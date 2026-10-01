@@ -7,6 +7,10 @@ description: Example skill that greets the user and confirms skills are installe
 
 Template skill. Copy this folder to start a new one.
 
+## Prerequisite
+
+Before doing anything else, run the `check-config` skill. If it reports a failure, stop here and do not continue with the steps below.
+
 ## Instructions
 
 1. Greet the user.
