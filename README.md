@@ -7,7 +7,7 @@ A library of reusable Agent Skills that work with both Claude Code and Codex. Sk
 Skills are installed globally, so they are available in every folder where you run the agent.
 
 ```bash
-npx skills add Frank0101/AgenticManager --all -g
+npx skills add Frank0101/AgenticManager --skill '*' --agent claude-code codex -g -y
 ```
 
 ## List
