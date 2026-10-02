@@ -16,3 +16,4 @@ Before doing anything else, run the `check-config` skill. If it reports a failur
 1. Greet the user.
 2. State that `hello-skill` was loaded successfully.
 3. Mention which agent you are (Claude, Codex, ...).
+4. Using the `source_control` sources from the `check-config` result, list the repositories I have access to, split into public and private.
