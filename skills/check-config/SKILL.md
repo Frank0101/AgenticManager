@@ -5,11 +5,11 @@ description: Validates agentic-manager.json and resolves which tool each area (d
 
 # Check Config
 
-Prerequisite for all AgenticManager skills. It validates `agentic-manager.json` in the repository root and tells the calling skill which tools to use and how to reach them.
+Prerequisite for all AgenticManager skills. It validates `agentic-manager.json` in the folder where the agent is running and tells the calling skill which tools to use and how to reach them.
 
 ## Concepts
 
-The config file lists the tools available in a repository. Each tool belongs to a group, and each one can be switched on or off:
+The config file lists the tools available in that folder. Each tool belongs to a group, and each one can be switched on or off:
 
 ```json
 {
@@ -51,7 +51,7 @@ Every source needs an `enabled` boolean. All groups are optional.
 
 ## Instructions
 
-1. Run the script from the repository where the skill is being used (not from this skill's folder):
+1. Run the script from the folder where the agent is running (not from this skill's folder). The script looks for `agentic-manager.json` there, or in the git root if that folder is inside a git repository:
 
    ```bash
    python3 <path to this skill's folder>/scripts/check_config.py
