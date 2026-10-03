@@ -49,6 +49,6 @@ The template lists every supported source, all disabled. In your config, you can
 
 ## Available skills
 
-| Skill                                                               | Description                                                                     |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [agentic-manager-check-config](skills/agentic-manager-check-config) | Validates and reads your config. Prerequisite for every other skill.            |
+| Skill                                                               | Description                                                          |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| [agentic-manager-check-config](skills/agentic-manager-check-config) | Validates and reads your config. Prerequisite for every other skill. |

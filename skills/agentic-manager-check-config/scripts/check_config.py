@@ -26,8 +26,10 @@ import re
 import shutil
 import sys
 
-CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".config", "agentic-manager", "config.json")
-TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config-template.json")
+CONFIG_PATH = os.path.join(os.path.expanduser(
+    "~"), ".config", "agentic-manager", "config.json")
+TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "config-template.json")
 
 # A setting still holding its template placeholder, e.g. "<token>".
 PLACEHOLDER = re.compile(r"^<.*>$")
@@ -75,6 +77,12 @@ def check_source(where, settings, template_settings):
         return [f"{where} must be an object"]
     errors = check_keys(where, settings, template_settings, "setting")
     enabled = settings.get("enabled")
+    if not isinstance(enabled, bool):
+        errors.append(f'{where}: "enabled" must be true or false')
+    for key in settings:
+        if key not in template_settings:
+            errors.append(
+                f'{where}: unknown setting "{key}" (supported: {names(template_settings)})')
     for key, default in template_settings.items():
         if key not in settings:
             continue
@@ -82,8 +90,16 @@ def check_source(where, settings, template_settings):
         if type(value) is not type(default):  # "is", so true is not accepted as a number
             errors.append(f"{where}.{key} must be {type_name(default)}")
         elif key != "enabled" and enabled is True:
-            if isinstance(value, str) and (not value.strip() or PLACEHOLDER.match(value)):
-                errors.append(f'{where}.{key} is not filled in: fill it in, or disable "{where}"')
+            if isinstance(value, str):
+                if not value.strip() or PLACEHOLDER.match(value):
+                    errors.append(f'{where}.{key} is not filled in: fill it in, or disable "{where}"')
+    if enabled is True:
+        for key, default in template_settings.items():
+            if key == "enabled":
+                continue
+            value = settings.get(key, default)
+            if isinstance(value, str) and PLACEHOLDER.match(value):
+                errors.append(f'{where}: fill in "{key}"')
     return errors
 
 
@@ -100,18 +116,22 @@ def resolve_config(config, template):
             errors.append(f"{group} must be an object of sources")
             continue
         errors += check_keys(group, entries, template_sources, "source")
-        for name, template_settings in template_sources.items():
-            if name not in entries:
+        for name, settings in entries.items():
+            where = f"{group}.{name}"
+            if name not in template_sources:
+                errors.append(
+                    f'{where} is not supported (supported in {group}: {names(template_sources)})')
                 continue
             where = f"{group}.{name}"
             problems = check_source(where, entries[name], template_settings)
             if problems:
-                errors += problems
-            elif entries[name]["enabled"]:
-                tool, _, channel = name.rpartition("-")  # "jira-api" -> "jira", "api"
-                extra = {k: v for k, v in entries[name].items() if k != "enabled"}
-                sources[group].append({"source": name, "tool": tool, "channel": channel, "settings": extra})
-    return sources, errors
+                errors.extend(problems)
+            elif settings["enabled"]:
+                # "notion-mcp" -> "notion", "mcp"
+                tool, _, channel = name.rpartition("-")
+                extra = {k: v for k, v in settings.items() if k != "enabled"}
+                sources[group].append(
+                    {"source": name, "tool": tool, "channel": channel, "settings": extra})
 
 
 # Returns (sources limited to the requested groups, errors). With no groups, returns all.
@@ -147,7 +167,8 @@ def main():
     if errors:
         print(json.dumps({"ok": False, **result, "created": created, "errors": errors}))
         sys.exit(1)
-    print(json.dumps({"ok": True, **result, "created": created, "sources": sources}))
+    print(json.dumps({"ok": True, **result,
+          "created": created, "sources": sources}))
 
 
 if __name__ == "__main__":

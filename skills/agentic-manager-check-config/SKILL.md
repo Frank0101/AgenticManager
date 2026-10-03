@@ -57,12 +57,16 @@ On success the script returns the enabled sources of the requested groups:
   "template": "/path/to/this/skill/config-template.json",
   "created": false,
   "sources": {
-    "workflow": [
-      { "source": "jira-api", "tool": "jira", "channel": "api", "settings": { "personal-access-token": "..." } }
+    "documentation": [
+      { "source": "notion-mcp", "tool": "notion", "channel": "mcp", "settings": {} }
     ],
     "source_control": [
       { "source": "github-cli", "tool": "github", "channel": "cli", "settings": {} }
-    ]
+    ],
+    "workflow": [
+      { "source": "jira-api", "tool": "jira", "channel": "api", "settings": { "personal-access-token": "..." } }
+    ],
+    "messaging": []
   }
 }
 ```
