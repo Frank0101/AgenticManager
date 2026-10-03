@@ -20,7 +20,7 @@ npx skills list -g
 
 Run the install command again. It reinstalls the latest version of every skill from this repo, including new ones.
 
-If an update adds a new source, the config check will report it as missing. Copy it from the [template](skills/agentic-manager-check-config/config-template.json) into your config.
+Your config keeps working when an update adds new sources: anything it doesn't list counts as disabled. When a skill needs one of them, it tells you what to add.
 
 ## Uninstall
 
@@ -45,7 +45,7 @@ The template lists every supported source, all disabled. In your config, you can
 - Fill in all their settings, such as the Jira `personal-access-token`.
 
 > [!CAUTION]
-> Don't add, remove or rename anything. If your config doesn't match the template, skills stop and tell you what to fix.
+> Don't add or rename groups, sources or settings. If your config has anything the template doesn't, skills stop and tell you what to fix.
 
 ## Available skills
 

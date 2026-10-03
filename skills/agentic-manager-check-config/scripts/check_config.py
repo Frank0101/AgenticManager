@@ -2,15 +2,16 @@
 #
 # Validates the user's AgenticManager config (~/.config/agentic-manager/config.json)
 # against config-template.json, which lists every supported group and source.
-# The config must have exactly the template's shape: the same groups, sources and
-# settings, nothing missing or added. The user may only switch "enabled" between
-# true and false and fill in settings; an enabled source must have every setting
-# filled in, with a value of the same type as in the template.
+# The config may only contain groups, sources and settings from the template; nothing
+# can be added. It may leave some out: a missing group or source counts as disabled,
+# so configs keep working when the template gains new ones. The user may only switch
+# "enabled" between true and false and fill in settings; an enabled source must have
+# every setting filled in, with a value of the same type as in the template.
 #
 # Usage: check_config.py [--init] [group ...]
 #   group   the groups the calling skill needs (e.g. workflow source_control). Each one
-#           must have at least one enabled source. With no groups, all are returned
-#           and none is required.
+#           must have at least one enabled source; if not, the error explains how to
+#           set one up. With no groups, all are returned and none is required.
 #   --init  copies the template to the config path first, if no config exists yet.
 #
 # Prints one line of JSON:
@@ -62,48 +63,53 @@ def type_name(value):
             list: "a list", dict: "an object"}.get(type(value), type(value).__name__)
 
 
-# Compares the keys of a config object with the template's. Returns the problems found.
-def check_keys(where, actual, expected, kind):
+def is_filled(value):
+    if isinstance(value, str):
+        return bool(value.strip()) and not PLACEHOLDER.match(value)
+    return value is not None
+
+
+def quoted(keys):
+    return ", ".join(f'"{k}"' for k in keys)
+
+
+# Reports keys of a config object that the template doesn't have. Keys the template
+# has but the config leaves out are allowed.
+def check_unknown(where, actual, expected, kind):
     prefix = f"{where}." if where else ""
-    missing = [
-        f'missing {kind} "{prefix}{k}"' for k in expected if k not in actual]
-    unknown = [f'unknown {kind} "{prefix}{k}" (supported: {", ".join(expected)})'
-               for k in actual if k not in expected]
-    return missing + unknown
+    return [f'unknown {kind} "{prefix}{k}" (supported: {", ".join(expected)})'
+            for k in actual if k not in expected]
 
 
 # Returns the problems with one source; empty if it is valid.
 def check_source(where, settings, template_settings):
     if not isinstance(settings, dict):
         return [f"{where} must be an object"]
-    errors = check_keys(where, settings, template_settings, "setting")
+    errors = check_unknown(where, settings, template_settings, "setting")
+    if "enabled" not in settings:
+        errors.append(f'{where}.enabled is missing: set it to true or false')
     enabled = settings.get("enabled")
     for key, default in template_settings.items():
-        if key not in settings:
-            continue  # already reported as missing
-        value = settings[key]
-        if type(value) is not type(default):  # "is", so true is not accepted as a number
+        value = settings.get(key)
+        if key in settings and type(value) is not type(default):  # "is": true is not a number
             errors.append(f"{where}.{key} must be {type_name(default)}")
-        elif key != "enabled" and enabled is True and isinstance(value, str):
-            if not value.strip() or PLACEHOLDER.match(value):
-                errors.append(
-                    f'{where}.{key} is not filled in: fill it in, or disable "{where}"')
+        elif key != "enabled" and enabled is True and not is_filled(value):
+            errors.append(f'{where}.{key} is not filled in: fill it in, or disable "{where}"')
     return errors
 
 
 # Returns (sources, errors): the enabled sources per group, and every problem found.
+# Groups and sources missing from the config count as disabled.
 def resolve_config(config, template):
-    errors = check_keys("", config, template, "group")
+    errors = check_unknown("", config, template, "group")
     sources = {}
     for group, template_sources in template.items():
         sources[group] = []
-        entries = config.get(group)
-        if entries is None:
-            continue  # already reported as missing
+        entries = config.get(group, {})
         if not isinstance(entries, dict):
             errors.append(f"{group} must be an object of sources")
             continue
-        errors += check_keys(group, entries, template_sources, "source")
+        errors += check_unknown(group, entries, template_sources, "source")
         for name, settings in entries.items():
             if name not in template_sources:
                 continue  # already reported as unknown
@@ -120,18 +126,35 @@ def resolve_config(config, template):
     return sources, errors
 
 
+# Explains how to set up one source of a group, starting from the user's config.
+def setup_steps(group, name, template_settings, config):
+    entry = dict(template_settings, enabled=True)
+    settings = [k for k in template_settings if k != "enabled"]
+    if group not in config:
+        step = f'add "{group}": {json.dumps({name: entry})} at the top level'
+    elif name not in config[group]:
+        step = f'add "{name}": {json.dumps(entry)} inside "{group}"'
+    else:
+        step = f'set "{group}.{name}.enabled" to true'
+        settings = [k for k in settings if not is_filled(config[group][name].get(k))]
+    if settings:
+        step += f", then fill in {quoted(settings)}"
+    tool, _, channel = name.rpartition("-")
+    return f'"{name}" ({tool} via {channel.upper()}): {step}'
+
+
 # Returns (sources limited to the requested groups, errors). With no groups, returns all.
-def select_groups(sources, requested, template):
+def select_groups(sources, requested, config, template):
     errors = [f'unknown group "{g}" requested (supported: {", ".join(template)})'
               for g in requested if g not in template]
     if errors:
         return {}, errors
     for group in requested:
         if not sources[group]:
-            options = ", ".join(
-                f'"{group}.{name}"' for name in template[group])
-            errors.append(
-                f'no enabled source for "{group}": enable {options} in {CONFIG_PATH}')
+            options = "; or ".join(setup_steps(group, name, settings, config)
+                                   for name, settings in template[group].items())
+            errors.append(f'no enabled source for "{group}". To use {options}. '
+                          f"Edit {CONFIG_PATH}.")
     return {g: sources[g] for g in (requested or template)}, errors
 
 
@@ -148,9 +171,10 @@ def main():
             os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
             shutil.copyfile(TEMPLATE_PATH, CONFIG_PATH)
             created = True
-        sources, errors = resolve_config(load_json(CONFIG_PATH), template)
+        config = load_json(CONFIG_PATH)
+        sources, errors = resolve_config(config, template)
         if not errors:
-            sources, errors = select_groups(sources, requested, template)
+            sources, errors = select_groups(sources, requested, config, template)
     except (ValueError, OSError) as e:
         errors = [str(e)]
     if errors:

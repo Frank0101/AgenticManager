@@ -12,9 +12,11 @@ Prerequisite for all AgenticManager skills. It validates the user's config, chec
 - **User config:** `~/.config/agentic-manager/config.json`. One global file, used wherever the agent runs.
 - **Template:** [config-template.json](config-template.json) in this skill's folder. It lists every supported group and source, all disabled, and is the only definition of what AgenticManager supports.
 
-The config must have exactly the template's groups, sources and settings. The user can only change two things: set a source's `enabled` to `true` or `false`, and fill in its settings (any key other than `enabled`). An enabled source must have every setting filled in. The script enforces all of this.
+The config may only contain groups, sources and settings from the template. It may leave some out: a missing group or source counts as disabled, so the config keeps working when the template gains new ones. The user can only change two things: set a source's `enabled` to `true` or `false`, and fill in its settings (any key other than `enabled`). An enabled source must have every setting filled in. The script enforces all of this.
 
-Never suggest adding, removing or renaming a group, source or setting, even if a connector for another tool is available in the session. If the script reports something missing after an update, tell the user to copy it from the template.
+Never suggest a group, source or setting that isn't in the template, even if a connector for another tool is available in the session. When a requested group has no enabled source, the script's error explains how to set up each source available for it; pass that on to the user.
+
+Settings can hold secrets, such as tokens. Never display a setting's value in the chat, in output or in files, and don't pass it on to anything except the tool it is for. Refer to it by name instead, for example "using your `personal-access-token`". This applies to the calling skill too.
 
 ## Input
 
@@ -48,7 +50,7 @@ When the user runs this skill directly to check their config, pass no groups: ev
 
 ## Output
 
-On success the script returns the enabled sources of the requested groups:
+On success the script returns the enabled sources of the requested groups. This example was run without groups, so every group is listed, including `messaging` with no enabled source:
 
 ```json
 {
@@ -98,7 +100,7 @@ On failure it returns `"ok": false` and an `errors` list, each entry explaining 
   "template": "/path/to/this/skill/config-template.json",
   "created": false,
   "errors": [
-    "no enabled source for \"source_control\": enable \"source_control.github-cli\" in /Users/me/.config/agentic-manager/config.json"
+    "no enabled source for \"workflow\". To use \"jira-api\" (jira via API): add \"jira-api\": {\"enabled\": true, \"personal-access-token\": \"<token>\"} inside \"workflow\", then fill in \"personal-access-token\". Edit /Users/me/.config/agentic-manager/config.json."
   ]
 }
 ```
