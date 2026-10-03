@@ -45,7 +45,7 @@ The template lists every supported source, all disabled. In your config, you can
 - Fill in all their settings, such as the Jira `personal-access-token`.
 
 > [!CAUTION]
-> Don't add or rename groups, sources or settings. If your config has anything the template doesn't, skills stop and tell you what to fix.
+> The template shows everything that's supported. Adding groups, sources or settings that aren't in it will cause an error.
 
 ## Available skills
 
