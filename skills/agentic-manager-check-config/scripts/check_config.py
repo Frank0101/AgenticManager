@@ -78,30 +78,16 @@ def check_source(where, settings, template_settings):
         return [f"{where} must be an object"]
     errors = check_keys(where, settings, template_settings, "setting")
     enabled = settings.get("enabled")
-    if not isinstance(enabled, bool):
-        errors.append(f'{where}: "enabled" must be true or false')
-    for key in settings:
-        if key not in template_settings:
-            errors.append(
-                f'{where}: unknown setting "{key}" (supported: {names(template_settings)})')
     for key, default in template_settings.items():
         if key not in settings:
-            continue
+            continue  # already reported as missing
         value = settings[key]
         if type(value) is not type(default):  # "is", so true is not accepted as a number
             errors.append(f"{where}.{key} must be {type_name(default)}")
-        elif key != "enabled" and enabled is True:
-            if isinstance(value, str):
-                if not value.strip() or PLACEHOLDER.match(value):
-                    errors.append(
-                        f'{where}.{key} is not filled in: fill it in, or disable "{where}"')
-    if enabled is True:
-        for key, default in template_settings.items():
-            if key == "enabled":
-                continue
-            value = settings.get(key, default)
-            if isinstance(value, str) and PLACEHOLDER.match(value):
-                errors.append(f'{where}: fill in "{key}"')
+        elif key != "enabled" and enabled is True and isinstance(value, str):
+            if not value.strip() or PLACEHOLDER.match(value):
+                errors.append(
+                    f'{where}.{key} is not filled in: fill it in, or disable "{where}"')
     return errors
 
 
@@ -119,13 +105,10 @@ def resolve_config(config, template):
             continue
         errors += check_keys(group, entries, template_sources, "source")
         for name, settings in entries.items():
-            where = f"{group}.{name}"
             if name not in template_sources:
-                errors.append(
-                    f'{where} is not supported (supported in {group}: {names(template_sources)})')
-                continue
-            where = f"{group}.{name}"
-            problems = check_source(where, entries[name], template_settings)
+                continue  # already reported as unknown
+            problems = check_source(
+                f"{group}.{name}", settings, template_sources[name])
             if problems:
                 errors.extend(problems)
             elif settings["enabled"]:
@@ -134,6 +117,7 @@ def resolve_config(config, template):
                 extra = {k: v for k, v in settings.items() if k != "enabled"}
                 sources[group].append(
                     {"source": name, "tool": tool, "channel": channel, "settings": extra})
+    return sources, errors
 
 
 # Returns (sources limited to the requested groups, errors). With no groups, returns all.
