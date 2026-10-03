@@ -1,11 +1,11 @@
 ---
-name: agentic-manager-check-config
-description: Validates the AgenticManager config (~/.config/agentic-manager/config.json), checks that the groups a calling skill needs (documentation, source_control, workflow, messaging) have an enabled source, and returns which tool each group uses and through which channel. Prerequisite for every AgenticManager skill; run it first. If it fails, it reports the errors to the calling skill, which decides what to do. Use when another AgenticManager skill says to run agentic-manager-check-config, or when the user asks to check or set up the AgenticManager configuration.
+name: agentic-manager-utils-check-config
+description: Validates the AgenticManager config (~/.config/agentic-manager/config.json), checks that the groups a calling skill needs (documentation, source_control, workflow, messaging) have an enabled source, and returns which tool each group uses and through which channel. Prerequisite for every AgenticManager skill except the agentic-manager-utils-* utilities; run it first. If it fails, it reports the errors to the calling skill, which decides what to do. Use when another AgenticManager skill says to run agentic-manager-utils-check-config, or when asked directly to check or set up the AgenticManager configuration.
 ---
 
 # Check Config
 
-Prerequisite for all AgenticManager skills. It validates the user's config, checks that the groups the calling skill needs are available, and tells the calling skill which tools to use and how to reach them.
+Prerequisite for every AgenticManager skill except the `agentic-manager-utils-*` utilities. It validates the user's config, checks that the groups the calling skill needs are available, and tells the calling skill which tools to use and how to reach them.
 
 ## The config
 
@@ -22,7 +22,7 @@ Settings can hold secrets, such as tokens. Never display a setting's value in th
 
 ## Input
 
-The calling skill names the groups it needs, for example "run agentic-manager-check-config for `workflow` and `source_control`". Each requested group must have at least one enabled source.
+The calling skill names the groups it needs, for example "run agentic-manager-utils-check-config for `workflow` and `source_control`". Each requested group must have at least one enabled source.
 
 | Group            | Area                              |
 | ---------------- | --------------------------------- |
@@ -31,7 +31,7 @@ The calling skill names the groups it needs, for example "run agentic-manager-ch
 | `workflow`       | Where work items and tickets live |
 | `messaging`      | Where the team chats              |
 
-When the user runs this skill directly to check their config, pass no groups: every group is returned and none is required.
+When it's run directly, not by another skill, pass no groups: every group is returned and none is required.
 
 ## Instructions
 
@@ -43,12 +43,11 @@ When the user runs this skill directly to check their config, pass no groups: ev
 
    It prints one line of JSON. Do not read or validate the config yourself.
 
-2. If it exits with `1` (`"ok": false`) or `python3` is unavailable: **stop** this skill and report the failure to the calling skill, which decides what to do next. Don't guess settings or create defaults.
+2. If it exits with `1` (`"ok": false`) or `python3` is unavailable, the check has failed. Don't return any sources, and don't guess settings or create defaults. Handle it with the user as below, then report the failure to the calling skill, which decides what to do next.
    - If `python3` is unavailable, tell the user AgenticManager needs Python 3.8+ available as `python3`.
    - Otherwise, show the user every entry in `errors`, and the config `path`.
    - If the config is missing, offer to create it from the template. Only if the user agrees, run the script again with `--init` and the same groups. It copies the template to `path`, never overwriting an existing file, and returns `"created": true`. Then tell the user to edit `path`: enable the sources they use and fill in their settings.
    - For any other error, you may offer to make the fix it describes, but edit the config only after the user explicitly approves.
-   - Once fixed, the user can re-run the original skill.
 
 3. If it exits with `0` (`"ok": true`): tell the user the configuration is OK and which source each requested group will use, then return `sources` to the calling skill. When run without groups, also name, for each group with no enabled source, the sources listed for it in the `template` file.
 
@@ -121,7 +120,7 @@ The calling skill refers to groups, not to specific tools. For each group it nee
 
 Example: a skill says "list the open tickets".
 
-1. It ran agentic-manager-check-config for `workflow`.
+1. It ran agentic-manager-utils-check-config for `workflow`.
 2. `sources.workflow` contains `jira` with channel `api`.
 3. It calls the Jira API, authenticating with `settings.personal-access-token`.
 

@@ -33,24 +33,22 @@ npx skills list -g --json | jq -r '.[] | select(.source == "Frank0101/AgenticMan
 ## Requirements
 
 - **Node.js 18+**, to install skills with `npx`.
-- **Python 3.8+**, available as `python3` where the agent runs. Every skill starts with `agentic-manager-check-config`, which runs a Python script.
+- **Python 3.8+**, available as `python3` where the agent runs. Skills use it to check your config.
 
 ## Configuration
 
-Skills read one global config, `~/.config/agentic-manager/config.json`, wherever you run the agent. If it's missing, any skill you run will offer to create it from the [template](skills/agentic-manager-check-config/config-template.json). To check your config at any time, ask the agent to check your AgenticManager configuration.
+Skills read one global config, `~/.config/agentic-manager/config.json`, wherever you run the agent. If it's missing, any skill you run will offer to create it from the [template](skills/agentic-manager-utils-check-config/config-template.json).
 
-The template lists every supported source, all disabled. In your config, you can only:
+The template lists every supported group and source, all disabled. In your config, you can only:
 
 - Set `enabled` to `true` for the sources you use.
 - Fill in all their settings, such as the Jira `personal-access-token`.
 
 > [!CAUTION]
-> The template shows everything that's supported. Adding groups, sources or settings that aren't in it will cause an error.
+> Adding groups, sources or settings that aren't in the template will cause an error.
 
 Skills never change your config on their own. If something is wrong, or a skill needs a source you haven't enabled, the skill tells you how to fix it. The agent may offer to make the change, but only makes it once you approve.
 
 ## Available skills
 
-| Skill                                                               | Description                                                          |
-| ------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| [agentic-manager-check-config](skills/agentic-manager-check-config) | Validates and reads your config. Prerequisite for every other skill. |
+None yet.

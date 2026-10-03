@@ -63,9 +63,9 @@ def load_json(path):
     return data
 
 
+# The template only holds "enabled" (true or false) and string placeholders.
 def type_name(value):
-    return {bool: "true or false", str: "a string", int: "a number", float: "a number",
-            list: "a list", dict: "an object"}.get(type(value), type(value).__name__)
+    return {bool: "true or false", str: "a string"}[type(value)]
 
 
 def is_filled(value):
@@ -96,7 +96,6 @@ def check_source(where, settings, template_settings):
     enabled = settings.get("enabled")
     for key, default in template_settings.items():
         value = settings.get(key)
-        # "is": true is not a number
         if key in settings and type(value) is not type(default):
             errors.append(f"{where}.{key} must be {type_name(default)}")
         elif key != "enabled" and enabled is True and not is_filled(value):

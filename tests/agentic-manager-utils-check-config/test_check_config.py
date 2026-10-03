@@ -1,4 +1,4 @@
-# Tests for skills/agentic-manager-check-config/scripts/check_config.py.
+# Tests for skills/agentic-manager-utils-check-config/scripts/check_config.py.
 # Run with: python3 tests/run.py
 #
 # Each test runs the script with HOME pointed at a temporary folder. The config is

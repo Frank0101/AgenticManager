@@ -1,8 +1,6 @@
 # AGENTS.md
 
-Before working in this repo, read [README.md](README.md) (what the skills do and how users install them) and [CONTRIBUTING.md](CONTRIBUTING.md) (the design choices behind the repo).
-
-Each document has one reader: the README is for the user, CONTRIBUTING for the developer (design, not procedures), and this file for you (how to do things). Keep new content in the right one.
+Each document has one reader: [README.md](README.md) is for the user (installing, configuring and using the skills), [CONTRIBUTING.md](CONTRIBUTING.md) for the developer (the design choices, not procedures), and this file for you (how to do things). Read the first two before working here, and keep new content in the right one.
 
 ## Rules that always apply
 
@@ -15,22 +13,22 @@ Each document has one reader: the README is for the user, CONTRIBUTING for the d
 ## Writing a skill
 
 - Put it in `skills/agentic-manager-<name>/SKILL.md`. The folder name and the frontmatter `name` must match.
-- Start the instructions with the prerequisite, naming the groups the skill needs and saying what the skill does if the check fails (usually stop):
+- Unless it's a utility (`agentic-manager-utils-*`), start the instructions with the prerequisite, naming the groups the skill needs and saying what the skill does if the check fails (usually stop):
 
   ```markdown
   ## Prerequisite
 
-  Run `agentic-manager-check-config` for `workflow` and `source_control`. If it fails, stop here.
+  Run `agentic-manager-utils-check-config` for `workflow` and `source_control`. If it fails, stop here.
   ```
 
 - Use the sources the check returns, reaching each tool through its channel (`mcp`, `cli` or `api`) and using the source's settings for credentials. Never hard-code a tool, URL or credential.
-- Add the skill to the README's Available skills table.
+- Add the skill to the README's Available skills section. A utility goes in CONTRIBUTING's Utilities table instead; the README never mentions utilities.
 
 ## Adding a source or a group
 
-- Add the source to [config-template.json](skills/agentic-manager-check-config/config-template.json) under its group, named `<tool>-<channel>` (channel `mcp`, `cli` or `api`), with `"enabled": false`.
+- Add the source to [config-template.json](skills/agentic-manager-utils-check-config/config-template.json) under its group, named `<tool>-<channel>` (channel `mcp`, `cli` or `api`), with `"enabled": false`.
 - Give each setting a placeholder in angle brackets, such as `"<token>"`. The check reports a placeholder as not filled in when the source is enabled.
-- For a new group, also add it to the groups table in the check-config [SKILL.md](skills/agentic-manager-check-config/SKILL.md). A test checks that they match.
+- For a new group, also add it to the groups table in the check-config [SKILL.md](skills/agentic-manager-utils-check-config/SKILL.md). A test checks that they match.
 
 ## Testing
 
