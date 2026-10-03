@@ -29,18 +29,21 @@ Edits to a skill apply to the next agent session. A running session keeps the in
    ```
 
 4. Refer to groups, not tools. Use the sources `agentic-manager-check-config` returns, reaching each tool through its channel (`mcp`, `cli` or `api`) and using its settings for credentials. Never hard-code a tool, URL or credential.
-5. Write scripts in Python 3.8+ using only the standard library, so users install nothing extra.
-6. Add tests in `tests/<skill>/test_*.py`.
+5. The skill must never change the user's config on its own. If something in it needs to change, the skill stops and tells the user what to change. It may offer to make the change, but makes it only after the user explicitly approves.
+6. Write scripts in Python 3.8+ using only the standard library, so users install nothing extra.
+7. Add tests in `tests/<skill>/test_*.py`.
 
 ## Adding a source
 
 [config-template.json](skills/agentic-manager-check-config/config-template.json) is the only definition of what's supported. To add a source:
 
-1. Add it to the template under its group, named `<tool>-<channel>`, with `"enabled": false`.
+1. Add it to the template under its group, named `<tool>-<channel>`, with `"enabled": false`. The channel is `mcp`, `cli` or `api`.
 2. Give each setting a placeholder in angle brackets, such as `"<token>"`. The check reports a placeholder as not filled in when the source is enabled.
-3. Add tests for it.
+3. Add tests for any new behavior it needs. The existing tests already check that every template entry follows the rules above.
 
-Users' existing configs keep working: a source they don't list counts as disabled. When a skill requests its group and nothing in it is enabled, the check tells the user exactly what to add, including the JSON to paste.
+To add a group, also add it to the groups table in the check-config [SKILL.md](skills/agentic-manager-check-config/SKILL.md). A test checks that they match.
+
+Users' existing configs keep working: a source they don't list counts as disabled. When a skill requests its group and nothing in it is enabled, the check tells the user exactly how to set it up: which JSON to add, or which source to enable.
 
 ## Testing
 

@@ -16,7 +16,10 @@
 #
 # Prints one line of JSON:
 #   success: {"ok": true, "path": ..., "template": ..., "created": bool, "sources": {...}}
-#   failure: {"ok": false, "path": ..., "template": ..., "errors": ["...", ...]}  (exit code 1)
+#   failure: {"ok": false, "path": ..., "template": ..., "created": bool, "errors": ["...", ...]}
+#            (exit code 1)
+#
+# The config is only ever written by --init, and never overwritten.
 #
 # "sources" maps each returned group to its enabled sources only. A source is named
 # "<tool>-<channel>" (e.g. "jira-api"); it is already split into tool, channel and
@@ -46,8 +49,10 @@ def reject_duplicates(pairs):
 
 
 def load_json(path):
-    if not os.path.isfile(path):
+    if not os.path.exists(path):
         raise ValueError(f"{path} not found")
+    if not os.path.isfile(path):
+        raise ValueError(f"{path} is not a file")
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f, object_pairs_hook=reject_duplicates)

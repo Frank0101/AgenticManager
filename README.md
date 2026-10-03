@@ -33,7 +33,7 @@ npx skills list -g --json | jq -r '.[] | select(.source == "Frank0101/AgenticMan
 ## Requirements
 
 - **Node.js 18+**, to install skills with `npx`.
-- **Python 3.8+**, available as `python3` where the agent runs. Every skill starts by running `agentic-manager-check-config`, which is a Python script.
+- **Python 3.8+**, available as `python3` where the agent runs. Every skill starts with `agentic-manager-check-config`, which runs a Python script.
 
 ## Configuration
 
@@ -46,6 +46,8 @@ The template lists every supported source, all disabled. In your config, you can
 
 > [!CAUTION]
 > The template shows everything that's supported. Adding groups, sources or settings that aren't in it will cause an error.
+
+Skills never change your config on their own. If something is wrong, or a skill needs a source you haven't enabled, the skill stops and tells you how to fix it. The agent may offer to make the change, but only makes it once you approve.
 
 ## Available skills
 

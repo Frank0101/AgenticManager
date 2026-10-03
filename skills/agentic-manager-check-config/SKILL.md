@@ -14,7 +14,9 @@ Prerequisite for all AgenticManager skills. It validates the user's config, chec
 
 The config may only contain groups, sources and settings from the template. It may leave some out: a missing group or source counts as disabled, so the config keeps working when the template gains new ones. The user can only change two things: set a source's `enabled` to `true` or `false`, and fill in its settings (any key other than `enabled`). An enabled source must have every setting filled in. The script enforces all of this.
 
-Never suggest a group, source or setting that isn't in the template, even if a connector for another tool is available in the session. When a requested group has no enabled source, the script's error explains how to set up each source available for it; pass that on to the user.
+This skill never changes the config on its own. When something is wrong, it stops, reports the problem and explains how to fix it. It changes the config only with the user's explicit approval (see step 2).
+
+Never suggest a group, source or setting that isn't in the template, even if a connector for another tool is available in the session.
 
 Settings can hold secrets, such as tokens. Never display a setting's value in the chat, in output or in files, and don't pass it on to anything except the tool it is for. Refer to it by name instead, for example "using your `personal-access-token`". This applies to the calling skill too.
 
@@ -41,13 +43,14 @@ When the user runs this skill directly to check their config, pass no groups: ev
 
    It prints one line of JSON. Do not read or validate the config yourself.
 
-2. If it exits with `1` (`"ok":false`) or `python3` is unavailable: **stop**. The calling skill must not continue, and you must not guess settings or create defaults.
-   - Show the user every entry in `errors`, and the config `path`.
+2. If it exits with `1` (`"ok": false`) or `python3` is unavailable: **stop**. The calling skill must not continue, and you must not guess settings or create defaults.
+   - If `python3` is unavailable, tell the user AgenticManager needs Python 3.8+ available as `python3`.
+   - Otherwise, show the user every entry in `errors`, and the config `path`.
    - If the config is missing, offer to create it from the template. Only if the user agrees, run the script again with `--init` and the same groups. It copies the template to `path`, never overwriting an existing file, and returns `"created": true`. Then tell the user to edit `path`: enable the sources they use and fill in their settings.
-   - For any other error, show the user how to fix it. You may offer to make the change, but edit the config only after the user explicitly approves.
+   - For any other error, you may offer to make the fix it describes, but edit the config only after the user explicitly approves.
    - Once fixed, the user can re-run the original skill.
 
-3. If it exits with `0` (`"ok":true`): tell the user the configuration is OK and which source each requested group will use, then return `sources` to the calling skill. When run without groups, also name, for each group with no enabled source, the source the template lists for it.
+3. If it exits with `0` (`"ok": true`): tell the user the configuration is OK and which source each requested group will use, then return `sources` to the calling skill. When run without groups, also name, for each group with no enabled source, the sources listed for it in the `template` file.
 
 ## Output
 

@@ -1,11 +1,13 @@
 # Tests for skills/agentic-manager-check-config/scripts/check_config.py.
-# Run from the repo root: python3 tests/run.py
+# Run with: python3 tests/run.py
 #
-# Each test runs the script with HOME pointed at a temporary folder, so the real
-# ~/.config/agentic-manager/config.json is never read or touched.
+# Each test runs the script with HOME pointed at a temporary folder. The config is
+# part of the test's setup, so each test writes its own and is free to change it.
 import copy
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,7 +21,8 @@ SCRIPT = os.path.join(SKILL_DIR, "scripts", "check_config.py")
 TEMPLATE = os.path.join(SKILL_DIR, "config-template.json")
 
 
-class CheckConfigTest(unittest.TestCase):
+# Helpers shared by the test classes below; it has no tests of its own.
+class ScriptTest(unittest.TestCase):
     def setUp(self):
         self.home = tempfile.TemporaryDirectory()
         self.config_path = os.path.join(
@@ -28,16 +31,31 @@ class CheckConfigTest(unittest.TestCase):
             self.template = json.load(f)
 
     def tearDown(self):
-        if os.path.exists(self.config_path):
+        if os.path.isfile(self.config_path):
             os.chmod(self.config_path, 0o644)
         self.home.cleanup()
 
     # Runs the script and returns (exit code, parsed JSON output).
-    def run_script(self, *args):
+    def run_script(self, *args, script=SCRIPT):
         env = dict(os.environ, HOME=self.home.name)
-        proc = subprocess.run([sys.executable, SCRIPT, *args], env=env,
+        proc = subprocess.run([sys.executable, script, *args], env=env,
                               capture_output=True, text=True)
         return proc.returncode, json.loads(proc.stdout)
+
+    # Runs a copy of the script next to a custom template (none if `template` is None),
+    # for cases the real template can't show, such as two sources in one group.
+    def run_with_template(self, template, *args):
+        skill = os.path.join(self.home.name, "skill")
+        os.makedirs(os.path.join(skill, "scripts"), exist_ok=True)
+        script = shutil.copy(SCRIPT, os.path.join(skill, "scripts"))
+        if template is not None:
+            with open(os.path.join(skill, "config-template.json"), "w", encoding="utf-8") as f:
+                json.dump(template, f)
+        return self.run_script(*args, script=script)
+
+    def read_raw(self):
+        with open(self.config_path, "rb") as f:
+            return f.read()
 
     def write_raw(self, text):
         os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
@@ -70,6 +88,8 @@ class CheckConfigTest(unittest.TestCase):
                         f"{expected!r} not in {out['errors']}")
         return out
 
+
+class CheckConfigTest(ScriptTest):
     # --- missing config and --init
 
     def test_missing_config(self):
@@ -93,6 +113,41 @@ class CheckConfigTest(unittest.TestCase):
         self.write_raw('{"x": 1}')
         out = self.assert_error('unknown group "x"', "--init")
         self.assertFalse(out["created"])
+        self.assertEqual(self.read_raw(), b'{"x": 1}')
+
+    def test_init_does_not_overwrite_valid_config(self):
+        self.write_config(self.enable_jira)
+        before = self.read_raw()
+        out = self.assert_ok("--init", "workflow")
+        self.assertFalse(out["created"])
+        self.assertEqual(self.read_raw(), before)
+
+    # --- the config is never changed without --init
+
+    def test_config_is_never_changed(self):
+        # name: (config, requested group)
+        cases = {
+            "valid": (json.dumps(self.template), "documentation"),
+            "no enabled source": (json.dumps(self.template), "workflow"),
+            "unknown group": ('{"chat": {}}', "workflow"),
+            "placeholder": ('{"workflow": {"jira-api": {"enabled": true, '
+                            '"personal-access-token": "<token>"}}}', "workflow"),
+            "invalid JSON": ("nope", "workflow"),
+        }
+        for name, (text, group) in cases.items():
+            with self.subTest(name):
+                self.write_raw(text)
+                before = (self.read_raw(), os.stat(
+                    self.config_path).st_mtime_ns)
+                self.run_script(group)
+                self.assertEqual(
+                    (self.read_raw(), os.stat(self.config_path).st_mtime_ns), before)
+                self.assertEqual(os.listdir(os.path.dirname(
+                    self.config_path)), ["config.json"])
+
+    def test_missing_config_is_not_created(self):
+        self.run_script("workflow")
+        self.assertFalse(os.path.exists(self.config_path))
 
     # --- valid configs and requested groups
 
@@ -107,6 +162,21 @@ class CheckConfigTest(unittest.TestCase):
         self.assertEqual(out["sources"], {"workflow": [{
             "source": "jira-api", "tool": "jira", "channel": "api",
             "settings": {"personal-access-token": "abc"}}]})
+
+    def test_no_groups_returns_every_group(self):
+        self.write_config(self.enable_jira)
+        out = self.assert_ok()
+        self.assertEqual(list(out["sources"]), list(self.template))
+        self.assertEqual(len(out["sources"]["workflow"]), 1)
+        self.assertEqual(out["sources"]["messaging"], [])
+
+    def test_requested_groups_keep_their_order(self):
+        def change(c):
+            self.enable_jira(c)
+            c["documentation"]["notion-mcp"]["enabled"] = True
+        self.write_config(change)
+        out = self.assert_ok("workflow", "documentation")
+        self.assertEqual(list(out["sources"]), ["workflow", "documentation"])
 
     def test_duplicate_requested_group(self):
         self.write_config(self.enable_jira)
@@ -149,7 +219,14 @@ class CheckConfigTest(unittest.TestCase):
 
     def test_unknown_requested_group(self):
         self.write_config(self.enable_jira)
-        self.assert_error('unknown group "chat" requested', "workflow", "chat")
+        out = self.assert_error(
+            'unknown group "chat" requested', "workflow", "chat")
+        self.assertEqual(len(out["errors"]), 1, out["errors"])
+
+    def test_config_problems_are_reported_before_requested_groups(self):
+        self.write_raw('{"chat": {}}')
+        out = self.assert_error('unknown group "chat" (supported', "workflow")
+        self.assertEqual(len(out["errors"]), 1, out["errors"])
 
     # --- settings
 
@@ -181,6 +258,23 @@ class CheckConfigTest(unittest.TestCase):
         self.write_config(lambda c: c["workflow"]
                           ["jira-api"].update({"enabled": 1}))
         self.assert_error("workflow.jira-api.enabled must be true or false")
+
+    def test_setting_set_to_null(self):
+        self.write_config(
+            lambda c: c["workflow"]["jira-api"].update({"personal-access-token": None}))
+        self.assert_error(
+            "workflow.jira-api.personal-access-token must be a string")
+
+    def test_enabled_as_null(self):
+        self.write_config(lambda c: c["workflow"]
+                          ["jira-api"].update({"enabled": None}))
+        self.assert_error("workflow.jira-api.enabled must be true or false")
+
+    def test_errors_never_contain_setting_values(self):
+        self.write_config(lambda c: c["workflow"]["jira-api"].update(
+            {"personal-access-token": "s3cret", "enabled": "yes"}))
+        out = self.assert_error("enabled must be true or false", "workflow")
+        self.assertNotIn("s3cret", json.dumps(out))
 
     def test_enabled_with_missing_setting(self):
         self.write_raw('{"workflow": {"jira-api": {"enabled": true}}}')
@@ -246,6 +340,15 @@ class CheckConfigTest(unittest.TestCase):
 
     # --- unreadable or malformed files
 
+    def test_config_is_a_folder(self):
+        os.makedirs(self.config_path)
+        out = self.assert_error("is not a file", "--init")
+        self.assertFalse(out["created"])
+
+    def test_empty_file(self):
+        self.write_raw("")
+        self.assert_error("invalid JSON")
+
     def test_duplicate_key(self):
         self.write_raw('{"documentation": {}, "documentation": {}}')
         self.assert_error('duplicate key "documentation"')
@@ -269,6 +372,76 @@ class CheckConfigTest(unittest.TestCase):
         self.write_config()
         os.chmod(self.config_path, 0)
         self.assert_error("Permission denied")
+
+    # --- the template itself
+
+    def test_template_follows_the_rules(self):
+        self.assertTrue(self.template)
+        for group, sources in self.template.items():
+            self.assertRegex(group, r"^[a-z_]+$")
+            self.assertTrue(sources, f"{group} has no sources")
+            for name, settings in sources.items():
+                where = f"{group}.{name}"
+                self.assertRegex(
+                    name, r"^[a-z0-9]+(-[a-z0-9]+)*-(mcp|cli|api)$", where)
+                self.assertIs(settings.get("enabled"), False, where)
+                for key, value in settings.items():
+                    if key != "enabled":
+                        self.assertRegex(value, r"^<.+>$", f"{where}.{key}")
+
+    def test_groups_match_the_skill(self):
+        with open(os.path.join(SKILL_DIR, "SKILL.md"), encoding="utf-8") as f:
+            documented = re.findall(
+                r"^\| `([a-z_]+)` +\| Where", f.read(), re.M)
+        self.assertEqual(documented, list(self.template))
+
+
+# Cases the real template can't show, run against a copy of the script with its own
+# template.
+class CustomTemplateTest(ScriptTest):
+    TEMPLATE = {
+        "workflow": {
+            "jira-api": {"enabled": False, "personal-access-token": "<token>"},
+            "azure-devops-cli": {"enabled": False, "organization": "<organization>"},
+        },
+    }
+
+    def setUp(self):
+        super().setUp()
+        self.template = copy.deepcopy(self.TEMPLATE)
+
+    def run_script(self, *args, script=None):
+        if script:
+            return super().run_script(*args, script=script)
+        return self.run_with_template(self.template, *args)
+
+    def test_several_enabled_sources_are_all_returned(self):
+        def change(c):
+            c["workflow"]["jira-api"].update(
+                {"enabled": True, "personal-access-token": "abc"})
+            c["workflow"]["azure-devops-cli"].update(
+                {"enabled": True, "organization": "acme"})
+        self.write_config(change)
+        out = self.assert_ok("workflow")
+        self.assertEqual(out["sources"]["workflow"], [
+            {"source": "jira-api", "tool": "jira", "channel": "api",
+             "settings": {"personal-access-token": "abc"}},
+            {"source": "azure-devops-cli", "tool": "azure-devops", "channel": "cli",
+             "settings": {"organization": "acme"}}])
+
+    def test_every_source_of_the_group_is_suggested(self):
+        self.write_raw("{}")
+        out = self.assert_error(
+            '"jira-api" (jira via API): add "workflow": ', "workflow")
+        self.assertIn('; or "azure-devops-cli" (azure-devops via CLI): add "workflow": '
+                      '{"azure-devops-cli": {"enabled": true, "organization": "<organization>"}} '
+                      'at the top level, then fill in "organization". Edit', out["errors"][0])
+
+    def test_missing_template(self):
+        code, out = self.run_with_template(None, "workflow")
+        self.assertEqual(code, 1, out)
+        self.assertTrue(out["errors"][0].endswith(
+            "config-template.json not found"))
 
 
 if __name__ == "__main__":
