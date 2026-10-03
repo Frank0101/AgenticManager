@@ -46,7 +46,13 @@ On success the script returns the configuration resolved for skills to use:
   "sources": {
     "documentation": [{ "tool": "notion", "channel": "mcp", "settings": {} }],
     "source_control": [],
-    "workflow": [{ "tool": "jira", "channel": "api", "settings": { "personal-access-token": "..." } }],
+    "workflow": [
+      {
+        "tool": "jira",
+        "channel": "api",
+        "settings": { "personal-access-token": "..." }
+      }
+    ],
     "messaging": []
   }
 }

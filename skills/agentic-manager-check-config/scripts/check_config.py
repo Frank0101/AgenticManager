@@ -17,8 +17,10 @@ import re
 import shutil
 import sys
 
-CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".config", "agentic-manager", "config.json")
-TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config-template.json")
+CONFIG_PATH = os.path.join(os.path.expanduser(
+    "~"), ".config", "agentic-manager", "config.json")
+TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "config-template.json")
 
 # A setting still holding its template placeholder, e.g. "<token>".
 PLACEHOLDER = re.compile(r"^<.*>$")
@@ -51,7 +53,8 @@ def check_source(where, settings, template_settings):
         errors.append(f'{where}: "enabled" must be true or false')
     for key in settings:
         if key not in template_settings:
-            errors.append(f'{where}: unknown setting "{key}" (supported: {names(template_settings)})')
+            errors.append(
+                f'{where}: unknown setting "{key}" (supported: {names(template_settings)})')
     if enabled is True:
         for key, default in template_settings.items():
             if key == "enabled":
@@ -68,7 +71,8 @@ def resolve_config(config, template):
     errors = []
     for group in config:
         if group not in template:
-            errors.append(f'unknown group "{group}" (supported: {names(template)})')
+            errors.append(
+                f'unknown group "{group}" (supported: {names(template)})')
 
     sources = {}
     for group, template_sources in template.items():
@@ -80,15 +84,18 @@ def resolve_config(config, template):
         for name, settings in entries.items():
             where = f"{group}.{name}"
             if name not in template_sources:
-                errors.append(f'{where} is not supported (supported in {group}: {names(template_sources)})')
+                errors.append(
+                    f'{where} is not supported (supported in {group}: {names(template_sources)})')
                 continue
             problems = check_source(where, settings, template_sources[name])
             if problems:
                 errors.extend(problems)
             elif settings["enabled"]:
-                tool, _, channel = name.rpartition("-")  # "notion-mcp" -> "notion", "mcp"
+                # "notion-mcp" -> "notion", "mcp"
+                tool, _, channel = name.rpartition("-")
                 extra = {k: v for k, v in settings.items() if k != "enabled"}
-                sources[group].append({"tool": tool, "channel": channel, "settings": extra})
+                sources[group].append(
+                    {"tool": tool, "channel": channel, "settings": extra})
 
     if errors:
         raise ValueError("invalid configuration: " + "; ".join(errors))
@@ -108,7 +115,8 @@ def main():
     except (ValueError, OSError) as e:
         print(json.dumps({"ok": False, **result, "error": str(e)}))
         sys.exit(1)
-    print(json.dumps({"ok": True, **result, "created": created, "sources": sources}))
+    print(json.dumps({"ok": True, **result,
+          "created": created, "sources": sources}))
 
 
 if __name__ == "__main__":
