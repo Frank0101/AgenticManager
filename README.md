@@ -35,24 +35,18 @@ npx skills list -g --json | jq -r '.[] | select(.source == "Frank0101/AgenticMan
 
 ## Configuration
 
-Skills read an `agentic-manager.json` file from the folder where you run the agent, for example your Obsidian or Logseq vault. If that folder is inside a git repository, they read it from the repository root instead. If the file is missing, skills stop.
+Skills read one global config, `~/.config/agentic-manager/config.json`, wherever you run the agent. If it's missing, ask the agent to check the AgenticManager configuration and it will offer to create it from the [template](skills/agentic-manager-check-config/config-template.json).
 
-Copy [agentic-manager.json](agentic-manager.json) from this repo into that folder. It lists every supported group and source, all disabled. Only two kinds of change are expected:
+The template lists every supported source, all disabled. In your config, only two kinds of change are expected:
 
 - Set `enabled` to `true` for the sources you use.
 - Fill in their settings, such as the Jira `personal-access-token`.
 
-Don't add groups or sources: skills only know how to use the ones in the file.
-
-| Group            | Area                              | Source       | How skills reach it                    |
-| ---------------- | --------------------------------- | ------------ | -------------------------------------- |
-| `documentation`  | Where documentation lives         | `notion-mcp` | Notion MCP                             |
-| `source_control` | Where the code is hosted          | `github-cli` | `gh` CLI                               |
-| `workflow`       | Where work items and tickets live | `jira-api`   | Jira API, with `personal-access-token` |
-| `messaging`      | Where the team chats              | `slack-mcp`  | Slack MCP                              |
+> [!CAUTION]
+> Don't add groups or sources: skills only know how to use the ones in the template.
 
 ## Available skills
 
 | Skill                                                               | Description                                                                     |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [agentic-manager-check-config](skills/agentic-manager-check-config) | Validates and reads `agentic-manager.json`. Prerequisite for every other skill. |
+| [agentic-manager-check-config](skills/agentic-manager-check-config) | Validates and reads your config. Prerequisite for every other skill.            |
