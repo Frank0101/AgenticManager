@@ -44,6 +44,7 @@ When the user runs this skill directly to check their config, pass no groups: ev
 2. If it exits with `1` (`"ok":false`) or `python3` is unavailable: **stop**. The calling skill must not continue, and you must not guess settings or create defaults.
    - Show the user every entry in `errors`, and the config `path`.
    - If the config is missing, offer to create it from the template. Only if the user agrees, run the script again with `--init` and the same groups. It copies the template to `path`, never overwriting an existing file, and returns `"created": true`. Then tell the user to edit `path`: enable the sources they use and fill in their settings.
+   - For any other error, show the user how to fix it. You may offer to make the change, but edit the config only after the user explicitly approves.
    - Once fixed, the user can re-run the original skill.
 
 3. If it exits with `0` (`"ok":true`): tell the user the configuration is OK and which source each requested group will use, then return `sources` to the calling skill. When run without groups, also name, for each group with no enabled source, the source the template lists for it.

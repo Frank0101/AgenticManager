@@ -48,9 +48,7 @@ Users' existing configs keep working: a source they don't list counts as disable
 python3 tests/run.py       # add -v to list each test
 ```
 
-Tests run scripts with `HOME` pointed at a temporary folder, so they never read or change your real config.
-
-When you build or test, act as a builder, not a user. Your own config and installed skills are what you use day to day. Never run scripts against them or use them as test data. To try a script by hand, set `HOME` to a temporary folder first. Skill names contain hyphens, so `python3 -m unittest discover` doesn't find the tests; use `run.py`.
+Tests run scripts with `HOME` pointed at a temporary folder. The config is part of each test's setup, so every test gets one it is free to change for its own purposes. Skill names contain hyphens, so `python3 -m unittest discover` doesn't find the tests; use `run.py`.
 
 ## Secrets and internal data
 
