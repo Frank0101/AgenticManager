@@ -1,6 +1,6 @@
 ---
-name: check-config
-description: Validates agentic-manager.json and resolves which tool each area (documentation, source control, workflow) uses and through which channel. Prerequisite for every AgenticManager skill; run it first and stop the calling skill if it fails. Use when another AgenticManager skill says to run check-config, or when the user asks to check the AgenticManager configuration.
+name: agentic-manager-check-config
+description: Validates agentic-manager.json and resolves which tool each area (documentation, source control, workflow) uses and through which channel. Prerequisite for every AgenticManager skill; run it first and stop the calling skill if it fails. Use when another AgenticManager skill says to run agentic-manager-check-config, or when the user asks to check the AgenticManager configuration.
 ---
 
 # Check Config
