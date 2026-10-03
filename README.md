@@ -37,7 +37,7 @@ npx skills list -g --json | jq -r '.[] | select(.source == "Frank0101/AgenticMan
 
 ## Configuration
 
-Skills read one global config, `~/.config/agentic-manager/config.json`, wherever you run the agent. If it's missing, ask the agent to check the AgenticManager configuration and it will offer to create it from the [template](skills/agentic-manager-check-config/config-template.json).
+Skills read one global config, `~/.config/agentic-manager/config.json`, wherever you run the agent. If it's missing, any skill you run will offer to create it from the [template](skills/agentic-manager-check-config/config-template.json). To check your config at any time, ask the agent to check your AgenticManager configuration.
 
 The template lists every supported source, all disabled. In your config, you can only:
 
@@ -47,7 +47,7 @@ The template lists every supported source, all disabled. In your config, you can
 > [!CAUTION]
 > The template shows everything that's supported. Adding groups, sources or settings that aren't in it will cause an error.
 
-Skills never change your config on their own. If something is wrong, or a skill needs a source you haven't enabled, the skill stops and tells you how to fix it. The agent may offer to make the change, but only makes it once you approve.
+Skills never change your config on their own. If something is wrong, or a skill needs a source you haven't enabled, the skill tells you how to fix it. The agent may offer to make the change, but only makes it once you approve.
 
 ## Available skills
 

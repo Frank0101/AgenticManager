@@ -1,6 +1,6 @@
 ---
 name: agentic-manager-check-config
-description: Validates the AgenticManager config (~/.config/agentic-manager/config.json), checks that the groups a calling skill needs (documentation, source_control, workflow, messaging) have an enabled source, and returns which tool each group uses and through which channel. Prerequisite for every AgenticManager skill; run it first and stop the calling skill if it fails. Use when another AgenticManager skill says to run agentic-manager-check-config, or when the user asks to check or set up the AgenticManager configuration.
+description: Validates the AgenticManager config (~/.config/agentic-manager/config.json), checks that the groups a calling skill needs (documentation, source_control, workflow, messaging) have an enabled source, and returns which tool each group uses and through which channel. Prerequisite for every AgenticManager skill; run it first. If it fails, it reports the errors to the calling skill, which decides what to do. Use when another AgenticManager skill says to run agentic-manager-check-config, or when the user asks to check or set up the AgenticManager configuration.
 ---
 
 # Check Config
@@ -43,7 +43,7 @@ When the user runs this skill directly to check their config, pass no groups: ev
 
    It prints one line of JSON. Do not read or validate the config yourself.
 
-2. If it exits with `1` (`"ok": false`) or `python3` is unavailable: **stop**. The calling skill must not continue, and you must not guess settings or create defaults.
+2. If it exits with `1` (`"ok": false`) or `python3` is unavailable: **stop** this skill and report the failure to the calling skill, which decides what to do next. Don't guess settings or create defaults.
    - If `python3` is unavailable, tell the user AgenticManager needs Python 3.8+ available as `python3`.
    - Otherwise, show the user every entry in `errors`, and the config `path`.
    - If the config is missing, offer to create it from the template. Only if the user agrees, run the script again with `--init` and the same groups. It copies the template to `path`, never overwriting an existing file, and returns `"created": true`. Then tell the user to edit `path`: enable the sources they use and fill in their settings.
