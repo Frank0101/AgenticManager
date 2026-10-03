@@ -65,7 +65,8 @@ def type_name(value):
 # Compares the keys of a config object with the template's. Returns the problems found.
 def check_keys(where, actual, expected, kind):
     prefix = f"{where}." if where else ""
-    missing = [f'missing {kind} "{prefix}{k}"' for k in expected if k not in actual]
+    missing = [
+        f'missing {kind} "{prefix}{k}"' for k in expected if k not in actual]
     unknown = [f'unknown {kind} "{prefix}{k}" (supported: {", ".join(expected)})'
                for k in actual if k not in expected]
     return missing + unknown
@@ -92,7 +93,8 @@ def check_source(where, settings, template_settings):
         elif key != "enabled" and enabled is True:
             if isinstance(value, str):
                 if not value.strip() or PLACEHOLDER.match(value):
-                    errors.append(f'{where}.{key} is not filled in: fill it in, or disable "{where}"')
+                    errors.append(
+                        f'{where}.{key} is not filled in: fill it in, or disable "{where}"')
     if enabled is True:
         for key, default in template_settings.items():
             if key == "enabled":
@@ -142,15 +144,18 @@ def select_groups(sources, requested, template):
         return {}, errors
     for group in requested:
         if not sources[group]:
-            options = ", ".join(f'"{group}.{name}"' for name in template[group])
-            errors.append(f'no enabled source for "{group}": enable {options} in {CONFIG_PATH}')
+            options = ", ".join(
+                f'"{group}.{name}"' for name in template[group])
+            errors.append(
+                f'no enabled source for "{group}": enable {options} in {CONFIG_PATH}')
     return {g: sources[g] for g in (requested or template)}, errors
 
 
 def main():
     args = sys.argv[1:]
     init = "--init" in args
-    requested = list(dict.fromkeys(a for a in args if a != "--init"))  # dedupe, keep order
+    # dedupe, keep order
+    requested = list(dict.fromkeys(a for a in args if a != "--init"))
     result = {"path": CONFIG_PATH, "template": TEMPLATE_PATH}
     created = False
     try:
@@ -165,7 +170,8 @@ def main():
     except (ValueError, OSError) as e:
         errors = [str(e)]
     if errors:
-        print(json.dumps({"ok": False, **result, "created": created, "errors": errors}))
+        print(json.dumps({"ok": False, **result,
+              "created": created, "errors": errors}))
         sys.exit(1)
     print(json.dumps({"ok": True, **result,
           "created": created, "sources": sources}))

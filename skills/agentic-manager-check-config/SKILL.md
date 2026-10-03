@@ -58,13 +58,28 @@ On success the script returns the enabled sources of the requested groups:
   "created": false,
   "sources": {
     "documentation": [
-      { "source": "notion-mcp", "tool": "notion", "channel": "mcp", "settings": {} }
+      {
+        "source": "notion-mcp",
+        "tool": "notion",
+        "channel": "mcp",
+        "settings": {}
+      }
     ],
     "source_control": [
-      { "source": "github-cli", "tool": "github", "channel": "cli", "settings": {} }
+      {
+        "source": "github-cli",
+        "tool": "github",
+        "channel": "cli",
+        "settings": {}
+      }
     ],
     "workflow": [
-      { "source": "jira-api", "tool": "jira", "channel": "api", "settings": { "personal-access-token": "..." } }
+      {
+        "source": "jira-api",
+        "tool": "jira",
+        "channel": "api",
+        "settings": { "personal-access-token": "..." }
+      }
     ],
     "messaging": []
   }
