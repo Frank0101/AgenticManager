@@ -91,10 +91,12 @@ def check_source(where, settings, template_settings):
     enabled = settings.get("enabled")
     for key, default in template_settings.items():
         value = settings.get(key)
-        if key in settings and type(value) is not type(default):  # "is": true is not a number
+        # "is": true is not a number
+        if key in settings and type(value) is not type(default):
             errors.append(f"{where}.{key} must be {type_name(default)}")
         elif key != "enabled" and enabled is True and not is_filled(value):
-            errors.append(f'{where}.{key} is not filled in: fill it in, or disable "{where}"')
+            errors.append(
+                f'{where}.{key} is not filled in: fill it in, or disable "{where}"')
     return errors
 
 
@@ -136,7 +138,8 @@ def setup_steps(group, name, template_settings, config):
         step = f'add "{name}": {json.dumps(entry)} inside "{group}"'
     else:
         step = f'set "{group}.{name}.enabled" to true'
-        settings = [k for k in settings if not is_filled(config[group][name].get(k))]
+        settings = [k for k in settings if not is_filled(
+            config[group][name].get(k))]
     if settings:
         step += f", then fill in {quoted(settings)}"
     tool, _, channel = name.rpartition("-")
@@ -174,7 +177,8 @@ def main():
         config = load_json(CONFIG_PATH)
         sources, errors = resolve_config(config, template)
         if not errors:
-            sources, errors = select_groups(sources, requested, config, template)
+            sources, errors = select_groups(
+                sources, requested, config, template)
     except (ValueError, OSError) as e:
         errors = [str(e)]
     if errors:

@@ -20,7 +20,8 @@ def load_suite():
     suite = unittest.TestSuite()
     for path in sorted(glob.glob(os.path.join(TESTS_DIR, "*", "test_*.py"))):
         skill = os.path.basename(os.path.dirname(path))
-        name = f"{skill}.{os.path.splitext(os.path.basename(path))[0]}".replace("-", "_")
+        name = f"{skill}.{os.path.splitext(os.path.basename(path))[0]}".replace(
+            "-", "_")
         spec = importlib.util.spec_from_file_location(name, path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -33,7 +34,8 @@ def main():
     if suite.countTestCases() == 0:
         print(f"no tests found under {TESTS_DIR}/<skill>/test_*.py")
         sys.exit(1)
-    result = unittest.TextTestRunner(verbosity=2 if "-v" in sys.argv[1:] else 1).run(suite)
+    result = unittest.TextTestRunner(
+        verbosity=2 if "-v" in sys.argv[1:] else 1).run(suite)
     sys.exit(0 if result.wasSuccessful() else 1)
 
 

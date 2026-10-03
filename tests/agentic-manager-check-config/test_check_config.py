@@ -22,7 +22,8 @@ TEMPLATE = os.path.join(SKILL_DIR, "config-template.json")
 class CheckConfigTest(unittest.TestCase):
     def setUp(self):
         self.home = tempfile.TemporaryDirectory()
-        self.config_path = os.path.join(self.home.name, ".config", "agentic-manager", "config.json")
+        self.config_path = os.path.join(
+            self.home.name, ".config", "agentic-manager", "config.json")
         with open(TEMPLATE, encoding="utf-8") as f:
             self.template = json.load(f)
 
@@ -84,7 +85,8 @@ class CheckConfigTest(unittest.TestCase):
             self.assertEqual(json.load(f), self.template)
 
     def test_init_then_requested_group_has_no_source(self):
-        out = self.assert_error('no enabled source for "workflow"', "--init", "workflow")
+        out = self.assert_error(
+            'no enabled source for "workflow"', "--init", "workflow")
         self.assertTrue(out["created"])
 
     def test_init_does_not_overwrite(self):
@@ -123,8 +125,10 @@ class CheckConfigTest(unittest.TestCase):
                           "workflow")
 
     def test_requested_group_disabled_source_with_setting_filled(self):
-        self.write_config(lambda c: c["workflow"]["jira-api"].update({"personal-access-token": "abc"}))
-        out = self.assert_error('set "workflow.jira-api.enabled" to true. Edit', "workflow")
+        self.write_config(
+            lambda c: c["workflow"]["jira-api"].update({"personal-access-token": "abc"}))
+        out = self.assert_error(
+            'set "workflow.jira-api.enabled" to true. Edit', "workflow")
         self.assertNotIn("abc", out["errors"][0])
 
     def test_requested_group_missing_from_config(self):
@@ -139,7 +143,8 @@ class CheckConfigTest(unittest.TestCase):
 
     def test_every_requested_group_is_reported(self):
         self.write_raw("{}")
-        out = self.assert_error('no enabled source for "workflow"', "workflow", "source_control")
+        out = self.assert_error(
+            'no enabled source for "workflow"', "workflow", "source_control")
         self.assertEqual(len(out["errors"]), 2, out["errors"])
 
     def test_unknown_requested_group(self):
@@ -157,19 +162,24 @@ class CheckConfigTest(unittest.TestCase):
         self.assert_error("personal-access-token is not filled in")
 
     def test_disabled_with_blank_setting_is_valid(self):
-        self.write_config(lambda c: c["workflow"]["jira-api"].update({"personal-access-token": ""}))
+        self.write_config(
+            lambda c: c["workflow"]["jira-api"].update({"personal-access-token": ""}))
         self.assert_ok()
 
     def test_setting_with_wrong_type(self):
-        self.write_config(lambda c: c["workflow"]["jira-api"].update({"personal-access-token": 5}))
-        self.assert_error("workflow.jira-api.personal-access-token must be a string")
+        self.write_config(
+            lambda c: c["workflow"]["jira-api"].update({"personal-access-token": 5}))
+        self.assert_error(
+            "workflow.jira-api.personal-access-token must be a string")
 
     def test_enabled_as_string(self):
-        self.write_config(lambda c: c["workflow"]["jira-api"].update({"enabled": "true"}))
+        self.write_config(lambda c: c["workflow"]
+                          ["jira-api"].update({"enabled": "true"}))
         self.assert_error("workflow.jira-api.enabled must be true or false")
 
     def test_enabled_as_number(self):
-        self.write_config(lambda c: c["workflow"]["jira-api"].update({"enabled": 1}))
+        self.write_config(lambda c: c["workflow"]
+                          ["jira-api"].update({"enabled": 1}))
         self.assert_error("workflow.jira-api.enabled must be true or false")
 
     def test_enabled_with_missing_setting(self):
@@ -192,24 +202,30 @@ class CheckConfigTest(unittest.TestCase):
         self.assert_ok()
 
     def test_disabled_with_missing_setting_is_allowed(self):
-        self.write_config(lambda c: c["workflow"]["jira-api"].pop("personal-access-token"))
+        self.write_config(lambda c: c["workflow"]
+                          ["jira-api"].pop("personal-access-token"))
         self.assert_ok()
 
     def test_missing_enabled(self):
-        self.write_config(lambda c: c["documentation"]["notion-mcp"].pop("enabled"))
-        self.assert_error("documentation.notion-mcp.enabled is missing: set it to true or false")
+        self.write_config(lambda c: c["documentation"]
+                          ["notion-mcp"].pop("enabled"))
+        self.assert_error(
+            "documentation.notion-mcp.enabled is missing: set it to true or false")
 
     def test_extra_group(self):
         self.write_config(lambda c: c.update({"chat": {}}))
         self.assert_error('unknown group "chat"')
 
     def test_extra_source(self):
-        self.write_config(lambda c: c["workflow"].update({"jira-mcp": {"enabled": True}}))
+        self.write_config(lambda c: c["workflow"].update(
+            {"jira-mcp": {"enabled": True}}))
         self.assert_error('unknown source "workflow.jira-mcp"')
 
     def test_extra_setting(self):
-        self.write_config(lambda c: c["documentation"]["notion-mcp"].update({"workspace": "x"}))
-        self.assert_error('unknown setting "documentation.notion-mcp.workspace"')
+        self.write_config(lambda c: c["documentation"]
+                          ["notion-mcp"].update({"workspace": "x"}))
+        self.assert_error(
+            'unknown setting "documentation.notion-mcp.workspace"')
 
     def test_group_not_an_object(self):
         self.write_config(lambda c: c.update({"workflow": []}))
