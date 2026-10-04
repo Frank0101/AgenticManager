@@ -74,6 +74,7 @@ class ConfigTest(unittest.TestCase):
 
     def test_is_filled(self):
         for value, filled in [("abc", True), ("", False), ("  ", False), ("<token>", False),
+                              (" \t<token>\n", False),
                               ("<a> b", True), (None, False), (False, True)]:
             with self.subTest(value=value):
                 self.assertIs(config.is_filled(value), filled)
@@ -109,6 +110,7 @@ class ConfigTest(unittest.TestCase):
 
     def test_read_source_unfilled_settings(self):
         for settings, missing in [({"api-token": "<token>"}, "api-token"),
+                                  ({"api-token": " <token> "}, "api-token"),
                                   ({"api-token": "  "}, "api-token"),
                                   ({"api-token": 5}, "api-token"),
                                   ({"api-token": None}, "api-token"),
@@ -126,6 +128,7 @@ class ConfigTest(unittest.TestCase):
 
     def test_output_root_not_set(self):
         for text in ({}, {"output": {}}, {"output": {"root": "<path>"}}, {"output": {"root": " "}},
+                     {"output": {"root": " <path> "}},
                      {"output": {"root": 5}}, {"output": []}):
             with self.subTest(text=text):
                 self.write(text)
@@ -140,15 +143,15 @@ class ConfigTest(unittest.TestCase):
     def test_output_folder(self):
         cases = [
             ("in the output root", {"output": {"root": "/reports"}},
-             (os.path.join("/reports", "sprint-reports"), False)),
+             (os.path.join("/reports", "jira-sprint-reports"), False)),
             ("in the temp folder without an output root", {},
-             (os.path.join(config.TEMP_ROOT, "sprint-reports"), True)),
+             (os.path.join(config.TEMP_ROOT, "jira-sprint-reports"), True)),
         ]
         for name, written, expected in cases:
             with self.subTest(name):
                 self.write(written)
                 self.assertEqual(config.output_folder(
-                    "sprint-reports"), expected)
+                    "jira-sprint-reports"), expected)
         self.assertTrue(config.TEMP_ROOT.startswith(tempfile.gettempdir()))
 
 

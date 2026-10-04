@@ -97,6 +97,8 @@ class DatesTest(unittest.TestCase):
             ("an end on midnight names the last day worked",
              "2026-03-07T23:00:00.000Z", True, "2026-03-07"),
             ("an end during the day", "2026-03-07T16:00:00.000Z", True, "2026-03-07"),
+            ("an end just after midnight stays on that day",
+             "2026-03-07T23:00:00.500Z", True, "2026-03-08"),
         ]
         for name, ts, end_of_period, expected in cases:
             with self.subTest(name):

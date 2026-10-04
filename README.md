@@ -68,6 +68,6 @@ Skills never change your config on their own. If something is wrong, or a skill 
 | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [agentic-manager-jira-sprint-report](skills/agentic-manager-jira-sprint-report) | Writes an exec-ready report of a Jira sprint, closed or in progress: goal outcome, achievements, blockers, scope timeline, burndown, delivery by epic and retro notes. Needs `jira-api` enabled in `sources.workflow`. |
 
-Ask the agent in your own words, for example "how did the last PROJ sprint go?". Reports are written to the `sprint-reports` folder of your `output.root`, or to a temporary folder if you haven't set one; the agent gives you a link to open them.
+Ask the agent in your own words, for example "how did the last PROJ sprint go?". Reports are written to the `jira-sprint-reports` folder of your `output.root`, or to a temporary folder if you haven't set one; the agent gives you a link to open them.
 
 The burndown uses each day's closing status, estimates and sprint membership. On the day a sprint closes it stops at the exact closing time; an active sprint's current day stops at the fetch time. Later changes are excluded from a closed sprint's figures. Work that was already Done at the start and is reopened counts as added scope from the day it was reopened.

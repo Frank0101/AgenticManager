@@ -195,7 +195,10 @@ def check_timeline(c, timeline, data):
                                        "already_done_original"),
                                 column("completed_extra", "already_done_extra")]))
     for (name, total), cell in zip(expected.items(), total_row[1:]):
-        c.check(qty(*total) in cell, "columns",
+        head = re.match(QTY, re.sub(r"</?b>", "", cell).strip())
+        got = (int(head.group(1)), parsed_number(
+            head.group(2))) if head else None
+        c.check(got == total, "columns",
                 f"{name} total is {qty(*total)}")
 
     scope = (data["points_total_issue_count"],

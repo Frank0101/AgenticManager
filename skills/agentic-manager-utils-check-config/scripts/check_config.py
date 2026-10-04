@@ -171,10 +171,16 @@ def main():
     if not errors:
         try:
             template = load_json(TEMPLATE_PATH)
-            if init and not os.path.exists(CONFIG_PATH):
+            if init and not os.path.lexists(CONFIG_PATH):
                 os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-                shutil.copyfile(TEMPLATE_PATH, CONFIG_PATH)
-                created = True
+                try:
+                    with open(CONFIG_PATH, "xb") as destination:
+                        with open(TEMPLATE_PATH, "rb") as source:
+                            shutil.copyfileobj(source, destination)
+                    created = True
+                except FileExistsError:
+                    # Another process created it; validate without overwriting.
+                    pass
             config = load_json(CONFIG_PATH)
             errors = check_config(config, template)
             if not errors:

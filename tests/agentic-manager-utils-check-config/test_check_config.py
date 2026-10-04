@@ -3,9 +3,12 @@
 #
 # They call the script's functions directly with small templates and configs.
 # test_e2e_check_config.py runs the whole script against real files.
+import json
 import os
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 # tests/<skill>/ mirrors skills/<skill>/.
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -171,6 +174,29 @@ class ListSourcesTest(unittest.TestCase):
         config["sources"]["workflow"]["jira-api"]["enabled"] = False
         self.assertNotIn("s3cret", str(
             check_config.list_sources(config, TEMPLATE)))
+
+
+class MainTest(unittest.TestCase):
+    def test_init_preserves_a_config_created_after_the_existence_check(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "config.json")
+            existing = '{"sources": {}}'
+
+            def appeared(_):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(existing)
+                return False
+
+            with mock.patch.object(check_config, "CONFIG_PATH", path), \
+                    mock.patch.object(sys, "argv", ["check_config.py", "--init"]), \
+                    mock.patch.object(check_config.os.path, "lexists", side_effect=appeared), \
+                    mock.patch("builtins.print") as printed:
+                check_config.main()
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(f.read(), existing)
+            result = json.loads(printed.call_args.args[0])
+            self.assertTrue(result["ok"])
+            self.assertFalse(result["created"])
 
 
 if __name__ == "__main__":

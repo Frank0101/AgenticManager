@@ -10,6 +10,8 @@ Writes a short, exec-ready report of one Jira sprint. Scripts do all fetching, c
 
 Closed and active sprints are equally supported. A report on a sprint in progress has the same shape; only the tense and a few labels change.
 
+The report's files are written to the `jira-sprint-reports` folder of the output root the user set in the config (`output.root`), or to a temporary folder if none is set. The scripts choose the folder themselves; don't pass one.
+
 ## Prerequisite
 
 Run `agentic-manager-utils-check-config`. If it fails, stop here.
@@ -48,7 +50,7 @@ python3 <scripts>/fetch_sprint.py <selector>
 - If the user doesn't say which project, board or sprint, ask. Don't guess.
 - Only active and closed sprints can be reported.
 
-The script prints one line of JSON with `report_dir`, `label` and `temporary`. The report folder is `<label>_<YY-MM-DD>` in the `sprint-reports` folder of the user's output root (`output.root` in the config), or of `<temp>/agentic-manager` if none is set; `temporary` is then `true`. Every run is a full regeneration: it deletes any earlier report of the same sprint there. Never reuse files from an earlier run.
+The script prints one line of JSON with `report_dir`, `label` and `temporary`. The report folder is `<label>_<YY-MM-DD>` in that `jira-sprint-reports` folder (`<temp>/agentic-manager/jira-sprint-reports` when no output root is set, and `temporary` is then `true`). Every run is a full regeneration: it deletes any earlier report of the same sprint there. Never reuse files from an earlier run.
 
 ### 2. Compute
 

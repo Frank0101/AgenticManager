@@ -381,9 +381,9 @@ class FetchTest(unittest.TestCase):
         root = os.path.join(self.tmp.name, "my reports")
         cases = [
             ("the output root", {"root": root},
-             os.path.join(root, "sprint-reports"), False),
+             os.path.join(root, "jira-sprint-reports"), False),
             ("the temp folder without an output root", None,
-             os.path.join(self.tmp.name, "agentic-manager", "sprint-reports"), True),
+             os.path.join(self.tmp.name, "agentic-manager", "jira-sprint-reports"), True),
         ]
         for name, output, folder, temporary in cases:
             with self.subTest(name):

@@ -109,7 +109,7 @@ def sprint_date(ts, offset, end_of_period=False):
     if not ts:
         return None
     moment = parse_ts(ts).astimezone(offset)
-    if end_of_period:
+    if end_of_period and moment.time() == time.min:
         moment -= timedelta(seconds=1)
     return moment.date().isoformat()
 

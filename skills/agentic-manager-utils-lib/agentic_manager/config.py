@@ -52,7 +52,8 @@ def load_json(path):
 
 def is_filled(value):
     if isinstance(value, str):
-        return bool(value.strip()) and not PLACEHOLDER.match(value)
+        value = value.strip()
+        return bool(value) and not PLACEHOLDER.match(value)
     return value is not None
 
 

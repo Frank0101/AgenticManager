@@ -133,6 +133,15 @@ class CheckConfigTest(ScriptTest):
                 self.assertFalse(out["created"])
                 self.assertEqual(self.read_raw(), before)
 
+    def test_init_does_not_follow_a_dangling_config_symlink(self):
+        os.makedirs(os.path.dirname(self.config_path))
+        target = os.path.join(self.home.name, "missing.json")
+        os.symlink(target, self.config_path)
+        out = self.assert_error("not found", "--init")
+        self.assertFalse(out["created"])
+        self.assertTrue(os.path.islink(self.config_path))
+        self.assertFalse(os.path.exists(target))
+
     def test_unknown_argument(self):
         out = self.assert_error('unknown argument "workflow" (usage: check_config.py [--init])',
                                 "--init", "workflow")
@@ -230,6 +239,8 @@ class CheckConfigTest(ScriptTest):
         jira = "sources.workflow.jira-api"
         cases = [
             (lambda c: self.enable_jira(c, "<token>"),
+             f"{jira}.api-token is not filled in"),
+            (lambda c: self.enable_jira(c, " <token> "),
              f"{jira}.api-token is not filled in"),
             (lambda c: self.enable_jira(c, "  "),
              f"{jira}.api-token is not filled in"),

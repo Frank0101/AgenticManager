@@ -8,8 +8,8 @@ Usage (exactly one sprint selector):
     python3 fetch_sprint.py --board 42 [--active]
     python3 fetch_sprint.py --sprint-name "Sprint 3" --project PROJ   (or --board 42)
 
---out-root  where report folders go. By default <output root>/sprint-reports, if
-            the config sets output.root, else <system temp>/agentic-manager/sprint-reports.
+--out-root  where report folders go. By default <output root>/jira-sprint-reports, if
+            the config sets output.root, else <system temp>/agentic-manager/jira-sprint-reports.
 
 The report folder is <out-root>/<label>_<YY-MM-DD>, where label is the project
 key and sprint name (e.g. PROJ_Sprint_3). Every run starts from scratch: once
@@ -57,7 +57,7 @@ from datetime import date, datetime, timezone
 from common import (RAW_DIR, History, JiraClient, as_of, history_fields, in_sprint_at, is_blocker_candidate,
                     issue_moves, nested, output_folder, parse_ts, report_label, status_categories, write_json)
 
-REPORTS_FOLDER = "sprint-reports"
+REPORTS_FOLDER = "jira-sprint-reports"
 MAX_WORKERS = 8
 # Issue fields the report needs, besides the site's Flagged and story points fields.
 BASE_FIELDS = [

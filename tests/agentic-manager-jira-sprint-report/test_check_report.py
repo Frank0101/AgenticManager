@@ -129,6 +129,7 @@ class ChecksTest(unittest.TestCase):
             ("commentary",
              f"Delivery centred on [PROJ-100]({BASE}/browse/PROJ-100).", ""),
             ("columns", "<b>6 stories / 11 pts</b>", "<b>6 stories / 12 pts</b>"),
+            ("columns", "<b>6 stories / 11 pts</b>", "<b>16 stories / 11 pts</b>"),
             ("columns", "<td>1 story / 3 pts<br>", "<td>1 story / 4 pts<br>"),
             ("cell shapes", flat, flat + "<br>note"),
             ("cell shapes", "<td>1 story / 3 pts<br>", "<td>three<br>"),
