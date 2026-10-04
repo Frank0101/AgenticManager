@@ -1,0 +1,24 @@
+{
+  "extraPaths": ["skills/agentic-manager-utils-lib"],
+  "executionEnvironments": [
+    {
+      "root": "tests/agentic-manager-jira-sprint-report",
+      "extraPaths": [
+        "skills/agentic-manager-utils-lib",
+        "skills/agentic-manager-jira-sprint-report/scripts"
+      ]
+    },
+    {
+      "root": "tests/agentic-manager-utils-check-config",
+      "extraPaths": [
+        "skills/agentic-manager-utils-lib",
+        "skills/agentic-manager-utils-check-config/scripts"
+      ]
+    },
+    {
+      "root": "tests/agentic-manager-utils-lib",
+      "extraPaths": ["skills/agentic-manager-utils-lib"]
+    },
+    { "root": "skills", "extraPaths": ["skills/agentic-manager-utils-lib"] }
+  ]
+}

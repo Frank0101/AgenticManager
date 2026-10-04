@@ -1,0 +1,36 @@
+{
+  "sources": {
+    "documentation": {
+      "notion-mcp": {
+        "enabled": false
+      }
+    },
+    "local_vault": {
+      "logseq-fs": {
+        "enabled": false,
+        "path": "<path>"
+      }
+    },
+    "source_control": {
+      "github-cli": {
+        "enabled": false
+      }
+    },
+    "workflow": {
+      "jira-api": {
+        "enabled": false,
+        "base-url": "<https://your-site.atlassian.net>",
+        "email": "<email>",
+        "api-token": "<token>"
+      }
+    },
+    "messaging": {
+      "slack-mcp": {
+        "enabled": false
+      }
+    }
+  },
+  "output": {
+    "root": "<path>"
+  }
+}
