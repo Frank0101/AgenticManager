@@ -19,7 +19,7 @@ sys.path.insert(0, LIB_DIR)
 from agentic_manager.output_file import write_output_file  # noqa: E402
 from agentic_manager.output_folder import output_folder  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, key_order,  # noqa: E402,F401
-                                  nested, parse_ts, value_at)
+                                  nested, parse_ts, plain_text, value_at)
 
 # The skill's output folder, which holds the report folders (see output_folder.py).
 REPORTS_FOLDER = "jira-sprint-reports"
@@ -30,8 +30,8 @@ RAW_DIR = "_raw"
 DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
 CHART_FILES = {
-    "outcome_stories": "outcome-stories.svg",
-    "outcome_points": "outcome-points.svg",
+    "outcome_stories": "outcome-tickets.svg",
+    "outcome_points": "outcome-pts.svg",
     "burndown": "burndown.svg",
 }
 
@@ -96,11 +96,6 @@ def as_of(sprint, fetched_at):
     return fetched_at
 
 
-def changed_at(change):
-    """When a changelog entry was made, for sorting entries in time order."""
-    return parse_ts(change["created"])
-
-
 class History:
     """One issue as it was at any past moment, rebuilt from its current fields
     and the changes in its changelog. Nothing reported about an issue comes
@@ -137,29 +132,6 @@ class History:
 
     def done_at(self, instant):
         return self.status_at(instant)[1] == "done"
-
-    def completed_at(self, instant):
-        """When the issue last moved into the Done category, if it was Done at
-        the instant, else None. An issue created Done completed when created."""
-        if not self.done_at(instant):
-            return None
-        completed = self.fields.get("created")
-        for change in self.changes:
-            if change["field"] != "status" or parse_ts(change["created"]) > instant:
-                continue
-            if self.category(change["from"]) != "done" and self.category(change["to"]) == "done":
-                completed = change["created"]
-        return completed
-
-    def reopened_at(self, after, until):
-        """When the issue first moved out of the Done category after `after`,
-        up to `until`, or None."""
-        for change in sorted(self.changes, key=changed_at):
-            if change["field"] != "status" or not after < parse_ts(change["created"]) <= until:
-                continue
-            if self.category(change["from"]) == "done" and self.category(change["to"]) != "done":
-                return change["created"]
-        return None
 
     def state_at(self, instant):
         """Everything the report shows about the issue, as it was at the instant."""
@@ -275,27 +247,109 @@ def plural(count, one, many):
     return one if count == 1 else many
 
 
+# The report's vocabulary and formats (see the skill's Vocabulary and
+# formatting section): a work item is a ticket; an amount of work is
+# "N tickets (N pts)", a part of a whole "N/M tickets (N/M pts)", one ticket
+# "KEY (N pts)", percentages are whole numbers.
+
 def unit(count):
-    return plural(count, "story", "stories")
+    return plural(count, "ticket", "tickets")
 
 
 def pts(points):
+    """Story points: "3 pts", "1 pt", or "– pts" when there's no estimate."""
+    if points is None:
+        return "– pts"
     return f"{number(points)} {plural(points, 'pt', 'pts')}"
 
 
-def points_text(points):
-    return f"{number(points)} {plural(points, 'point', 'points')}"
-
-
 def qty(count, points):
-    """The one quantity format used in every table cell."""
-    return f"{count} {unit(count)} / {pts(points)}"
+    """An amount of work: "7 tickets (7 pts)"."""
+    return f"{count} {unit(count)} ({pts(points)})"
 
 
-def percentage(part, whole):
+def ratio(done, total, done_points, total_points):
+    """Done out of total: "11/22 tickets (34/74 pts)"."""
+    return f"{done}/{total} {unit(total)} ({number(done_points)}/{number(total_points)} pts)"
+
+
+def ticket_ref(key, points):
+    """One ticket: "PROJ-20 (2 pts)", or "PROJ-13 (– pts)" with no estimate."""
+    return f"{key} ({pts(points)})"
+
+
+# The header table's goal verdicts: content.json's goal_verdict must be one of
+# those for the sprint's state, or NO_GOAL_VERDICT when Jira has no goal.
+GOAL_VERDICTS = {"closed": ("Fully met", "Partially met", "Not met"),
+                 "active": ("On track", "At risk", "Too early to tell")}
+NO_GOAL_VERDICT = "No goal set in Jira for this sprint"
+
+
+def allowed_verdicts(data):
+    return GOAL_VERDICTS[data["sprint_status"]] if data["sprint_goal"] else (NO_GOAL_VERDICT,)
+
+
+# How each piece of work in the outcome charts ended, and their rows: the
+# original commitment, split into carry-over and new work, and the extra scope.
+OUTCOMES = ("completed", "not_completed", "removed")
+OUTCOME_ROWS = ("original", "carried_in", "new", "extra")
+
+
+# The groups of an epic's commentary, in the order it shows them (see
+# build_sprint_data.py's scope_group), and the commentary's word limit.
+SCOPE_GROUPS = ("completed", "in_review", "not_completed", "descoped")
+EPIC_COMMENTARY_WORDS = 60
+# Marks the parts of the report the agent writes, on their heading or label;
+# everything else is generated from data.json and checked.
+AI_LABEL = "[AI Generated]"
+
+
+def ai(title):
+    """A heading or label of an AI-written part."""
+    return f"{title} {AI_LABEL}"
+
+
+# The word limit of the Key Achievements and Blockers & Risks paragraphs, and
+# the most retro notes.
+SUMMARY_WORDS = 80
+RETRO_NOTES = 5
+# The note make_report.py accepts on the first run, before the agent has read
+# the report; the check fails while it is there.
+RETRO_PLACEHOLDER = "To be written?"
+
+
+def scope_group_label(group, status):
+    """A commentary group's label: the report's outcome words, with "Open"
+    for not completed work while the sprint runs."""
+    if group == "not_completed" and status == "active":
+        return "Open"
+    return {"completed": "Completed", "in_review": "In review", "not_completed": "Not completed",
+            "descoped": "Descoped"}[group]
+
+
+def epic_groups(epic):
+    """The commentary groups an epic has tickets to describe in, in order."""
+    return [g for g in SCOPE_GROUPS if epic["scope_groups"][g]]
+
+
+def outcome_total(breakdown, row):
+    """All the work of an outcome_breakdown row, however it ended."""
+    return sum(breakdown[f"{row}_{outcome}"] for outcome in OUTCOMES)
+
+
+def estimate(points):
+    """An estimate for display: "–" when there is none."""
+    return "–" if points is None else number(points)
+
+
+def whole_percentage(part, whole):
+    """A share as a whole percentage, "<1%" for a share above zero that
+    would round to 0%."""
     if not whole:
         return "n/a"
-    return f"{number(round(part * 100 / whole, 1))}%"
+    share = part * 100 / whole
+    rounded = f"{share:.0f}"
+    return "<1%" if share > 0 and rounded == "0" else f"{rounded}%"
 
 
 def display_date(iso_date):
@@ -303,18 +357,9 @@ def display_date(iso_date):
 
 
 def target_completion(data):
-    """(closed_keys, pool_keys, excluded_keys) for the sprint target metric:
-    original-commitment tickets (not points) closed within the sprint.
-
-    Tickets already Done at the start are left out of the pool, because Jira's
-    own burndown starts without them. Original tickets removed while still
-    open stay in the pool as not closed."""
-    excluded, pool = [], []
-    for issue in data["issues"] + data["removed_issues"]:
-        if not issue["addedMidSprint"]:
-            (excluded if issue["startState"]["done"]
-             else pool).append(issue["key"])
-    credited = {key for row in data["scope_timeline"]
-                for key in row["completed_original_keys"]}
-    closed = [key for key in pool if key in credited]
-    return closed, pool, sorted(excluded, key=key_order)
+    """(closed_keys, pool_keys) for the sprint target metric: the original
+    commitment's spells, and those completed. A ticket already Done at the
+    start counts as closed unless it was reopened; one that left the sprint,
+    never, even if it came back."""
+    original = [t for t in data["spells"] if t["scope"] == "original"]
+    return ([t["key"] for t in original if t["outcome"] == "completed"], [t["key"] for t in original])

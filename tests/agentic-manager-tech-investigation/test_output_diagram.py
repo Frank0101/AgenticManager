@@ -74,6 +74,45 @@ class DarkStyleTest(unittest.TestCase):
     def test_leaves_an_svg_without_styles_alone(self):
         self.assertEqual(output_diagram.dark_style(GOOD_SVG), GOOD_SVG)
 
+    def test_edge_default_preserves_authored_colour_cascade(self):
+        for custom in ('#my-svg .changed{stroke:#ef4444;}',
+                       '#my-svg .flowchart-link{stroke:#ef4444;}',
+                       '#my-svg .changed{stroke:#ef4444 !important;}'):
+            with self.subTest(custom=custom):
+                edge = '<path class="flowchart-link changed" style="stroke:#ef4444;stroke-width:3px" d="M0,0L10,0"/>'
+                svg = ('<svg id="my-svg"><style>'
+                       '#my-svg .flowchart-link{stroke:#000000;fill:none;}'
+                       + custom + '</style>' + edge + '</svg>')
+                styled = output_diagram.dark_style(svg)
+                self.assertIn('#my-svg .flowchart-link{stroke:#a1a1aa;fill:none;}' + custom, styled)
+                self.assertIn(edge, styled)
+                self.assertNotIn('.flowchart-link{stroke:#a1a1aa !important;', styled)
+
+
+class RetirementCrossTest(unittest.TestCase):
+    def test_crosses_only_marked_rectangles_without_changing_labels(self):
+        import xml.etree.ElementTree as ET
+        for classes, width, count in (("node default", "100", 0),
+                                      ("node decommissioned", "100", 1),
+                                      ("node decommissioned", "5", 0),
+                                      ("node decommissioned", "100%", 0)):
+            with self.subTest(classes=classes, width=width):
+                svg = (f'<svg><g class="{classes}" transform="translate(200,100)">'
+                       f'<rect x="-50" y="-20" width="{width}" height="40"/>'
+                       '<g class="label"><text>Service</text></g></g></svg>')
+                result = output_diagram.retirement_crosses(svg)
+                group = ET.fromstring(result).find("g")
+                self.assertEqual(group.attrib["transform"], "translate(200,100)")
+                self.assertEqual(len(group.findall("path")), count)
+                self.assertEqual(group.find("g/text").text, "Service")
+                self.assertEqual(output_diagram.line_problems(result), [])
+                if count:
+                    self.assertEqual(group.find("path").attrib["d"],
+                                     "M-45,-15L45,15M-45,15L45,-15")
+                    self.assertEqual(list(group)[-1].attrib["class"], "label")
+                else:
+                    self.assertEqual(result, svg)
+
 
 class WriteTest(unittest.TestCase):
     def setUp(self):
@@ -128,11 +167,50 @@ class WriteTest(unittest.TestCase):
                          ("maps", "a/map.svg", "default"))
         self.assertEqual(output_diagram.parse_args(
             ["--name", "maps", "--path", "a.svg", "--theme", "dark"]).theme, "dark")
+        self.assertTrue(output_diagram.parse_args(["--check", "--png"]).png)
         for argv in (["--name", "../x", "--path", "a.svg"], ["--name", "maps"],
-                     ["--name", "maps", "--path", "a.svg", "--theme", "neon"]):
+                     ["--name", "maps", "--path", "a.svg", "--theme", "neon"],
+                     ["--name", "maps", "--path", "a.svg", "--png"]):
             with self.subTest(argv=argv), self.assertRaises(SystemExit), mock.patch("sys.stderr"):
                 output_diagram.parse_args(argv)
 
+
+
+class CheckTest(unittest.TestCase):
+    """--check renders a diagram and reports its size, writing nothing; the
+    line rules apply to flowcharts only."""
+
+    def check(self, source, svg, png=False):
+        with mock.patch.object(output_diagram, "render", return_value=svg) as render:
+            return output_diagram.check_diagram(source.encode("utf-8"), "dark", png), render
+
+    def test_reports_the_size_and_checks_flowchart_lines(self):
+        sized = GOOD_SVG.replace("<svg>", '<svg viewBox="0 0 640.5 300">')
+        result, render = self.check('%%{init: {}}%%\nflowchart LR\n  a --> b\n', sized)
+        self.assertEqual(result, {"width": 640.5, "height": 300.0, "nodes": {}})
+        self.assertEqual(render.call_args.args[1:], ("dark", None))
+        bad = BAD_SVG.replace("<svg>", '<svg viewBox="0 0 10 10">')
+        with self.assertRaises(SystemExit) as raised:
+            self.check("graph TD\n  a --> b\n", bad)
+        self.assertIn("break the rules", str(raised.exception))
+        # A sequence's arrows aren't held to the map's line rules.
+        self.assertEqual(self.check("sequenceDiagram\n  A->>B: 1. Hi\n", bad)[0], {"width": 10.0, "height": 10.0})
+
+    def test_node_positions(self):
+        svg = ('<svg><g class="nodes"><g class="node default" id="my-svg-flowchart-api-0" transform="translate(88, 34.5)">'
+               '</g><g class="node default" id="flowchart-db_store-12" transform="translate(280.25,-4)"></g>'
+               '<g class="cluster" id="edge"></g></g></svg>')
+        self.assertEqual(output_diagram.node_positions(svg), {"api": [88.0, 34.5], "db_store": [280.25, -4.0]})
+
+    def test_png_preview_goes_to_the_temp_folder(self):
+        result, render = self.check("sequenceDiagram\n  A->>B: 1. Hi\n", '<svg viewBox="0 0 1 1">', png=True)
+        self.assertTrue(result["png"].endswith("preview.png"))
+        self.assertEqual(render.call_args.args[2], result["png"])
+
+    def test_refuses_empty_or_binary_input(self):
+        for source in (b"  ", b"\xff\xfe"):
+            with self.subTest(source=source), self.assertRaises(SystemExit):
+                output_diagram.check_diagram(source)
 
 class RenderTest(unittest.TestCase):
     def test_render_without_node(self):

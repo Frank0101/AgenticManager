@@ -4,11 +4,13 @@
 # backlog was loaded that morning, some the day before. Its issues cover each case
 # the report has to tell apart:
 #
-#   PROJ-1   original, 3 pts, completed 06/03                         epic PROJ-100
-#   PROJ-2   original (added 03/03), 5 pts, still In Progress         epic PROJ-100
+#   PROJ-1   original, 3 pts, completed 06/03, carried over from Sprint 6  epic PROJ-100
+#   PROJ-2   original (added 03/03), 5 pts, still In Progress, left
+#            Sprint 6 before it closed, so not carried over           epic PROJ-100
 #   PROJ-3   original, 2 pts, Done before it arrived, removed 05/03   epic PROJ-101
 #   PROJ-4   original, 3 pts, open, removed 09/03 (descoped)          epic PROJ-101
-#   PROJ-5   extra (added 04/03 after the start), 2 pts, completed 10/03, no epic
+#   PROJ-5   extra (added 04/03 after the start), 2 pts, completed 10/03, no epic;
+#            in Sprint 6 when it closed, but extra, so not carried over
 #   PROJ-6   original, 1 pt, left 05/03, back 06/03, closed as Duplicate 11/03
 #   PROJ-7   extra, created in the running sprint 10/03, 1 pt, Blocked
 #   PROJ-8   original, 2 pts, completed 05/03, removed 06/03
@@ -16,12 +18,21 @@
 #   PROJ-10  original (added 03/03), 1 pt, Done 03/03 before the start   epic PROJ-100
 #   PROJ-11  added and removed 03/03, before the start, so not reported
 #
+# Sprint 6, the previous sprint, closed on 04/03 at 09:00, moving its open work
+# into Sprint 7 as Jira does: Sprint 6 stays in the issue's Sprint field.
+#
 # Each issue's fields are as Jira returns them today, and its changelog holds
 # how it got there: its moves in and out of the sprint and its status changes.
 SPRINT_ID = 7
 BOARD_ID = 42
 POINTS_FIELD = "customfield_10016"
 FLAGGED_FIELD = "customfield_10021"
+
+PREVIOUS_SPRINT = {
+    "id": 6, "self": "https://acme.test/rest/agile/1.0/sprint/6", "state": "closed",
+    "name": "Sprint 6", "startDate": "2026-02-18T12:00:00.000Z", "endDate": "2026-03-03T17:00:00.000Z",
+    "completeDate": "2026-03-04T09:00:00.000Z", "originBoardId": BOARD_ID,
+}
 
 SPRINT = {
     "id": SPRINT_ID, "self": "https://acme.test/rest/agile/1.0/sprint/7", "state": "closed",
@@ -51,6 +62,8 @@ def status_field(name):
 def issue(key, points, status, created, resolution=None, parent=None, priority="Medium", subtask=False):
     fields = {
         "summary": f"Work item {key}",
+        # The Agile API returns descriptions as text.
+        "description": f"What {key} changes.",
         "status": status_field(status),
         "issuetype": {"name": "Sub-task" if subtask else "Story", "subtask": subtask},
         "assignee": {"displayName": "Alex Example"},
@@ -91,6 +104,18 @@ def added(day, time="10:00", previous=""):
             "fromString": None, "toString": None}
 
 
+def carried(day, time="09:00"):
+    """Moved from Sprint 6 into Sprint 7 when Sprint 6 closed."""
+    return {"created": ts(day, time), "field": "sprint", "from": "6", "to": "6, 7",
+            "fromString": None, "toString": None}
+
+
+def left_previous(day, time="10:00"):
+    """Removed from Sprint 6, which it was in from its creation."""
+    return {"created": ts(day, time), "field": "sprint", "from": "6", "to": "",
+            "fromString": None, "toString": None}
+
+
 def removed(day, time="10:00", to=""):
     return {"created": ts(day, time), "field": "sprint", "from": "7", "to": to,
             "fromString": None, "toString": None}
@@ -110,11 +135,11 @@ def completed(created, status="Done"):
 # The changes fetch_sprint.py stores per issue: its moves in and out of the
 # sprint, and the status changes that took it from In Progress to where it is.
 CHANGELOGS = {
-    "PROJ-1": [added(4), completed((6,))],
-    "PROJ-2": [added(3)],
+    "PROJ-1": [carried(4), completed((6,))],
+    "PROJ-2": [left_previous(2), added(3)],
     "PROJ-3": [completed("2026-02-27T10:00:00.000+0000"), added(4, "10:02", previous="6"), removed(5, to="8")],
     "PROJ-4": [added(4, "10:03"), removed(9, to="8")],
-    "PROJ-5": [added(4, "15:00"), completed((10,))],
+    "PROJ-5": [added(4, "15:00", previous="6"), completed((10,))],
     "PROJ-6": [added(4, "10:04"), removed(5, "11:00"), added(6, "09:00"), completed((11,), "Duplicate")],
     "PROJ-7": [],
     "PROJ-8": [added(4, "10:05"), completed((5, "12:00")), removed(6, "16:00")],
@@ -141,16 +166,25 @@ COMMENTS = {"PROJ-7": [{"id": "1", "body": "Waiting on a dependency."}]}
 CONTENT = {
     "goal_verdict": "Partially met",
     "epic_commentary": {
-        "PROJ-100": "Import closed 4 of 5 original stories; PROJ-2 carried over.",
-        "PROJ-101": "Export work was descoped or tidied out; PROJ-7 is blocked.",
-        "__no_epic__": "PROJ-5 was added mid-sprint and delivered.",
+        "PROJ-100": {"completed": "Files can now be imported from a folder.",
+                     "not_completed": "Importing from a shared link is still in progress.",
+                     "descoped": "Import previews were dropped from this sprint."},
+        "PROJ-101": {"not_completed": "Retrying a failed export is blocked on a dependency.",
+                     "descoped": "Export scheduling and the export history were dropped."},
+        "__no_epic__": {"completed": "The settings page loads faster."},
     },
-    "scope_notes": ["PROJ-5 was added to fix a regression found in testing."],
-    "delivery_commentary": "Delivery concentrated on the import flow, while export work was mostly removed.",
-    "key_achievements": ["The import flow shipped with PROJ-1."],
-    "blockers_risks": ["PROJ-7 is blocked on an external dependency."],
-    "retro_notes": ["Why was PROJ-4 descoped so late?"],
+    "key_achievements": "The import flow shipped: files can now be imported from a folder.",
+    "blockers_risks": "Importing from a shared link is still in progress, with no blocker recorded.",
+    "retro_notes": ["4 tickets (8 pts) were descoped: was the commitment too large?",
+                    "PROJ-6 (1 pt) left the sprint and came back: was it ready when it was committed?"],
 }
+
+
+def epic_commentary(data):
+    """A valid epic_commentary for any data.json: a sentence for each group
+    each epic has tickets to describe in."""
+    return {epic["key"]: {group: f"Scope {group.replace('_', ' ')} on this epic." for group, tickets
+                          in epic["scope_groups"].items() if tickets} for epic in data["epics"]}
 
 
 def raw_files():
@@ -164,11 +198,16 @@ def raw_files():
             "blocker_candidate_keys": ["PROJ-7"],
         },
         "sprint.json": SPRINT,
+        "previous_sprint.json": PREVIOUS_SPRINT,
         "sprint_issues.json": CURRENT,
         "sprint_report.json": SPRINT_REPORT,
         "punted_issues.json": REMOVED,
         "statuses.json": STATUSES,
-        "parents.json": [],
+        # Every epic, as the search API returns it: descriptions in Atlassian
+        # Document Format.
+        "parents.json": [{"id": id_, "key": key, "fields": {"summary": name, "description": {
+            "type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"{name}."}]}]}}}
+            for key, name, id_ in (IMPORT, EXPORT)],
     }
     files.update({f"changelogs/{k}.json": v for k, v in CHANGELOGS.items()})
     files.update({f"comments/{k}.json": v for k, v in COMMENTS.items()})

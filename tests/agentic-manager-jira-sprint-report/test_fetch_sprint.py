@@ -141,6 +141,28 @@ class ReportDirTest(unittest.TestCase):
         self.assertTrue(os.path.isdir(elsewhere))
 
 
+class PreviousSprintTest(unittest.TestCase):
+    def test_previous_sprint(self):
+        def sprint(sprint_id, start, state="closed", board=42):
+            return {"id": sprint_id, "state": state, "startDate": f"2026-{start}T09:00:00.000Z",
+                    "completeDate": f"2026-{start}T10:00:00.000Z" if state == "closed" else None,
+                    "originBoardId": board}
+        current = sprint(7, "03-04", state="active")
+        cases = [
+            ("the latest start before this one",
+             [sprint(5, "02-04"), sprint(6, "02-18"), current], 6),
+            ("from another board, after a move to this one", [sprint(6, "02-18", board=41)], 6),
+            ("still running", [sprint(5, "02-04"), sprint(6, "02-18", state="active")], 5),
+            ("started after this one", [sprint(5, "02-04"), sprint(8, "03-18")], 5),
+            ("none before it", [sprint(8, "03-18")], None),
+        ]
+        for name, sprints, expected in cases:
+            with self.subTest(name):
+                previous = fetch_sprint.previous_sprint(current, sprints)
+                self.assertEqual(previous and previous["id"], expected)
+        self.assertIsNone(fetch_sprint.previous_sprint({"id": 7, "startDate": None}, [sprint(6, "02-18")]))
+
+
 class HelpersTest(unittest.TestCase):
     def test_project_key_of(self):
         cases = [("PROJ", [], "PROJ"),

@@ -85,6 +85,36 @@ class HelpersTest(unittest.TestCase):
         self.assertEqual(jira.ISSUE_KEY.findall("PROJ-1, A2B-30 and proj-4 or X-1a"),
                          ["PROJ-1", "A2B-30"])
 
+    def test_plain_text(self):
+        def para(*nodes):
+            return {"type": "paragraph", "content": list(nodes)}
+
+        def txt(value):
+            return {"type": "text", "text": value}
+        adf = {"type": "doc", "content": [
+            {"type": "heading", "content": [txt("Goal")]},
+            para(txt("Let staff  sign in"), {
+                 "type": "hardBreak"}, txt("with SSO.")),
+            {"type": "bulletList", "content": [
+                {"type": "listItem", "content": [
+                    para(txt("Ask "), {"type": "mention", "attrs": {"text": "@Ann"}})]},
+                {"type": "listItem", "content": [
+                    para({"type": "inlineCard", "attrs": {"url": "https://acme.test"}})]},
+            ]},
+            {"type": "table", "content": [{"type": "tableRow", "content": [
+                {"type": "tableHeader", "content": [para(txt("A"))]},
+                {"type": "tableCell", "content": [para(txt("B"))]}]}]},
+        ]}
+        cases = [
+            ("none", None, ""),
+            ("empty string", "", ""),
+            ("wiki text", "Line one\n\n  Line   two ", "Line one\nLine two"),
+            ("document", adf, "Goal\nLet staff sign in\nwith SSO.\nAsk @Ann\nhttps://acme.test\nA | B"),
+        ]
+        for name, value, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(jira.plain_text(value), expected)
+
 
 class ClientTest(unittest.TestCase):
     @classmethod
@@ -375,6 +405,16 @@ class ClientTest(unittest.TestCase):
                            self.sprint(8, state="active"))
         self.assertEqual(self.client.find_sprint(project="PROJ")["id"], 7)
         self.assertNotIn("/rest/agile/1.0/board/41/sprint", self.paths())
+
+    def test_latest_sprint_compares_instants_and_falls_back_to_end_date(self):
+        for field in ("completeDate", "endDate"):
+            with self.subTest(field=field):
+                older = self.sprint(6)
+                newer = self.sprint(7)
+                older[field] = "2026-03-13T17:30:00+0200"
+                newer[field] = "2026-03-13T16:00:00Z"
+                self.board_sprints(42, older, newer, self.sprint(5))
+                self.assertEqual(self.client.find_sprint(board_id=42)["id"], 7)
 
     def test_find_sprint_dedupes_across_boards_and_warns(self):
         self.boards({"id": 42, "type": "scrum"}, {"id": 43, "type": "scrum"})

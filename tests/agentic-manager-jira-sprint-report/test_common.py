@@ -147,41 +147,17 @@ class HistoryTest(unittest.TestCase):
             with self.subTest(sprint=sprint):
                 self.assertEqual(common.as_of(sprint, "F"), expected)
 
-    def test_status_and_completion_at(self):
+    def test_status_at(self):
         # Done on the 4th, moved to Duplicate on the 6th, reopened on the 9th.
         history = self.history(self.raw(), [self.moved(4, "3", "10"), self.moved(6, "10", "11"),
                                             self.moved(9, "11", "1")])
-        cases = [(3, ("In Progress", "indeterminate"), None),
-                 (5, ("Done", "done"), "2026-03-04T10:00:00.000+0100"),
-                 (7, ("Duplicate", "done"), "2026-03-04T10:00:00.000+0100"),
-                 (10, ("To Do", "new"), None)]
-        for day, status, completed in cases:
+        cases = [(3, ("In Progress", "indeterminate")), (5, ("Done", "done")),
+                 (7, ("Duplicate", "done")), (10, ("To Do", "new"))]
+        for day, status in cases:
             with self.subTest(day=day):
                 self.assertEqual(history.status_at(self.at(day)), status)
-                self.assertEqual(history.completed_at(self.at(day)), completed)
-
-    def test_reopened_at(self):
-        # Done on the 4th, reopened on the 6th, Done again on the 8th, then moved
-        # to Duplicate (still Done) and back to In Progress on the 12th.
-        history = self.history(self.raw(), [self.moved(4, "3", "10"), self.moved(6, "10", "3"),
-                                            self.moved(8, "3", "10"), self.moved(
-                                                10, "10", "11"),
-                                            self.moved(12, "11", "3")])
-        cases = [("the first reopening", 3, 20, "2026-03-06T10:00:00.000+0100"),
-                 ("not before the window", 6, 20, "2026-03-12T10:00:00.000+0100"),
-                 ("not after the window", 3, 5, None),
-                 ("up to and including the end of the window", 3, 6, "2026-03-06T10:00:00.000+0100")]
-        for name, after, until, expected in cases:
-            with self.subTest(name):
-                self.assertEqual(history.reopened_at(
-                    self.at(after), self.at(until)), expected)
-        self.assertIsNone(self.history(
-            self.raw(), []).reopened_at(self.at(1), self.at(20)))
-
-    def test_created_done_completed_when_created(self):
-        history = self.history(self.raw(status=("10", "Done", "done")), [])
-        self.assertEqual(history.completed_at(self.at(5)),
-                         "2026-03-01T10:00:00.000+0100")
+                self.assertEqual(history.done_at(
+                    self.at(day)), status[1] == "done")
 
     def test_state_at(self):
         raw = self.raw(customfield_points=8.0, customfield_flag=None,
@@ -285,17 +261,28 @@ class QuantitiesTest(unittest.TestCase):
         self.assertEqual([common.plural(n, "it", "they") for n in (0, 1, 1.0, 2)],
                          ["they", "it", "it", "they"])
 
-    def test_units(self):
-        self.assertEqual((common.unit(1), common.unit(2)),
-                         ("story", "stories"))
-        self.assertEqual((common.pts(1), common.pts(2.0)), ("1 pt", "2 pts"))
-        self.assertEqual(
-            (common.points_text(1), common.points_text(0)), ("1 point", "0 points"))
-        self.assertEqual(common.qty(1, 3.0), "1 story / 3 pts")
+    def test_formats(self):
+        cases = [
+            ("unit", [common.unit(1), common.unit(2)], ["ticket", "tickets"]),
+            ("pts", [common.pts(1), common.pts(2.0),
+             common.pts(None)], ["1 pt", "2 pts", "– pts"]),
+            ("amount", [common.qty(1, 3.0), common.qty(7, 7), common.qty(4, None)],
+             ["1 ticket (3 pts)", "7 tickets (7 pts)", "4 tickets (– pts)"]),
+            ("done out of total", [common.ratio(11, 22, 34, 74), common.ratio(1, 1, 2.0, 2)],
+             ["11/22 tickets (34/74 pts)", "1/1 ticket (2/2 pts)"]),
+            ("one ticket", [common.ticket_ref("PROJ-20", 2), common.ticket_ref("PROJ-13", None)],
+             ["PROJ-20 (2 pts)", "PROJ-13 (– pts)"]),
+            ("estimate", [common.estimate(5),
+             common.estimate(None)], ["5", "–"]),
+        ]
+        for name, got, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(got, expected)
 
-    def test_percentage(self):
-        self.assertEqual([common.percentage(part, whole) for part, whole in ((1, 3), (2, 4), (1, 0))],
-                         ["33.3%", "50%", "n/a"])
+    def test_whole_percentage(self):
+        self.assertEqual([common.whole_percentage(part, whole) for part, whole in
+                          ((1, 3), (2, 4), (1, 0), (1, 300), (1, 200), (0, 5), (2, 3))],
+                         ["33%", "50%", "n/a", "<1%", "<1%", "0%", "67%"])
 
     def test_display_date(self):
         self.assertEqual(common.display_date("2026-03-02"), "02/03/2026")
@@ -303,17 +290,12 @@ class QuantitiesTest(unittest.TestCase):
 
 class TargetCompletionTest(unittest.TestCase):
     def test_target_completion(self):
-        def issue(key, extra=False, already=False):
-            return {"key": key, "addedMidSprint": extra, "startState": {"done": already}}
-        data = {"issues": [issue("PROJ-1"), issue("PROJ-2"), issue("PROJ-3", extra=True),
-                           issue("PROJ-10", already=True), issue("PROJ-9", already=True)],
-                "removed_issues": [issue("PROJ-4")],
-                "scope_timeline": [{"completed_original_keys": ["PROJ-1"]},
-                                   {"completed_original_keys": ["PROJ-4"]}]}
-        closed, pool, excluded = common.target_completion(data)
-        self.assertEqual(pool, ["PROJ-1", "PROJ-2", "PROJ-4"])
-        self.assertEqual(closed, ["PROJ-1", "PROJ-4"])
-        self.assertEqual(excluded, ["PROJ-9", "PROJ-10"])
+        def ticket(key, scope="original", outcome="completed"):
+            return {"key": key, "scope": scope, "outcome": outcome}
+        data = {"spells": [ticket("PROJ-1"), ticket("PROJ-2", outcome="not_completed"),
+                           ticket("PROJ-3", scope="extra"), ticket("PROJ-4", outcome="removed")]}
+        self.assertEqual(common.target_completion(
+            data), (["PROJ-1"], ["PROJ-1", "PROJ-2", "PROJ-4"]))
 
 
 if __name__ == "__main__":

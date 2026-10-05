@@ -9,6 +9,11 @@ file goes inside it, such as "2026-03-29--payments/ledgers.md": missing folders
 on the way are created, and an existing file is replaced. The content is read
 from standard input as UTF-8.
 
+With --patch, stdin is a nonempty JSON array of {"old": "...", "new": "..."}
+replacements for an existing UTF-8 file. Each nonempty old string must match
+exactly once, in sequence. All replacements are validated before writing;
+a malformed, missing or ambiguous match leaves the file unchanged.
+
 It never writes outside the skill's folder: an absolute path, a ".." step or a
 symbolic link leading out of it is refused. Only output.root is read from the
 config.
@@ -66,12 +71,52 @@ def parse_args(argv=None):
                         help="the skill's own folder, such as tech-investigations")
     parser.add_argument("--path", required=True,
                         help="where the file goes inside that folder")
+    parser.add_argument("--patch", action="store_true",
+                        help="apply exact JSON replacements from standard input")
     return parser.parse_args(argv)
+
+
+def patch_output_file(name, relative, content):
+    """Apply exact replacements inside the same boundary as full writes.
+
+    Read/validate every edit before writing, so a later failed edit cannot
+    leave an earlier edit applied. Error messages never include file content.
+    """
+    try:
+        edits = json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise SystemExit("patch must be UTF-8 JSON")
+    if not isinstance(edits, list) or not edits:
+        raise SystemExit("patch must be a nonempty array of replacements")
+    folder, temporary = output_folder(name)
+    path = target(folder, relative)
+    try:
+        with open(path, "rb") as f:
+            text = f.read().decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        raise SystemExit("patch target must be an existing readable UTF-8 file")
+    for index, edit in enumerate(edits, 1):
+        if (not isinstance(edit, dict) or set(edit) != {"old", "new"}
+                or not isinstance(edit["old"], str) or not edit["old"]
+                or not isinstance(edit["new"], str)):
+            raise SystemExit(f"replacement {index} needs nonempty old and string new fields only")
+        start = text.find(edit["old"])
+        if start < 0 or text.find(edit["old"], start + 1) >= 0:
+            raise SystemExit(f"replacement {index} must match exactly once; reread the target")
+        text = text.replace(edit["old"], edit["new"], 1)
+    try:
+        result = text.encode("utf-8")
+    except UnicodeEncodeError:
+        raise SystemExit("patch result is not UTF-8 text")
+    with open(path, "wb") as f:
+        f.write(result)
+    return path, temporary
 
 
 def main():
     args = parse_args()
-    path, temporary = write_output_file(
+    writer = patch_output_file if args.patch else write_output_file
+    path, temporary = writer(
         args.name, args.path, sys.stdin.buffer.read())
     print(json.dumps({"path": path, "temporary": temporary}))
 
