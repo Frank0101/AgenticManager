@@ -12,7 +12,7 @@ npx skills add Frank0101/AgenticManager --skill '*' --agent claude-code codex -g
 
 ## Use without installing
 
-You can also clone the repo and start Claude Code or Codex inside it: the skills are available there without installing them, so you don't need Node.js.
+You can also clone the repo and start Claude Code or Codex inside it: the skills are available there without installing them, so you need Node.js only for the tech investigation's architecture map.
 
 ```bash
 git clone https://github.com/Frank0101/AgenticManager.git
@@ -44,7 +44,7 @@ npx skills list -g --json | jq -r '.[] | select(.source == "Frank0101/AgenticMan
 
 ## Requirements
 
-- **Node.js 18+**, to install skills with `npx`.
+- **Node.js 18+**, to install skills with `npx`. Drawing the tech investigation’s architecture map as an image requires **Node.js 22.13+**, as required by the pinned Mermaid CLI, and its Puppeteer headless browser. If rendering reports a missing `chrome-headless-shell`, install it with `npx -y -p @mermaid-js/mermaid-cli@12.0.0 puppeteer browsers install chrome-headless-shell`. Without Node.js the map is left as a Mermaid diagram for your viewer to draw.
 - **Python 3.8+**, available as `python3` where the agent runs. Skills use it to check your config and to run their scripts.
 
 ## Configuration
@@ -64,10 +64,23 @@ Skills never change your config on their own. If something is wrong, or a skill 
 
 ## Available skills
 
-| Skill                                                                           | What it does                                                                                                                                                                                                           |
-| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [agentic-manager-jira-sprint-report](skills/agentic-manager-jira-sprint-report) | Writes an exec-ready report of a Jira sprint, closed or in progress: goal outcome, achievements, blockers, scope timeline, burndown, delivery by epic and retro notes. Needs `jira-api` enabled in `sources.workflow`. |
+| Skill                                                                           | What it does                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [agentic-manager-jira-sprint-report](skills/agentic-manager-jira-sprint-report) | Writes an exec-ready report of a Jira sprint, closed or in progress: goal outcome, achievements, blockers, scope timeline, burndown, delivery by epic and retro notes. Needs `jira-api` enabled in `sources.workflow`.                                                                                                                                                                                     |
+| [agentic-manager-tech-investigation](skills/agentic-manager-tech-investigation) | Investigates a technical system or proposal by comparing its documentation (the vision), tickets (the delivery) and code (the implementation): the current state, the current milestone and a target architecture, with an architecture map, flow diagrams, gaps and open decisions. Uses the `mcp` and `cli` sources enabled in `sources.documentation`, `sources.workflow` and `sources.source_control`. |
 
-Ask the agent in your own words, for example "how did the last PROJ sprint go?". Reports are written to the `jira-sprint-reports` folder of your `output.root`, or to a temporary folder if you haven't set one; the agent gives you a link to open them.
+Ask the agent in your own words.
+
+### Sprint reports
+
+For example, "how did the last PROJ sprint go?". Reports are written to the `jira-sprint-reports` folder of your `output.root`, or to a temporary folder if you haven't set one; the agent gives you a link to open them.
 
 The burndown uses each day's closing status, estimates and sprint membership. On the day a sprint closes it stops at the exact closing time; an active sprint's current day stops at the fetch time. Later changes are excluded from a closed sprint's figures. Work that was already Done at the start and is reopened counts as added scope from the day it was reopened.
+
+### Tech investigations
+
+For example, "investigate how the payments retry service works today and what its next milestone should be", or "give me a 100-word exec summary of the acme search rewrite". A short summary is always built on a full investigation, so it takes as long as the full document, and you can then ask for more detail without the agent starting again.
+
+The agent reads every source you've enabled through `mcp` or `cli` in the three groups: your documentation for the vision, your work tracker for the delivery and your source control for the implementation. Sources reached through `api` or `fs` aren't used. If a group has no such source, the agent tells you how to enable one, and can go on without it: what depends on that group is then marked unverified.
+
+Investigations are written to the `tech-investigations` folder of your `output.root`, or to a temporary folder if you haven't set one: one folder per topic and day, with the full document and the evidence ledgers behind it. When you tell the agent you're happy with a document or summary, it keeps a copy in the `_examples` folder there, listed first, and uses those as models of tone and structure for later investigations, never as evidence.

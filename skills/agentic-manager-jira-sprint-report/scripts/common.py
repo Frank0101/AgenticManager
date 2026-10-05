@@ -15,7 +15,7 @@ from datetime import datetime
 LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
-from agentic_manager.config import output_folder  # noqa: E402,F401
+from agentic_manager.output_folder import output_folder  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, date_only, key_order,  # noqa: E402,F401
                                   nested, parse_ts, value_at)
 

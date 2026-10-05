@@ -16,10 +16,10 @@ import common  # noqa: E402
 
 class LibraryTest(unittest.TestCase):
     def test_library_names_are_importable_from_here(self):
-        from agentic_manager import config, jira
+        from agentic_manager import jira, output_folder
         for name in ("ISSUE_KEY", "JiraClient", "date_only", "key_order", "nested", "parse_ts", "value_at"):
             self.assertIs(getattr(common, name), getattr(jira, name))
-        self.assertIs(common.output_folder, config.output_folder)
+        self.assertIs(common.output_folder, output_folder.output_folder)
 
 
 class BlockerCandidateTest(unittest.TestCase):

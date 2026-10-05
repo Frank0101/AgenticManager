@@ -45,10 +45,9 @@ class ScriptTest(unittest.TestCase):
                               capture_output=True, text=True)
         return proc.returncode, json.loads(proc.stdout)
 
-    # Runs a copy of the script next to a custom template (none if `template` is None),
-    # for cases the real template can't show, such as two sources in one group. The
-    # shared library is linked next to the copy, as an install puts it, unless
-    # `lib` is False.
+    # Runs a copy of the script next to a copy of `template` (none if `template` is
+    # None), for an install with a file missing. The shared library is linked next
+    # to the copy, as an install puts it, unless `lib` is False.
     def run_with_template(self, template, *args, lib=True):
         skill = os.path.join(self.home.name, "skill")
         os.makedirs(os.path.join(skill, "scripts"), exist_ok=True)
@@ -191,6 +190,15 @@ class CheckConfigTest(ScriptTest):
         self.assertEqual(out["sources"]["workflow"]["jira-api"],
                          {"tool": "jira", "channel": "api", "enabled": True})
 
+    def test_several_enabled_sources_are_all_returned(self):
+        def change(c):
+            self.enable_jira(c)
+            c["workflow"]["jira-mcp"]["enabled"] = True
+        self.write_config(change)
+        self.assertEqual(self.assert_ok()["sources"]["workflow"], {
+            "jira-mcp": {"tool": "jira", "channel": "mcp", "enabled": True},
+            "jira-api": {"tool": "jira", "channel": "api", "enabled": True}})
+
     def test_setting_values_are_never_returned(self):
         self.write_config(lambda c: self.enable_jira(c, "s3cret"))
         out = self.assert_ok()
@@ -312,8 +320,8 @@ class CheckConfigTest(ScriptTest):
             (lambda c: c["documentation"]["notion-mcp"].pop("enabled"),
              "sources.documentation.notion-mcp.enabled is missing: set it to true or false"),
             (lambda c: c.update({"chat": {}}), 'unknown group "sources.chat"'),
-            (lambda c: c["workflow"].update({"jira-mcp": {"enabled": True}}),
-             'unknown source "sources.workflow.jira-mcp"'),
+            (lambda c: c["workflow"].update({"linear-mcp": {"enabled": True}}),
+             'unknown source "sources.workflow.linear-mcp"'),
             (lambda c: c["documentation"]["notion-mcp"].update({"workspace": "x"}),
              'unknown setting "sources.documentation.notion-mcp.workspace"'),
             (lambda c: c.update({"workflow": []}),
@@ -329,7 +337,7 @@ class CheckConfigTest(ScriptTest):
     def test_every_problem_is_listed(self):
         def change(c):
             c["chat"] = {}
-            c["workflow"]["jira-mcp"] = {"enabled": False}
+            c["workflow"]["linear-mcp"] = {"enabled": False}
             c["workflow"]["jira-api"]["enabled"] = True
         self.write_config(change)
         out = self.assert_error('unknown group "sources.chat"')
@@ -391,37 +399,8 @@ class CheckConfigTest(ScriptTest):
         self.assertEqual(documented, list(self.template["sources"]))
 
 
-# Cases the real template can't show, run against a copy of the script with its own
-# template.
-class CustomTemplateTest(ScriptTest):
-    TEMPLATE = {"sources": {
-        "workflow": {
-            "jira-api": {"enabled": False, "api-token": "<token>"},
-            "azure-devops-cli": {"enabled": False, "organization": "<organization>"},
-        },
-    }, "output": {"root": "<path>"}}
-
-    def setUp(self):
-        super().setUp()
-        self.template = copy.deepcopy(self.TEMPLATE)
-
-    def run_script(self, *args, script=None):
-        if script:
-            return super().run_script(*args, script=script)
-        return self.run_with_template(self.template, *args)
-
-    def test_several_enabled_sources_are_all_returned(self):
-        def change(c):
-            c["workflow"]["jira-api"].update(
-                {"enabled": True, "api-token": "abc"})
-            c["workflow"]["azure-devops-cli"].update(
-                {"enabled": True, "organization": "acme"})
-        self.write_config(change)
-        out = self.assert_ok()
-        self.assertEqual(out["sources"]["workflow"], {
-            "jira-api": {"tool": "jira", "channel": "api", "enabled": True},
-            "azure-devops-cli": {"tool": "azure-devops", "channel": "cli", "enabled": True}})
-
+# An install with a file missing, run against a copy of the script.
+class InstallTest(ScriptTest):
     def test_missing_files(self):
         cases = [
             ("lib", self.template, False,

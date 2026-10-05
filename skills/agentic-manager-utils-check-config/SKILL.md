@@ -74,6 +74,12 @@ On success the script returns every source of the template by group:
       "github-cli": { "tool": "github", "channel": "cli", "enabled": true }
     },
     "workflow": {
+      "jira-mcp": {
+        "tool": "jira",
+        "channel": "mcp",
+        "enabled": false,
+        "setup": "set \"sources.workflow.jira-mcp.enabled\" to true"
+      },
       "jira-api": { "tool": "jira", "channel": "api", "enabled": true }
     },
     "messaging": {
@@ -90,7 +96,7 @@ On success the script returns every source of the template by group:
 
 - Each source names the `tool`, the `channel` used to reach it, and whether it is `enabled`.
 - A disabled source also has `setup`: how to enable it in the config, naming any settings to fill in.
-- Setting values are never returned, and neither is `output`: a script gets its folder itself (see below).
+- Setting values are never returned, and neither is `output`: a skill gets its folder itself (see below).
 
 On failure it returns `"ok": false` and an `errors` list, each entry explaining one problem and how to fix it:
 
@@ -122,4 +128,4 @@ Reach each tool through its channel:
 | `api`   | Run a script of the calling skill                         |
 | `fs`    | Run a script of the calling skill, which reads the folder |
 
-An `api` or `fs` source always goes through a script, since its settings, such as a token or the folder to read, aren't returned. The script reads them with `agentic_manager.config.read_source()`. A script that writes files gets its folder with `agentic_manager.config.output_folder()`.
+An `api` or `fs` source always goes through a script, since its settings, such as a token or the folder to read, aren't returned. The script reads them with `agentic_manager.config.read_source()`. A skill that writes files gets its folder from `agentic_manager/output_folder.py`, in the `agentic-manager-utils-lib` skill.

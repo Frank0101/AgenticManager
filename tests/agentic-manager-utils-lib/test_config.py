@@ -119,41 +119,6 @@ class ConfigTest(unittest.TestCase):
                 self.jira(**settings)
                 self.assert_exits(f"not filled in: {missing}.")
 
-    # --- output_root
-
-    def test_output_root(self):
-        self.write({"output": {"root": " ~/reports "}})
-        self.assertEqual(config.output_root(),
-                         os.path.join(os.path.expanduser("~"), "reports"))
-
-    def test_output_root_not_set(self):
-        for text in ({}, {"output": {}}, {"output": {"root": "<path>"}}, {"output": {"root": " "}},
-                     {"output": {"root": " <path> "}},
-                     {"output": {"root": 5}}, {"output": []}):
-            with self.subTest(text=text):
-                self.write(text)
-                self.assertIsNone(config.output_root())
-
-    def test_output_root_unreadable_config(self):
-        with self.assertRaisesRegex(SystemExit, "could not read"):
-            config.output_root()
-
-    # --- output_folder
-
-    def test_output_folder(self):
-        cases = [
-            ("in the output root", {"output": {"root": "/reports"}},
-             (os.path.join("/reports", "jira-sprint-reports"), False)),
-            ("in the temp folder without an output root", {},
-             (os.path.join(config.TEMP_ROOT, "jira-sprint-reports"), True)),
-        ]
-        for name, written, expected in cases:
-            with self.subTest(name):
-                self.write(written)
-                self.assertEqual(config.output_folder(
-                    "jira-sprint-reports"), expected)
-        self.assertTrue(config.TEMP_ROOT.startswith(tempfile.gettempdir()))
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,6 +9,13 @@
       ]
     },
     {
+      "root": "tests/agentic-manager-tech-investigation",
+      "extraPaths": [
+        "skills/agentic-manager-utils-lib",
+        "skills/agentic-manager-tech-investigation/scripts"
+      ]
+    },
+    {
       "root": "tests/agentic-manager-utils-check-config",
       "extraPaths": [
         "skills/agentic-manager-utils-lib",
@@ -19,6 +26,9 @@
       "root": "tests/agentic-manager-utils-lib",
       "extraPaths": ["skills/agentic-manager-utils-lib"]
     },
-    { "root": "skills", "extraPaths": ["skills/agentic-manager-utils-lib"] }
+    {
+      "root": "skills",
+      "extraPaths": ["skills/agentic-manager-utils-lib"]
+    }
   ]
 }

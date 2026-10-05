@@ -3,14 +3,13 @@ where it lives, how it's loaded and when a setting counts as filled in.
 
 agentic-manager-utils-check-config validates the whole config with these rules,
 but never returns setting values, which can be secrets such as tokens. A script
-that needs a source's settings reads them with read_source(), and the folder
-to write its files to with output_folder(), so the values never reach the agent
-or the chat.
+that needs a source's settings reads them with read_source(), so the values
+never reach the agent or the chat. The folder a skill writes its files to is in
+output_folder.py.
 """
 import json
 import os
 import re
-import tempfile
 
 CONFIG_PATH = os.path.join(os.path.expanduser(
     "~"), ".config", "agentic-manager", "config.json")
@@ -19,9 +18,6 @@ CONFIG_PATH = os.path.join(os.path.expanduser(
 PLACEHOLDER = re.compile(r"^<.*>$")
 
 FIX = "Run agentic-manager-utils-check-config to see how to fix it."
-
-# Where skills write their files when the config sets no output root.
-TEMP_ROOT = os.path.join(tempfile.gettempdir(), "agentic-manager")
 
 
 def reject_duplicates(pairs):
@@ -81,23 +77,3 @@ def read_source(group, source, keys):
         raise SystemExit(
             f"{where} setting(s) not filled in: {', '.join(missing)}. {FIX}")
     return {k: settings[k].strip() for k in keys}
-
-
-def output_root():
-    """The folder where skills write their files, with ~ expanded, or None if
-    the config doesn't set one. Exits if the config can't be read."""
-    output = load_config().get("output")
-    root = output.get("root") if isinstance(output, dict) else None
-    if not isinstance(root, str) or not is_filled(root):
-        return None
-    return os.path.expanduser(root.strip())
-
-
-def output_folder(name):
-    """(folder, temporary): the folder a skill writes its files to, `name` in the
-    user's output root, or in TEMP_ROOT if the config doesn't set one, and
-    whether it is that temporary one. Exits if the config can't be read."""
-    root = output_root()
-    if root:
-        return os.path.join(root, name), False
-    return os.path.join(TEMP_ROOT, name), True

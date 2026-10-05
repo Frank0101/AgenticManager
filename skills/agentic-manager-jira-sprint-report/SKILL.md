@@ -1,7 +1,7 @@
 ---
 name: agentic-manager-jira-sprint-report
 description: Writes a short, exec-ready report of one Jira sprint, closed or still running - goal outcome, key achievements, blockers and risks, a dated scope timeline (added, removed, completed), a burndown, delivery by epic and notes for the retro - as Markdown with SVG charts, built from the Jira REST API. Use when the user asks for a sprint report, summary or review, or "how did the sprint go" / "how is the sprint going", for a project, board or sprint.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_sprint.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/build_sprint_data.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_charts.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_report.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_folder.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_sprint.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/build_sprint_data.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_charts.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_report.py *)
 ---
 
 # Sprint Report
@@ -75,7 +75,15 @@ What to know before writing prose about `data.json` (the script's docstring has 
 
 ### 3. Write content.json
 
-Create `<report_dir>/content.json`. Use bare Jira keys (`PROJ-12`); the generator links them. Don't repeat figures the generator produces.
+Run `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_folder.py --name jira-sprint-reports` to get the output `folder`. Write `<report_dir>/content.json` through the shared writer, using the final folder name from `report_dir` as `<report-folder>` (relative to that `folder`):
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py --name jira-sprint-reports --path '<report-folder>/content.json' <<'END_OF_FILE'
+<the complete JSON content below, filled in>
+END_OF_FILE
+```
+
+Use the same command for revisions, never your own file tools. Use bare Jira keys (`PROJ-12`); the generator links them. Don't repeat figures the generator produces.
 
 ```json
 {
