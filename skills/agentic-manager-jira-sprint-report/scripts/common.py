@@ -15,9 +15,13 @@ from datetime import datetime
 LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
+from agentic_manager.output_file import write_output_file  # noqa: E402
 from agentic_manager.output_folder import output_folder  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, date_only, key_order,  # noqa: E402,F401
                                   nested, parse_ts, value_at)
+
+# The skill's output folder, which holds the report folders (see output_folder.py).
+REPORTS_FOLDER = "jira-sprint-reports"
 
 # Files inside a report folder. fetch_sprint.py creates the folder; each later
 # step reads and writes here.
@@ -220,10 +224,21 @@ def load_json(path):
         return json.load(f)
 
 
+def write_report_file(path, text):
+    """Writes `text` to `path`, creating missing folders, through the shared
+    writer, so nothing is written outside the skill's output folder. Exits,
+    writing nothing, if `path` isn't inside it."""
+    folder, _ = output_folder(REPORTS_FOLDER)
+    relative = os.path.relpath(
+        os.path.realpath(path), os.path.realpath(folder))
+    if relative.split(os.sep)[0] == os.pardir:
+        raise SystemExit(
+            f"{path} is not inside {folder}, where sprint reports are written")
+    write_output_file(REPORTS_FOLDER, relative, text.encode("utf-8"))
+
+
 def write_json(path, payload):
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
+    write_report_file(path, json.dumps(payload, indent=2))
 
 
 def report_label(project_key, sprint_name):

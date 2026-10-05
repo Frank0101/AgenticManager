@@ -8,13 +8,14 @@ Usage (exactly one sprint selector):
     python3 fetch_sprint.py --board 42 [--active]
     python3 fetch_sprint.py --sprint-name "Sprint 3" --project PROJ   (or --board 42)
 
---out-root  where report folders go. By default <output root>/jira-sprint-reports, if
-            the config sets output.root, else <system temp>/agentic-manager/jira-sprint-reports.
+Report folders go in the skill's output folder: <output root>/jira-sprint-reports
+if the config sets output.root, else <system temp>/agentic-manager/jira-sprint-reports
+(see output_folder.py).
 
-The report folder is <out-root>/<label>_<YY-MM-DD>, where label is the project
-key and sprint name (e.g. PROJ_Sprint_3). Every run starts from scratch: once
-the sprint is fetched, any earlier report folder under <out-root> for the same
-sprint is deleted, then the new one is written. There is no reuse mode.
+The report folder is <label>_<YY-MM-DD> in it, where label is the project key and
+sprint name (e.g. PROJ_Sprint_3). Every run starts from scratch: once the sprint is
+fetched, any earlier report folder there for the same sprint is deleted, then the
+new one is written. There is no reuse mode.
 
 Only active and closed sprints can be reported; a future sprint fails before
 anything is deleted.
@@ -22,8 +23,8 @@ anything is deleted.
 Prints one line of JSON on stdout:
     {"sprint_id": ..., "sprint_name": ..., "sprint_state": ..., "label": ..., "report_dir": ...,
      "temporary": ...}
-"temporary" is true when neither --out-root nor output.root is set, so report folders
-go to the system temp folder.
+"temporary" is true when output.root isn't set, so report folders go to the system
+temp folder.
 Progress goes to stderr.
 
 Writes into <report_dir>/_raw:
@@ -54,10 +55,10 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
 
-from common import (RAW_DIR, History, JiraClient, as_of, history_fields, in_sprint_at, is_blocker_candidate,
-                    issue_moves, nested, output_folder, parse_ts, report_label, status_categories, write_json)
+from common import (RAW_DIR, REPORTS_FOLDER, History, JiraClient, as_of, history_fields, in_sprint_at,
+                    is_blocker_candidate, issue_moves, nested, output_folder, parse_ts, report_label,
+                    status_categories, write_json)
 
-REPORTS_FOLDER = "jira-sprint-reports"
 MAX_WORKERS = 8
 # Issue fields the report needs, besides the site's Flagged and story points fields.
 BASE_FIELDS = [
@@ -82,7 +83,6 @@ def stored_sprint_id(report_dir):
 def prepare_report_dir(out_root, report_dir, sprint_id, log):
     """Delete earlier reports of this sprint, and the destination itself, then
     return a new, empty _raw folder."""
-    os.makedirs(out_root, exist_ok=True)
     matches = {
         os.path.abspath(entry.path) for entry in os.scandir(out_root)
         if entry.is_dir(follow_symlinks=False) and stored_sprint_id(entry.path) == str(sprint_id)
@@ -120,8 +120,6 @@ def parse_args():
     parser.add_argument("--board", help="numeric board id")
     parser.add_argument("--active", action="store_true",
                         help="with --project or --board: the sprint in progress, not the last closed one")
-    parser.add_argument("--out-root",
-                        help="folder that holds report folders (default: see above)")
     args = parser.parse_args()
 
     # Conflicting selectors fail rather than one silently winning.
@@ -222,9 +220,7 @@ def main():
 
     project_key = project_key_of(args, sprint_issues + punted_issues)
     label = report_label(project_key, sprint.get("name"))
-    out_root, temporary = (
-        args.out_root, False) if args.out_root else output_folder(REPORTS_FOLDER)
-    out_root = os.path.abspath(out_root)
+    out_root, temporary = output_folder(REPORTS_FOLDER)
     report_dir = os.path.join(
         out_root, f"{label}_{date.today().strftime('%y-%m-%d')}")
     raw_dir = prepare_report_dir(out_root, report_dir, sprint_id, log)

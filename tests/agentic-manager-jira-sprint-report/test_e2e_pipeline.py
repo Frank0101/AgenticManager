@@ -3,8 +3,10 @@
 # after the other. Each script's functions have unit tests in test_<script>.py.
 # Run with: python3 tests/run.py agentic-manager-jira-sprint-report
 #
-# Each test writes the made-up sprint in sprint_fixture.py into a temporary report
-# folder, changing it first where the case needs to.
+# Each test writes the made-up sprint in sprint_fixture.py into a report folder,
+# changing it first where the case needs to. HOME points at a temporary folder
+# holding the test's own config, whose output root is in that folder too, so the
+# scripts write their files there.
 import copy
 import json
 import os
@@ -28,7 +30,15 @@ REPORT = "PROJ_Sprint_7_Sprint_Report.md"
 class ReportTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.dir = self.tmp.name
+        self.home = os.path.join(self.tmp.name, "home")
+        root = os.path.join(self.tmp.name, "output")
+        self.dir = os.path.join(root, "jira-sprint-reports",
+                                "PROJ_Sprint_7_26-03-16")
+        config = os.path.join(self.home, ".config",
+                              "agentic-manager", "config.json")
+        os.makedirs(os.path.dirname(config))
+        with open(config, "w", encoding="utf-8") as f:
+            json.dump({"output": {"root": root}}, f)
         self.raw = copy.deepcopy(fixture.raw_files())
         self.content = copy.deepcopy(fixture.CONTENT)
         self.today = "2026-03-16"
@@ -43,9 +53,10 @@ class ReportTest(unittest.TestCase):
             with open(full, "w", encoding="utf-8") as f:
                 json.dump(payload, f)
 
-    def run_script(self, name, *args):
-        return subprocess.run([sys.executable, os.path.join(SCRIPTS, name), "--report-dir", self.dir, *args],
-                              capture_output=True, text=True)
+    def run_script(self, name, *args, report_dir=None):
+        return subprocess.run([sys.executable, os.path.join(SCRIPTS, name),
+                               "--report-dir", report_dir or self.dir, *args],
+                              env=dict(os.environ, HOME=self.home), capture_output=True, text=True)
 
     def assert_runs(self, name, *args):
         proc = self.run_script(name, *args)
@@ -491,6 +502,29 @@ class ChartsTest(ReportTest):
         for name in ("outcome-stories.svg", "outcome-points.svg", "burndown.svg"):
             with open(os.path.join(self.dir, name), encoding="utf-8") as f:
                 self.assertTrue(f.read().startswith("<svg "), name)
+
+
+class OutputFolderTest(ReportTest):
+    def test_a_report_folder_outside_the_output_folder_gets_nothing(self):
+        self.make_report()
+        outside = os.path.join(self.tmp.name, "elsewhere")
+        cases = [
+            ("build_sprint_data.py", ["--today", self.today], ["data.json"]),
+            ("make_charts.py", [], ["outcome-stories.svg",
+             "outcome-points.svg", "burndown.svg"]),
+            ("make_report.py", [], [REPORT]),
+        ]
+        for script, args, outputs in cases:
+            with self.subTest(script):
+                shutil.copytree(self.dir, outside)
+                for name in outputs:
+                    os.remove(os.path.join(outside, name))
+                proc = self.run_script(script, *args, report_dir=outside)
+                self.assertEqual(proc.returncode, 1, proc.stdout)
+                self.assertIn("where sprint reports are written", proc.stderr)
+                self.assertEqual(
+                    [n for n in outputs if os.path.exists(os.path.join(outside, n))], [])
+                shutil.rmtree(outside)
 
 
 class MakeReportTest(ReportTest):

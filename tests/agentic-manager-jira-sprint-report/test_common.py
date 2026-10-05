@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 # tests/<skill>/ mirrors skills/<skill>/.
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -12,6 +13,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
+from agentic_manager import output_file  # noqa: E402
 
 
 class LibraryTest(unittest.TestCase):
@@ -212,13 +214,40 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(common.report_file("PROJ_Sprint_7"),
                          "PROJ_Sprint_7_Sprint_Report.md")
 
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = os.path.realpath(tmp.name)
+        self.folder = os.path.join(self.tmp, "jira-sprint-reports")
+        os.makedirs(self.folder)
+        for module in (common, output_file):
+            patcher = mock.patch.object(
+                module, "output_folder", return_value=(self.folder, False))
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
     def test_write_and_load_json(self):
-        with tempfile.TemporaryDirectory() as folder:
-            path = os.path.join(folder, "a", "b", "data.json")
-            common.write_json(path, {"x": [1]})
-            self.assertEqual(common.load_json(path), {"x": [1]})
-            with open(path, encoding="utf-8") as f:
-                self.assertEqual(f.read(), json.dumps({"x": [1]}, indent=2))
+        path = os.path.join(self.folder, "PROJ_Sprint_7", "_raw", "data.json")
+        common.write_json(path, {"x": [1]})
+        self.assertEqual(common.load_json(path), {"x": [1]})
+        with open(path, encoding="utf-8") as f:
+            self.assertEqual(f.read(), json.dumps({"x": [1]}, indent=2))
+
+    def test_nothing_is_written_outside_the_output_folder(self):
+        os.symlink(self.tmp, os.path.join(self.folder, "link"))
+        cases = [
+            ("a sibling folder", os.path.join(self.tmp, "other", "data.json"),
+             "where sprint reports are written"),
+            ("the parent folder", os.path.join(self.tmp, "data.json"),
+             "where sprint reports are written"),
+            ("through a symbolic link", os.path.join(self.folder, "link", "data.json"),
+             "where sprint reports are written"),
+        ]
+        for name, path, expected in cases:
+            with self.subTest(name):
+                with self.assertRaisesRegex(SystemExit, expected):
+                    common.write_report_file(path, "{}")
+                self.assertFalse(os.path.exists(path))
 
     def test_load_missing_json(self):
         with self.assertRaisesRegex(SystemExit, "missing /no/such/file.json"):

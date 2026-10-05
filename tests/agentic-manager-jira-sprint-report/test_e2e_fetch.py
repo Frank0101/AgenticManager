@@ -4,8 +4,9 @@
 #
 # The script runs against a fake Jira server, started on a local port, that serves the
 # made-up sprint in sprint_fixture.py. HOME points at a temporary folder holding the
-# test's own config, whose base-url is that server, and TMPDIR at the same folder, so
-# reports that fall back to the system temp folder stay inside it.
+# test's own config, whose base-url is that server and whose output root is in that
+# folder too, and TMPDIR at the same folder, so reports that fall back to the system
+# temp folder stay inside it.
 import base64
 import copy
 import json
@@ -135,7 +136,8 @@ class FetchTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = os.path.join(self.tmp.name, "home")
-        self.out_root = os.path.join(self.tmp.name, "reports")
+        self.root = os.path.join(self.tmp.name, "output")
+        self.out_root = os.path.join(self.root, "jira-sprint-reports")
         self.reset_jira()
         self.write_config()
 
@@ -159,26 +161,28 @@ class FetchTest(unittest.TestCase):
         FakeJira.estimation = {"typeId": "field",
                                "fieldId": fixture.POINTS_FIELD}
 
+    # Writes the test's config. `output` is its output settings; by default the
+    # output root is the test's own.
     def write_config(self, output=None, **settings):
         source = {"enabled": True, "base-url": self.base_url,
                   "email": EMAIL, "api-token": TOKEN}
         source.update(settings)
-        config = {"sources": {"workflow": {"jira-api": source}}}
-        if output:
-            config["output"] = output
+        config = {"sources": {"workflow": {"jira-api": source}},
+                  "output": {"root": self.root} if output is None else output}
         path = os.path.join(self.home, ".config",
                             "agentic-manager", "config.json")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(config, f)
 
-    # Runs the script with --out-root, unless `out_root` is False. The system temp
-    # folder is the test's own.
-    def fetch(self, *args, out_root=True):
+    # Runs a script with the test's HOME, and its own system temp folder.
+    def run_script(self, name, *args):
         env = dict(os.environ, HOME=self.home, TMPDIR=self.tmp.name)
-        options = ["--out-root", self.out_root] if out_root else []
-        return subprocess.run([sys.executable, os.path.join(SCRIPTS, "fetch_sprint.py"),
-                               *options, *args], env=env, capture_output=True, text=True)
+        return subprocess.run([sys.executable, os.path.join(SCRIPTS, name), *args],
+                              env=env, capture_output=True, text=True)
+
+    def fetch(self, *args):
+        return self.run_script("fetch_sprint.py", *args)
 
     def assert_fetches(self, *args):
         proc = self.fetch(*args)
@@ -203,7 +207,7 @@ class FetchTest(unittest.TestCase):
         out = self.assert_fetches("--project", "PROJ")
         self.assertEqual((out["sprint_id"], out["label"],
                          out["sprint_state"]), (7, "PROJ_Sprint_7", "closed"))
-        self.assertFalse(out["temporary"])  # --out-root isn't the temp folder
+        self.assertFalse(out["temporary"])  # the config sets an output root
         self.assertNotIn("/rest/agile/1.0/board/43/sprint", FakeJira.requests)
 
     def test_selectors(self):
@@ -372,23 +376,23 @@ class FetchTest(unittest.TestCase):
 
     def test_fetched_data_builds(self):
         out = self.assert_fetches("--project", "PROJ")
-        proc = subprocess.run([sys.executable, os.path.join(SCRIPTS, "build_sprint_data.py"), "--report-dir",
-                               out["report_dir"], "--today", "2026-03-16"], capture_output=True, text=True)
+        proc = self.run_script("build_sprint_data.py", "--report-dir", out["report_dir"],
+                               "--today", "2026-03-16")
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("[matches Jira's sprint report]", proc.stdout)
 
-    def test_reports_folder_without_out_root(self):
+    def test_reports_folder(self):
         root = os.path.join(self.tmp.name, "my reports")
         cases = [
             ("the output root", {"root": root},
              os.path.join(root, "jira-sprint-reports"), False),
-            ("the temp folder without an output root", None,
+            ("the temp folder without an output root", {},
              os.path.join(self.tmp.name, "agentic-manager", "jira-sprint-reports"), True),
         ]
         for name, output, folder, temporary in cases:
             with self.subTest(name):
                 self.write_config(output=output)
-                proc = self.fetch("--sprint-id", "7", out_root=False)
+                proc = self.fetch("--sprint-id", "7")
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 out = json.loads(proc.stdout)
                 self.assertEqual(

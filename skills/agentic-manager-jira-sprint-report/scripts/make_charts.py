@@ -55,7 +55,7 @@ import html
 import os
 from datetime import date, timedelta
 
-from common import CHART_FILES, DATA_FILE, display_date, load_json, plural, unit
+from common import CHART_FILES, DATA_FILE, display_date, load_json, plural, unit, write_report_file
 
 FONT = "-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
 SURFACE = "#fcfcfb"
@@ -404,8 +404,7 @@ def main():
     }
     for name, content in charts.items():
         path = os.path.join(args.report_dir, CHART_FILES[name])
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(content)
+        write_report_file(path, content)
         print("wrote", path)
 
 

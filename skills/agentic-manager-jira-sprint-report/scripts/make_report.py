@@ -31,7 +31,8 @@ from datetime import date
 from typing import cast
 
 from common import (CHART_FILES, CONTENT_FILE, DATA_FILE, ISSUE_KEY, NO_EPIC, display_date, load_json, number,
-                    percentage, plural, points_text, pts, qty, report_file, target_completion, unit)
+                    percentage, plural, points_text, pts, qty, report_file, target_completion, unit,
+                    write_report_file)
 
 
 def were(count):
@@ -446,8 +447,7 @@ def main():
         load_json(os.path.join(args.report_dir, CONTENT_FILE))))
     validate_content(content, data)
     out = os.path.join(args.report_dir, report_file(data["label"]))
-    with open(out, "w", encoding="utf-8") as f:
-        f.write(Report(data, content).build())
+    write_report_file(out, Report(data, content).build())
     print("wrote", out)
 
 

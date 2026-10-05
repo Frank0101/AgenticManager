@@ -35,7 +35,7 @@ class ArgsTest(unittest.TestCase):
 
     def test_valid_selectors(self):
         cases = [
-            (("--sprint-id", "7"), {"sprint_id": "7", "out_root": None}),
+            (("--sprint-id", "7"), {"sprint_id": "7"}),
             (("--project", "PROJ", "--active"),
              {"project": "PROJ", "active": True}),
             (("--board", "42"), {"board": "42"}),
@@ -67,6 +67,10 @@ class ArgsTest(unittest.TestCase):
         for expected, args in cases:
             with self.subTest(args=args):
                 self.assert_rejected(expected, *args)
+
+    def test_the_reports_folder_cant_be_chosen(self):
+        self.assert_rejected("unrecognized arguments: --out-root",
+                             "--sprint-id", "7", "--out-root", "reports")
 
 
 class ReportDirTest(unittest.TestCase):

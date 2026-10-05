@@ -17,6 +17,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import build_sprint_data as build  # noqa: E402
+import common  # noqa: E402
+from agentic_manager import output_file  # noqa: E402
 from common import NO_EPIC, parse_ts  # noqa: E402
 
 START = "2026-03-02T09:00:00.000+0100"
@@ -541,11 +543,17 @@ class CrossCheckTest(unittest.TestCase):
 
 
 class MainTest(unittest.TestCase):
-    """main()'s guards, on a minimal raw folder."""
+    """main()'s guards, on a minimal raw folder. The temporary folder is the
+    skill's output folder."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        for module in (common, output_file):
+            patcher = mock.patch.object(
+                module, "output_folder", return_value=(self.tmp.name, False))
+            patcher.start()
+            self.addCleanup(patcher.stop)
         self.reset()
 
     # A new report folder with valid raw contents, which a test then breaks.
