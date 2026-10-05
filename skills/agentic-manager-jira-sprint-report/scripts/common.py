@@ -78,6 +78,11 @@ def as_of(sprint, fetched_at):
     return fetched_at
 
 
+def changed_at(change):
+    """When a changelog entry was made, for sorting entries in time order."""
+    return parse_ts(change["created"])
+
+
 class History:
     """One issue as it was at any past moment, rebuilt from its current fields
     and the changes in its changelog. Nothing reported about an issue comes
@@ -131,7 +136,7 @@ class History:
     def reopened_at(self, after, until):
         """When the issue first moved out of the Done category after `after`,
         up to `until`, or None."""
-        for change in sorted(self.changes, key=lambda c: parse_ts(c["created"])):
+        for change in sorted(self.changes, key=changed_at):
             if change["field"] != "status" or not after < parse_ts(change["created"]) <= until:
                 continue
             if self.category(change["from"]) == "done" and self.category(change["to"]) != "done":

@@ -85,8 +85,9 @@ class WriteTest(unittest.TestCase):
             output_file, "output_folder", return_value=(self.folder, False))
         patcher.start()
         self.addCleanup(patcher.stop)
+        self.render = mock.Mock(return_value=GOOD_SVG)
         for name, value in (("output_folder", mock.Mock(return_value=(self.folder, False))),
-                            ("render", mock.Mock(return_value=GOOD_SVG))):
+                            ("render", self.render)):
             patcher = mock.patch.object(output_diagram, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -98,7 +99,7 @@ class WriteTest(unittest.TestCase):
                          (os.path.join(self.folder, "topic", "map.svg"), False))
         with open(path, encoding="utf-8") as f:
             self.assertEqual(f.read(), GOOD_SVG)
-        output_diagram.render.assert_called_once_with(
+        self.render.assert_called_once_with(
             "flowchart TB\n  A --> B\n", "default")
 
     def test_refusals_write_nothing(self):
@@ -114,7 +115,7 @@ class WriteTest(unittest.TestCase):
         for name, relative, source, svg, expected in cases:
             with self.subTest(name):
                 if svg:
-                    output_diagram.render.return_value = svg
+                    self.render.return_value = svg
                 with self.assertRaisesRegex(SystemExit, expected):
                     output_diagram.write_output_diagram(
                         "maps", relative, source)

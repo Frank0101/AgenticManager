@@ -264,6 +264,7 @@ class CurrentAndRemovedTest(unittest.TestCase):
     def test_movements_are_bounded_by_the_cutoff(self):
         changes = [joined(at("02-27")), left(at("03-16")), joined(at("03-17"))]
         facts = build.build_issue(raw("PROJ-1"), changes, context(), CLOSE)
+        assert facts is not None
         self.assertEqual((facts["departureEvents"], facts["returnEvents"], facts["sprintRemoveEvents"]),
                          ([], [], []))
         current, removed = build.scope_at(
@@ -411,6 +412,7 @@ class BurndownTest(unittest.TestCase):
         facts = build.build_issue(raw("PROJ-1", points=8),
                                   [moved(at("03-04"), "Done", "To Do"),
                                    changed(at("03-06"), "points", "3", "8")], context(), CLOSE)
+        assert facts is not None
         self.assertEqual(facts["startState"], {"storyPoints": 3, "done": True})
         # Reopened in the sprint, so extra scope: it is never in the baseline.
         self.assertEqual(

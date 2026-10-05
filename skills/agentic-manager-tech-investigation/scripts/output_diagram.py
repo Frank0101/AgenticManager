@@ -142,7 +142,7 @@ def path_problems(d):
             control = (float(tokens[i]), float(tokens[i + 1]))
             end = (float(tokens[i + 2]), float(tokens[i + 3]))
             i += 4
-            chord = math.hypot(end[0] - current[0], end[1] - current[1])
+            chord = math.hypot(*vector(current, end))
             if chord > MAX_CORNER:
                 problems.append(f"has a {chord:.0f}px curve, not a corner")
             elif not (allowed(current, control) and allowed(control, end)):
