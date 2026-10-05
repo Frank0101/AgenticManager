@@ -41,7 +41,7 @@ Settings can hold secrets, such as tokens. The script checks that they're filled
    It prints one line of JSON. Do not read or validate the config yourself.
 
 2. If it exits with `1` (`"ok": false`) or `python3` is unavailable, the check has failed. Don't return any sources, and don't guess settings or create defaults. Handle it with the user as below, then report the failure to the calling skill.
-   - If `python3` is unavailable, tell the user AgenticManager needs Python 3.8+ available as `python3`.
+   - If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ available as `python3`.
    - Otherwise, show the user every entry in `errors`, and the config `path`.
    - If the config is missing, offer to create it from the template. Only if the user agrees, run the script again with `--init`. It copies the template to `path`, never overwriting an existing file, and returns `"created": true`. Then tell the user to edit `path`: enable the sources they use and fill in their settings, and optionally set `output.root`.
    - For any other error, you may offer to make the fix it describes, but edit the config only after the user explicitly approves.

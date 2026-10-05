@@ -44,6 +44,7 @@ class FakeJira(BaseHTTPRequestHandler):
     fields = []
     removed = []
     parents = []
+    reporting_timezone = "Europe/London"
     estimation: Optional[dict] = None
     requests = []
 
@@ -76,7 +77,7 @@ class FakeJira(BaseHTTPRequestHandler):
     def route(self, path, query):
         sprints = {str(s["id"]): s for s in FakeJira.sprints}
         if path == "/rest/api/3/myself":
-            return {"accountId": "1", "displayName": "Alex Example"}
+            return {"accountId": "1", "displayName": "Alex Example", "timeZone": FakeJira.reporting_timezone}
         if path == "/rest/api/3/field":
             return FakeJira.fields
         if path == "/rest/api/3/status":
@@ -158,6 +159,7 @@ class FetchTest(unittest.TestCase):
         FakeJira.removed = fixture.REMOVED
         FakeJira.parents = []
         FakeJira.requests = []
+        FakeJira.reporting_timezone = "Europe/London"
         FakeJira.estimation = {"typeId": "field",
                                "fieldId": fixture.POINTS_FIELD}
 
@@ -259,6 +261,18 @@ class FetchTest(unittest.TestCase):
                 self.assert_fails(expected, *args)
                 self.assertFalse(os.path.exists(self.out_root))
 
+    def test_unusable_timezone_preserves_existing_reports(self):
+        out = self.assert_fetches("--sprint-id", "7")
+        sentinel = os.path.join(out["report_dir"], "kept.md")
+        with open(sentinel, "w", encoding="utf-8") as f:
+            f.write("Existing report")
+        for zone in (None, "Missing/Zone"):
+            with self.subTest(zone=zone):
+                FakeJira.reporting_timezone = zone
+                self.assert_fails("reporting timezone", "--sprint-id", "7")
+                with open(sentinel, encoding="utf-8") as f:
+                    self.assertEqual(f.read(), "Existing report")
+
     def test_warnings(self):
         def no_points_field():
             FakeJira.estimation = None
@@ -292,6 +306,7 @@ class FetchTest(unittest.TestCase):
             out["report_dir"]).startswith("PROJ_Sprint_7_"))
         meta = self.raw(out, "_meta.json")
         self.assertEqual(meta["base_url"], self.base_url)
+        self.assertEqual(meta["report_timezone"], "Europe/London")
         # the board's, not "Story Points"
         self.assertEqual(meta["story_points_field"], fixture.POINTS_FIELD)
         self.assertEqual(meta["flagged_field"], fixture.FLAGGED_FIELD)
@@ -376,8 +391,8 @@ class FetchTest(unittest.TestCase):
 
     def test_fetched_data_builds(self):
         out = self.assert_fetches("--project", "PROJ")
-        proc = self.run_script("build_sprint_data.py", "--report-dir", out["report_dir"],
-                               "--today", "2026-03-16")
+        proc = self.run_script("build_sprint_data.py",
+                               "--report-dir", out["report_dir"])
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("[matches Jira's sprint report]", proc.stdout)
 

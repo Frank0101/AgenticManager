@@ -53,11 +53,11 @@ import os
 import shutil
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 from common import (RAW_DIR, REPORTS_FOLDER, History, JiraClient, as_of, history_fields, in_sprint_at,
                     is_blocker_candidate, issue_moves, nested, output_folder, parse_ts, report_label,
-                    status_categories, write_json)
+                    report_timezone, status_categories, write_json)
 
 MAX_WORKERS = 8
 # Issue fields the report needs, besides the site's Flagged and story points fields.
@@ -141,7 +141,9 @@ def parse_args():
 def main():
     args = parse_args()
     client = JiraClient()
-    me = client.whoami()
+    profile = client.whoami()
+    me = profile.get("displayName")
+    reporting_zone = report_timezone(profile.get("timeZone"))
     log(f"authenticated as {me}")
 
     sprint = client.find_sprint(sprint_id=args.sprint_id, board_id=args.board, project=args.project,
@@ -222,7 +224,7 @@ def main():
     label = report_label(project_key, sprint.get("name"))
     out_root, temporary = output_folder(REPORTS_FOLDER)
     report_dir = os.path.join(
-        out_root, f"{label}_{date.today().strftime('%y-%m-%d')}")
+        out_root, f"{label}_{parse_ts(fetched_at).astimezone(reporting_zone).strftime('%y-%m-%d')}")
     raw_dir = prepare_report_dir(out_root, report_dir, sprint_id, log)
 
     write_json(os.path.join(raw_dir, "sprint.json"), sprint)
@@ -237,6 +239,7 @@ def main():
         write_json(os.path.join(raw_dir, "comments", f"{key}.json"), values)
     write_json(os.path.join(raw_dir, "_meta.json"), {
         "fetched_at": fetched_at,
+        "report_timezone": reporting_zone.key,
         "base_url": client.base_url,
         "fetched_by": me,
         "board_id": board_id,

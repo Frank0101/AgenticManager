@@ -112,6 +112,8 @@ def prose_has(md, count, points):
 
 
 def check_figures(c, md, data):
+    c.check(f"| Reporting timezone | {data['report_timezone']} |" in md,
+            "dates", "reporting timezone stated")
     oc, op = data["outcome_counts"], data["outcome_points"]
     open_word = "still open" if data["sprint_status"] == "active" else "carried over"
     in_scope = f"{data['points_total_issue_count']} issues ({points_text(sum(op.values()))})"

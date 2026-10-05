@@ -148,6 +148,8 @@ class ChecksTest(unittest.TestCase):
              "## Scope Timeline\n\n![Sprint burndown](burndown.svg)", "## Scope Timeline"),
             ("em dashes", "Partially met", "Partially met — mostly"),
             ("dates", "02/03/2026–", "2026-03-02–"),
+            ("dates", "| Reporting timezone | Europe/London |",
+             "| Reporting timezone | UTC |"),
             ("links", "Delivery centred on", "PROJ-9 and delivery centred on"),
         ]
         for check, old, new in cases:

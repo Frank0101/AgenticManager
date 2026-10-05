@@ -74,7 +74,7 @@ def changed(created, field, old, new, old_id=None, new_id=None):
 
 
 def context(epics=None):
-    return build.Context("7", START, START_DATE, CATEGORIES, FIELDS, epics or {})
+    return build.Context("7", START, START_DATE, CATEGORIES, FIELDS, epics or {}, PLUS_ONE)
 
 
 def issue(key, points=None, extra=False, carried=False, parent=None, already=False, removed_done=False,
@@ -106,19 +106,6 @@ class DatesTest(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(build.sprint_date(
                     ts, PLUS_ONE, end_of_period=end_of_period), expected)
-
-    def test_site_offset(self):
-        cases = [
-            ("from the first issue with a creation time",
-             ([{"fields": {}}, raw("PROJ-1", created="2026-03-01T10:00:00.000+0200")],),
-             timezone(timedelta(hours=2))),
-            ("from the fallback timestamp",
-             ([], "2026-03-01T10:00:00.000+0100"), PLUS_ONE),
-            ("UTC with neither", ([],), timezone.utc),
-        ]
-        for name, args, expected in cases:
-            with self.subTest(name):
-                self.assertEqual(build.site_offset(*args), expected)
 
 
 class FieldsTest(unittest.TestCase):
@@ -248,6 +235,21 @@ class BuildIssueTest(unittest.TestCase):
                     issue_raw, changes, context(epics), CLOSE)
                 assert facts is not None
                 self.assertEqual({k: facts[k] for k in expected}, expected)
+
+    def test_entry_and_membership_dates_use_reporting_timezone(self):
+        zone = common.report_timezone("Europe/London")
+        ctx = build.Context("7", "2026-03-27T09:00:00Z",
+                            "2026-03-27", CATEGORIES, FIELDS, {}, zone)
+        changes = [joined("2026-03-29T23:30:00Z"), left("2026-03-30T23:30:00Z"),
+                   joined("2026-03-31T23:30:00Z")]
+        facts = build.build_issue(
+            raw("PROJ-1", points=3), changes, ctx, "2026-04-02T16:00:00Z")
+        self.assertEqual(facts["enteredSprintOn"], "2026-03-30")
+        rows = build.build_scope_timeline([facts], [], "closed", ctx.start_date,
+                                          "2026-04-02", "2026-04-02", "2026-04-03", zone)
+        by_day = {row["date"]: row for row in rows}
+        self.assertEqual(by_day["2026-03-31"]["departure_keys"], ["PROJ-1"])
+        self.assertEqual(by_day["2026-04-01"]["readded_keys"], ["PROJ-1"])
 
     def test_not_in_the_sprint_after_the_start(self):
         self.assertIsNone(build.build_issue(raw("PROJ-1"), [joined(at("02-27")), left(at("02-28"))],
@@ -575,7 +577,8 @@ class MainTest(unittest.TestCase):
 
     def run_main(self):
         self.write("_meta.json", {"label": "PROJ_Sprint_7", "fetched_at": self.fetched_at,
-                   "story_points_field": "customfield_points"})
+                   "report_timezone": "Europe/Paris",
+                                  "story_points_field": "customfield_points"})
         self.write("statuses.json", [{"id": i, "statusCategory": {
                    "key": c}} for i, c in CATEGORIES.items()])
         self.write("sprint.json", self.sprint)
@@ -587,7 +590,7 @@ class MainTest(unittest.TestCase):
             self.write(f"changelogs/{issue['key']}.json",
                        [left("2026-03-04T10:00:00.000+0100")] if issue in self.removed else [])
         argv = ["build_sprint_data.py", "--report-dir",
-                self.dir, "--today", "2026-03-16"]
+                self.dir]
         with mock.patch.object(sys, "argv", argv), mock.patch("builtins.print"):
             build.main()
         with open(os.path.join(self.dir, "data.json"), encoding="utf-8") as f:
@@ -614,6 +617,7 @@ class MainTest(unittest.TestCase):
         def change(name, value):
             return lambda: setattr(self, name, value)
         cases = [
+            (change("fetched_at", None), "no fetch timestamp"),
             (change("current", []), "the sprint has no issues"),
             (lambda: self.sprint.update(state="future"),
              "sprint state 'future': only active and closed sprints"),

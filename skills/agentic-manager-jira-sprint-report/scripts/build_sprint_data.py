@@ -1,13 +1,13 @@
 """
 Build <report_dir>/data.json from the _raw files fetch_sprint.py wrote.
-Reads no network: the same raw files and --today always give the same output,
+Reads no network: the same raw files always give the same output,
 so a report's numbers can be audited against the payloads they came from.
 
 Usage:
-    python3 build_sprint_data.py --report-dir <report_dir> --today YYYY-MM-DD
+    python3 build_sprint_data.py --report-dir <report_dir>
 
---today is passed in rather than read from the clock, so the calculation is
-explicit and testable.
+The report date comes from the saved fetch timestamp in the reporting timezone,
+so the calculation is explicit and testable without reading the clock.
 
 What it computes:
 
@@ -81,8 +81,8 @@ import argparse
 import os
 from datetime import datetime, time, timedelta, timezone
 
-from common import (DATA_FILE, NO_EPIC, RAW_DIR, History, add_and_remove_events, as_of, date_only, in_sprint_at, is_blocker_candidate,
-                    issue_moves, key_order, load_json, nested, parse_ts, sprint_moves, status_categories,
+from common import (DATA_FILE, NO_EPIC, RAW_DIR, History, add_and_remove_events, as_of, in_sprint_at, is_blocker_candidate,
+                    issue_moves, key_order, load_json, nested, parse_ts, sprint_moves, status_categories, report_timezone,
                     write_json)
 
 # Terms meaning an issue was closed without delivering it (duplicate, won't do,
@@ -100,8 +100,8 @@ def load_optional(path, default):
 
 
 def sprint_date(ts, offset, end_of_period=False):
-    """Calendar date of a sprint timestamp. The Agile API returns these in UTC,
-    unlike issue timestamps, so convert to the site's offset first.
+    """Calendar date of a timestamp in the reporting timezone, including its
+    daylight-saving rules.
 
     With `end_of_period`, a boundary exactly on midnight names the last day
     worked rather than the next day: an end of 00:00 on the 8th means the sprint
@@ -114,22 +114,13 @@ def sprint_date(ts, offset, end_of_period=False):
     return moment.date().isoformat()
 
 
-def site_offset(issues_raw, fallback_ts=None):
-    """The UTC offset Jira stamps this site's issue timestamps with, read from
-    the data rather than assumed."""
-    for raw in issues_raw:
-        created = nested(raw.get("fields"), ["created"])
-        if created:
-            return parse_ts(created).tzinfo
-    return parse_ts(fallback_ts).tzinfo if fallback_ts else timezone.utc
-
-
 class Context:
     """What every issue is built with: the sprint, the site's fields and
     statuses, and the epics' names."""
 
-    def __init__(self, sprint_id, start_ts, start_date, categories, fields, epic_names):
+    def __init__(self, sprint_id, start_ts, start_date, categories, fields, epic_names, reporting_zone=timezone.utc):
         self.sprint_id, self.start_ts, self.start_date = sprint_id, start_ts, start_date
+        self.reporting_zone = reporting_zone
         self.categories = categories
         self.flagged_field, self.points_field = fields
         # {epic id: (key, summary)}
@@ -229,7 +220,8 @@ def build_issue(raw, changes, context, until=None):
             departures = [ts for ts in departures if parse_ts(
                 ts) > parse_ts(reopened)]
     entered_ts = entered or context.start_ts
-    entered_on = date_only(entered) if extra else context.start_date
+    entered_on = sprint_date(
+        entered, context.reporting_zone) if extra else context.start_date
     state = history.state_at(cutoff)
     parent_id = state.pop("parentId")
     parent_key, parent_summary = (context.epic_names.get(parent_id, (state["parentKey"], state["parentKey"]))
@@ -269,7 +261,7 @@ def build_issue(raw, changes, context, until=None):
         "sprintAddEvents": [ts for ts in added if parse_ts(ts) <= cutoff],
         "sprintRemoveEvents": [ts for ts in removed if parse_ts(ts) <= cutoff],
         "alreadyDoneOnArrival": already,
-        "effectiveCompletionDate": entered_on if already else date_only(completed),
+        "effectiveCompletionDate": entered_on if already else sprint_date(completed, context.reporting_zone),
     }
 
 
@@ -422,7 +414,7 @@ def build_epics(current, removed):
                   key=lambda e: (-(e["original_points_total"] + e["extra_points_total"]), key_order(e["key"])))
 
 
-def build_scope_timeline(current, removed, status, start, complete, end, today):
+def build_scope_timeline(current, removed, status, start, complete, end, today, reporting_zone=timezone.utc):
     rows = {}
 
     def row(day):
@@ -465,8 +457,10 @@ def build_scope_timeline(current, removed, status, start, complete, end, today):
         departure and return after it."""
         record(issue["enteredSprintOn"], issue["key"],
                issue["storyPoints"], "added_keys", "added_points")
-        returns = [date_only(t) for t in issue["returnEvents"]]
-        departures = [date_only(t) for t in issue["departureEvents"]]
+        returns = [sprint_date(t, reporting_zone)
+                   for t in issue["returnEvents"]]
+        departures = [sprint_date(t, reporting_zone)
+                      for t in issue["departureEvents"]]
         cancelled_adds = {d: min(returns.count(
             d), departures.count(d)) for d in set(returns)}
         cancelled_departures = dict(cancelled_adds)
@@ -477,7 +471,7 @@ def build_scope_timeline(current, removed, status, start, complete, end, today):
                 record(day, issue["key"], issue["storyPoints"],
                        "readded_keys", "readded_points")
         for ts, done in zip(issue["departureEvents"], issue["doneAtDepartures"]):
-            day = date_only(ts)
+            day = sprint_date(ts, reporting_zone)
             if cancelled_departures.get(day):
                 cancelled_departures[day] -= 1
                 continue
@@ -553,8 +547,6 @@ def main():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--report-dir", required=True,
                         help="report folder created by fetch_sprint.py")
-    parser.add_argument("--today", required=True,
-                        help="today's date, YYYY-MM-DD")
     args = parser.parse_args()
 
     raw_dir = os.path.join(args.report_dir, RAW_DIR)
@@ -582,7 +574,7 @@ def main():
             f"sprint state {status!r}: only active and closed sprints can be reported")
     if not sprint.get("startDate"):
         raise SystemExit("the sprint has no start date")
-    offset = site_offset(current_raw + removed_raw, sprint.get("startDate"))
+    offset = report_timezone(meta.get("report_timezone"))
     start = sprint_date(sprint.get("startDate"), offset)
     end = sprint_date(sprint.get("endDate"), offset, end_of_period=True)
     complete = sprint_date(sprint.get("completeDate"), offset)
@@ -593,11 +585,15 @@ def main():
                       status_categories(load_json(os.path.join(
                           raw_dir, "statuses.json"))), fields,
                       epic_names(current_raw + removed_raw,
-                                 load_optional(os.path.join(raw_dir, "parents.json"), [])))
+                                 load_optional(os.path.join(raw_dir, "parents.json"), [])), offset)
     moment = as_of(sprint, meta.get("fetched_at"))
     if not moment:
         raise SystemExit("can't tell the moment the report describes (no close date or fetch time); "
                          "fetch the sprint again")
+    today = sprint_date(meta.get("fetched_at"), offset)
+    if not today:
+        raise SystemExit(
+            "no fetch timestamp for the report date; fetch the sprint again")
     overlap = {i["key"] for i in current_raw} & {i["key"] for i in removed_raw}
     if overlap:
         raise SystemExit(
@@ -636,7 +632,7 @@ def main():
     descoped = [i for i in removed if not i["wasDoneAtRemoval"]]
     done_before_removal = [i for i in removed if i["wasDoneAtRemoval"]]
     timeline = build_scope_timeline(
-        current, removed, status, start, complete, end, args.today)
+        current, removed, status, start, complete, end, today, offset)
     current_keys = {i["key"] for i in current}
 
     data = {
@@ -656,7 +652,8 @@ def main():
         "sprint_end_instant": sprint.get("endDate"),
         # The moment the issues' fields describe: the close, or the fetch.
         "as_of_instant": moment,
-        "today": args.today,
+        "report_timezone": offset.key,
+        "today": today,
         "issues": current,
         "removed_issues": removed,
         "outcome_counts": outcome_counts,
@@ -694,7 +691,7 @@ def main():
         "scope_timeline": timeline,
         "burndown": build_burndown(
             all_raw, changes, context, current + removed, offset, moment,
-            min(args.today, end, sprint_date(moment, offset)) if status == "active"
+            min(today, end) if status == "active"
             else sprint_date(moment, offset)),
     }
     out = os.path.join(args.report_dir, DATA_FILE)

@@ -81,11 +81,6 @@ class HelpersTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(jira.nested(node, path, default), expected)
 
-    def test_date_only(self):
-        self.assertEqual(jira.date_only(
-            "2026-03-29T23:30:00.000+0100"), "2026-03-29")
-        self.assertIsNone(jira.date_only(None))
-
     def test_issue_key(self):
         self.assertEqual(jira.ISSUE_KEY.findall("PROJ-1, A2B-30 and proj-4 or X-1a"),
                          ["PROJ-1", "A2B-30"])
@@ -132,8 +127,9 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(self.client.base_url, self.base_url)
 
     def test_whoami(self):
-        FakeJira.routes["/rest/api/3/myself"] = {"displayName": "Alex Example"}
-        self.assertEqual(self.client.whoami(), "Alex Example")
+        profile = {"displayName": "Alex Example", "timeZone": "Europe/London"}
+        FakeJira.routes["/rest/api/3/myself"] = profile
+        self.assertEqual(self.client.whoami(), profile)
 
     def test_sends_basic_auth(self):
         seen = []

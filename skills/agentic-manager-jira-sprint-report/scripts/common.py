@@ -11,13 +11,14 @@ import os
 import re
 import sys
 from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.output_file import write_output_file  # noqa: E402
 from agentic_manager.output_folder import output_folder  # noqa: E402,F401
-from agentic_manager.jira import (ISSUE_KEY, JiraClient, date_only, key_order,  # noqa: E402,F401
+from agentic_manager.jira import (ISSUE_KEY, JiraClient, key_order,  # noqa: E402,F401
                                   nested, parse_ts, value_at)
 
 # The skill's output folder, which holds the report folders (see output_folder.py).
@@ -43,6 +44,19 @@ NO_EPIC = "__no_epic__"
 HIGH_PRIORITIES = {"highest", "high"}
 BLOCKED_STATUSES = {"blocked", "impeded",
                     "on hold", "waiting", "waiting for support"}
+
+
+def report_timezone(name):
+    """The named timezone saved from the Jira API account's profile."""
+    if not isinstance(name, str) or not name.strip():
+        raise SystemExit(
+            "no reporting timezone: check the Jira API account's timezone and fetch the sprint again")
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise SystemExit("reporting timezone is unavailable: check the Jira API account's timezone, "
+                         "install timezone data with python3 -m pip install tzdata if needed, "
+                         "and fetch the sprint again")
 
 
 def is_blocker_candidate(flagged, status, status_category, priority):

@@ -45,7 +45,7 @@ def totals(count, points):
 
 def sprint_data(**changes):
     data = {
-        "base_url": BASE, "label": "PROJ_Sprint_7", "sprint_name": "Sprint 7", "sprint_status": "closed",
+        "report_timezone": "Europe/London", "base_url": BASE, "label": "PROJ_Sprint_7", "sprint_name": "Sprint 7", "sprint_status": "closed",
         "sprint_goal": "Ship login", "sprint_start": "2026-03-02", "sprint_end": "2026-03-13",
         "sprint_complete_date": "2026-03-13", "today": "2026-03-16",
         "issues": [issue("PROJ-1", 3), issue("PROJ-2", 2, carried=True, status="In Progress"),

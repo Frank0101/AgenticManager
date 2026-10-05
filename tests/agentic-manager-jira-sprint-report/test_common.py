@@ -19,9 +19,24 @@ from agentic_manager import output_file  # noqa: E402
 class LibraryTest(unittest.TestCase):
     def test_library_names_are_importable_from_here(self):
         from agentic_manager import jira, output_folder
-        for name in ("ISSUE_KEY", "JiraClient", "date_only", "key_order", "nested", "parse_ts", "value_at"):
+        for name in ("ISSUE_KEY", "JiraClient", "key_order", "nested", "parse_ts", "value_at"):
             self.assertIs(getattr(common, name), getattr(jira, name))
         self.assertIs(common.output_folder, output_folder.output_folder)
+
+
+class ReportTimezoneTest(unittest.TestCase):
+    def test_named_timezone(self):
+        zone = common.report_timezone("Europe/London")
+        for stamp, expected in [("2026-01-10T12:00:00Z", 0),
+                                ("2026-07-10T12:00:00Z", 3600)]:
+            with self.subTest(stamp=stamp):
+                self.assertEqual(common.parse_ts(stamp).astimezone(
+                    zone).utcoffset().total_seconds(), expected)
+
+    def test_missing_or_unknown_timezone(self):
+        for name in (None, "", " ", 3, "Missing/Zone", "/absolute"):
+            with self.subTest(name=name), self.assertRaisesRegex(SystemExit, "reporting timezone"):
+                common.report_timezone(name)
 
 
 class BlockerCandidateTest(unittest.TestCase):

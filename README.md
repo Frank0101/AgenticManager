@@ -45,7 +45,7 @@ npx skills list -g --json | jq -r '.[] | select(.source == "Frank0101/AgenticMan
 ## Requirements
 
 - **Node.js 18+**, to install skills with `npx`. Drawing the tech investigation’s architecture map as an image requires **Node.js 22.13+**, as required by the pinned Mermaid CLI, and its Puppeteer headless browser. If rendering reports a missing `chrome-headless-shell`, install it with `npx -y -p @mermaid-js/mermaid-cli@12.0.0 puppeteer browsers install chrome-headless-shell`. Without Node.js the map is left as a Mermaid diagram for your viewer to draw.
-- **Python 3.8+**, available as `python3` where the agent runs. Skills use it to check your config and to run their scripts.
+- **Python 3.14+**, available as `python3` where the agent runs. Skills use it to check your config and to run their scripts. Sprint reports also need IANA timezone data, normally provided by macOS and Linux. If it is missing, install it with `python3 -m pip install tzdata`.
 
 ## Configuration
 
@@ -74,6 +74,8 @@ Ask the agent in your own words.
 ### Sprint reports
 
 For example, "how did the last PROJ sprint go?". Reports are written to the `jira-sprint-reports` folder of your `output.root`, or to a temporary folder if you haven't set one; the agent gives you a link to open them.
+
+Report dates use the Jira API account's timezone, saved with the fetched data and shown in the report. An active report’s snapshot date comes from the saved fetch timestamp. If Jira does not return a usable timezone, the fetch stops and asks you to check that account's timezone. Older raw data without a saved timezone must be fetched again.
 
 The burndown uses each day's closing status, estimates and sprint membership. On the day a sprint closes it stops at the exact closing time; an active sprint's current day stops at the fetch time. Later changes are excluded from a closed sprint's figures. Work that was already Done at the start and is reopened counts as added scope from the day it was reopened.
 

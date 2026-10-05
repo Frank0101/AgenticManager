@@ -382,6 +382,7 @@ class Report:
                          "not moved to a future sprint.")
         parts += [
             f"| Field | Detail |\n|---|---|\n| Dates | {dates} |\n| Goal | {goal} |\n"
+            f"| Reporting timezone | {self.table_text(d['report_timezone'])} |\n"
             f"| Goal outcome | {self.table_text(c['goal_verdict'])} |",
             f"![Sprint outcome by stories]({CHART_FILES['outcome_stories']})",
             f"![Sprint outcome by points]({CHART_FILES['outcome_points']})",

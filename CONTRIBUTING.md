@@ -58,7 +58,9 @@ A user's config may only contain what the template lists, but it may leave thing
 
 When a skill's output has numbers that must be right every time, such as the sprint report, scripts own everything mechanical: fetching, classification, arithmetic, charts, formatting. The agent writes only the judgment text, in a small JSON file the generator reads. A checker script then validates the finished output against the data. Prose rules alone don't stop a table drifting when it is edited by hand; a check that fails does. When a rule changes, change the generator and the checker together.
 
-Such skills use only the Python standard library (charts are drawn as SVG by hand), so they need nothing but Python 3.8+. A skill that produces files writes them to a folder of its own in the user's output root, or in the system temp folder if the config doesn't set one, and tells the user where. Output settings are optional, so a skill works before the user has chosen a folder.
+Such skills use only the Python standard library (charts are drawn as SVG by hand), so they need Python 3.14+ and, for timezone conversion, IANA timezone data from the system or the `tzdata` package. A skill that produces files writes them to a folder of its own in the user's output root, or in the system temp folder if the config doesn't set one, and tells the user where. Output settings are optional, so a skill works before the user has chosen a folder.
+
+Sprint dates and daily boundaries use `zoneinfo` with the API account's named timezone, saved from Jira's current-user profile in the fetch metadata. This keeps timeline dates and burndown boundaries consistent across daylight-saving changes. A missing or unavailable timezone stops the report rather than guessing a fixed offset.
 
 A report on a past period must give the same figures whenever it is run. Jira's issue fields hold their state today, so the scripts rebuild every field that matters to a figure from the issue's changelog, as it was at the moment the report describes, and never read the current value unless the changelog shows it held then too.
 

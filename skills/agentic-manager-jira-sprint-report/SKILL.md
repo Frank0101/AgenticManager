@@ -50,13 +50,17 @@ python3 <scripts>/fetch_sprint.py <selector>
 - If the user doesn't say which project, board or sprint, ask. Don't guess.
 - Only active and closed sprints can be reported.
 
+The script reads the API account's named timezone from Jira's current-user profile and saves it in the fetch metadata. Every report date and daily boundary uses that timezone, including daylight-saving changes; the report displays it. If it is missing or unavailable, follow the script's error and fetch again. Older raw data without it must also be fetched again.
+
 The script prints one line of JSON with `report_dir`, `label` and `temporary`. The report folder is `<label>_<YY-MM-DD>` in that `jira-sprint-reports` folder (`<temp>/agentic-manager/jira-sprint-reports` when no output root is set, and `temporary` is then `true`). Every run is a full regeneration: it deletes any earlier report of the same sprint there. Never reuse files from an earlier run.
 
 ### 2. Compute
 
 ```bash
-python3 <scripts>/build_sprint_data.py --report-dir <report_dir> --today <YYYY-MM-DD>
+python3 <scripts>/build_sprint_data.py --report-dir <report_dir>
 ```
+
+The snapshot date is derived from the saved fetch timestamp in the reporting timezone. No date argument is needed.
 
 It cross-checks the scope and the completed issues against Jira's own sprint report. On a discrepancy it writes nothing. Usually the sprint changed during the fetch, so run step 1 again. If Jira's sprint report is empty, the sprint's origin board doesn't serve it: fetch again with `--board`, using another scrum board of the project.
 
@@ -118,7 +122,7 @@ Writes two outcome charts (stories and points: original vs extra, completed vs n
 When writing about the burndown:
 
 - The baseline is the commitment at the sprint start, less what was already Done then (as in Jira's burndown).
-- Each daily reading uses membership, status and estimates at the end of that day in the site's offset. The closing day stops at the exact closing instant, and an active snapshot's current day at the fetch instant. Reopening adds outstanding work back on its actual day; re-estimation changes points from its actual day onward.
+- Each daily reading uses membership, status and estimates at the end of that day in the saved reporting timezone. The closing day stops at the exact closing instant, and an active snapshot's current day at the fetch instant. Reopening adds outstanding work back on its actual day; re-estimation changes points from its actual day onward.
 - The vertical movement on the start day reflects closures, removals, reopening and estimate changes that day. It isn't a delivery pace.
 - For a closed sprint the chart runs to the close date, and its last value is what was carried over: work finished after the close still counts as open.
 - For an active sprint past its end date, the chart stops at the end date, not today.

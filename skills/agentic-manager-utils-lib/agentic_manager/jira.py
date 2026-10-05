@@ -69,12 +69,6 @@ def nested(node, path, default=None):
     return node if node is not None else default
 
 
-def date_only(ts):
-    """Calendar date of an issue or changelog timestamp. Jira stamps these in
-    the site's own offset, so the first ten characters are the local date."""
-    return ts[:10] if ts else None
-
-
 def parse_ts(ts):
     """Parse both timestamp shapes Jira emits: issue and changelog stamps carry
     a literal offset ("...+0100"), the Agile API's sprint dates end in "Z"."""
@@ -137,7 +131,8 @@ class JiraClient:
                 f"could not reach {self.base_url} (your `base-url` setting): {e.reason}")
 
     def whoami(self):
-        return self._get("/rest/api/3/myself").get("displayName")
+        """The authenticated user profile, including displayName and timeZone."""
+        return self._get("/rest/api/3/myself")
 
     def fields(self):
         return self._get("/rest/api/3/field")

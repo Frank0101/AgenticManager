@@ -41,7 +41,6 @@ class ReportTest(unittest.TestCase):
             json.dump({"output": {"root": root}}, f)
         self.raw = copy.deepcopy(fixture.raw_files())
         self.content = copy.deepcopy(fixture.CONTENT)
-        self.today = "2026-03-16"
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -65,7 +64,7 @@ class ReportTest(unittest.TestCase):
 
     def build(self):
         self.write_raw()
-        self.assert_runs("build_sprint_data.py", "--today", self.today)
+        self.assert_runs("build_sprint_data.py")
         with open(os.path.join(self.dir, "data.json"), encoding="utf-8") as f:
             return json.load(f)
 
@@ -276,7 +275,7 @@ class BuildTest(ReportTest):
                 change(self.raw)
                 self.write_raw()
                 proc = self.run_script(
-                    "build_sprint_data.py", "--today", self.today)
+                    "build_sprint_data.py")
                 self.assertEqual(proc.returncode, 1)
                 self.assertIn(expected, proc.stderr)
                 self.assertFalse(os.path.exists(
@@ -504,12 +503,84 @@ class ChartsTest(ReportTest):
                 self.assertTrue(f.read().startswith("<svg "), name)
 
 
+class TimezoneTest(ReportTest):
+    def test_active_snapshot_date_follows_fetch_in_reporting_timezone(self):
+        cases = [
+            ("Europe/London", "2026-03-30", "2026-04-03", "today"),
+            ("America/New_York", "2026-03-29", "2026-04-03", "today"),
+            ("Europe/London", "2026-03-30", "2026-03-27", "sprint end"),
+        ]
+        for zone, expected_day, end_day, cutoff_label in cases:
+            with self.subTest(zone=zone, end=end_day):
+                self.raw = copy.deepcopy(fixture.raw_files())
+                self.raw["_meta.json"].update(
+                    fetched_at="2026-03-29T23:30:00Z", report_timezone=zone)
+                self.raw["sprint.json"].update(
+                    state="active", completeDate=None, endDate=f"{end_day}T17:00:00Z")
+                data, md = self.make_report()
+                self.assertEqual(data["today"], expected_day)
+                self.assertEqual(data["burndown"][-1]
+                                 ["date"], min(expected_day, end_day))
+                today_row = next(
+                    row for row in data["scope_timeline"] if "today" in row["labels"])
+                self.assertEqual(today_row["date"], expected_day)
+                display_day = "/".join(reversed(expected_day.split("-")))
+                self.assertIn(f"snapshot as at {display_day}", md)
+                with open(os.path.join(self.dir, "burndown.svg"), encoding="utf-8") as f:
+                    self.assertIn(f">{cutoff_label}<", f.read())
+
+    def test_timeline_and_burndown_agree_across_clock_changes(self):
+        cases = [
+            ("spring", "2026-01-10T10:00:00+0000", "2026-03-26T23:30:00Z",
+             "2026-03-31T16:00:00Z", "2026-03-29T23:30:00Z", "2026-03-30", "2026-03-29"),
+            ("autumn", "2026-07-10T10:00:00+0100", "2026-10-23T08:00:00Z",
+             "2026-10-27T16:00:00Z", "2026-10-25T23:30:00Z", "2026-10-25", "2026-10-24"),
+        ]
+        for name, created, start, close, completed, completion_day, previous_day in cases:
+            with self.subTest(name=name):
+                self.raw = copy.deepcopy(fixture.raw_files())
+                self.raw["sprint.json"].update(
+                    startDate=start, endDate=close, completeDate=close)
+                self.raw["sprint_issues.json"] = [
+                    fixture.issue("PROJ-1", 3, "Done", created, "Done")]
+                self.raw["punted_issues.json"] = []
+                self.raw["changelogs/PROJ-1.json"] = [
+                    fixture.completed(completed)]
+                self.raw["sprint_report.json"] = {"contents": {
+                    "completedIssues": [{"key": "PROJ-1"}], "puntedIssues": []}}
+                self.content["epic_commentary"] = {
+                    "__no_epic__": "The planned work completed."}
+                self.raw["_meta.json"]["fetched_at"] = close
+                data, md = self.make_report()
+                issue = data["issues"][0]
+                self.assertEqual(
+                    issue["effectiveCompletionDate"], completion_day)
+                rows = {row["date"]: row for row in data["burndown"]}
+                self.assertEqual(rows[previous_day]["total"], 3)
+                self.assertEqual(rows[completion_day]["total"], 0)
+                completed_row = next(row for row in data["scope_timeline"]
+                                     if row["completed_original_keys"])
+                self.assertEqual(completed_row["date"], completion_day)
+                self.assertEqual(data["report_timezone"], "Europe/London")
+                self.assertIn("| Reporting timezone | Europe/London |", md)
+                if name == "spring":
+                    self.assertEqual(data["sprint_start"], "2026-03-26")
+
+    def test_old_raw_data_requires_a_fresh_fetch(self):
+        self.raw["_meta.json"].pop("report_timezone")
+        self.write_raw()
+        proc = self.run_script("build_sprint_data.py")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("no reporting timezone", proc.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "data.json")))
+
+
 class OutputFolderTest(ReportTest):
     def test_a_report_folder_outside_the_output_folder_gets_nothing(self):
         self.make_report()
         outside = os.path.join(self.tmp.name, "elsewhere")
         cases = [
-            ("build_sprint_data.py", ["--today", self.today], ["data.json"]),
+            ("build_sprint_data.py", [], ["data.json"]),
             ("make_charts.py", [], ["outcome-stories.svg",
              "outcome-points.svg", "burndown.svg"]),
             ("make_report.py", [], [REPORT]),
@@ -542,7 +613,7 @@ class MakeReportTest(ReportTest):
 
     def test_active_sprint_report(self):
         self.raw["sprint.json"].update(state="active", completeDate=None)
-        self.today = "2026-03-11"
+        self.raw["_meta.json"]["fetched_at"] = "2026-03-11T12:00:00Z"
         _, md = self.make_report()
         self.assertIn(
             "This is a mid-sprint snapshot as at 11/03/2026, with 2 calendar days remaining.", md)
