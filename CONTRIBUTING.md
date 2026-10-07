@@ -32,6 +32,8 @@ The check never returns setting values. Settings can hold secrets, such as token
 
 For the same reason, the agent never reads the output root from the config. Every skill gets its folder from the library's `output_folder.py`, which reads only `output.root`: a skill's scripts import it, and the agent runs it when it writes a skill's files itself. Those files then go through the library's `output_file.py`, which refuses any path outside the skill's folder. That makes it safe to pre-approve, as a skill's own scripts are, whereas the agent's file tools would need either a prompt for every write or an approval to write anywhere, the config included.
 
+The output writer also supports exact text patches within the same folder boundary. Each replacement must match once; the entire batch is validated before the file is written. This avoids resending long reports for small edits while refusing ambiguous or stale context. Concurrent edits can invalidate the expected text, so the writer rejects conflicting patches rather than merging them.
+
 ## Utilities
 
 Skills named `agentic-manager-utils-*` are utilities: they're used by other skills or by you while you work on the repo, not by the people who install the skills, so the README doesn't mention them.
@@ -56,7 +58,7 @@ A user's config may only contain what the template lists, but it may leave thing
 
 ## Script-owned skills
 
-When a skill's output has numbers that must be right every time, such as the sprint report, scripts own everything mechanical: fetching, classification, arithmetic, charts, formatting. The agent writes only the judgment text, in a small JSON file the generator reads. A checker script then validates the finished output against the data. Prose rules alone don't stop a table drifting when it is edited by hand; a check that fails does. When a rule changes, change the generator and the checker together.
+When a skill's output has numbers that must be right every time, such as the sprint report, scripts own everything mechanical: fetching, classification, arithmetic, charts, formatting. The agent writes only the judgment text, in a small JSON file the generator reads. A checker script then validates the finished output against the data. Prose rules alone don't stop a table drifting when it is edited by hand; a check that fails does. Copied Jira fields are excluded from generated-prose restrictions by their fixed report positions. The timeline commentary’s fixed historical phrases are checked against membership spells; AI-written ticket references use the latest estimate for the reported period.
 
 Such skills use only the Python standard library (charts are drawn as SVG by hand), so they need Python 3.14+ and, for timezone conversion, IANA timezone data from the system or the `tzdata` package. A skill that produces files writes them to a folder of its own in the user's output root, or in the system temp folder if the config doesn't set one, and tells the user where. Output settings are optional, so a skill works before the user has chosen a folder.
 
@@ -64,10 +66,16 @@ Sprint dates and daily boundaries use `zoneinfo` with the API account's named ti
 
 A report on a past period must give the same figures whenever it is run. Jira's issue fields hold their state today, so the scripts rebuild every field that matters to a figure from the issue's changelog, as it was at the moment the report describes, and never read the current value unless the changelog shows it held then too.
 
-## The architecture map
+## Investigation reports
+
+Investigation ledgers keep a compact resume block followed by one research action queue, grouped into ready/in progress, blocked and completed actions. Findings own the evidence explanations; inventories and reviews reference stable IDs. File-level reading depth prevents discovery searches from being mistaken for full validation. One report evolves throughout research, with concise corrections retained instead of duplicate draft snapshots.
+
+### The architecture map
+
+Investigation diagrams explain the approach rather than reproduce the implementation inventory. The maps retain concrete services, stores, hosting and material interfaces; internal details can be grouped where they do not affect those relationships. Fixed component positions support stage comparison, while scope outlines, changed connections and explicit lifecycle labels show evolution. The ledger retains the mapping and evidence. Visual inspection complements syntax and geometry checks. A read-only report checker catches fixed-structure, local-artifact, table-citation and diagram-order errors. It complements source review and actual diagram rendering; passing it is not evidence that a claim or proposed interaction is true.
 
 The tech investigation's map is the one output drawn by a tool outside Python: viewers draw Mermaid with their own versions and settings, so the skill's `output_diagram.py` renders it once with the Mermaid CLI, pinned to one version and run through `npx`, and checks every connection line against the map's rules before writing the SVG. A check that fails stops a bad layout, where an instruction to the agent alone wouldn't. Node.js stays optional: without it the script exits with code 3, and the skill shows the map as a Mermaid block instead. The script lives in the skill, not the library, until another skill needs it.
 
 ## Pitfalls
 
-- **Don't run `npx skills` from inside this repo.** The `skills` CLI has a bug: `remove -g` also deletes `<current folder>/.agents/skills/<skill>`, and here that's a symlink to `skills/`, so it deletes the skill's source. Adding `--agent` to the README's uninstall command doesn't work around it: the CLI then keeps the shared `~/.agents/skills` copy whenever another installed agent uses that folder.
+- **Running `npx skills` inside this repo can delete source files.** The `skills` CLI has a bug: `remove -g` also deletes `<current folder>/.agents/skills/<skill>`, and here that's a symlink to `skills/`, so it deletes the skill's source. Adding `--agent` to the README's uninstall command doesn't work around it: the CLI then keeps the shared `~/.agents/skills` copy whenever another installed agent uses that folder.

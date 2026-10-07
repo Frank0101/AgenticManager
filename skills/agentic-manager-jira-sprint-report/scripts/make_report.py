@@ -12,16 +12,15 @@ what needs judgment:
 
 {
   "goal_verdict": "Partially met",
-  "epic_commentary": {"PROJ-10": "One sentence on this epic's own numbers."},
-  "scope_notes": ["Why later scope was added, using bare Jira keys."],
-  "delivery_commentary": "One factual conclusion supported by the epic table.",
-  "key_achievements": ["One or two achievement bullets."],
-  "blockers_risks": ["One or two blocker or risk bullets."],
-  "retro_notes": ["Zero to three extra evidence-backed retro prompts."]
+  "epic_commentary": {"PROJ-10": {"completed": "One sentence on the scope completed.",
+                                  "in_review": "...", "not_completed": "...", "descoped": "..."}},
+  "key_achievements": "A paragraph on the scope completed across the epics.",
+  "blockers_risks": "A paragraph on the commitment still open, and why where stated.",
+  "retro_notes": ["A fact the report shows, then a question for the team?"]
 }
 
 Bare Jira keys in content.json are linked here. Em dashes are replaced by
-commas everywhere, including text that comes from Jira.
+commas in judgment text only; copied Jira goals and names retain their wording.
 """
 import argparse
 import html
@@ -30,17 +29,51 @@ import re
 from datetime import date
 from typing import cast
 
-from common import (CHART_FILES, CONTENT_FILE, DATA_FILE, ISSUE_KEY, NO_EPIC, display_date, load_json, number,
-                    percentage, plural, points_text, pts, qty, report_file, target_completion, unit,
+from common import (CHART_FILES, CONTENT_FILE, DATA_FILE, ISSUE_KEY, NO_EPIC, RETRO_NOTES, SCOPE_GROUPS, ai,
+                    allowed_verdicts,
+                    display_date, epic_groups, estimate, key_order, parse_ts, load_json, outcome_total, plural, pts, qty, ratio,
+                    report_file, scope_group_label, target_completion, ticket_ref, unit, whole_percentage,
                     write_report_file)
+
+
+# The timeline's event tags: (label, background, text colour). Each sets both
+# colours, so it reads the same in light and dark previews; the colours follow
+# the outcome charts where they share a meaning.
+TAGS = {
+    "added": ("Added", "#2a78d6", "#ffffff"),
+    "already_done": ("Already done", "#1a7f37", "#ffffff"),
+    "completed": ("Completed", "#0ca30c", "#ffffff"),
+    "reopened": ("Reopened", "#fab219", "#1a1a1a"),
+    "removed": ("Descoped", "#b5b2aa", "#1a1a1a"),
+    "reestimated": ("Re-estimated", "#9c27b0", "#ffffff"),
+}
+
+
+def tag(kind, suffix=""):
+    label, background, colour = TAGS[kind]
+    return (f'<span style="background:{background};color:{colour};border-radius:10px;padding:1px 7px;'
+            f'margin:1px 3px 1px 0;font-size:90%;white-space:nowrap;display:inline-block">'
+            f'{html.escape(label + suffix)}</span>')
+
+
+# The timeline commentary's length, before its caveats.
+COMMENTARY_WORDS = 100
+
+
+def amount(spells):
+    """The amount of work of some spells: "N tickets (N pts)", "– pts" if
+    none has an estimate."""
+    estimates = [s["points"] for s in spells if s["points"] is not None]
+    return qty(len(spells), sum(estimates) if estimates else None)
+
+
+def plain_words(text):
+    """The words of Markdown text as a reader sees them: links as their text."""
+    return re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text).split()
 
 
 def were(count):
     return plural(count, "was", "were")
-
-
-def they(count):
-    return plural(count, "it", "they")
 
 
 def strip_em_dashes(value):
@@ -57,8 +90,6 @@ class Report:
     def __init__(self, data, content):
         self.data = data
         self.content = content
-        self.issues = {i["key"]: i for i in data["issues"] +
-                       data["removed_issues"]}
 
     # --- links and cells
 
@@ -74,291 +105,297 @@ class Report:
     def linkify(self, text):
         return ISSUE_KEY.sub(lambda m: self.md_key(m.group(0)), text)
 
-    def linkify_html(self, text):
-        return ISSUE_KEY.sub(lambda m: self.html_key(m.group(0)), html.escape(text))
-
     def table_text(self, text):
         return self.linkify(str(text).replace("\n", " ").replace("|", "\\|"))
 
-    def points(self, keys):
-        return sum(self.issues[k].get("storyPoints") or 0 for k in keys)
-
-    def cell(self, groups, force_groups=False):
-        """One of the two cell shapes the checker accepts. FLAT is a quantity
-        and its keys. SUBCATEGORISED is the cell total, then one bold
-        "Label, quantity" per group with its keys. groups is [(label, keys)];
-        empty groups are skipped."""
-        groups = [(label, keys) for label, keys in groups if keys]
-        if not groups:
-            return "–"
-        all_keys = [k for _, keys in groups for k in keys]
-        if len(groups) == 1 and not force_groups:
-            return f"{qty(len(all_keys), self.points(all_keys))}<br>{self.key_list(all_keys)}"
-        parts = [qty(len(all_keys), self.points(all_keys))]
-        for label, keys in groups:
-            parts.append(f"<b>{html.escape(label)}, {qty(len(keys), self.points(keys))}</b>"
-                         f"<br>{self.key_list(keys)}")
-        return "<br><br>".join(parts)
-
-    def key_list(self, keys):
-        return ", ".join(self.html_key(k) for k in keys)
-
-    def added_cell(self, row):
-        return self.cell([("New scope", row["added_keys"]), ("Reinstated", row["readded_keys"])],
-                         force_groups=bool(row["readded_keys"]))
-
-    def removed_cell(self, row):
-        # Describe only what happened that day: an open issue leaving is
-        # Descoped even if it returns later; its return is shown on that day.
-        done = set(row["removed_done_keys"])
-        departed = row["departure_keys"]
-        return self.cell([
-            ("Descoped", [k for k in departed if k not in done]),
-            ("Already done", [k for k in departed if k in done
-                              and self.issues[k]["alreadyDoneOnArrival"]]),
-            ("Removed after completion", [k for k in departed if k in done
-                                          and not self.issues[k]["alreadyDoneOnArrival"]]),
-        ], force_groups=bool(departed))
-
-    def completion_cell(self, row, origin):
-        markers = {i["key"]: i["marker"]
-                   for i in self.data["non_delivery_closures"]["issues"]}
-        completed = row[f"completed_{origin}_keys"]
-        arrived_done = row[f"already_done_{origin}_keys"]
-        by_marker = {}
-        for key in completed:
-            if key in markers:
-                by_marker.setdefault(markers[key], []).append(key)
-        groups = [("Delivered", [k for k in completed if k not in markers])]
-        groups += [(f"Closed as {m}", keys)
-                   for m, keys in sorted(by_marker.items())]
-        groups.append(("Already done", arrived_done))
-        return self.cell(groups, force_groups=bool(arrived_done or by_marker))
-
     # --- tables
 
+    def tags(self, event):
+        """An event as its tags (see TAGS), in the order they happened."""
+        if event["type"] in ("committed", "joined"):
+            return tag("added") + (tag("already_done") if event["done"] else "")
+        if event["type"] == "reestimated":
+            return tag("reestimated", f": {estimate(event['fromPoints'])} → {pts(event['points'])}")
+        return tag(event["type"])
+
+    def end_of_day(self, row):
+        """The day's figures: on the first day, the whole commitment; on every
+        day of the burndown, what was open at its end, as the burndown shows."""
+        d, parts = self.data, []
+        if "sprint_start" in row["labels"]:
+            original = [t for t in d["spells"] if t["scope"] == "original"]
+            parts.append(
+                f"<b>Commitment:</b><br>{qty(len(original), d['burndown_baseline'])}")
+        reading = next(
+            (r for r in d["burndown"] if r["date"] == row["date"]), None)
+        if reading:
+            parts.append(f"<b>Open:</b><br>{qty(reading['committed_stories'], reading['committed'])} of the "
+                         f"commitment<br>{qty(reading['total_stories'], reading['total'])} with extra")
+        return "<br><br>".join(parts) or "–"
+
     def timeline_table(self):
-        lines = ['<table>', '<tr>', '<th style="width:13%">Date</th>',
-                 '<th style="width:28%">Added to sprint</th>', '<th style="width:18%">Removed from sprint</th>',
-                 '<th style="width:26%">Completed (original)</th>', '<th style="width:15%">Completed (extra)</th>',
-                 '</tr>']
+        """Every spell's events by day: one row per ticket with events that
+        day, its estimate at the end of the day and its events as tags in time
+        order; the day's date and end-of-day figures span its rows."""
+        lines = ['<table style="font-size:75%">', '<tr>', '<th style="width:14%">Date</th>',
+                 '<th style="width:14%">Ticket</th>', '<th style="width:46%">Events</th>',
+                 '<th style="width:26%">End of day</th>', '</tr>']
         names = {"sprint_start": "sprint start",
                  "today": "today", "sprint_closed": "sprint closed"}
-        timeline = self.data["scope_timeline"]
-        for row in timeline:
-            date_cell = display_date(
+        for row in self.data["timeline"]:
+            stories = {}
+            for e in row["events"]:
+                stories.setdefault(e["key"], []).append(e)
+            date = display_date(
                 row["date"]) + "".join(f"<br>({names[l]})" for l in row["labels"])
-            cells = [date_cell, self.added_cell(row), self.removed_cell(row),
-                     self.completion_cell(row, "original"), self.completion_cell(row, "extra")]
-            lines += ["<tr>"] + [f"<td>{c}</td>" for c in cells] + ["</tr>"]
-
-        def column(*fields):
-            return (sum(len(r[f"{f}_keys"]) for r in timeline for f in fields),
-                    sum(r[f"{f}_points"] for r in timeline for f in fields))
-        totals = [column("added", "readded"), column("departure"),
-                  column("completed_original", "already_done_original"),
-                  column("completed_extra", "already_done_extra")]
-        counts, points = self.data["commitment_breakdown_counts"], self.data["commitment_breakdown_points"]
-        in_scope = [None, None, (counts["original_completed"], points["original_completed"]),
-                    (counts["extra_completed"], points["extra_completed"])]
-        cells = []
-        for total, current in zip(totals, in_scope):
-            value = qty(*total)
-            # The Completed columns also show the figure still in the sprint
-            # when it differs: the column counts completions credited in the
-            # sprint window, the board shows what's still in it.
-            if current is not None and current != total:
-                value += f" (still in scope: {qty(*current)})"
-            cells.append(f"<b>{value}</b>")
-        lines += ["<tr>", "<td><b>Total</b></td>"] + \
-            [f"<td>{c}</td>" for c in cells] + ["</tr>", "</table>"]
+            span = max(len(stories), 1)
+            first = [
+                f'<td rowspan="{span}" style="vertical-align:top">{date}</td>']
+            last = [
+                f'<td rowspan="{span}" style="vertical-align:top">{self.end_of_day(row)}</td>']
+            if not stories:
+                lines.append(
+                    "<tr>" + first[0] + '<td colspan="2">–</td>' + last[0] + "</tr>")
+                continue
+            for index, key in enumerate(sorted(stories, key=key_order)):
+                events = sorted(stories[key], key=lambda e: parse_ts(e["at"]))
+                cells = [f'<td style="white-space:nowrap">{ticket_ref(self.html_key(key), events[-1]["points"])}</td>',
+                         "<td>" + "".join(self.tags(e) for e in events) + "</td>"]
+                lines.append("<tr>" + "".join((first if index == 0 else []) + cells
+                                              + (last if index == 0 else [])) + "</tr>")
+        lines.append("</table>")
         return "\n".join(lines)
 
+    def epic_commentary(self, epic):
+        """One labelled sentence per group the epic has tickets in, or "–"."""
+        text = self.content["epic_commentary"].get(epic["key"]) or {}
+        lines = [f"<b>{scope_group_label(g, self.data['sprint_status'])}:</b> {html.escape(text[g])}"
+                 for g in epic_groups(epic)]
+        return "<br>".join(lines) or "–"
+
     def epic_table(self):
-        lines = ['<table>', '<tr>', '<th style="width:20%">Epic</th>',
-                 '<th style="width:9%">Original Stories</th>', '<th style="width:9%">Original Points</th>',
-                 '<th style="width:9%">Extra Stories</th>', '<th style="width:9%">Extra Points</th>',
-                 '<th style="width:44%">Commentary</th>', '</tr>']
-        commentary = self.content["epic_commentary"]
+        """Per epic, the commitment's and the extra work's tickets completed,
+        out of all of them: "N/M tickets (N/M pts)", and the scope it covers."""
+        lines = ['<table>', '<tr>', '<th style="width:20%">Epic</th>', '<th style="width:14%">Commitment</th>',
+                 '<th style="width:14%">Extra</th>', f'<th style="width:52%">{ai("Commentary")}</th>', '</tr>']
         for epic in self.data["epics"]:
             name = html.escape(epic["name"] or "")
             title = name if epic["key"] == NO_EPIC else \
                 f'<a href="{self.url(epic["key"])}">{html.escape(epic["key"])}: {name}</a>'
 
-            def ratio(kind):
-                if kind == "extra" and epic["extra_stories_total"] == 0:
-                    return ["–", "–"]
-                return [f'{epic[f"{kind}_stories_done"]}/{epic[f"{kind}_stories_total"]}',
-                        f'{number(epic[f"{kind}_points_done"])}/{number(epic[f"{kind}_points_total"])}']
-            cells = [title] + ratio("original") + ratio("extra") + \
-                [self.linkify_html(commentary[epic["key"]])]
+            def done_of(kind):
+                if epic[f"{kind}_stories_total"] == 0:
+                    return "–"
+                return ratio(epic[f"{kind}_stories_done"], epic[f"{kind}_stories_total"],
+                             epic[f"{kind}_points_done"], epic[f"{kind}_points_total"])
+            cells = [title, done_of("original"), done_of(
+                "extra"), self.epic_commentary(epic)]
             lines += ["<tr>"] + [f"<td>{c}</td>" for c in cells] + ["</tr>"]
         lines.append("</table>")
         return "\n".join(lines)
 
+    def header_table(self):
+        """The table above the charts: always these rows, in this order (see
+        the skill's Header table section)."""
+        d = self.data
+        dates = f"{display_date(d['sprint_start'])}–{display_date(d['sprint_end'])}"
+        if d["sprint_complete_date"] and d["sprint_complete_date"] != d["sprint_end"]:
+            dates += f" (completed {display_date(d['sprint_complete_date'])})"
+        goal = ("<br>".join(self.table_text(line.strip()) for line in d["sprint_goal"].splitlines() if line.strip())
+                if d["sprint_goal"] else "*No goal was set in Jira for this sprint*")
+        rows = [("Dates", dates), ("Goal", goal),
+                (ai("Goal outcome"), self.table_text(
+                    self.content["goal_verdict"])),
+                ("Sprint target completion", self.target_completion_value()),
+                self.carry_over_row()]
+        return "| Field | Detail |\n|---|---|\n" + "\n".join(f"| {label} | {value} |" for label, value in rows)
+
+    def target_completion_value(self):
+        """The original commitment's spells completed: their whole percentage,
+        then the ratios."""
+        closed, pool = target_completion(self.data)
+        original = [s for s in self.data["spells"] if s["scope"] == "original"]
+        done_points = sum(
+            s["points"] or 0 for s in original if s["outcome"] == "completed")
+        so_far = " so far" if self.data["sprint_status"] == "active" else ""
+        return (f"{whole_percentage(len(closed), len(pool))}, "
+                f"{ratio(len(closed), len(pool), done_points, sum(s['points'] or 0 for s in original))} "
+                f"completed{so_far}")
+
+    def carry_over_row(self):
+        """(label, value): the part of the original commitment carried over
+        from the previous sprint."""
+        d = self.data
+        previous = d["previous_sprint"]
+        if not previous:
+            return "Carried over", "None: no earlier sprint on this board"
+        counts, points = d["outcome_breakdown_counts"], d["outcome_breakdown_points"]
+        carried = (outcome_total(counts, "carried_in"),
+                   outcome_total(points, "carried_in"))
+        original = (outcome_total(counts, "original"),
+                    outcome_total(points, "original"))
+        done = (counts["carried_in_completed"], points["carried_in_completed"])
+        so_far = " so far" if d["sprint_status"] == "active" else ""
+        return (f"Carried over from {self.table_text(previous['name'])}",
+                f"{carried[0]} {unit(carried[0])} \\| {whole_percentage(carried[0], original[0])} of commitment "
+                f"({pts(carried[1])} \\| {whole_percentage(carried[1], original[1])}); "
+                f"{qty(*done)} completed{so_far}")
+
     # --- generated prose
 
-    def scope_summary(self):
-        d = self.data
-        oc, op, removed = d["outcome_counts"], d["outcome_points"], d["removed_summary"]
-        open_word = "still open" if d["sprint_status"] == "active" else "carried over"
-        descoped = removed["descoped_incomplete"]
-        text = (f"**{d['points_total_issue_count']} issues ({points_text(sum(op.values()))})** are in scope: "
-                f"{oc['completed']} completed ({points_text(op['completed'])}) and "
-                f"{oc['carried_over']} {open_word} ({points_text(op['carried_over'])}). "
-                f"The net removals include {descoped['count']} incomplete {unit(descoped['count'])} "
-                f"({points_text(descoped['points'])}) genuinely descoped.")
-        housekeeping = removed["already_done_on_arrival"]
-        if housekeeping["count"]:
-            text += (f" {housekeeping['count']} {unit(housekeeping['count'])} ({points_text(housekeeping['points'])}) "
-                     f"{were(housekeeping['count'])} already Done when {they(housekeeping['count'])} entered the sprint "
-                     "and later removed as housekeeping.")
-        delivered = removed["completed_before_removal"]
-        if delivered["count"]:
-            text += (f" {delivered['count']} {unit(delivered['count'])} ({points_text(delivered['points'])}) "
-                     f"{were(delivered['count'])} removed after completion.")
-        arrived = [i for i in d["already_done_on_arrival"]
-                   ["issues"] if i["stillInSprint"]]
-        if arrived:
-            arrived_points = sum(i["storyPoints"] or 0 for i in arrived)
-            text += (f" The Completed columns include {len(arrived)} {unit(len(arrived))} "
-                     f"({points_text(arrived_points)}) already Done when {they(len(arrived))} entered the sprint.")
-        non_delivery = d["non_delivery_closures"]
-        if non_delivery["count"]:
-            keys = ", ".join(self.md_key(i["key"])
-                             for i in non_delivery["issues"])
-            text += (f" {keys}: {points_text(non_delivery['points'])} closed as non-delivery, "
-                     "kept in Jira's Done total.")
+    def commentary(self):
+        """The timeline's commentary: everything that departed from the ideal
+        sprint (all of it committed on the first day, completed steadily,
+        nothing left at the end), from the spells alone, in at most
+        COMMENTARY_WORDS words before its caveats. A kind of departure names
+        its tickets when it has up to three, else counts them; if the text is
+        still too long, all are counted."""
+        text = self.commentary_text(name_up_to=3)
+        if len(plain_words(text)) > COMMENTARY_WORDS:
+            text = self.commentary_text(name_up_to=0)
+            text = text.replace(
+                "counting as descoped and then as extra", "descoped, then extra")
+            text = text.replace("of them without an estimate", "unestimated")
+        return " ".join([text] + self.commentary_caveats())
+
+    def mentioned(self, spells, one, many, name_up_to=3):
+        """Tickets in running text: one ticket as "KEY (N pts) <one>", a list
+        as "N tickets (N pts) <many> (KEY, KEY)", the keys left out above
+        `name_up_to`. A "{keys}" in `many` places the list there instead of
+        at the end."""
+        keys = sorted({s["key"] for s in spells}, key=key_order)
+        if len(spells) == 1 and name_up_to:
+            return f"{ticket_ref(self.md_key(keys[0]), spells[0]['points'])} {one}"
+        listed = f" ({', '.join(self.md_key(k) for k in keys)})" if len(
+            keys) <= name_up_to else ""
+        phrase = (one if len(spells) == 1 else many).replace("{keys}", "")
+        if "{keys}" in many and len(spells) > 1:
+            return f"{amount(spells)} {many.replace('{keys}', listed)}"
+        return f"{amount(spells)} {phrase}{listed}"
+
+    def reestimates(self, spells, name_up_to):
+        """Re-estimated tickets: one as "KEY (old → new pts) was re-estimated",
+        a list as "N tickets (old → new pts) were re-estimated (KEY, KEY)",
+        from the estimates before the first re-estimate to the latest."""
+        def before(spell):
+            return next(e["fromPoints"] for e in spell["events"] if e["type"] == "reestimated")
+
+        def total(values):
+            known = [v for v in values if v is not None]
+            return estimate(sum(known)) if known else "–"
+        keys = sorted({s["key"] for s in spells}, key=key_order)
+        known = [s['points'] for s in spells if s['points'] is not None]
+        change = f"{total(before(s) for s in spells)} → {pts(sum(known) if known else None)}"
+        if len(spells) == 1 and name_up_to:
+            return f"{self.md_key(keys[0])} ({change}) was re-estimated"
+        listed = f" ({', '.join(self.md_key(k) for k in keys)})" if len(
+            keys) <= name_up_to else ""
+        return f"{len(spells)} {unit(len(spells))} ({change}) {plural(len(spells), 'was', 'were')} re-estimated{listed}"
+
+    def commentary_text(self, name_up_to):
+        d, spells = self.data, self.data["spells"]
+
+        def say(found, one, many):
+            return self.mentioned(found, one, many, name_up_to)
+        original = [s for s in spells if s["scope"] == "original"]
+        sentences = []
+
+        already = [dict(s, points=s["events"][0]["points"])
+                   for s in original if s["events"][0]["done"]]
+        descoped = [s for s in original if s["outcome"] == "removed"]
+        parts = []
+        if already:
+            parts.append(say(already, "was already Done at the start",
+                         "were already Done at the start"))
+        if descoped:
+            parts.append(say(descoped, "was descoped", "were descoped"))
+        committed = qty(len(original), d["burndown_baseline"])
+        sentences.append(f"Of the {committed} in the commitment, " + ", and ".join(parts) if parts
+                         else f"{'The' if len(original) == 1 else 'All'} {committed} in the commitment stayed in the "
+                         "sprint")
+
+        extra = [s for s in spells if s["scope"] == "extra" and s["counted"]]
+        dropped = [s for s in spells if not s["counted"]]
+        parts = []
+        if extra:
+            unestimated = [s for s in extra if s["points"] is None]
+            parts.append(say(extra, "was added as extra", "were added as extra")
+                         + (f", {qty(len(unestimated), None)} of them without an estimate"
+                            if unestimated and len(extra) > 1 else ""))
+        if dropped:
+            parts.append(say(dropped, "was added and descoped again, so it doesn't count",
+                             "were added and descoped again{keys}, so they don't count"))
+        if parts:
+            sentences.append("; ".join(parts))
+
+        returns = [s for i, s in enumerate(spells)
+                   if s["events"][0]["type"] == "joined" and any(o["key"] == s["key"] for o in spells[:i])]
+        reopened = [s for s in spells if any(
+            e["type"] == "reopened" for e in s["events"])]
+        reestimated = [s for s in spells if any(
+            e["type"] == "reestimated" for e in s["events"])]
+        parts = []
+        if reopened:
+            parts.append(say(reopened, "was reopened", "were reopened"))
+        if reestimated:
+            parts.append(self.reestimates(reestimated, name_up_to))
+        if returns:
+            parts.append(say(returns, "left the sprint and came back, counting as descoped and then as extra",
+                             "left the sprint and came back, counting as descoped and then as extra"))
+        if parts:
+            sentence = ", ".join(
+                parts[:-1]) + (" and " if len(parts) > 1 else "") + parts[-1]
+            sentences.append(sentence[0].upper() + sentence[1:])
+
+        open_spells = [s for s in spells if s["counted"]
+                       and s["outcome"] == "not_completed"]
+        open_original = [s for s in open_spells if s["scope"] == "original"]
+        total = qty(len(open_spells), sum(
+            s["points"] or 0 for s in open_spells))
+        if len(open_original) == len(open_spells):
+            of_them = ""
+        elif not open_original:
+            of_them = ", all of it extra"
+        else:
+            committed_open = qty(len(open_original), sum(
+                s["points"] or 0 for s in open_original))
+            of_them = f", {committed_open} of them from the commitment"
+        if d["sprint_status"] == "active":
+            left = self.days_left(", with ")
+            sentences.append(f"{total} {plural(len(open_spells), 'is', 'are')} open{of_them}{left}"
+                             if open_spells else f"Nothing is open{left}")
+        else:
+            sentences.append(f"At the close, {total} {were(len(open_spells))} not completed{of_them}"
+                             if open_spells else "Everything in the sprint was completed by the close")
+        return " ".join(s + "." for s in sentences)
+
+    def commentary_caveats(self):
+        """Data-quality warnings, never cut for length."""
+        d, caveats = self.data, []
+        non_delivery = [s for s in d["spells"]
+                        if s["counted"] and s["closedAsNonDelivery"]]
+        if non_delivery:
+            caveats.append(self.mentioned(non_delivery, "was resolved as Duplicate or Won't Do and counts as completed",
+                                          "were resolved as Duplicate or Won't Do and count as completed", 99) + ".")
         excluded = d.get("membership_cross_check_excluded_keys", [])
         if excluded:
-            keys = ", ".join(self.md_key(key) for key in excluded)
-            text += (f" Historical membership for {keys} is reconstructed from changelogs; "
-                     "later sprint moves prevent comparison with Jira's current membership buckets.")
-        return text
-
-    def scope_notes(self):
-        timeline, notes = self.data["scope_timeline"], []
-        for row in timeline:
-            for key in row["readded_keys"]:
-                left = next(
-                    (r["date"] for r in reversed(timeline)
-                     if r["date"] < row["date"] and key in r["departure_keys"]), None)
-                if left:
-                    notes.append(f"{self.md_key(key)} left the sprint on {display_date(left)} and returned on "
-                                 f"{display_date(row['date'])}; both movements are in the timeline totals.")
-        return notes
-
-    def health_notes(self):
-        """The generated sprint-health review: the same dimensions every time,
-        so the retro doesn't depend on which problem stood out."""
-        d = self.data
-        all_issues = d["issues"] + d["removed_issues"]
-        original = [i for i in all_issues if not i["addedMidSprint"]]
-        extra = [i for i in all_issues if i["addedMidSprint"]]
-        original_points = sum(
-            i["startState"]["storyPoints"] or 0 for i in original)
-        extra_points = sum(i["storyPoints"] or 0 for i in extra)
-
-        notes = [f"Planning baseline: {qty(len(original), original_points)} "
-                 f"{were(len(original))} in the sprint when it started on {display_date(d['sprint_start'])}"]
-        done_at_start = [i for i in original if i["startState"]["done"]]
-        if done_at_start:
-            done_points = sum(i["startState"]["storyPoints"]
-                              or 0 for i in done_at_start)
-            notes[0] += (f", {qty(len(done_at_start), done_points)} of them already Done, leaving "
-                         f"{qty(len(original) - len(done_at_start), original_points - done_points)} to do "
-                         "(the burndown's baseline)")
-        notes[0] += "."
-
-        closed, pool, excluded = target_completion(d)
-        so_far = " so far" if d["sprint_status"] == "active" else ""
-        excluded_text = (f"; excludes {len(excluded)} {plural(len(excluded), 'ticket', 'tickets')} "
-                         f"already closed when the sprint started ({', '.join(excluded)})" if excluded else "")
-        notes.append(f"Sprint target completion: {len(closed)}/{len(pool)} original-commitment tickets "
-                     f"closed{so_far} ({percentage(len(closed), len(pool))}){excluded_text}.")
-
-        if d["sprint_goal"]:
-            # A multi-line goal is joined so its "- " lines don't become
-            # separate list items.
-            goal = " / ".join(line.strip().lstrip("-").strip()
-                              for line in d["sprint_goal"].splitlines() if line.strip())
-            notes.append(f"Goal discipline: Jira recorded the sprint goal as “{goal}”; the report verdict is "
-                         f"{self.content['goal_verdict']}.")
-        else:
-            notes.append("Goal discipline: no sprint goal was set in Jira, so completion and scope decisions "
-                         "can't be assessed against an explicit intended outcome.")
-
-        notes.append(f"Scope added after commitment: {qty(len(extra), extra_points)}, equal to "
-                     f"{percentage(len(extra), len(original))} of the initial story count and "
-                     f"{percentage(extra_points, original_points)} of its points.")
-
-        removed = d["removed_summary"]
-        reinstated = [k for r in d["scope_timeline"]
-                      for k in r["readded_keys"]]
-        descoped = removed["descoped_incomplete"]
-        housekeeping = removed["already_done_on_arrival"]
-        delivered = removed["completed_before_removal"]
-        notes.append(
-            f"Scope removed or reversed: {qty(descoped['count'], descoped['points'])} "
-            f"{were(descoped['count'])} genuinely descoped "
-            f"({percentage(descoped['points'], original_points)} of initial points); "
-            f"{qty(housekeeping['count'], housekeeping['points'])} "
-            f"{were(housekeeping['count'])} already Done when {they(housekeeping['count'])} entered the sprint "
-            "and removed as housekeeping; "
-            f"{qty(delivered['count'], delivered['points'])} "
-            f"{were(delivered['count'])} removed after completion; and "
-            f"{qty(len(reinstated), self.points(reinstated))} {were(len(reinstated))} "
-            "reinstated after a cross-day departure.")
-
-        arrived_done = {i["key"]
-                        for i in d["already_done_on_arrival"]["issues"]}
-
-        def completion(origin, issues):
-            pool = [i for i in issues if i["key"] not in arrived_done]
-            keys = {k for r in d["scope_timeline"]
-                    for k in r[f"completed_{origin}_keys"]}
-            done_points = self.points(keys)
-            total_points = sum(i["storyPoints"] or 0 for i in pool)
-            return (f"{origin}: {len(keys)}/{len(pool)} stories ({percentage(len(keys), len(pool))}) and "
-                    f"{number(done_points)}/{number(total_points)} points ({percentage(done_points, total_points)})")
-        notes.append("Actionable completion (excluding work already Done when it entered the sprint): "
-                     f"{completion('original', original)}; {completion('extra', extra)}.")
-
-        already, non_delivery = d["already_done_on_arrival"], d["non_delivery_closures"]
-        nd_keys = ", ".join(i["key"] for i in non_delivery["issues"]) or "none"
-        notes.append(
-            f"Board-data quality: {qty(already['count'], already['points'])} {were(already['count'])} "
-            f"already Done when {they(already['count'])} entered the sprint, inflating the sprint's totals "
-            "without being sprint delivery; "
-            f"{qty(non_delivery['count'], non_delivery['points'])} in the Done total "
-            f"{plural(non_delivery['count'], 'was a', 'were')} non-delivery "
-            f"{plural(non_delivery['count'], 'closure', 'closures')} ({nd_keys}).")
-
-        open_issues = [i for i in d["issues"] if i["carriedOver"]]
-        by_status = {}
-        for issue in open_issues:
-            bucket = by_status.setdefault(issue["status"], [0, 0])
-            bucket[0] += 1
-            bucket[1] += issue["storyPoints"] or 0
-        status_text = ", ".join(f"{n} {status} ({pts(p)})"
-                                for status, (n, p) in sorted(by_status.items())) or "none"
-        open_keys = {i["key"] for i in open_issues}
-        blockers = ", ".join(
-            k for k in d["blocker_candidate_keys"] if k in open_keys) or "none"
-        state = "remain open" if d["sprint_status"] == "active" else "carried over"
-        notes.append(f"Unfinished-work shape: {qty(len(open_issues), sum(i['storyPoints'] or 0 for i in open_issues))}"
-                     f" {state}{self.days_left(' with ')}; status mix is {status_text}; "
-                     f"blocker candidates are {blockers}.")
-        return notes
+            found = [next((s for s in reversed(d["spells"]) if s["key"] == k), {"key": k, "points": None})
+                     for k in excluded]
+            caveats.append("The membership of " + self.mentioned(found, "is reconstructed from changelogs",
+                                                                 "is reconstructed from changelogs", 99)
+                           + ", as later sprint moves prevent checking it against Jira.")
+        return caveats
 
     def days_left(self, prefix):
         if self.data["sprint_status"] != "active":
             return ""
         days = (date.fromisoformat(
             self.data["sprint_end"]) - date.fromisoformat(self.data["today"])).days
-        if days >= 0:
-            return f"{prefix}{days} calendar days remaining"
-        return f"{prefix}the recorded end date {-days} calendar days overdue"
+        if days == 0:
+            return f"{prefix}no days left"
+        if days > 0:
+            return f"{prefix}{days} {plural(days, 'day', 'days')} left"
+        return f"{prefix}{-days} {plural(-days, 'day', 'days')} past the end date"
 
     # --- the report
 
@@ -367,70 +404,70 @@ class Report:
 
     def build(self):
         d, c = self.data, self.content
-        start, end = display_date(
-            d["sprint_start"]), display_date(d["sprint_end"])
-        dates = f"{start}–{end}"
-        if d["sprint_complete_date"] and d["sprint_complete_date"] != d["sprint_end"]:
-            dates += f" (completed {display_date(d['sprint_complete_date'])})"
-        goal = ("<br>".join(self.table_text(line.strip()) for line in d["sprint_goal"].splitlines() if line.strip())
-                if d["sprint_goal"] else "*No goal was set in Jira for this sprint*")
         # Jira has no page for a sprint, so the title links nothing.
         parts = [f"# Sprint Summary: {d['sprint_name']}"]
         if d["sprint_status"] == "active":
             parts.append(f"This is a mid-sprint snapshot as at {display_date(d['today'])}"
-                         f"{self.days_left(', with ')}. \"Still open\" means unfinished in the active sprint, "
-                         "not moved to a future sprint.")
+                         f"{self.days_left(', with ')}. \"Open\" means not completed yet.")
         parts += [
-            f"| Field | Detail |\n|---|---|\n| Dates | {dates} |\n| Goal | {goal} |\n"
-            f"| Reporting timezone | {self.table_text(d['report_timezone'])} |\n"
-            f"| Goal outcome | {self.table_text(c['goal_verdict'])} |",
-            f"![Sprint outcome by stories]({CHART_FILES['outcome_stories']})",
-            f"![Sprint outcome by points]({CHART_FILES['outcome_points']})",
+            self.header_table(),
+            f"![Sprint outcome in tickets]({CHART_FILES['outcome_stories']})",
+            f"![Sprint outcome in pts]({CHART_FILES['outcome_points']})",
             "## Scope Timeline",
             f"![Sprint burndown]({CHART_FILES['burndown']})",
             self.timeline_table(),
-            self.scope_summary(),
+            self.commentary(),
         ]
-        parts += self.scope_notes()
-        parts += [self.linkify(note) for note in c["scope_notes"]]
         parts += [
             "## Delivery by Epic",
             self.epic_table(),
-            self.linkify(c["delivery_commentary"]),
-            self.bullets("## Key Achievements", c["key_achievements"]),
-            self.bullets("## Blockers & Risks", c["blockers_risks"]),
-            "## Notes for Sprint Retro",
+            f"## {ai('Key Achievements')}",
+            self.linkify(c["key_achievements"]),
+            f"## {ai('Blockers & Risks')}",
+            self.linkify(c["blockers_risks"]),
+            self.bullets(
+                f"## {ai('Notes for Sprint Retro')}", c["retro_notes"]),
         ]
-        if c["retro_notes"]:
-            parts.append(self.bullets(
-                "### Discussion Points", c["retro_notes"]))
-        parts.append(self.bullets(
-            "### Sprint Health Data", self.health_notes()))
         return "\n\n".join(parts).rstrip() + "\n"
 
 
 def validate_content(content, data):
     problems = []
-    bounds = {"scope_notes": (0, None), "key_achievements": (1, 2), "blockers_risks": (1, 2),
-              "retro_notes": (0, 3)}
-    for field, (low, high) in bounds.items():
-        value = content.get(field)
-        if (not isinstance(value, list) or len(value) < low or (high is not None and len(value) > high)
-                or any(not isinstance(v, str) or not v.strip() for v in value)):
-            problems.append(
-                f"{field} must be a list of {low}{'+' if high is None else f'-{high}'} non-empty strings")
-    for field in ("goal_verdict", "delivery_commentary"):
+    if "scope_notes" in content:
+        problems.append(
+            "scope_notes is no longer used: the timeline's commentary is generated from the data")
+    for field in ("key_achievements", "blockers_risks"):
         if not isinstance(content.get(field), str) or not content[field].strip():
-            problems.append(f"{field} must be a non-empty string")
+            problems.append(
+                f"{field} must be a non-empty string: one paragraph")
+    notes = content.get("retro_notes")
+    if (not isinstance(notes, list) or not 1 <= len(notes) <= RETRO_NOTES
+            or any(not isinstance(n, str) or not n.strip().endswith("?") for n in notes)):
+        problems.append(
+            f"retro_notes must be a list of 1-{RETRO_NOTES} notes, each ending with a question")
+    if "delivery_commentary" in content:
+        problems.append(
+            "delivery_commentary is no longer used: each epic's commentary says what it delivered")
+    if content.get("goal_verdict") not in allowed_verdicts(data):
+        problems.append("goal_verdict must be one of: " +
+                        ", ".join(f'"{v}"' for v in allowed_verdicts(data)))
     commentary = content.get("epic_commentary")
     if not isinstance(commentary, dict):
-        problems.append("epic_commentary must map each epic key to a sentence")
+        problems.append(
+            "epic_commentary must map each epic key to its groups' sentences")
     else:
-        missing = [e["key"] for e in data["epics"]
-                   if not isinstance(commentary.get(e["key"]), str) or not commentary[e["key"]].strip()]
-        if missing:
-            problems.append(
-                f"epic_commentary is missing: {', '.join(missing)}")
+        for epic in data["epics"]:
+            groups, given = epic_groups(
+                epic), commentary.get(epic["key"]) or {}
+            if not isinstance(given, dict):
+                problems.append(
+                    f"epic_commentary.{epic['key']} must map each group to a sentence")
+                continue
+            written = [g for g in SCOPE_GROUPS if isinstance(
+                given.get(g), str) and given[g].strip()]
+            if written != groups or set(given) - set(groups):
+                problems.append(f"epic_commentary.{epic['key']} needs a sentence for exactly these groups: "
+                                + (", ".join(groups) or "none"))
     if problems:
         raise SystemExit("content.json:\n  - " + "\n  - ".join(problems))
 
@@ -442,8 +479,7 @@ def main():
                         help="report folder holding data.json and content.json")
     args = parser.parse_args()
 
-    data = cast(dict, strip_em_dashes(
-        load_json(os.path.join(args.report_dir, DATA_FILE))))
+    data = load_json(os.path.join(args.report_dir, DATA_FILE))
     content = cast(dict, strip_em_dashes(
         load_json(os.path.join(args.report_dir, CONTENT_FILE))))
     validate_content(content, data)

@@ -32,7 +32,7 @@ return a sprint report with its removals missing.
 import base64
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -79,6 +79,49 @@ def parse_ts(ts):
         except ValueError:
             continue
     raise ValueError(f"unrecognised timestamp format: {ts!r}")
+
+
+# Atlassian Document Format nodes that end a line of text.
+ADF_BLOCKS = {"paragraph", "heading", "listItem", "codeBlock",
+              "blockquote", "tableRow", "rule", "mediaGroup"}
+
+
+def plain_text(value):
+    """A rich-text field (a description or a comment) as plain text, whether
+    Jira returns it in Atlassian Document Format, as API v3 does, or as a
+    string, as the Agile API does; "" for none. Line breaks between blocks are
+    kept, other whitespace collapsed."""
+    if not value:
+        return ""
+    if isinstance(value, str):
+        lines = value.splitlines()
+    else:
+        parts = []
+
+        def walk(node, in_cell=False):
+            kind, attrs = node.get("type"), node.get("attrs") or {}
+            if kind == "text":
+                parts.append(node.get("text", ""))
+            elif kind == "hardBreak":
+                parts.append(" " if in_cell else "\n")
+            elif kind in ("mention", "emoji", "status", "date"):
+                parts.append(
+                    str(attrs.get("text") or attrs.get("shortName") or ""))
+            elif kind in ("inlineCard", "blockCard", "embedCard"):
+                parts.append(str(attrs.get("url") or ""))
+            cells = node.get("content") or []
+            if kind == "tableRow":
+                for index, cell in enumerate(cells):
+                    parts.append(" | " if index else "")
+                    walk(cell, in_cell=True)
+            else:
+                for child in cells:
+                    walk(child, in_cell)
+            if kind in ADF_BLOCKS:
+                parts.append(" " if in_cell else "\n")
+        walk(value)
+        lines = "".join(parts).splitlines()
+    return "\n".join(line for line in (" ".join(raw.split()) for raw in lines) if line)
 
 
 def value_at(changes, field, instant, current):
@@ -208,7 +251,8 @@ class JiraClient:
         if log and len({c.get("originBoardId") for c in candidates}) > 1:
             log("warning: closed sprints span several boards; picked the latest. "
                 "Give a board to choose one.")
-        return max(candidates, key=lambda s: s.get("completeDate") or s.get("endDate") or "")
+        return max(candidates, key=lambda s: parse_ts(s.get("completeDate") or s["endDate"])
+                   if s.get("completeDate") or s.get("endDate") else datetime.min.replace(tzinfo=timezone.utc))
 
     def flagged_and_points_fields(self, board_id):
         """(Flagged field id, story points field id); either may be None. The

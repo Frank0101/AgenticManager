@@ -30,6 +30,8 @@ Progress goes to stderr.
 Writes into <report_dir>/_raw:
     _meta.json             what was fetched, when, from where, and the field ids used
     sprint.json            the sprint
+    previous_sprint.json   the closed sprint, of those the board lists, that started
+                           last before this one, or null if there is none
     sprint_issues.json     issues currently in the sprint
     sprint_report.json     Jira's own sprint report
     punted_issues.json     issues removed from the sprint, same shape as sprint_issues
@@ -37,15 +39,17 @@ Writes into <report_dir>/_raw:
     changelogs/<KEY>.json  every change, of every current and removed issue, to the
                            fields the report reads (sprint, status, resolution,
                            points, flag, priority, parent)
-    parents.json           epics the issues belonged to before a change of parent
+    parents.json           every epic the issues belong to, or belonged to before a
+                           change of parent, with its description
     comments/<KEY>.json    comments of blocker candidates, up to the moment the
                            report describes
 
 The report describes the sprint as it was when it closed, or, for an active
 sprint, at the fetch: issues' fields are rebuilt from their changelogs, so a
-later edit changes nothing. Nothing is computed here beyond choosing which
-comments and epics to fetch; build_sprint_data.py does the rest from these
-files.
+later edit changes nothing. Descriptions are the exception: Jira keeps no
+usable history of them, so they are as they read at the fetch. Nothing is
+computed here beyond choosing which comments and epics to fetch;
+build_sprint_data.py does the rest from these files.
 """
 import argparse
 import json
@@ -63,7 +67,7 @@ MAX_WORKERS = 8
 # Issue fields the report needs, besides the site's Flagged and story points fields.
 BASE_FIELDS = [
     "summary", "status", "issuetype", "assignee", "created", "resolution",
-    "priority", "parent", "labels",
+    "priority", "parent", "labels", "description",
 ]
 
 
@@ -102,6 +106,23 @@ def prepare_report_dir(out_root, report_dir, sprint_id, log):
     raw_dir = os.path.join(report_dir, RAW_DIR)
     os.makedirs(raw_dir)
     return raw_dir
+
+
+def previous_sprint(sprint, board_sprints):
+    """The closed sprint, of those the board lists, that started last before
+    `sprint`, or None. Work still in it when it closed and in `sprint` at its
+    start is carried over. The board's own sprints aren't told apart from
+    others it lists: after a team moves to a new board, its earlier sprints
+    keep the old board as their origin."""
+    start = sprint.get("startDate")
+    if not start:
+        return None
+    candidates = [
+        s for s in board_sprints
+        if (s.get("state") or "").lower() == "closed" and str(s["id"]) != str(sprint["id"])
+        and s.get("startDate") and s.get("completeDate") and parse_ts(s["startDate"]) < parse_ts(start)
+    ]
+    return max(candidates, key=lambda s: parse_ts(s["startDate"]), default=None)
 
 
 def project_key_of(args, issues):
@@ -163,6 +184,10 @@ def main():
         raise SystemExit(
             "can't tell the sprint's board, which Jira's sprint report needs; pass --board")
 
+    previous = previous_sprint(sprint, client.sprints_for_board(board_id, state="closed"))
+    log(f"previous sprint: {previous.get('name')} (id {previous['id']})" if previous
+        else "no previous sprint on the board")
+
     flagged_field, points_field = client.flagged_and_points_fields(board_id)
     if not points_field:
         log("warning: no story points field found; points will read as 0")
@@ -191,14 +216,14 @@ def main():
         changelogs = dict(zip(all_keys, pool.map(
             lambda key: client.field_changes(key, tracked), all_keys)))
 
-    # Epics an issue belonged to before a change of parent, which the issues'
-    # own fields no longer name.
-    current_parents = {str(parent_id) for i in sprint_issues + punted_issues
-                       if (parent_id := nested(i.get("fields"), ["parent", "id"]))}
-    past_parents = sorted({str(c[side]) for changes in changelogs.values() for c in changes
-                           if c["field"] == "parent" for side in ("from", "to") if c[side]}
-                          - current_parents)
-    parents = client.issues_by_ids(past_parents, ["summary"])
+    # Every epic: the issues' current parents, whose descriptions their own
+    # fields don't carry, and those they belonged to before a change of
+    # parent, which their fields no longer name.
+    parent_ids = sorted({str(parent_id) for i in sprint_issues + punted_issues
+                         if (parent_id := nested(i.get("fields"), ["parent", "id"]))}
+                        | {str(c[side]) for changes in changelogs.values() for c in changes
+                           if c["field"] == "parent" for side in ("from", "to") if c[side]})
+    parents = client.issues_by_ids(parent_ids, ["summary", "description"])
 
     # Comments are fetched only for blocker candidates, as they were at the
     # moment the report describes; build_sprint_data.py computes the same list
@@ -228,6 +253,7 @@ def main():
     raw_dir = prepare_report_dir(out_root, report_dir, sprint_id, log)
 
     write_json(os.path.join(raw_dir, "sprint.json"), sprint)
+    write_json(os.path.join(raw_dir, "previous_sprint.json"), previous)
     write_json(os.path.join(raw_dir, "sprint_issues.json"), sprint_issues)
     write_json(os.path.join(raw_dir, "sprint_report.json"), report)
     write_json(os.path.join(raw_dir, "punted_issues.json"), punted_issues)

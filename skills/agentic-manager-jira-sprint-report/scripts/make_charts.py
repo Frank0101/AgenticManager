@@ -6,19 +6,25 @@ Usage:
     python3 make_charts.py --report-dir <report_dir>
     python3 make_charts.py --report-dir <report_dir> --print-series   # burndown numbers only
 
-Writes outcome-stories.svg, outcome-points.svg and burndown.svg.
+Writes outcome-tickets.svg, outcome-pts.svg and burndown.svg.
 
-Outcome charts: two bars on one shared scale, the original commitment and the
-extra scope added later, each split into Completed and Not completed. They
-cover issues currently in the sprint; removed scope lives in the timeline
-table. "Completed" is counted as in Jira's sprint report. The points chart's
-title notes partial estimation when some issues have no points.
+Outcome charts: the final situation of the spells (see build_sprint_data.py),
+in three bars on one shared scale, each split into Completed, Not completed
+and Descoped: the original commitment's work carried over from the previous
+sprint, its new work, and the extra scope added later. An original spell that
+ended with the ticket leaving is Descoped, whatever its state; an extra spell
+that did isn't counted, as it was never part of the commitment. The original
+commitment is the sprint target's pool. A bracket joins the first two as the original commitment. The longest bar spans
+the full bar width and the others are sized against it. Both charts share one
+layout: the same width, the labels in the same place, and the bars taking
+the width the labels leave. The points chart's title notes partial estimation when some issues
+have no points.
 
 Burndown: points remaining for every calendar day of the sprint (through the
 close date, if it closed after its end date), four series.
 
-  Committed (blue, solid)          remaining original commitment.
-  Committed + extra (violet, dash) the same plus scope added later; never
+  Commitment (blue, solid)         remaining original commitment.
+  Commitment + extra (violet, dash) the same plus scope added later; never
                                    below blue.
   Ideal (green, dashed)            the commitment, held through the start day,
                                    then burned evenly per later weekday to zero
@@ -27,23 +33,28 @@ close date, if it closed after its end date), four series.
 
 Rules the burndown follows, checked by validate_series before drawing:
 
-  * The baseline is the original commitment still to do: what was in the
-    sprint at its start (issues with `addedMidSprint` false), less what was
-    already Done then, with estimates as they stood at the start.
-  * Blue and violet are end-of-day readings. The start day gets two points at
-    the same x: the baseline, then that day's close, drawn as a vertical movement
-    reflecting closures, removals, reopening and estimate changes that day.
-  * The ideal assumes no burn on the start day; it starts sloping on the next
-    weekday.
+  * Both lines replay the tickets' events (see build_sprint_data.py), the
+    same events every other part of the report is built from: on each day,
+    the open points of the tickets then in the sprint, at that day's
+    estimates.
+  * Blue and violet are end-of-day readings, except on the last day, which
+    stops at the exact close (or, for an active sprint, the fetch). The start
+    day gets two points at the same x: the baseline, which is the whole
+    original commitment at the start, at the estimates it had then and
+    including work already Done, then that day's end-of-day reading, drawn as
+    a vertical movement reflecting work already Done at the start and that
+    day's closures, removals, reopening and estimate changes.
+  * The ideal starts from the same baseline and assumes no burn on the start
+    day; it starts sloping on the next weekday.
   * Each day has one x position: its values, its tick and its weekend band
     share it. A weekend day's band runs from the previous day's tick to its
     own, because the space between two ticks is the later day passing.
   * Actuals stop at today (active), or at the end date if an active sprint
     has run past it, or at the close date (closed). For a closed
-    sprint the last value is what was carried over: work finished after the
-    close, even later the same day, still counts as open. Each earlier day
-    uses its end-of-day status, estimate and membership; reopening and
-    re-estimation appear on the day they happened. An active snapshot uses
+    sprint the last value is what was left open: work finished after the
+    close, even later the same day, still counts as open. Reopening,
+    re-estimation and removals appear on the day they happened; extra work
+    appears while in the sprint and leaves the burndown when removed. An active snapshot uses
     the fetch instant for the current day.
 
 Colours were checked for colour-blind separation; blue and violet are close
@@ -52,10 +63,11 @@ the legend. Keep the four patterns distinct.
 """
 import argparse
 import html
+import math
 import os
 from datetime import date, timedelta
 
-from common import CHART_FILES, DATA_FILE, display_date, load_json, plural, unit, write_report_file
+from common import CHART_FILES, DATA_FILE, display_date, load_json, plural, unit, whole_percentage, write_report_file
 
 FONT = "-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
 SURFACE = "#fcfcfb"
@@ -65,16 +77,23 @@ GRID = "#e8e7e4"
 WEEKEND = "#e7e4dc"
 
 SERIES = {
-    "committed": {"label": "Committed", "color": "#2a78d6", "width": 2.4, "dash": None},
-    "total": {"label": "Committed + extra", "color": "#9c27b0", "width": 2.0, "dash": "14 4"},
-    "ideal": {"label": "Ideal (committed)", "color": "#1a7f37", "width": 1.8, "dash": "7 5"},
+    "committed": {"label": "Commitment", "color": "#2a78d6", "width": 2.4, "dash": None},
+    "total": {"label": "Commitment + extra", "color": "#9c27b0", "width": 2.0, "dash": "14 4"},
+    "ideal": {"label": "Ideal (commitment)", "color": "#1a7f37", "width": 1.8, "dash": "7 5"},
     "spread": {"label": "Spread vs ideal", "color": "#d92d20", "width": 1.8, "dash": "2 4"},
 }
-OUTCOME_ROWS = [("original", "Original commitment"),
-                ("extra", "Extra (added mid-sprint)")]
+# The outcome rows that split the original commitment; the third is the extra
+# scope.
+ORIGINAL_ROWS = ("carried_in", "new")
+# Both outcome charts share one layout: this width (more only if the labels
+# need it), with the bars taking this share of it, flush with the right margin.
+OUTCOME_WIDTH = 960
+OUTCOME_MIN_BAR_SHARE = 0.5
+OUTCOME_MARGIN = 20
 OUTCOME_SEGMENTS = [
     ("completed", "Completed", "#0ca30c", "#ffffff"),
     ("not_completed", "Not completed", "#fab219", INK),
+    ("removed", "Descoped", "#b5b2aa", INK),
 ]
 
 
@@ -86,9 +105,19 @@ def fmt(value):
     return f"{value:g}"
 
 
+# Character widths in em, after Helvetica and Arial; anything else counts as a
+# lower-case letter.
+CHAR_WIDTHS = {**dict.fromkeys("ijl|", 0.23), **dict.fromkeys(" ftI.,:;'!/", 0.28),
+               **dict.fromkeys("r()-", 0.34), **dict.fromkeys("cksvxyz", 0.5),
+               **dict.fromkeys("FTZ", 0.61), **dict.fromkeys("ABEKPSVXY", 0.67),
+               **dict.fromkeys("CDHNRUw", 0.72), **dict.fromkeys("GOQ", 0.78),
+               **dict.fromkeys("mM", 0.84), "%": 0.89, "W": 0.95, "→": 1.0}
+
+
 def text_width(text, size, bold=False):
-    """Rough rendered width; enough to decide whether a label fits a bar."""
-    return len(str(text)) * size * (0.62 if bold else 0.56)
+    """Estimated rendered width, close enough to size the label column and to
+    decide whether a label fits a bar."""
+    return sum(CHAR_WIDTHS.get(c, 0.56) for c in str(text)) * size * (1.08 if bold else 1)
 
 
 def text(x, y, content, size=12, color=INK, anchor="start", bold=False, extra=""):
@@ -106,62 +135,151 @@ def svg(width, height, body):
 # --- outcome charts
 
 def unit_label(n, is_points):
-    return f"story {plural(n, 'point', 'points')}" if is_points else unit(n)
+    return plural(n, "pt", "pts") if is_points else unit(n)
+
+
+def outcome_segments(data):
+    """The outcome segments, with the not-completed one called Open while the
+    sprint runs."""
+    return [(seg, ("Open" if seg == "not_completed" and data["sprint_status"] == "active" else label), color, ink)
+            for seg, label, color, ink in OUTCOME_SEGMENTS]
+
+
+def outcome_rows(data):
+    """[(row key, label)]: the original commitment split into carry-over and
+    new work, then the extra scope."""
+    previous = data["previous_sprint"]
+    carried = f"Carried over from {previous['name']}" if previous else "Carried over (no previous sprint)"
+    return [("carried_in", carried), ("new", "New commitment"), ("extra", "Extra")]
+
+
+def outcome_labels(data, is_points):
+    """What one outcome chart writes beside its bars: (breakdown, totals,
+    grand total, [(row, label, sublabel)], the bracket's lines)."""
+    breakdown = data["outcome_breakdown_points" if is_points else "outcome_breakdown_counts"]
+    rows = outcome_rows(data)
+    totals = {row: sum(breakdown[f"{row}_{seg}"] for seg, *_ in OUTCOME_SEGMENTS)
+              for row in ("original", *(r for r, _ in rows))}
+    grand = totals["original"] + totals["extra"]
+
+    def sublabel(row):
+        text_ = f"{fmt(totals[row])} {unit_label(totals[row], is_points)}"
+        if row in ORIGINAL_ROWS and totals["original"]:
+            text_ += f" ({whole_percentage(totals[row], totals['original'])} of commitment)"
+        elif row == "extra" and grand:
+            text_ += f" ({whole_percentage(totals[row], grand)} of total)"
+        return text_
+
+    group_lines = [("Commitment", 12, INK),
+                   (f"{fmt(totals['original'])} {unit_label(totals['original'], is_points)}", 11, MUTED)]
+    if grand:
+        group_lines.append(
+            (f"({whole_percentage(totals['original'], grand)} of total)", 11, MUTED))
+    return breakdown, totals, grand, [(row, label, sublabel(row)) for row, label in rows], group_lines
+
+
+def outcome_layout(data):
+    """(width, bracket position, bar start), shared by the tickets and points
+    charts so they look alike: the label column fits the longer labels of
+    either chart and the bars take the rest of the width. The width grows past
+    OUTCOME_WIDTH only to keep the bars at OUTCOME_MIN_BAR_SHARE of it."""
+    group_w = label_w = 0
+    for is_points in (False, True):
+        *_, rows, group_lines = outcome_labels(data, is_points)
+        group_w = max(group_w, *(text_width(t, size, i == 0)
+                      for i, (t, size, _) in enumerate(group_lines)))
+        label_w = max(label_w, *(max(text_width(label, 12),
+                      text_width(sub, 11)) for _, label, sub in rows))
+    bracket_x = math.ceil(OUTCOME_MARGIN + group_w + 8)
+    left = math.ceil(bracket_x + 10 + label_w + 12)
+    width = max(OUTCOME_WIDTH, math.ceil(
+        (left + OUTCOME_MARGIN) / (1 - OUTCOME_MIN_BAR_SHARE)))
+    return width, bracket_x, left
 
 
 def outcome_chart(data, is_points):
-    breakdown = data["commitment_breakdown_points" if is_points else "commitment_breakdown_counts"]
-    totals = {row: sum(breakdown[f"{row}_{seg}"]
-                       for seg, *_ in OUTCOME_SEGMENTS) for row, _ in OUTCOME_ROWS}
-    grand = sum(totals.values())
-
+    breakdown, totals, grand, rows, group_lines = outcome_labels(
+        data, is_points)
     title = f"{data['sprint_name']}: Sprint Outcome ({fmt(grand)} {unit_label(grand, is_points)})"
     estimated, total_issues = data["points_estimated_issue_count"], data["points_total_issue_count"]
     if is_points and estimated < total_issues:
-        title += f" ({estimated}/{total_issues} issues estimated)"
+        title += f" ({estimated}/{total_issues} tickets estimated)"
 
-    left, bar_w, row_h, top = 200, 520, 56, 56
-    body = [text(20, 30, title, size=16, bold=True)]
-    right_edge = left + bar_w
-    for index, (row, row_label) in enumerate(OUTCOME_ROWS):
+    # Columns, left to right: the bracket's label; the bracket; the row
+    # labels; the bars, ending at the right margin. Bars share one scale, set
+    # by the longest, which spans the full bar width.
+    width, bracket_x, left = outcome_layout(data)
+    bar_w = width - OUTCOME_MARGIN - left
+    row_h, top, bar_h = 56, 56, 40
+    scale = bar_w / (max(totals[row] for row, *_ in rows) or 1)
+    body = [text(OUTCOME_MARGIN, 30, title, size=16, bold=True)]
+    for index, (row, row_label, sub) in enumerate(rows):
         y = top + index * row_h
         body.append(text(left - 12, y + 16, row_label, anchor="end"))
-        body.append(text(left - 12, y + 32, f"({fmt(totals[row])} {unit_label(totals[row], is_points)})",
-                         size=11, color=MUTED, anchor="end"))
+        body.append(text(left - 12, y + 32, sub,
+                    size=11, color=MUTED, anchor="end"))
         x, segments = left, []
-        for seg, seg_label, color, label_color in OUTCOME_SEGMENTS:
+        for seg, seg_label, color, label_color in outcome_segments(data):
             value = breakdown[f"{row}_{seg}"]
             if not value:
                 continue
-            width = bar_w * value / grand if grand else 0
-            pct = 100 * value / totals[row]
+            seg_w = value * scale
+            pct = whole_percentage(value, totals[row])
             segments.append(
-                (x, width, value, pct, seg_label, color, label_color))
-            x += width
-        for sx, width, *_rest, color, _ in segments:
-            body.append(f'<rect x="{sx:.1f}" y="{y:.1f}" width="{width:.1f}" height="40" fill="{color}" '
+                (x, seg_w, value, pct, seg_label, color, label_color))
+            x += seg_w
+        for sx, seg_w, *_rest, color, _ in segments:
+            body.append(f'<rect x="{sx:.1f}" y="{y:.1f}" width="{seg_w:.1f}" height="{bar_h}" fill="{color}" '
                         f'stroke="{SURFACE}" stroke-width="2"/>')
-        labels = [f"{fmt(v)} ({p:.0f}%)" for _, _, v, p, *_ in segments]
-        # Labels go inside their segments only if every one of them fits;
-        # otherwise the row's labels are joined to the right of the bar.
+        labels = [f"{fmt(v)} ({p})" for _, _, v, p, *_ in segments]
+        joined = "; ".join(f"{s[4]}: {lbl}" for lbl,
+                           s in zip(labels, segments))
+        # Labels go inside their segments if every one of them fits; otherwise
+        # the row's labels are joined to the right of the bar. A bar leaving
+        # no room for them keeps each label inside its segment, shortened to
+        # the bare number where the full one doesn't fit, and joins only those
+        # that fit neither way to the right of the bar or over its start.
         if all(text_width(lbl, 12, True) + 8 <= s[1] for lbl, s in zip(labels, segments)):
-            for lbl, (sx, width, *_rest, label_color) in zip(labels, segments):
-                body.append(text(sx + width / 2, y + 24, lbl,
-                            anchor="middle", bold=True, color=label_color))
-        elif segments:
-            joined = "; ".join(f"{s[4]}: {lbl}" for lbl,
-                               s in zip(labels, segments))
-            body.append(text(x + 8, y + 24, joined, bold=True))
-            right_edge = max(right_edge, x + 8 + text_width(joined, 12, True))
+            inside, outside = list(zip(labels, segments)), []
+        elif x + 8 + text_width(joined, 12, True) <= width - OUTCOME_MARGIN:
+            inside, outside = [], list(zip(labels, segments))
+        else:
+            inside, outside = [], []
+            for lbl, seg in zip(labels, segments):
+                short = fmt(seg[2])
+                if text_width(lbl, 12, True) + 8 <= seg[1]:
+                    inside.append((lbl, seg))
+                elif text_width(short, 12, True) + 8 <= seg[1]:
+                    inside.append((short, seg))
+                else:
+                    outside.append((lbl, seg))
+        for lbl, (sx, seg_w, *_rest, label_color) in inside:
+            body.append(text(sx + seg_w / 2, y + 24, lbl,
+                        anchor="middle", bold=True, color=label_color))
+        if outside:
+            joined = "; ".join(f"{seg[4]}: {lbl}" for lbl, seg in outside)
+            fits = x + 8 + text_width(joined, 12,
+                                      True) <= width - OUTCOME_MARGIN
+            body.append(text(x + 8 if fits else left +
+                        8, y + 24, joined, bold=True))
 
-    legend_y = top + len(OUTCOME_ROWS) * row_h + 14
+    # The bracket joins the two original rows, from the top of the first bar
+    # to the bottom of the second.
+    y1, y2 = top, top + row_h + bar_h
+    body.append(f'<path d="M {bracket_x + 8:.1f} {y1} H {bracket_x:.1f} V {y2} H {bracket_x + 8:.1f}" '
+                f'fill="none" stroke="{MUTED}" stroke-width="1.5"/>')
+    middle = (y1 + y2) / 2
+    for i, (line, size, color) in enumerate(group_lines):
+        body.append(text(bracket_x - 8, middle + 4 + (i - (len(group_lines) - 1) / 2) * 15, line, size=size, color=color, anchor="end",
+                         bold=i == 0))
+
+    legend_y = top + len(rows) * row_h + 14
     lx = left
-    for _, seg_label, color, _ in OUTCOME_SEGMENTS:
+    for _, seg_label, color, _ in outcome_segments(data):
         body.append(
-            f'<rect x="{lx}" y="{legend_y - 10}" width="12" height="12" fill="{color}"/>')
+            f'<rect x="{lx:.1f}" y="{legend_y - 10}" width="12" height="12" fill="{color}"/>')
         body.append(text(lx + 18, legend_y, seg_label))
         lx += 18 + text_width(seg_label, 12) + 24
-    width = max(right_edge + 20, text_width(title, 16, True) + 40)
     return svg(width, legend_y + 18, body)
 
 
@@ -183,14 +301,12 @@ def is_weekday(day):
 
 
 def build_series(data):
-    issues = data["issues"] + data["removed_issues"]
     actuals = {parse_date(row["date"]): row for row in data["burndown"]}
     sprint_start, sprint_end = parse_date(
         data["sprint_start"]), parse_date(data["sprint_end"])
     last_actual = max(actuals)
 
-    baseline = sum(i["startState"]["storyPoints"] or 0 for i in issues
-                   if not i["addedMidSprint"] and not i["startState"]["done"])
+    baseline = data["burndown_baseline"]
     weekdays = sum(1 for d in daterange(
         sprint_start + timedelta(days=1), sprint_end) if is_weekday(d))
 
@@ -221,16 +337,13 @@ def build_series(data):
 def validate_series(series, data):
     """Fail before drawing if the series breaks the chart's rules."""
     rows, baseline, problems = series["rows"], series["baseline"], []
-    # The timeline's start row adds the original commitment, plus any extra
-    # work that joined later that day; the baseline is the part not yet Done.
-    issues = {i["key"]: i for i in data["issues"] + data["removed_issues"]}
-    start_row = next(
-        (r for r in data["scope_timeline"] if r["date"] == data["sprint_start"]), None)
-    committed = sum(issues[k]["startState"]["storyPoints"] or 0 for k in (start_row or {}).get("added_keys", [])
-                    if not issues[k]["addedMidSprint"] and not issues[k]["startState"]["done"])
+    # The baseline is the whole original commitment at the start: its
+    # committed events, Done or not, at the estimate they had then.
+    committed = sum(e["points"] or 0 for t in data["spells"] for e in t["events"][:1]
+                    if e["type"] == "committed")
     if committed != baseline:
         problems.append(
-            f"baseline {fmt(baseline)} differs from the open commitment added at the start {fmt(committed)}")
+            f"baseline {fmt(baseline)} differs from the commitment at the start {fmt(committed)}")
     if len(rows) < 2 or rows[1]["date"] != series["sprint_start"]:
         problems.append(
             "the start day needs a baseline point and an end-of-day point")
@@ -290,7 +403,7 @@ def burndown_chart(data, series):
     status_word = "sprint in progress" if data["sprint_status"] == "active" else "sprint closed"
     body = [
         text(left, 30, f"{data['sprint_name']}: Burndown", size=17, bold=True),
-        text(left, 52, f"Committed {fmt(series['baseline'])} pts at the start on "
+        text(left, 52, f"Commitment of {fmt(series['baseline'])} pts at the start on "
              f"{display_date(series['sprint_start'].isoformat())} · ideal paced over {series['weekdays']} later "
              f"weekdays · actuals to {display_date(series['last_actual'].isoformat())} ({status_word})",
              size=11, color=MUTED),
@@ -310,7 +423,7 @@ def burndown_chart(data, series):
         body.append(text(left - 8, y + 4, fmt(tick + 0),
                     size=11, color=MUTED, anchor="end"))
         tick += step
-    body.append(text(16, top + plot_h / 2, "Story points remaining", size=12, anchor="middle",
+    body.append(text(16, top + plot_h / 2, "Remaining pts", size=12, anchor="middle",
                      extra=f' transform="rotate(-90 16 {top + plot_h / 2:.1f})"'))
 
     cutoff = x_of(series["last_actual"])

@@ -72,6 +72,9 @@ class ReportTest(unittest.TestCase):
     def make_report(self):
         data = self.build()
         self.assert_runs("make_charts.py")
+        # The agent writes a sentence for each group of each epic, which
+        # depends on the data the test built.
+        self.content["epic_commentary"] = fixture.epic_commentary(data)
         with open(os.path.join(self.dir, "content.json"), "w", encoding="utf-8") as f:
             json.dump(self.content, f)
         self.assert_runs("make_report.py")
@@ -92,120 +95,159 @@ class ReportTest(unittest.TestCase):
 
 
 class BuildTest(ReportTest):
-    def issues(self, data):
-        return {i["key"]: i for i in data["issues"] + data["removed_issues"]}
+    """The fixture sprint, as the model sees it (see build_sprint_data.py):
+    original PROJ-1 (carried over), 2, 3 (Done at the start, descoped), 4
+    (descoped), 6 (left: descoped; came back as extra work, Duplicate), 8
+    (completed, descoped) and 10 (Done at the start); extra PROJ-5 and 7;
+    PROJ-11 left before the start."""
 
-    def test_commitment_is_what_was_in_the_sprint_at_the_start(self):
+    def spells(self, data):
+        """{key: [its spells]}."""
+        found = {}
+        for spell in data["spells"]:
+            found.setdefault(spell["key"], []).append(spell)
+        return found
+
+    def tickets(self, data):
+        """{key: its last spell}."""
+        return {key: spells[-1] for key, spells in self.spells(data).items()}
+
+    def kinds(self, spell):
+        return [f"{e['type']} {e['date'][8:]}" for e in spell["events"]]
+
+    def test_who_belongs(self):
         data = self.build()
-        issues = self.issues(data)
         self.assertEqual(data["sprint_start"], "2026-03-04")
-        # Added the day before the start: original. Added the same day, after it: extra.
-        self.assertFalse(issues["PROJ-2"]["addedMidSprint"])
-        self.assertTrue(issues["PROJ-5"]["addedMidSprint"])
-        self.assertEqual(data["added_mid_sprint_keys"], ["PROJ-5", "PROJ-7"])
+        self.assertEqual({k: [t["scope"] for t in spells] for k, spells in self.spells(data).items()}, {
+            "PROJ-1": ["original"], "PROJ-2": ["original"], "PROJ-3": ["original"], "PROJ-4": ["original"],
+            "PROJ-5": ["extra"], "PROJ-6": ["original", "extra"], "PROJ-7": ["extra"], "PROJ-8": ["original"],
+            "PROJ-10": ["original"]})
+        self.assertEqual(data["left_before_start_keys"], ["PROJ-11"])
 
-    def test_original_work_enters_at_the_start(self):
-        timeline = self.build()["scope_timeline"]
-        self.assertEqual(timeline[0]["date"], "2026-03-04")
-        self.assertEqual(timeline[0]["added_keys"],
-                         ["PROJ-1", "PROJ-2", "PROJ-3", "PROJ-4", "PROJ-5", "PROJ-6", "PROJ-8", "PROJ-10"])
+    def test_outcomes(self):
+        data = self.build()
+        self.assertEqual({k: [t["outcome"] for t in spells] for k, spells in self.spells(data).items()}, {
+            "PROJ-1": ["completed"], "PROJ-2": ["not_completed"], "PROJ-3": ["removed"], "PROJ-4": ["removed"],
+            "PROJ-5": ["completed"], "PROJ-6": ["removed", "completed"], "PROJ-7": ["not_completed"],
+            "PROJ-8": ["removed"], "PROJ-10": ["completed"]})
+        self.assertEqual(
+            [i["key"] for i in data["non_delivery_closures"]["issues"]], ["PROJ-6"])
+        outcomes = ("completed", "not_completed", "removed")
+        self.assertEqual({row: [data["outcome_breakdown_counts"][f"{row}_{o}"] for o in outcomes]
+                          for row in ("original", "extra")}, {"original": [2, 1, 4], "extra": [2, 1, 0]})
+        self.assertEqual([data["outcome_breakdown_points"]
+                         [f"original_{o}"] for o in outcomes], [4, 5, 8])
+
+    def test_events(self):
+        spells = self.spells(self.build())
+        tickets = self.tickets(self.build())
+        self.assertEqual({k: [event for t in found for event in self.kinds(t)] for k, found in spells.items()}, {
+            "PROJ-1": ["committed 04", "completed 06"],
+            "PROJ-2": ["committed 04"],
+            "PROJ-3": ["committed 04", "removed 05"],
+            "PROJ-4": ["committed 04", "removed 09"],
+            "PROJ-5": ["joined 04", "completed 10"],
+            "PROJ-6": ["committed 04", "removed 05", "joined 06", "completed 11"],
+            "PROJ-7": ["joined 10"],
+            "PROJ-8": ["committed 04", "completed 05", "removed 06"],
+            "PROJ-10": ["committed 04"]})
+        self.assertEqual([tickets[k]["events"][0]["done"] for k in ("PROJ-3", "PROJ-10", "PROJ-2")],
+                         [True, True, False])
+        self.assertEqual(tickets["PROJ-7"]["events"][0]
+                         ["at"], tickets["PROJ-7"]["created"])
 
     def test_edited_start_date_is_used_as_is(self):
+        # Everything joined after a start moved back to 02/03: all extra, and
+        # the extra work later removed was never part of the sprint.
         self.raw["sprint.json"]["startDate"] = "2026-03-02T09:00:00.000Z"
         data = self.build()
         self.assertEqual(data["sprint_start"], "2026-03-02")
-        self.assertEqual(
-            len(data["added_mid_sprint_keys"]), len(data["issues"]))
+        self.assertEqual({t["scope"] for t in data["spells"]}, {"extra"})
+        self.assertEqual([t["key"] for t in data["spells"] if not t["counted"]],
+                         ["PROJ-3", "PROJ-4", "PROJ-6", "PROJ-8", "PROJ-11"])
 
     def test_issue_in_the_sprint_since_creation_with_only_a_removal(self):
         # Jira logs no add for a sprint set when the issue was created.
         self.raw["changelogs/PROJ-4.json"] = [fixture.removed(9, to="8")]
-        data = self.build()
-        proj_4 = self.issues(data)["PROJ-4"]
-        self.assertFalse(proj_4["addedMidSprint"])
-        self.assertEqual(data["removed_summary"]["descoped_incomplete"], {
-                         "count": 1, "points": 3})
+        proj_4 = self.tickets(self.build())["PROJ-4"]
+        self.assertEqual((proj_4["scope"], self.kinds(
+            proj_4)), ("original", ["committed 04", "removed 09"]))
         self.assert_runs("make_charts.py", "--print-series")
 
-    def test_left_before_the_start_is_not_reported(self):
-        data = self.build()
-        self.assertNotIn("PROJ-11", self.issues(data))
-        self.assertEqual(data["removed_before_start_keys"], ["PROJ-11"])
+    def test_carry_over_is_original_work_in_the_previous_sprint_when_it_closed(self):
+        # PROJ-1 and PROJ-3 moved in when Sprint 6 closed. PROJ-2 left Sprint 6
+        # before it closed, and PROJ-5 was in it then but joined after the start.
+        data, md = self.make_report()
+        self.assertEqual([k for k, t in self.tickets(
+            data).items() if t["carriedIn"]], ["PROJ-1", "PROJ-3"])
+        self.assertEqual(data["previous_sprint"]["name"], "Sprint 6")
+        counts, points = data["outcome_breakdown_counts"], data["outcome_breakdown_points"]
+        outcomes = ("completed", "not_completed", "removed")
+        self.assertEqual(([counts[f"carried_in_{o}"] for o in outcomes], [points[f"carried_in_{o}"] for o in outcomes]),
+                         ([1, 0, 1], [3, 0, 2]))
+        for c in (counts, points):
+            for outcome in outcomes:
+                self.assertEqual(
+                    c[f"original_{outcome}"], c[f"carried_in_{outcome}"] + c[f"new_{outcome}"])
+        self.assertIn("| Carried over from Sprint 6 | 2 tickets \\| 29% of commitment (5 pts \\| 29%); 1 ticket (3 pts) "
+                      "completed |", md)
 
-    def test_issue_created_in_the_running_sprint_is_extra(self):
-        issue = self.issues(self.build())["PROJ-7"]
-        self.assertEqual(issue["enteredSprintAt"], issue["created"])
-        self.assertTrue(issue["addedMidSprint"])
-
-    def test_outcome_mirrors_the_board(self):
-        data = self.build()
-        self.assertEqual(data["outcome_counts"], {
-                         "completed": 4, "carried_over": 2})
-        self.assertEqual(data["outcome_points"], {
-                         "completed": 7, "carried_over": 6})
+    def test_descoped_extra_work_is_history_not_final_situation(self):
+        # PROJ-5, extra, is descoped after completing: the timeline and the
+        # burndown show it, the final situation doesn't count it.
+        self.raw["changelogs/PROJ-5.json"] = self.raw["changelogs/PROJ-5.json"] + [
+            fixture.removed(11, to="8")]
+        self.raw["sprint_issues.json"] = [
+            i for i in self.raw["sprint_issues.json"] if i["key"] != "PROJ-5"]
+        self.raw["punted_issues.json"] = self.raw["punted_issues.json"] + [
+            i for i in fixture.CURRENT if i["key"] == "PROJ-5"]
+        report = self.raw["sprint_report.json"]["contents"]
+        report["completedIssues"] = [
+            e for e in report["completedIssues"] if e["key"] != "PROJ-5"]
+        report["puntedIssues"] = report["puntedIssues"] + [{"key": "PROJ-5"}]
+        before = self.build()
+        proj_5 = self.tickets(before)["PROJ-5"]
+        self.assertEqual((proj_5["scope"], proj_5["outcome"],
+                         proj_5["counted"]), ("extra", "removed", False))
+        self.assertIn(("PROJ-5", "removed"), [(e["key"], e["type"])
+                      for row in before["timeline"] for e in row["events"]])
+        self.assertEqual(before["outcome_breakdown_counts"]
+                         ["extra_completed"], 1)  # PROJ-6 only
+        burndown = {r["date"]: r["total"] - r["committed"]
+                    for r in before["burndown"]}
+        # Extra open: PROJ-5 (2) from the 4th; with PROJ-6's new spell (1) on the 9th.
         self.assertEqual(
-            [i["key"] for i in data["non_delivery_closures"]["issues"]], ["PROJ-6"])
+            (burndown["2026-03-04"], burndown["2026-03-09"]), (2, 3))
 
     def test_sub_tasks_are_left_out(self):
-        data = self.build()
-        self.assertNotIn("PROJ-9", [i["key"] for i in data["issues"]])
+        self.assertNotIn("PROJ-9", self.tickets(self.build()))
 
-    def test_removals_are_split(self):
-        summary = self.build()["removed_summary"]
-        self.assertEqual(summary, {"descoped_incomplete": {"count": 1, "points": 3},
-                                   "already_done_on_arrival": {"count": 1, "points": 2},
-                                   "completed_before_removal": {"count": 1, "points": 2},
-                                   "total": {"count": 3, "points": 7}})
-
-    def test_done_at_the_start_is_credited_at_the_start(self):
-        # PROJ-10 was finished after joining but before the start. PROJ-3 arrived
-        # Done too, but was removed: it is only a removal, never a completion.
-        data = self.build()
-        start = data["scope_timeline"][0]
-        self.assertEqual(start["already_done_original_keys"], ["PROJ-10"])
-        self.assertTrue(self.issues(data)["PROJ-10"]["alreadyDoneOnArrival"])
-        self.assertTrue(self.issues(data)["PROJ-3"]["alreadyDoneOnArrival"])
-        self.assertFalse(any("PROJ-3" in r["completed_original_keys"] + r["already_done_original_keys"]
-                             for r in data["scope_timeline"]))
-
-    def test_cross_day_return_is_recorded(self):
-        timeline = {r["date"]: r for r in self.build()["scope_timeline"]}
-        self.assertIn("PROJ-6", timeline["2026-03-05"]["departure_keys"])
-        self.assertEqual(timeline["2026-03-06"]["readded_keys"], ["PROJ-6"])
-
-    def test_same_day_return_cancels_out(self):
+    def test_same_day_leave_and_return_is_a_descope_then_an_addition(self):
         self.raw["changelogs/PROJ-6.json"] = [fixture.added(4), fixture.removed(5, "09:00"),
                                               fixture.added(5, "17:00")]
-        timeline = self.build()["scope_timeline"]
-        self.assertFalse(
-            any("PROJ-6" in r["departure_keys"] + r["readded_keys"] for r in timeline))
+        spells = self.spells(self.build())["PROJ-6"]
+        self.assertEqual([(t["scope"], self.kinds(t)) for t in spells],
+                         [("original", ["committed 04", "removed 05"]), ("extra", ["joined 05"])])
 
-    def test_completion_after_close_counts_as_carried_over(self):
+    def test_completion_after_the_close_is_not_completed(self):
         # The sprint closed at 16:00 on 13/03; PROJ-6 was closed an hour later.
         changes = self.raw["changelogs/PROJ-6.json"]
         changes[-1] = fixture.completed((13, "17:00"), "Duplicate")
         self.jira_did_not_complete_proj_6()
-        data = self.build()
-        proj_6 = self.issues(data)["PROJ-6"]
+        proj_6 = self.tickets(self.build())["PROJ-6"]
         self.assertEqual(
-            (proj_6["status"], proj_6["carriedOver"]), ("In Progress", True))
-        self.assertEqual(data["outcome_counts"], {
-                         "completed": 3, "carried_over": 3})
-        self.assertFalse(
-            any("PROJ-6" in r["completed_original_keys"] for r in data["scope_timeline"]))
+            (proj_6["status"], proj_6["outcome"]), ("In Progress", "not_completed"))
+        self.assertNotIn("completed 13", self.kinds(proj_6))
 
-    def test_reopened_before_the_close_is_not_done(self):
+    def test_reopened_before_the_close_is_not_completed(self):
         self.issue(
             "PROJ-6")["fields"]["status"] = fixture.status_field("To Do")
         self.raw["changelogs/PROJ-6.json"].append(
             fixture.moved((12,), "Duplicate", "To Do"))
         self.jira_did_not_complete_proj_6()
-        data = self.build()
-        proj_6 = self.issues(data)["PROJ-6"]
-        self.assertIsNone(proj_6["completedAt"])
-        self.assertTrue(proj_6["carriedOver"])
-        self.assertFalse(
-            any("PROJ-6" in r["completed_original_keys"] for r in data["scope_timeline"]))
+        proj_6 = self.tickets(self.build())["PROJ-6"]
+        self.assertEqual((proj_6["outcome"], self.kinds(proj_6)[-2:]),
+                         ("not_completed", ["completed 11", "reopened 12"]))
 
     def test_later_edits_change_nothing(self):
         # What happened to the issues after the sprint closed, as Jira shows it
@@ -238,12 +280,14 @@ class BuildTest(ReportTest):
     def test_blocker_candidates(self):
         self.assertEqual(self.build()["blocker_candidate_keys"], ["PROJ-7"])
 
-    def test_epics_include_removed_work_and_no_epic(self):
+    def test_epics(self):
+        # PROJ-100: PROJ-1 and 10 completed, PROJ-2 open, PROJ-6 and 8
+        # descoped; PROJ-6 completed again as extra work.
         epics = {e["key"]: e for e in self.build()["epics"]}
         self.assertEqual(set(epics), {"PROJ-100", "PROJ-101", "__no_epic__"})
         self.assertEqual(epics["PROJ-101"]["removed_stories"], 2)
-        self.assertEqual((epics["PROJ-100"]["original_stories_done"], epics["PROJ-100"]["original_stories_total"]),
-                         (4, 5))
+        self.assertEqual((epics["PROJ-100"]["original_stories_done"], epics["PROJ-100"]["original_stories_total"],
+                          epics["PROJ-100"]["extra_stories_done"]), (2, 5, 1))
 
     def test_output_is_deterministic(self):
         self.build()
@@ -284,10 +328,11 @@ class BuildTest(ReportTest):
 
 
 class ReopenedAtTheStartTest(ReportTest):
-    """Original work that was Done at the start isn't initial commitment. If it is
-    reopened while in the sprint, it is extra scope from that day. The fixture
-    sprint starts on 04/03 at 12:00 and closes on 13/03 at 16:00. Six issues are
-    added to it, all in the sprint since before the start and Done on 27/02:
+    """Work in the sprint at the start is original commitment, Done or not. The
+    fixture sprint starts on 04/03 at 12:00 and closes on 13/03 at 16:00. Six
+    issues are added to it, all in the sprint since before the start and Done
+    on 27/02, so the sprint starts with their points completed; reopening moves
+    them back to not completed:
 
       PROJ-20  1 pt  never reopened
       PROJ-21  1 pt  reopened on 14/03, after the close
@@ -298,7 +343,7 @@ class ReopenedAtTheStartTest(ReportTest):
     """
     DONE_AT_START = fixture.moved(
         "2026-02-27T10:00:00.000+0000", "In Progress", "Done")
-    NEW = {f"PROJ-{n}" for n in range(20, 26)}
+    NEW = [f"PROJ-{n}" for n in range(20, 26)]
 
     def add(self, key, points, status, changes, removed=False):
         group = "punted_issues.json" if removed else "sprint_issues.json"
@@ -331,106 +376,76 @@ class ReopenedAtTheStartTest(ReportTest):
         self.before = self.build()
         self.add_scenarios()
         self.data, self.md = self.make_report()
-        self.issues = {
-            i["key"]: i for i in self.data["issues"] + self.data["removed_issues"]}
-        self.timeline = {r["date"]: r for r in self.data["scope_timeline"]}
+        self.tickets = {t["key"]: t for t in self.data["spells"]}
 
-    def test_which_issues_are_initial_commitment(self):
-        # name: (key, added mid-sprint, entered the sprint on, already Done on arrival)
+    def test_all_are_original_commitment(self):
         cases = [
-            ("never reopened", "PROJ-20", False, "2026-03-04", True),
-            ("reopened after the close", "PROJ-21", False, "2026-03-04", True),
-            ("reopened and Done again", "PROJ-22", True, "2026-03-06", False),
-            ("reopened and still open", "PROJ-23", True, "2026-03-06", False),
-            ("reopened and removed open", "PROJ-24", True, "2026-03-06", False),
-            ("reopened, Done again and removed",
-             "PROJ-25", True, "2026-03-06", False),
+            ("never reopened", "PROJ-20", "completed", ["committed 04"]),
+            ("reopened after the close", "PROJ-21",
+             "completed", ["committed 04"]),
+            ("reopened and Done again", "PROJ-22", "completed",
+             ["committed 04", "reopened 06", "completed 09"]),
+            ("reopened and still open", "PROJ-23",
+             "not_completed", ["committed 04", "reopened 06"]),
+            ("reopened and removed open", "PROJ-24", "removed",
+             ["committed 04", "reopened 06", "removed 09"]),
+            ("reopened, Done again and removed", "PROJ-25", "removed",
+             ["committed 04", "reopened 06", "completed 07", "removed 09"]),
         ]
-        for name, key, extra, entered, already in cases:
+        for name, key, outcome, events in cases:
             with self.subTest(name):
-                issue = self.issues[key]
-                self.assertEqual((issue["addedMidSprint"], issue["enteredSprintOn"], issue["alreadyDoneOnArrival"]),
-                                 (extra, entered, already))
+                ticket = self.tickets[key]
+                self.assertEqual((ticket["scope"], ticket["outcome"],
+                                  [f"{e['type']} {e['date'][8:]}" for e in ticket["events"]]),
+                                 ("original", outcome, events))
+                self.assertTrue(ticket["events"][0]["done"])
 
-    def test_timeline(self):
-        start = self.timeline["2026-03-04"]
-        self.assertEqual([k for k in start["added_keys"] if k in self.NEW], [
-                         "PROJ-20", "PROJ-21"])
-        self.assertEqual([k for k in start["already_done_original_keys"] if k in self.NEW],
-                         ["PROJ-20", "PROJ-21"])
-        self.assertEqual(self.timeline["2026-03-06"]["added_keys"],
-                         ["PROJ-22", "PROJ-23", "PROJ-24", "PROJ-25"])
-        self.assertEqual(self.timeline["2026-03-06"]["added_points"], 14)
-        # Completions: PROJ-25 before it left, PROJ-22 when it was Done again.
-        self.assertEqual(self.timeline["2026-03-07"]
-                         ["completed_extra_keys"], ["PROJ-25"])
-        self.assertEqual(self.timeline["2026-03-09"]
-                         ["completed_extra_keys"], ["PROJ-22"])
-        # Removals: the open one is descoped, the finished one is not.
-        removal = self.timeline["2026-03-09"]
-        self.assertEqual(([k for k in removal["departure_keys"] if k in self.NEW],
-                          [k for k in removal["removed_done_keys"] if k in self.NEW]),
-                         (["PROJ-24", "PROJ-25"], ["PROJ-25"]))
-        # Nothing of the reopened work is outstanding commitment or already done.
-        for key in ("PROJ-22", "PROJ-23", "PROJ-24", "PROJ-25"):
-            self.assertNotIn(key, start["added_keys"])
-            self.assertTrue(
-                all(key not in r["already_done_extra_keys"] for r in self.data["scope_timeline"]))
-
-    def test_outcome_and_removals_change_only_where_expected(self):
+    def test_outcomes_change_only_where_expected(self):
         def grew(field, key):
             return self.data[field][key] - self.before[field][key]
-        # Done at the close: PROJ-20, 21 and 22. Carried over: PROJ-23.
-        self.assertEqual((grew("outcome_counts", "completed"),
-                         grew("outcome_counts", "carried_over")), (3, 1))
-        self.assertEqual((grew("outcome_points", "completed"),
-                         grew("outcome_points", "carried_over")), (5, 2))
-        summary, before = self.data["removed_summary"], self.before["removed_summary"]
-        self.assertEqual(summary["descoped_incomplete"]["points"] -
-                         before["descoped_incomplete"]["points"], 4)
-        self.assertEqual(summary["completed_before_removal"]["points"]
-                         - before["completed_before_removal"]["points"], 5)
-        self.assertEqual(summary["already_done_on_arrival"],
-                         before["already_done_on_arrival"])
+        self.assertEqual([grew("outcome_breakdown_counts", f"original_{o}")
+                          for o in ("completed", "not_completed", "removed")], [3, 1, 2])
+        self.assertEqual([grew("outcome_breakdown_points", f"original_{o}")
+                          for o in ("completed", "not_completed", "removed")], [5, 2, 9])
+        self.assertEqual([grew("outcome_breakdown_counts", f"extra_{o}")
+                          for o in ("completed", "not_completed", "removed")], [0, 0, 0])
 
-    def test_epic_table_counts_reopened_work_as_extra(self):
+    def test_burndown_moves_reopened_points_back_to_the_commitment(self):
+        now = {r["date"]: r for r in self.data["burndown"]}
+        before = {r["date"]: r for r in self.before["burndown"]}
+        # Reopened on the 6th: 14 pts open again; 9 once PROJ-25 is done on the
+        # 7th; 2 once PROJ-22 is done and PROJ-24 is removed on the 9th.
+        reopened = {"2026-03-04": 0, "2026-03-05": 0, "2026-03-06": 14, "2026-03-07": 9, "2026-03-08": 9,
+                    "2026-03-09": 2, "2026-03-13": 2}
+        for day, points in reopened.items():
+            with self.subTest(day):
+                self.assertEqual(now[day]["committed"] -
+                                 before[day]["committed"], points)
+                self.assertEqual(now[day]["total"] -
+                                 before[day]["total"], points)
+        out = self.assert_runs("make_charts.py", "--print-series").stdout
+        self.assertIn("baseline 33 pts", out)
+
+    def test_planning_and_target_completion_count_them(self):
+        self.assertIn("Of the 13 tickets (33 pts) in the commitment, 8 tickets (19 pts) were already Done at the start",
+                      self.md)
+        self.assertIn(
+            "| Sprint target completion | 38%, 5/13 tickets (9/33 pts) completed |", self.md)
+        self.assertIn(
+            '<a href="https://acme.atlassian.net/browse/PROJ-20">PROJ-20</a> (1 pt)', self.md)
+        self.assertEqual(self.md.count(">Already done</span>"), 8)
+        self.assertEqual(self.md.count(">Reopened</span>"),
+                         4)  # PROJ-22 to 25, on the 6th
+
+    def test_epic_table_counts_them_as_original(self):
         def row(data):
             return next(e for e in data["epics"] if e["key"] == "__no_epic__")
         now, before = row(self.data), row(self.before)
         diff = {k: now[k] - before[k]
                 for k in now if isinstance(now[k], (int, float))}
-        # Extra: PROJ-22 and 25 are done, PROJ-23 and 24 are not. Original: 20 and 21 are done.
-        self.assertEqual((diff["extra_stories_total"],
-                         diff["extra_stories_done"]), (4, 2))
-        self.assertEqual((diff["extra_points_total"],
-                         diff["extra_points_done"]), (14, 8))
-        self.assertEqual((diff["original_stories_total"],
-                         diff["original_stories_done"]), (2, 2))
-
-    def test_burndown_adds_the_reopened_points_on_the_day_and_never_to_the_commitment(self):
-        now = {r["date"]: r for r in self.data["burndown"]}
-        before = {r["date"]: r for r in self.before["burndown"]}
-        # The extra points: 14 from the 6th, 9 once PROJ-25 is done on the 7th, 2 once PROJ-22 is done
-        # and PROJ-24 is removed on the 9th.
-        extra = {"2026-03-04": 0, "2026-03-05": 0, "2026-03-06": 14, "2026-03-07": 9, "2026-03-08": 9,
-                 "2026-03-09": 2, "2026-03-13": 2}
-        for day, points in extra.items():
-            with self.subTest(day):
-                self.assertEqual(now[day]["committed"],
-                                 before[day]["committed"])
-                self.assertEqual(now[day]["total"] -
-                                 before[day]["total"], points)
-        out = self.assert_runs("make_charts.py", "--print-series").stdout
-        self.assertIn("baseline 14 pts", out)
-
-    def test_planning_and_target_completion_leave_out_the_reopened_work(self):
-        # Original work is the fixture's plus PROJ-20 and 21; both were Done at the start.
-        self.assertIn(
-            "excludes 4 tickets already closed when the sprint started", self.md)
-        self.assertIn(
-            "Planning baseline: 9 stories / 19 pts were in the sprint when it started", self.md)
-        self.assertIn(
-            "4 stories / 5 pts of them already Done, leaving 5 stories / 14 pts to do", self.md)
+        self.assertEqual([diff[k] for k in ("original_stories_total", "original_stories_done",
+                                            "original_points_total", "original_points_done",
+                                            "extra_stories_total")], [6, 3, 16, 5, 0])
 
 
 class ChartsTest(ReportTest):
@@ -447,9 +462,9 @@ class ChartsTest(ReportTest):
         data, _ = self.make_report()
         rows = {r["date"]: r for r in data["burndown"]}
         self.assertEqual([rows[day]["committed"] for day in
-                          ("2026-03-06", "2026-03-07", "2026-03-11", "2026-03-12")], [9, 12, 8, 9])
+                          ("2026-03-06", "2026-03-07", "2026-03-11", "2026-03-12")], [8, 11, 8, 8])
         out = self.assert_runs("make_charts.py", "--print-series").stdout
-        self.assertIn("baseline 14 pts", out)
+        self.assertIn("baseline 17 pts", out)
 
     def test_later_sprint_moves_do_not_change_historical_figures(self):
         before = self.build()
@@ -462,11 +477,12 @@ class ChartsTest(ReportTest):
             i for i in contents["completedIssues"] if i["key"] != "PROJ-1"]
         contents["puntedIssues"].append({"key": "PROJ-1"})
         after, md = self.make_report()
-        for field in ("outcome_counts", "outcome_points", "scope_timeline", "burndown", "removed_summary"):
+        for field in ("spells", "outcome_breakdown_counts", "outcome_breakdown_points", "timeline", "burndown"):
             self.assertEqual(after[field], before[field], field)
         self.assertEqual(
             after["membership_cross_check_excluded_keys"], ["PROJ-1"])
-        self.assertIn("later sprint moves prevent comparison", md)
+        self.assertIn(
+            "later sprint moves prevent checking it against Jira", md)
 
     def test_closing_day_stops_at_the_exact_close(self):
         before = self.build()["burndown"]
@@ -475,16 +491,27 @@ class ChartsTest(ReportTest):
         self.issue("PROJ-2")["fields"]["status"] = fixture.status_field("Done")
         self.assertEqual(self.build()["burndown"], before)
 
+    def test_ticket_first_added_after_close_is_explained_without_being_counted(self):
+        self.raw["changelogs/PROJ-7.json"] = [fixture.added(16)]
+        self.raw["_meta.json"]["blocker_candidate_keys"] = []
+        data, md = self.make_report()
+        self.assertNotIn("PROJ-7", [s["key"] for s in data["spells"]])
+        self.assertEqual(data["left_before_start_keys"], ["PROJ-11"])
+        self.assertEqual(
+            data["membership_cross_check_excluded_keys"], ["PROJ-7"])
+        self.assertIn("PROJ-7) (– pts) is reconstructed from changelogs", md)
+
     def test_print_series(self):
         self.build()
         out = self.assert_runs("make_charts.py", "--print-series").stdout
-        # The baseline leaves out PROJ-3 and PROJ-10, Done at the start, as
-        # Jira's burndown does.
+        # The baseline is the whole commitment at the start, including PROJ-3
+        # and PROJ-10, already Done then.
         self.assertIn(
-            "baseline 14 pts committed at the start on 2026-03-04", out)
-        # Start day: the baseline, then the day's close, with PROJ-5 (added after it).
-        self.assertRegex(out, r"2026-03-04 +Wed +start +14 +14 +14 +0")
-        self.assertRegex(out, r"2026-03-04 +Wed +close +14 +16 +14 +0")
+            "baseline 17 pts committed at the start on 2026-03-04", out)
+        # Start day: the baseline, then the day's close, without the work
+        # already Done and with PROJ-5 (added after the start).
+        self.assertRegex(out, r"2026-03-04 +Wed +start +17 +17 +17 +0")
+        self.assertRegex(out, r"2026-03-04 +Wed +close +14 +16 +17 +-3")
         self.assertRegex(out, r"2026-03-13 +Fri +close +5 +6 +0 +5")
 
     def test_late_close_extends_the_chart(self):
@@ -498,7 +525,7 @@ class ChartsTest(ReportTest):
     def test_writes_svg_charts(self):
         self.build()
         self.assert_runs("make_charts.py")
-        for name in ("outcome-stories.svg", "outcome-points.svg", "burndown.svg"):
+        for name in ("outcome-tickets.svg", "outcome-pts.svg", "burndown.svg"):
             with open(os.path.join(self.dir, name), encoding="utf-8") as f:
                 self.assertTrue(f.read().startswith("<svg "), name)
 
@@ -517,12 +544,13 @@ class TimezoneTest(ReportTest):
                     fetched_at="2026-03-29T23:30:00Z", report_timezone=zone)
                 self.raw["sprint.json"].update(
                     state="active", completeDate=None, endDate=f"{end_day}T17:00:00Z")
+                self.content["goal_verdict"] = "At risk"
                 data, md = self.make_report()
                 self.assertEqual(data["today"], expected_day)
                 self.assertEqual(data["burndown"][-1]
                                  ["date"], min(expected_day, end_day))
                 today_row = next(
-                    row for row in data["scope_timeline"] if "today" in row["labels"])
+                    row for row in data["timeline"] if "today" in row["labels"])
                 self.assertEqual(today_row["date"], expected_day)
                 display_day = "/".join(reversed(expected_day.split("-")))
                 self.assertIn(f"snapshot as at {display_day}", md)
@@ -548,21 +576,19 @@ class TimezoneTest(ReportTest):
                     fixture.completed(completed)]
                 self.raw["sprint_report.json"] = {"contents": {
                     "completedIssues": [{"key": "PROJ-1"}], "puntedIssues": []}}
-                self.content["epic_commentary"] = {
-                    "__no_epic__": "The planned work completed."}
                 self.raw["_meta.json"]["fetched_at"] = close
                 data, md = self.make_report()
-                issue = data["issues"][0]
+                completion = data["spells"][0]["events"][-1]
                 self.assertEqual(
-                    issue["effectiveCompletionDate"], completion_day)
+                    (completion["type"], completion["date"]), ("completed", completion_day))
                 rows = {row["date"]: row for row in data["burndown"]}
                 self.assertEqual(rows[previous_day]["total"], 3)
                 self.assertEqual(rows[completion_day]["total"], 0)
-                completed_row = next(row for row in data["scope_timeline"]
-                                     if row["completed_original_keys"])
+                completed_row = next(row for row in data["timeline"]
+                                     if any(e["type"] == "completed" for e in row["events"]))
                 self.assertEqual(completed_row["date"], completion_day)
                 self.assertEqual(data["report_timezone"], "Europe/London")
-                self.assertIn("| Reporting timezone | Europe/London |", md)
+                self.assertNotIn("Reporting timezone", md)
                 if name == "spring":
                     self.assertEqual(data["sprint_start"], "2026-03-26")
 
@@ -581,8 +607,8 @@ class OutputFolderTest(ReportTest):
         outside = os.path.join(self.tmp.name, "elsewhere")
         cases = [
             ("build_sprint_data.py", [], ["data.json"]),
-            ("make_charts.py", [], ["outcome-stories.svg",
-             "outcome-points.svg", "burndown.svg"]),
+            ("make_charts.py", [], ["outcome-tickets.svg",
+             "outcome-pts.svg", "burndown.svg"]),
             ("make_report.py", [], [REPORT]),
         ]
         for script, args, outputs in cases:
@@ -602,42 +628,77 @@ class MakeReportTest(ReportTest):
     def test_closed_sprint_report(self):
         _, md = self.make_report()
         self.assertIn(
-            "**6 issues (13 points)** are in scope: 4 completed (7 points) and 2 carried over", md)
-        self.assertIn("[PROJ-1](https://acme.atlassian.net/browse/PROJ-1)", md)
-        self.assertIn("04/03/2026–13/03/2026", md)
+            "Of the 7 tickets (17 pts) in the commitment, 2 tickets (3 pts) were already Done at the start "
+            "([PROJ-3](https://acme.atlassian.net/browse/PROJ-3), [PROJ-10](https://acme.atlassian.net/browse/PROJ-10)), "
+            "and 4 tickets (8 pts) were descoped.",
+            md)
         self.assertIn(
-            "Planning baseline: 7 stories / 17 pts were in the sprint when it started on 04/03/2026, "
-            "2 stories / 3 pts of them already Done, leaving 5 stories / 14 pts to do (the burndown's baseline).", md)
-        self.assertIn("<b>Reinstated, 1 story / 1 pt</b>", md)
+            "- [PROJ-6](https://acme.atlassian.net/browse/PROJ-6) (1 pt) left the sprint", md)
+        self.assertIn("04/03/2026–13/03/2026", md)
+        self.assertIn("<b>Commitment:</b><br>7 tickets (17 pts)", md)
+        # PROJ-6 left on the 5th and came back on the 6th: Descoped, then Added.
+        self.assertIn("PROJ-6</a> (1 pt)</td><td><span", md)
+        self.assertIn(">Descoped</span>", md)
         self.assertNotIn("mid-sprint snapshot", md)
 
     def test_active_sprint_report(self):
         self.raw["sprint.json"].update(state="active", completeDate=None)
         self.raw["_meta.json"]["fetched_at"] = "2026-03-11T12:00:00Z"
+        self.content["goal_verdict"] = "On track"
         _, md = self.make_report()
         self.assertIn(
-            "This is a mid-sprint snapshot as at 11/03/2026, with 2 calendar days remaining.", md)
-        self.assertIn("2 still open", md)
+            'This is a mid-sprint snapshot as at 11/03/2026, with 2 days left. "Open" means not completed yet.', md)
+        self.assertIn(
+            "2 tickets (6 pts) are open, 1 ticket (5 pts) of them from the commitment, with 2 days left.", md)
         self.assertIn("(today)", md)
 
     def test_no_goal(self):
         self.raw["sprint.json"]["goal"] = None
+        self.content["goal_verdict"] = "No goal set in Jira for this sprint"
         _, md = self.make_report()
         self.assertIn("*No goal was set in Jira for this sprint*", md)
-        self.assertIn("Goal discipline: no sprint goal was set in Jira", md)
+        self.assertIn(
+            "| Goal outcome [AI Generated] | No goal set in Jira for this sprint |", md)
+
+    def test_goal_verdict_must_suit_the_sprint(self):
+        cases = [({}, "On track"), ({"goal": None}, "Partially met")]
+        for sprint_changes, verdict in cases:
+            with self.subTest(verdict=verdict):
+                self.raw = copy.deepcopy(fixture.raw_files())
+                self.raw["sprint.json"].update(sprint_changes)
+                self.content["goal_verdict"] = verdict
+                self.build()
+                self.assert_runs("make_charts.py")
+                with open(os.path.join(self.dir, "content.json"), "w", encoding="utf-8") as f:
+                    json.dump(self.content, f)
+                proc = self.run_script("make_report.py")
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("goal_verdict must be one of", proc.stderr)
 
     def test_em_dashes_are_replaced(self):
-        self.content["key_achievements"] = [
-            "The import flow — finally — shipped."]
+        self.content["key_achievements"] = "The import flow — finally — shipped."
         _, md = self.make_report()
         self.assertIn("The import flow, finally, shipped.", md)
+
+    def test_jira_source_text_survives_the_pipeline(self):
+        source = "One story — fix issues"
+        self.raw["sprint.json"].update(name=source, goal=source)
+        self.raw["previous_sprint.json"]["name"] = source
+        for parent in self.raw["parents.json"]:
+            parent["fields"]["summary"] = source
+        _, md = self.make_report()
+        self.assertIn("# Sprint Summary: " + source, md)
+        self.assertIn("| Goal | " + source + " |", md)
+        self.assertIn("Carried over from " + source, md)
+        self.assertIn(": " + source + "</a>", md)
 
     def test_bad_content_fails(self):
         cases = [
             (lambda content: content["epic_commentary"].pop(
-                "PROJ-101"), "epic_commentary is missing: PROJ-101"),
-            (lambda content: content.update(key_achievements=["One.", "Two.", "Three."]),
-             "key_achievements must be a list of 1-2"),
+                "PROJ-101"), "epic_commentary.PROJ-101 needs a sentence for exactly these groups: "
+                             "not_completed, descoped"),
+            (lambda content: content.update(key_achievements=["One.", "Two."]),
+             "key_achievements must be a non-empty string"),
         ]
         self.build()
         for change, expected in cases:
@@ -658,23 +719,24 @@ class CheckReportTest(ReportTest):
         with open(path, encoding="utf-8") as f:
             md = f.read()
         cases = [
-            ("<b>10 stories / 21 pts</b>", "<b>10 stories / 22 pts</b>",
-             "FAIL  columns: Added total is 10 stories / 21 pts"),
-            ("<b>4 stories / 8 pts</b></td>", "<b>4 stories / 8 pts (3 left)</b></td>",
-             "FAIL  totals row: Removed is a bare total"),
-            ("1 story / 3 pts<br><a", "1 story / 3 pts<br><br><a", "FAIL  spacing"),
-            ("Delivery concentrated", "Delivery — concentrated", "FAIL  em dashes"),
+            ("<b>Commitment:</b><br>7 tickets (17 pts)", "<b>Commitment:</b><br>7 tickets (18 pts)",
+             "FAIL  timeline: 04/03/2026 end of day"),
+            ("The import flow shipped", "The import flow — shipped", "FAIL  em dashes"),
             ("04/03/2026–13/03/2026", "2026-03-04–13/03/2026", "FAIL  dates"),
-            ("[PROJ-5](https://acme.atlassian.net/browse/PROJ-5) was added",
-             "PROJ-5 was added", "FAIL  links"),
-            ("4 completed (7 points)", "4 completed (8 points)",
-             "FAIL  figures: completed"),
-            ("<b>Reinstated, 1 story / 1 pt</b>", "<b>New scope, 1 story / 1 pt</b>",
-             "FAIL  movements: PROJ-6 return shown as Reinstated"),
-            ("Board-data quality:", "Board data:",
-             "FAIL  retro: Board-data quality covered"),
-            ("<td>4/5</td>", "<td>3/5</td>", "FAIL  epics: PROJ-100 shows 4/5"),
-            ('PROJ-5</a></td>', 'PROJ-5</a> <i>(late)</i></td>', "FAIL  cell shapes"),
+            ("[PROJ-6](https://acme.atlassian.net/browse/PROJ-6) (1 pt) left the sprint",
+             "PROJ-6 (1 pt) left the sprint", "FAIL  links"),
+            ("4 tickets (8 pts) were descoped", "4 tickets (9 pts) were descoped",
+             "FAIL  commentary: states 4 tickets (8 pts) descoped"),
+            (">Added</span></td></tr>\n<tr><td style=\"white-space:nowrap\"><a href=\"https://acme.atlassian.net/browse/PROJ-6\">",
+             ">Completed</span></td></tr>\n<tr><td style=\"white-space:nowrap\"><a href=\"https://acme.atlassian.net/browse/PROJ-6\">",
+             "FAIL  timeline: 04/03/2026 lists each ticket's events, in time order"),
+            ("was the commitment too large?", "the commitment was too large.",
+             "FAIL  retro: each note ends with a question"),
+            ("<td>2/5 tickets (4/12 pts)</td>", "<td>3/5 tickets (4/12 pts)</td>",
+             "FAIL  epics: PROJ-100 shows 2/5 tickets (4/12 pts)"),
+            ("The import flow shipped", "The import flow story shipped",
+             "FAIL  vocabulary: no story or stories"),
+            ('<td rowspan="8" style', '<td rowspan="7" style', "FAIL  cell shapes"),
         ]
         for old, new, expected in cases:
             with self.subTest(expected):

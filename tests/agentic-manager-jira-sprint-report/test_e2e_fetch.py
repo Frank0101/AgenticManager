@@ -11,6 +11,7 @@ import base64
 import copy
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -44,6 +45,7 @@ class FakeJira(BaseHTTPRequestHandler):
     fields = []
     removed = []
     parents = []
+    parent_queries = []
     reporting_timezone = "Europe/London"
     estimation: Optional[dict] = None
     requests = []
@@ -103,6 +105,7 @@ class FakeJira(BaseHTTPRequestHandler):
             return fixture.SPRINT_REPORT
         if path == "/rest/api/3/search/jql":
             if query["jql"].startswith("id in"):
+                FakeJira.parent_queries.append((query["jql"], query.get("fields")))
                 return {"issues": FakeJira.parents}
             return {"issues": FakeJira.removed}
         if path.startswith("/rest/api/3/issue/"):
@@ -148,8 +151,7 @@ class FetchTest(unittest.TestCase):
     # Puts the fake Jira back to serving the fixture's sprint.
     def reset_jira(self):
         FakeJira.sprints = [copy.deepcopy(fixture.SPRINT),
-                            {**fixture.SPRINT, "id": 6, "name": "Sprint 6",
-                             "completeDate": "2026-02-27T16:00:00.000Z"},
+                            copy.deepcopy(fixture.PREVIOUS_SPRINT),
                             {**fixture.SPRINT, "id": 8, "name": "Sprint 8", "state": "future",
                              "completeDate": None}]
         FakeJira.boards = [{"id": 43, "type": "kanban"},
@@ -158,6 +160,7 @@ class FetchTest(unittest.TestCase):
                            {"id": "customfield_99999", "name": "Story Points"}]
         FakeJira.removed = fixture.REMOVED
         FakeJira.parents = []
+        FakeJira.parent_queries = []
         FakeJira.requests = []
         FakeJira.reporting_timezone = "Europe/London"
         FakeJira.estimation = {"typeId": "field",
@@ -317,6 +320,7 @@ class FetchTest(unittest.TestCase):
             out["report_dir"], "_raw", "comments")), ["PROJ-7.json"])
         self.assertEqual([i["key"] for i in self.raw(out, "punted_issues.json")], [
                          "PROJ-3", "PROJ-4", "PROJ-8", "PROJ-11"])
+        self.assertEqual(self.raw(out, "previous_sprint.json"), fixture.PREVIOUS_SPRINT)
 
     def test_raw_data_is_as_at_the_close(self):
         # The sprint closed at 16:00 on 13/03. Since then PROJ-2 was flagged,
@@ -347,6 +351,14 @@ class FetchTest(unittest.TestCase):
         self.assertEqual(self.raw(out, "statuses.json"), fixture.STATUSES)
         self.assertEqual(
             self.raw(out, "changelogs/PROJ-2.json"), changelogs["PROJ-2"])
+
+    def test_every_epic_is_fetched_with_its_description(self):
+        # The issues' current epics too, as their own fields carry only the
+        # epic's summary; tickets get their descriptions with their fields.
+        self.assert_fetches("--project", "PROJ")
+        jql, fields = FakeJira.parent_queries[0]
+        self.assertEqual(sorted(re.findall(r"\d+", jql)), sorted({fixture.IMPORT[2], fixture.EXPORT[2]}))
+        self.assertEqual(fields, "summary,description")
 
     def test_points_field_found_by_name_when_the_board_estimates_by_count(self):
         FakeJira.estimation = {"typeId": "issueCount"}

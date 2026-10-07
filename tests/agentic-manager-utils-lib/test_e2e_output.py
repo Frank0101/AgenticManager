@@ -90,6 +90,23 @@ class OutputScriptsTest(unittest.TestCase):
                 with open(path, encoding="utf-8") as f:
                     self.assertEqual(f.read(), CONTENT)
 
+    def test_patch_command_updates_and_rejects_stale_context(self):
+        self.write_config({"root": self.reports})
+        args = ("--name", "tech-investigations", "--path", "report.md")
+        code, out, err = self.run_script(FILE_SCRIPT, *args, content=CONTENT)
+        self.assertEqual(code, 0, err)
+        target = json.loads(out)
+        patch = json.dumps([{"old": "# Payments retry", "new": "# Updated report"}])
+        code, out, err = self.run_script(FILE_SCRIPT, *args, "--patch", content=patch)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out), target)
+        code, out, err = self.run_script(FILE_SCRIPT, *args, "--patch", content=patch)
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertIn("match exactly once", err)
+        with open(target["path"], encoding="utf-8") as f:
+            self.assertEqual(f.read(), CONTENT.replace("# Payments retry", "# Updated report"))
+
     def test_failures(self):
         # name: (script, whether a config exists, arguments, exit code, expected on stderr)
         cases = [
