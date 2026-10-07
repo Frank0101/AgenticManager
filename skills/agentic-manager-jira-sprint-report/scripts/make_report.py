@@ -1,26 +1,43 @@
 """
-Write the sprint report Markdown from <report_dir>/data.json and the
-judgment text in <report_dir>/content.json.
+Write the sprint report Markdown from <report_dir>/data.json and the agent's
+text in <report_dir>/content.json.
 
 Usage:
     python3 make_report.py --report-dir <report_dir>
 
-Writes <report_dir>/<label>_Sprint_Report.md. build_sprint_data.py owns the
-numbers and this script owns the formatting: every figure, table cell, total,
-date, link and the generated notes come from data.json. content.json holds only
-what needs judgment:
+Writes <report_dir>/<label>_Sprint_Report.md. Everything but content.json's
+text is generated here, in the vocabulary and formats set out in common.py.
+The agent's parts are marked [AI Gen.], so a reader knows which text is
+interpretation and which is data. check_report.py checks the result.
 
-{
-  "goal_verdict": "Partially met",
-  "epic_commentary": {"PROJ-10": {"completed": "One sentence on the scope completed.",
-                                  "in_review": "...", "not_completed": "...", "descoped": "..."}},
-  "key_achievements": "A paragraph on the scope completed across the epics.",
-  "blockers_risks": "A paragraph on the commitment still open, and why where stated.",
-  "retro_notes": ["A fact the report shows, then a question for the team?"]
-}
+The report, top to bottom:
 
-Bare Jira keys in content.json are linked here. Em dashes are replaced by
-commas in judgment text only; copied Jira goals and names retain their wording.
+  Header       a fixed table, these rows in this order: Dates (start–end, plus
+               "(completed DD/MM/YYYY)" if it closed on another day), Goal
+               (Jira's, one line per <br>), Goal outcome [AI Gen.], Sprint
+               target completion ("X%, N/M tickets (N/M pts) completed", "so
+               far" while running). A fixed table lets readers find the same
+               figure in every report.
+  Charts       the two outcome charts (make_charts.py).
+  Timeline     the burndown, then a table in 75% type, one row per ticket with
+               events that day: Date (spanning the day's rows), Ticket (its
+               estimate at the end of the day), Events (tags in time order) and
+               End of day (spanning: the commitment on the first day, then the
+               burndown's readings as "Still open"). Every spell is shown,
+               including extra work added and descoped again, which the final
+               figures don't count: the history hides nothing.
+  Commentary   the paragraph under the timeline, generated, not written,
+               because what departed from the ideal sprint (all committed on
+               the first day, completed steadily, nothing left) is a fact of
+               the data. See commentary() for its rules.
+  Epics        per epic, Commitment and Extra as "N/M tickets (N/M pts)", and
+               the agent's Commentary [AI Gen.].
+  AI sections  Key Achievements, Blockers & Risks, Notes for Sprint Retro.
+
+The agent's text is validated before anything is written, each problem naming
+the content.json field to fix, so it is fixed where it was written. Bare Jira
+keys in it are linked here; em dashes in it are replaced by commas. Copied Jira
+text (goal, sprint and epic names) keeps its wording.
 """
 import argparse
 import html
@@ -29,11 +46,11 @@ import re
 from datetime import date
 from typing import cast
 
-from common import (CHART_FILES, CONTENT_FILE, DATA_FILE, ISSUE_KEY, NO_EPIC, RETRO_NOTES, SCOPE_GROUPS, ai,
-                    allowed_verdicts,
-                    display_date, epic_groups, estimate, key_order, parse_ts, load_json, outcome_total, plural, pts, qty, ratio,
+from common import (CHART_FILES, COMMENTARY_WORDS, CONTENT_FILE, DATA_FILE, EPIC_COMMENTARY_WORDS, ISSUE_KEY,
+                    NO_EPIC, RETRO_NOTES, SCOPE_GROUPS, SUMMARY_WORDS, ai, allowed_verdicts, banned_words,
+                    display_date, epic_groups, estimate, key_order, load_json, parse_ts, plural, pts, qty, ratio,
                     report_file, scope_group_label, target_completion, ticket_ref, unit, whole_percentage,
-                    write_report_file)
+                    word_count, write_report_file)
 
 
 # The timeline's event tags: (label, background, text colour). Each sets both
@@ -56,20 +73,11 @@ def tag(kind, suffix=""):
             f'{html.escape(label + suffix)}</span>')
 
 
-# The timeline commentary's length, before its caveats.
-COMMENTARY_WORDS = 100
-
-
 def amount(spells):
     """The amount of work of some spells: "N tickets (N pts)", "– pts" if
     none has an estimate."""
     estimates = [s["points"] for s in spells if s["points"] is not None]
     return qty(len(spells), sum(estimates) if estimates else None)
-
-
-def plain_words(text):
-    """The words of Markdown text as a reader sees them: links as their text."""
-    return re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text).split()
 
 
 def were(count):
@@ -129,7 +137,7 @@ class Report:
         reading = next(
             (r for r in d["burndown"] if r["date"] == row["date"]), None)
         if reading:
-            parts.append(f"<b>Open:</b><br>{qty(reading['committed_stories'], reading['committed'])} of the "
+            parts.append(f"<b>Still open:</b><br>{qty(reading['committed_stories'], reading['committed'])} of the "
                          f"commitment<br>{qty(reading['total_stories'], reading['total'])} with extra")
         return "<br><br>".join(parts) or "–"
 
@@ -143,22 +151,22 @@ class Report:
         names = {"sprint_start": "sprint start",
                  "today": "today", "sprint_closed": "sprint closed"}
         for row in self.data["timeline"]:
-            stories = {}
+            tickets = {}
             for e in row["events"]:
-                stories.setdefault(e["key"], []).append(e)
+                tickets.setdefault(e["key"], []).append(e)
             date = display_date(
                 row["date"]) + "".join(f"<br>({names[l]})" for l in row["labels"])
-            span = max(len(stories), 1)
+            span = max(len(tickets), 1)
             first = [
                 f'<td rowspan="{span}" style="vertical-align:top">{date}</td>']
             last = [
                 f'<td rowspan="{span}" style="vertical-align:top">{self.end_of_day(row)}</td>']
-            if not stories:
+            if not tickets:
                 lines.append(
                     "<tr>" + first[0] + '<td colspan="2">–</td>' + last[0] + "</tr>")
                 continue
-            for index, key in enumerate(sorted(stories, key=key_order)):
-                events = sorted(stories[key], key=lambda e: parse_ts(e["at"]))
+            for index, key in enumerate(sorted(tickets, key=key_order)):
+                events = sorted(tickets[key], key=lambda e: parse_ts(e["at"]))
                 cells = [f'<td style="white-space:nowrap">{ticket_ref(self.html_key(key), events[-1]["points"])}</td>',
                          "<td>" + "".join(self.tags(e) for e in events) + "</td>"]
                 lines.append("<tr>" + "".join((first if index == 0 else []) + cells
@@ -196,7 +204,7 @@ class Report:
 
     def header_table(self):
         """The table above the charts: always these rows, in this order (see
-        the skill's Header table section)."""
+        the module docstring)."""
         d = self.data
         dates = f"{display_date(d['sprint_start'])}–{display_date(d['sprint_end'])}"
         if d["sprint_complete_date"] and d["sprint_complete_date"] != d["sprint_end"]:
@@ -206,8 +214,7 @@ class Report:
         rows = [("Dates", dates), ("Goal", goal),
                 (ai("Goal outcome"), self.table_text(
                     self.content["goal_verdict"])),
-                ("Sprint target completion", self.target_completion_value()),
-                self.carry_over_row()]
+                ("Sprint target completion", self.target_completion_value())]
         return "| Field | Detail |\n|---|---|\n" + "\n".join(f"| {label} | {value} |" for label, value in rows)
 
     def target_completion_value(self):
@@ -222,36 +229,27 @@ class Report:
                 f"{ratio(len(closed), len(pool), done_points, sum(s['points'] or 0 for s in original))} "
                 f"completed{so_far}")
 
-    def carry_over_row(self):
-        """(label, value): the part of the original commitment carried over
-        from the previous sprint."""
-        d = self.data
-        previous = d["previous_sprint"]
-        if not previous:
-            return "Carried over", "None: no earlier sprint on this board"
-        counts, points = d["outcome_breakdown_counts"], d["outcome_breakdown_points"]
-        carried = (outcome_total(counts, "carried_in"),
-                   outcome_total(points, "carried_in"))
-        original = (outcome_total(counts, "original"),
-                    outcome_total(points, "original"))
-        done = (counts["carried_in_completed"], points["carried_in_completed"])
-        so_far = " so far" if d["sprint_status"] == "active" else ""
-        return (f"Carried over from {self.table_text(previous['name'])}",
-                f"{carried[0]} {unit(carried[0])} \\| {whole_percentage(carried[0], original[0])} of commitment "
-                f"({pts(carried[1])} \\| {whole_percentage(carried[1], original[1])}); "
-                f"{qty(*done)} completed{so_far}")
-
     # --- generated prose
 
     def commentary(self):
         """The timeline's commentary: everything that departed from the ideal
         sprint (all of it committed on the first day, completed steadily,
-        nothing left at the end), from the spells alone, in at most
-        COMMENTARY_WORDS words before its caveats. A kind of departure names
-        its tickets when it has up to three, else counts them; if the text is
-        still too long, all are counted."""
+        nothing left at the end), from the spells alone, in this order and
+        leaving out what didn't happen: the commitment, with what was already
+        Done at the start and what was descoped; the extra work, with what had
+        no estimate and what was added and descoped again; reopened,
+        re-estimated and left-and-came-back tickets; then what is open, or
+        was not completed at the close, and how much is from the commitment.
+
+        It names no dates, as the table above has them. A kind of departure
+        names its tickets when it has up to 3 and otherwise counts them: more
+        keys would crowd a paragraph meant for execs, and the table lists every
+        ticket. If the text is still over COMMENTARY_WORDS, every kind is
+        counted. The caveats (Duplicate or Won't Do, and membership that
+        couldn't be checked against Jira) always name their tickets and are
+        never cut, as they qualify the figures."""
         text = self.commentary_text(name_up_to=3)
-        if len(plain_words(text)) > COMMENTARY_WORDS:
+        if word_count(text) > COMMENTARY_WORDS:
             text = self.commentary_text(name_up_to=0)
             text = text.replace(
                 "counting as descoped and then as extra", "descoped, then extra")
@@ -411,8 +409,8 @@ class Report:
                          f"{self.days_left(', with ')}. \"Open\" means not completed yet.")
         parts += [
             self.header_table(),
-            f"![Sprint outcome in tickets]({CHART_FILES['outcome_stories']})",
-            f"![Sprint outcome in pts]({CHART_FILES['outcome_points']})",
+            f"![Sprint outcome in tickets]({CHART_FILES['outcome_tickets']})",
+            f"![Sprint outcome in pts]({CHART_FILES['outcome_pts']})",
             "## Scope Timeline",
             f"![Sprint burndown]({CHART_FILES['burndown']})",
             self.timeline_table(),
@@ -468,8 +466,34 @@ def validate_content(content, data):
             if written != groups or set(given) - set(groups):
                 problems.append(f"epic_commentary.{epic['key']} needs a sentence for exactly these groups: "
                                 + (", ".join(groups) or "none"))
+    if not problems:
+        problems += text_problems(content, data)
     if problems:
         raise SystemExit("content.json:\n  - " + "\n  - ".join(problems))
+
+
+def text_problems(content, data):
+    """The rules for the AI-written text, each problem naming the field to fix.
+    check_report.py checks the finished report again; failing here first keeps
+    the fix next to the text that needs it."""
+    problems, texts = [], [("key_achievements", content["key_achievements"], SUMMARY_WORDS),
+                           ("blockers_risks", content["blockers_risks"], SUMMARY_WORDS)]
+    for epic in data["epics"]:
+        given = content["epic_commentary"].get(epic["key"]) or {}
+        texts.append((f"epic_commentary.{epic['key']}", " ".join(given.values()), EPIC_COMMENTARY_WORDS))
+    for field, text, limit in texts:
+        if word_count(text) > limit:
+            problems.append(f"{field}: {word_count(text)} words, at most {limit}")
+        if ISSUE_KEY.search(text):
+            problems.append(f"{field}: names tickets {ISSUE_KEY.findall(text)[:3]}; describe the work instead")
+    for field, text, _ in texts[:2]:
+        if "\n" in text.strip():
+            problems.append(f"{field}: must be a single paragraph")
+    texts += [(f"retro_notes[{i}]", note, None) for i, note in enumerate(content["retro_notes"])]
+    for field, text, _ in texts:
+        for rule, words in banned_words(text):
+            problems.append(f"{field}: no {rule}, found {words[:3]}")
+    return problems
 
 
 def main():

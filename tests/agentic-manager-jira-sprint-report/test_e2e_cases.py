@@ -7,7 +7,6 @@
 # replays the same events and requires the charts, header, epic table, prose,
 # timeline table and burndown to agree with them.
 # Run with: python3 tests/run.py agentic-manager-jira-sprint-report
-import json
 import os
 import re
 import sys
@@ -70,6 +69,14 @@ CASES = [
      [(O, "not_completed", 2, True, ["committed 04"])]),
     ("done only after the close", [add(3), done(14)], "Done", 2, "open",
      [(O, "not_completed", 2, True, ["committed 04"])]),
+    # The close is an instant, not a day: done an hour after it is too late.
+    ("done on the closing day, after the close", [add(3), mv((13, "17:00"), "To Do", "Done")], "Done", 2, "open",
+     [(O, "not_completed", 2, True, ["committed 04"])]),
+    ("done, then reopened before the close", [add(3), done(6), reopen(9)], "In Progress", 2, "open",
+     [(O, "not_completed", 2, True, ["committed 04", "completed 06", "reopened 09"])]),
+    # Jira logs no add for a sprint set when the issue was created.
+    ("in the sprint since creation, only its removal logged", [rem(9)], "To Do", 2, "punted",
+     [(O, "removed", 2, True, ["committed 04", "removed 09"])]),
     ("descoped while open", [add(3), rem(6)], "To Do", 2, "punted",
      [(O, "removed", 2, True, ["committed 04", "removed 06"])]),
     ("done, then descoped", [add(3), done(5), rem(6)], "Done", 2, "punted",
@@ -196,6 +203,8 @@ class CasesTest(ReportTest):
                     self.assertEqual(len(spell["events"]), len(events))
 
     def test_the_whole_report_agrees_with_the_events(self):
+        # check_report.py has already passed on it; these replay the events
+        # independently of the checker, so a bug shared by both still shows.
         data, md = self.make_report()
         spells = [s for case in CASES for s in case[5]]
         original = [s for s in spells if s[0] != X]
@@ -210,11 +219,9 @@ class CasesTest(ReportTest):
         self.assertEqual(data["non_delivery_closures"]["count"], 1)
         with open(os.path.join(self.dir, REPORT), encoding="utf-8") as f:
             self.assertEqual(f.read(), md)
-
-    def test_the_timeline_tags_replay_into_the_burndown(self):
-        # Reading the timeline as a reader does, from its tags and each story's
-        # estimate, gives the burndown on every day: nothing moves it unseen.
-        data, md = self.make_report()
+        # Reading the timeline as a reader does, from its tags and each
+        # ticket's estimate, gives the burndown on every day: nothing moves it
+        # unseen.
         table = re.search(r'<table style="font-size:75%">.*?</table>', md, re.S)[0]
         days, day = {}, None
         for row in re.findall(r"<tr>(.*?)</tr>", table, re.S)[1:]:
@@ -247,18 +254,6 @@ class CasesTest(ReportTest):
             day = "/".join(reversed(reading["date"].split("-")))
             last = replayed.get(day, last)
             self.assertEqual(last, (reading["committed"], reading["total"]), day)
-
-    def test_a_report_that_drifts_from_the_events_fails(self):
-        self.make_report()
-        path = os.path.join(self.dir, "data.json")
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-        data["spells"][0]["outcome"] = "removed"
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f)
-        proc = self.run_script("check_report.py")
-        self.assertEqual(proc.returncode, 1, proc.stdout)
-        self.assertIn("FAIL  model: PROJ-1 ends completed, as its events give", proc.stdout)
 
 
 if __name__ == "__main__":

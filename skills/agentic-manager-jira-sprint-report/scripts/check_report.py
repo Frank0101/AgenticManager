@@ -5,11 +5,13 @@ the report's formatting rules.
 Usage:
     python3 check_report.py --report-dir <report_dir>
 
-Prints every check and exits non-zero if any fails. make_report.py generates
-the mechanical structure and content.json supplies judgment prose; this is the
-independent contract test for both. Every rule here exists because the same
-table drifted when it was corrected by hand; prose guidance alone didn't stop
-the regressions, a failing check does.
+Prints every check and exits non-zero if any fails. make_report.py writes the
+report and content.json supplies the agent's text; this is the contract test
+for both. It shares only the format helpers with make_report.py and recomputes
+every figure from the spells' events, so a generator bug can't pass by
+agreeing with itself. Every rule here exists because a table drifted when it
+was corrected by hand; prose guidance didn't stop the regressions, a failing
+check does.
 
   model        each spell's events are well formed and give its outcome,
                latest estimate and whether it's counted; the charts'
@@ -18,31 +20,27 @@ the regressions, a failing check does.
   header       the table above the charts has exactly its rows, in order,
                each formatted as specified and matching data.json
   figures      carry-over and new work add up to the original commitment
-  commentary   the paragraph under the timeline states, from the spells,
+  commentary   a paragraph follows the timeline and states, from the spells,
                every way the sprint departed from the ideal and no other,
                within its word limit, with its caveats when they apply
   images       embedded charts exist; the burndown sits under Scope Timeline
   headings     each table has a heading directly above it
-  commentary   the timeline table is followed by a prose paragraph
-  timeline     each day lists, per story, its estimate and its events as tags
+  timeline     each day lists, per ticket, its estimate and its events as tags
                in time order, and its end-of-day figures are the burndown's
   cell shapes  each day's date and end-of-day cells span its tickets' rows
   epics        epic table cells match data.json, and their totals the charts;
                each commentary has one labelled sentence per group the epic
                has tickets to describe in, in order, within its word limit,
                with no ticket keys
-  vocabulary   the report's vocabulary and formats, the agent's text included:
-               tickets, pts, Commitment, Extra, Descoped, Not completed or
-               Open, completed; whole percentages; N tickets (N pts), N/M
-               tickets (N/M pts), KEY (N pts) and sorted (KEY, KEY) lists;
-               bold only for labels
+  vocabulary   the vocabulary and formats in common.py, the agent's text
+               included
   ai labels    every AI-written part (Goal outcome, the epic commentary,
                Key Achievements, Blockers & Risks, the retro notes) is
-               marked [AI Generated] on its heading or label
+               marked [AI Gen.] on its heading or label
   summaries    Key Achievements and Blockers & Risks are each one paragraph,
                within their word limit, naming no tickets
   retro        the retro section holds 1 to 5 notes, each ending with a
-               question, and no longer the first run's placeholder
+               question
   dates        DD/MM/YYYY in generated text
   em dashes    none in generated text
   links        every Jira key outside the plain-text title is a link
@@ -53,11 +51,10 @@ import os
 import re
 import sys
 
-from common import (CHART_FILES, DATA_FILE, EPIC_COMMENTARY_WORDS, ISSUE_KEY, NO_EPIC, RETRO_NOTES, RETRO_PLACEHOLDER,
-                    SUMMARY_WORDS,
-                    ai, allowed_verdicts, display_date,
-                    epic_groups, key_order, parse_ts, load_json, number, pts, qty, report_file, scope_group_label,
-                    target_completion, whole_percentage)
+from common import (BANNED_WORDS, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, EPIC_COMMENTARY_WORDS, ISSUE_KEY,
+                    NO_EPIC, OUTCOMES, RETRO_NOTES, SUMMARY_WORDS, ai, allowed_verdicts, banned_words, display_date,
+                    epic_groups, estimate, key_order, load_json, number, parse_ts, plural, pts, qty, ratio,
+                    report_file, scope_group_label, target_completion, whole_percentage, word_count)
 
 
 class Checker:
@@ -107,8 +104,7 @@ def table_kind(table):
 
 
 HEADER_START = "| Field | Detail |\n|---|---|\n"
-HEADER_LABELS = ["Dates", "Goal", ai(
-    "Goal outcome"), "Sprint target completion", "Carried over"]
+HEADER_LABELS = ["Dates", "Goal", ai("Goal outcome"), "Sprint target completion"]
 # The AI-written sections, as their headings read.
 AI_SECTIONS = [ai("Key Achievements"), ai(
     "Blockers & Risks"), ai("Notes for Sprint Retro")]
@@ -131,13 +127,8 @@ def check_header(c, md, data):
     rows = header_rows(md)
     if not c.check(rows is not None, "header", "table above the charts found") or rows is None:
         return
-    rows = [(re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", label).replace("\\|", "|"), value)
-            for label, value in rows]
-    previous = data["previous_sprint"]
-    labels = HEADER_LABELS[:-1] + ["Carried over from " +
-                                   " ".join(previous['name'].splitlines()) if previous else "Carried over"]
-    if not c.check([label for label, _ in rows] == labels, "header",
-                   f"rows are exactly {labels} (got {[label for label, _ in rows]})"):
+    labels = [label for label, _ in rows]
+    if not c.check(labels == HEADER_LABELS, "header", f"rows are exactly {HEADER_LABELS} (got {labels})"):
         return
     values = dict(rows)
 
@@ -159,41 +150,22 @@ def check_header(c, md, data):
     c.check(values[ai("Goal outcome")] in allowed_verdicts(data), "header",
             f"Goal outcome is one of {list(allowed_verdicts(data))}")
 
-    closed, pool = target_completion(data)
+    completed, pool = target_completion(data)
     so_far = " so far" if data["sprint_status"] == "active" else ""
     original_spells = [t for t in data["spells"] if t["scope"] == "original"]
-    target = (f"{whole_percentage(len(closed), len(pool))}, {len(closed)}/{len(pool)} "
-              f"{'ticket' if len(pool) == 1 else 'tickets'} "
-              f"({number(sum(t['points'] or 0 for t in original_spells if t['outcome'] == 'completed'))}/"
-              f"{number(sum(t['points'] or 0 for t in original_spells))} pts) completed{so_far}")
+    target = (f"{whole_percentage(len(completed), len(pool))}, "
+              + ratio(len(completed), len(pool),
+                      sum(t['points'] or 0 for t in original_spells if t['outcome'] == 'completed'),
+                      sum(t['points'] or 0 for t in original_spells))
+              + f" completed{so_far}")
     c.check(values["Sprint target completion"] == target,
             "header", f"Sprint target completion is {target!r}")
     oc = data["outcome_breakdown_counts"]
     charted = (sum(oc[f"original_{outcome}"] for outcome in ("completed", "not_completed", "removed")),
                oc["original_completed"])
-    c.check(charted == (len(pool), len(closed)), "header",
+    c.check(charted == (len(pool), len(completed)), "header",
             f"the charts' original commitment, {charted[0]} with {charted[1]} completed, is the target's "
-            f"{len(pool)} with {len(closed)} closed")
-
-    if previous:
-        cc, cp = data["outcome_breakdown_counts"], data["outcome_breakdown_points"]
-
-        def carried(breakdown):
-            return sum(breakdown[f"carried_in_{outcome}"] for outcome in ("completed", "not_completed", "removed"))
-
-        def original(breakdown):
-            return sum(breakdown[f"original_{outcome}"] for outcome in ("completed", "not_completed", "removed"))
-        expected = (f"{carried(cc)} {'ticket' if carried(cc) == 1 else 'tickets'} \\| "
-                    f"{whole_percentage(carried(cc), original(cc))} of commitment ({pts(carried(cp))} \\| "
-                    f"{whole_percentage(carried(cp), original(cp))}); "
-                    f"{qty(cc['carried_in_completed'], cp['carried_in_completed'])} completed{so_far}")
-    else:
-        expected = "None: no earlier sprint on this board"
-    c.check(values[labels[-1]] == expected, "header",
-            f"{labels[-1]} is {expected!r}")
-
-
-OUTCOMES = ("completed", "not_completed", "removed")
+            f"{len(pool)} with {len(completed)} completed")
 
 
 def charted(data, row, outcome=None):
@@ -203,12 +175,12 @@ def charted(data, row, outcome=None):
     return (sum(counts[f"{row}_{o}"] for o in outcomes), sum(points[f"{row}_{o}"] for o in outcomes))
 
 
-COMMENTARY_WORDS = 100
+# The commentary's caveats, which its word limit doesn't count.
 CAVEATS = ("resolved as Duplicate or Won't Do",
            "is reconstructed from changelogs")
 
 
-def check_figures(c, md, data):
+def check_figures(c, data):
     """The breakdown's carry-over and new work add up to the original commitment."""
     for outcome in OUTCOMES:
         split = tuple(a + b for a, b in zip(charted(data,
@@ -238,11 +210,8 @@ def check_commentary(c, md, data):
         return
     sentences = re.split(r"(?<=\.) (?=[A-Z0-9])", text)
     core = " ".join(s for s in sentences if not any(m in s for m in CAVEATS))
-    c.check(len(core.split()) <= COMMENTARY_WORDS, "commentary",
-            f"at most {COMMENTARY_WORDS} words before its caveats (got {len(core.split())})")
-
-    def were(count):
-        return "was" if count == 1 else "were"
+    c.check(word_count(core) <= COMMENTARY_WORDS, "commentary",
+            f"at most {COMMENTARY_WORDS} words before its caveats (got {word_count(core)})")
     spells = data["spells"]
     original = [s for s in spells if s["scope"] == "original"]
     c.check(f"{qty(len(original), data['burndown_baseline'])} in the commitment" in text, "commentary",
@@ -253,7 +222,7 @@ def check_commentary(c, md, data):
         if len(items) > 1:
             estimates = [s["points"] for s in items if s["points"] is not None]
             amount = qty(len(items), sum(estimates) if estimates else None)
-            c.check(f"{amount} {were(len(items))} {kind}" in text,
+            c.check(f"{amount} {plural(len(items), 'was', 'were')} {kind}" in text,
                     "commentary", f"states {amount} {kind}")
     returns = [s for i, s in enumerate(spells)
                if s["events"][0]["type"] == "joined" and any(o["key"] == s["key"] for o in spells[:i])]
@@ -345,9 +314,8 @@ def check_epics(c, table, data):
             if epic[f"{kind}_stories_total"] == 0:
                 expected.append("–")
             else:
-                total = epic[f"{kind}_stories_total"]
-                expected.append(f"{epic[f'{kind}_stories_done']}/{total} {'ticket' if total == 1 else 'tickets'} "
-                                f"({number(epic[f'{kind}_points_done'])}/{number(epic[f'{kind}_points_total'])} pts)")
+                expected.append(ratio(*(epic[f"{kind}_{part}"] for part in
+                                        ("stories_done", "stories_total", "points_done", "points_total"))))
         c.check(cells == expected, "epics",
                 f"{epic['key']} shows {' '.join(expected)} (got {' '.join(cells)})")
         check_epic_commentary(c, epic, cells_of(row)[3], data["sprint_status"])
@@ -373,7 +341,7 @@ def check_epic_commentary(c, epic, cell, status):
     c.check(found == labels, "epics",
             f"{epic['key']} commentary has {', '.join(labels)} (got {found})")
     texts = [html.unescape(m.group(2)) for m in lines if m]
-    words = sum(len(t.split()) for t in texts)
+    words = sum(word_count(t) for t in texts)
     c.check(words <= EPIC_COMMENTARY_WORDS, "epics",
             f"{epic['key']} commentary has at most {EPIC_COMMENTARY_WORDS} words (got {words})")
     c.check(all(len(re.split(r"(?<=[.!?]) +(?=[A-Z0-9])", t.strip())) == 1 for t in texts), "epics",
@@ -392,12 +360,8 @@ def tag_labels(e):
     if e["type"] in ("committed", "joined"):
         return ["Added"] + (["Already done"] if e["done"] else [])
     if e["type"] == "reestimated":
-        return [f"Re-estimated: {shown_estimate(e['fromPoints'])} → {pts(e['points'])}"]
+        return [f"Re-estimated: {estimate(e['fromPoints'])} → {pts(e['points'])}"]
     return [{"completed": "Completed", "reopened": "Reopened", "removed": "Descoped"}[e["type"]]]
-
-
-def shown_estimate(points):
-    return "–" if points is None else number(points)
 
 
 def text_of(cell):
@@ -473,7 +437,7 @@ def check_model(c, data):
 
 
 def timeline_days(table):
-    """[{date, rowspan, stories: [(story text, [tags])], end}] from the
+    """[{date, rowspan, tickets: [(ticket text, [tags])], end}] from the
     timeline table's rows."""
     days = []
     for row in rows_of(table)[1:]:
@@ -481,16 +445,16 @@ def timeline_days(table):
         if cells and "rowspan" in cells[0][0]:
             span = re.search(r'rowspan="(\d+)"', cells[0][0])
             days.append({"date": text_of(cells[0][1]), "rowspan": int(span.group(1)) if span else 1,
-                         "end": text_of(cells[-1][1]), "stories": []})
+                         "end": text_of(cells[-1][1]), "tickets": []})
             cells = cells[1:-1]
         if days and len(cells) == 2:
-            days[-1]["stories"].append((text_of(cells[0][1]),
+            days[-1]["tickets"].append((text_of(cells[0][1]),
                                         [html.unescape(t) for t in re.findall(r"<span[^>]*>(.*?)</span>", cells[1][1])]))
     return days
 
 
 def check_timeline(c, table, data):
-    """Each day lists, one row per story, the story's estimate at the end of
+    """Each day lists, one row per ticket, the ticket's estimate at the end of
     the day and its events as tags in time order; its end-of-day figures are
     the burndown's; and the days are the timeline's."""
     if not c.check(table is not None, "timeline", "table found") or table is None:
@@ -507,24 +471,24 @@ def check_timeline(c, table, data):
         for t in data["spells"]:
             by_key.setdefault(t["key"], []).extend(
                 e for e in t["events"] if e["date"] == row["date"])
-        stories = []
+        tickets = []
         for key, events in by_key.items():
             events.sort(key=lambda e: parse_ts(e["at"]))
             if events:
-                stories.append((f"{key} ({pts(events[-1]['points'])})",
+                tickets.append((f"{key} ({pts(events[-1]['points'])})",
                                 [label_ for e in events for label_ in tag_labels(e)]))
-        stories.sort(key=lambda s: key_order(s[0].split()[0]))
-        c.check(day["stories"] == stories, "timeline",
+        tickets.sort(key=lambda s: key_order(s[0].split()[0]))
+        c.check(day["tickets"] == tickets, "timeline",
                 f"{label} lists each ticket's events, in time order")
-        c.check(day["rowspan"] == max(len(stories), 1),
-                "cell shapes", f"{label} spans its {len(stories)} tickets")
+        c.check(day["rowspan"] == max(len(tickets), 1),
+                "cell shapes", f"{label} spans its {len(tickets)} tickets")
         parts = []
         if "sprint_start" in row["labels"]:
             parts.append(
                 f"Commitment: {qty(len(original), data['burndown_baseline'])}")
         reading = readings.get(row["date"])
         if reading:
-            parts.append(f"Open: {qty(reading['committed_stories'], reading['committed'])} of the commitment "
+            parts.append(f"Still open: {qty(reading['committed_stories'], reading['committed'])} of the commitment "
                          f"{qty(reading['total_stories'], reading['total'])} with extra")
         expected_end = " ".join(parts) or "–"
         c.check(day["end"] == expected_end, "timeline",
@@ -546,14 +510,14 @@ def check_summaries(c, md):
             continue
         c.check("\n" not in text and not text.startswith(("- ", "* ")),
                 "summaries", f"{heading} is one paragraph")
-        words = len(re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text).split())
+        words = word_count(text)
         c.check(words <= SUMMARY_WORDS, "summaries",
                 f"{heading} has at most {SUMMARY_WORDS} words (got {words})")
         c.check(not ISSUE_KEY.search(text), "summaries",
                 f"{heading} names no tickets")
 
 
-def check_retro(c, md, data):
+def check_retro(c, md):
     """1 to RETRO_NOTES bullets, each a fact then a question, and nothing else."""
     text = section_of(md, AI_SECTIONS[2])
     if not c.check(text is not None, "retro", "section found"):
@@ -563,8 +527,6 @@ def check_retro(c, md, data):
             f"1 to {RETRO_NOTES} bullets and nothing else (got {len(lines)} lines)")
     c.check(all(line.rstrip().endswith("?")
             for line in lines), "retro", "each note ends with a question")
-    c.check(not any(RETRO_PLACEHOLDER in line for line in lines),
-            "retro", "the placeholder note was replaced")
 
 
 def check_images(c, md, report_dir):
@@ -579,16 +541,10 @@ def check_images(c, md, report_dir):
             "images", "burndown sits under the Scope Timeline heading")
 
 
-NUMBER_WORDS = r"\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|" \
-               r"sixteen|seventeen|eighteen|nineteen|twenty)\b"
-
-
 def generated_text(md):
     """Exclude only the fixed source-text slots, never matching prose by value."""
     md = re.sub(r"^# Sprint Summary:.*$", "# Sprint Summary:", md, flags=re.M)
     md = re.sub(r"^\| Goal \|.*$", "| Goal | |", md, flags=re.M)
-    md = re.sub(r"^(\| Carried over from ).*?(?<!\\) \|",
-                r"\1 |", md, flags=re.M)
     for table in html_tables(md):
         if table_kind(table) == "epics":
             without_names = re.sub(
@@ -640,14 +596,9 @@ def check_vocabulary(c, md, data):
                   re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", md))
     text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)
     words = re.sub(r"<[^>]+>", " ", text)
-    for name, pattern in (("story or stories", r"\bstor(?:y|ies)\b"), ("issue or issues", r"\bissues?\b"),
-                          ("points (pts is the unit)", r"\bpoints?\b"), ("spelled-out numbers", NUMBER_WORDS)):
-        found = re.findall(pattern, words, re.I)
-        c.check(not found, "vocabulary",
-                f"no {name} {found[:3] or ''}".strip())
-    closed = re.findall(r"\bclosed\b", words.replace("(sprint closed)", ""))
-    c.check(not closed, "vocabulary",
-            "closed only in the timeline's (sprint closed) label")
+    found = dict(banned_words(words.replace("(sprint closed)", "")))
+    for rule, _ in BANNED_WORDS:
+        c.check(rule not in found, "vocabulary", f"no {rule} {found.get(rule, [])[:3] or ''}".strip())
     decimals = re.findall(r"\d+\.\d+%", words)
     c.check(not decimals, "vocabulary",
             f"whole percentages only {decimals[:3] or ''}".strip())
@@ -722,7 +673,7 @@ def run_checks(md, data, report_dir):
     c = Checker()
     check_model(c, data)
     check_header(c, md, data)
-    check_figures(c, md, data)
+    check_figures(c, data)
     check_commentary(c, md, data)
     check_framing(c, md)
     check_images(c, md, report_dir)
@@ -730,7 +681,7 @@ def run_checks(md, data, report_dir):
     check_epics(c, tables.get("epics"), data)
     check_ai_labels(c, md, tables.get("epics"))
     check_summaries(c, md)
-    check_retro(c, md, data)
+    check_retro(c, md)
     check_style(c, md)
     check_vocabulary(c, md, data)
     return c

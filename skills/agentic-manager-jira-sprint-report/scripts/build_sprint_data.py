@@ -1,89 +1,47 @@
 """
 Build <report_dir>/data.json from the _raw files fetch_sprint.py wrote.
-Reads no network: the same raw files always give the same output,
-so a report's numbers can be audited against the payloads they came from.
 
 Usage:
     python3 build_sprint_data.py --report-dir <report_dir>
 
-The report date comes from the saved fetch timestamp in the reporting timezone,
-so the calculation is explicit and testable without reading the clock.
+No network and no clock: the report date comes from the saved fetch time, so the
+same raw files always give the same figures and can be audited against them.
 
-One model for the whole report: each ticket's spells in the sprint, each with
-its dated events, worked out once from its changelog. Every figure the report
-shows is built from them and nothing else. The history (the timeline table and
-the burndown) shows every spell's events; the final situation (the outcome
-charts, the header, the epic table and the generated prose) counts each spell
-by where it ended. check_report.py replays the events itself and requires
-every part of the report to agree.
+One model for the whole report. Each ticket's time in the sprint is split into
+spells, each with its dated events (committed or joined, completed, reopened,
+reestimated, removed), worked out once from its changelog. Every figure is built
+from them: the history (timeline, burndown) shows every event, the final
+situation (charts, header, epic table) counts each spell by how it ended.
+check_report.py replays the events and fails any part that disagrees. Separate
+calculations per view drifted apart before; one model can't.
 
-A spell is one stretch of time a ticket spent in the sprint, as at the moment
-the report describes (when a closed sprint closed, or the fetch for an active
-one; later moves are ignored):
+Decisions behind the model:
 
-  * The original commitment is the spell of every ticket in the sprint at its
-    start instant (`startDate` as Jira records it), Done or not. A ticket
-    already Done then is committed work completed from the start; if it is
-    reopened, its points move back to not completed.
-  * Every time a ticket leaves the sprint, its spell ends: it is descoped, at
-    its estimate then. Every time a ticket joins after the start, including
-    when it comes back, a new spell begins: extra work, at its estimate and
-    state then, as they may have changed while it was out.
-  * An extra spell that ends with the ticket leaving was never part of the
-    commitment: the history shows it, but the final situation doesn't count it
-    (`counted` false). Tickets that joined and left before the start have no
-    spell and are in no part of the report (`left_before_start_keys`).
+  * Figures are as at the end (the close, or the fetch for a running sprint),
+    rebuilt from changelogs, never as Jira shows them today, so a report run
+    later gives the same figures. Descriptions are the exception: Jira keeps no
+    usable history of them.
+  * The commitment is what was in the sprint at its start instant, Done or not,
+    as Jira's sprint report counts it.
+  * A ticket that leaves ends its spell as descoped; one that joins later, even
+    coming back the same day, starts an extra spell. An extra spell that ends
+    descoped was never part of the plan, so the history shows it but the final
+    situation doesn't count it (`counted` false).
+  * Completed means Jira's Done category, Duplicates and Won't Do included, to
+    match Jira's own report; `non_delivery_closures` names them as a caveat.
+  * Carried over means in the previous sprint at the instant it closed, not
+    merely in it at some point.
+  * The epic commentary groups (`scope_groups`) leave out work the sprint didn't
+    do (`left_out`): Duplicates, Won't Do, and work already Done when its spell
+    began. The figures still count it; the AI text mustn't describe it.
 
-An issue whose Sprint-field changes for this sprint don't start with an add
-(none at all, or a removal first) got the sprint when it was created: Jira
-logs no change for a field's initial value, so its `created` time is when it
-joined.
+Jira logs no change for a field's initial value, so a ticket whose sprint
+changes don't start with an add was in the sprint from its creation.
 
-A spell's events, in time order, each with the estimate and the Done state
-right after it:
-
-  committed    in the sprint at the start (the original spell)
-  joined       joined after the start, or came back (an extra spell)
-  completed    moved into Jira's Done category
-  reopened     moved out of it
-  reestimated  its story points changed (`fromPoints`)
-  removed      left the sprint: the spell ends, descoped
-
-Its outcome is its state after the last event: `completed` or
-`not_completed` if it is in the sprint at the end, `removed` (descoped) if it
-isn't. Its `points` are its latest estimate: at the end, or when it left.
-Completed means in Jira's Done category, as in Jira's sprint report, so
-duplicates and Won't Do count too; `non_delivery_closures` names them, as an
-annotation, never a subtraction.
-
-Carried over (`carriedIn`) is the original spell of a ticket that was also in
-the previous sprint (the board's closed sprint that started last before this
-one) at the instant that sprint closed. Being in it at some point isn't
-enough.
-
-Every field that describes a spell (status, resolution, flag, priority, epic)
-is as it was at the end, or when the ticket left, rebuilt from its changelog,
-never as it is today. Run on the same sprint at any later date, the report gives the
-same figures.
-
-Each epic in `epics` also sorts its counted spells into the groups its
-commentary describes in scope terms (`scope_groups`): completed, in review
-(not completed, with a status at the end whose name contains "review"), not
-completed, and descoped, each ticket with its scope (original or extra),
-summary and description. Work
-the sprint didn't do is left out (`left_out`): tickets resolved as Duplicate
-or Won't Do, and tickets never completed during their spell, as they were
-already Done when it began, whether they then stayed or were descoped. The
-figures still count them, as completed or descoped.
-Descriptions are as they read at the fetch, the only text not rebuilt to the
-end.
-
-The in-scope, completed and removed sets are also cross-checked against
-Jira's own sprint report. If the check can't run or finds a discrepancy, the
-script exits non-zero without writing data.json. Jira's sprint report shows
-today's membership, so issues moved after the moment the report describes
-are left out of that comparison and listed in
-`membership_cross_check_excluded_keys`.
+The result is cross-checked against Jira's own sprint report, and nothing is
+written on a discrepancy. That report shows today's membership, so tickets moved
+after the end are left out of the comparison
+(`membership_cross_check_excluded_keys`).
 """
 import argparse
 import os
@@ -272,6 +230,8 @@ def build_spells(raw, changes, context, moment):
         scope = "original" if events[0]["type"] == "committed" else "extra"
         state = history.state_at(cutoff if inside else parse_ts(last["at"]))
         parent_id = state.pop("parentId")
+        # An epic that couldn't be fetched is named by its key rather than
+        # left blank, so its row in the epic table can still be found.
         parent_key, parent_summary = (context.epic_names.get(parent_id, (state["parentKey"], state["parentKey"]))
                                       if parent_id else (None, None))
         spells.append({
@@ -364,7 +324,8 @@ def build_epics(spells, descriptions=None):
             "left_out": [],
         })
         group, reason = scope_group(spell)
-        ticket = {"key": spell["key"], "scope": spell["scope"], "summary": spell["summary"],
+        ticket = {"key": spell["key"], "scope": spell["scope"], "points": spell["points"],
+                  "status": spell.get("status"), "flagged": spell.get("flagged", False), "summary": spell["summary"],
                   "description": spell.get("description", "")}
         if group:
             epic["scope_groups"][group].append(ticket)
@@ -406,7 +367,7 @@ def build_timeline(spells, status, start, end, complete, today):
 
 
 def build_burndown(spells, start_date, last_date, moment, offset):
-    """Open stories and points at the end of each local day, from the
+    """Open tickets and pts at the end of each local day, from the
     events of every spell, counted or not: the original commitment's, and with
     the extra work's too.
     The closing day stops at the exact close, an active snapshot's current day
@@ -515,8 +476,8 @@ def main():
     if status not in {"active", "closed"}:
         raise SystemExit(
             f"sprint state {status!r}: only active and closed sprints can be reported")
-    if not sprint.get("startDate"):
-        raise SystemExit("the sprint has no start date")
+    if not sprint.get("startDate") or not sprint.get("endDate"):
+        raise SystemExit("the sprint has no start or end date")
     offset = report_timezone(meta.get("report_timezone"))
     if not os.path.exists(os.path.join(raw_dir, "previous_sprint.json")):
         raise SystemExit(

@@ -239,5 +239,46 @@ class RenderTest(unittest.TestCase):
                     output_diagram.render("flowchart TB")
 
 
+
+class RenderManyTest(unittest.TestCase):
+    """render_many() renders a batch in one Mermaid CLI run; mmdc is patched."""
+
+    def batch(self, npx, source_path, out_path, theme, source):
+        self.runs.append(source)
+        if "BROKEN" in source:
+            raise SystemExit("the diagram doesn't render: Parse error")
+        folder = os.path.dirname(out_path)
+        for number in range(1, source.count("```mermaid") + 1):
+            with open(os.path.join(folder, f"out-{number}.svg"), "w", encoding="utf-8") as f:
+                f.write(f'<svg viewBox="0 0 {number}00 50"/>')
+
+    def setUp(self):
+        self.runs = []
+        for name, value in (("mmdc", self.batch), ("shutil.which", lambda _: "/bin/npx")):
+            patcher = mock.patch.object(output_diagram, name, value) if "." not in name \
+                else mock.patch(f"output_diagram.{name}", value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_one_run_for_the_batch(self):
+        svgs = output_diagram.render_many(["sequenceDiagram\n A->>B: x", "sequenceDiagram\n B->>A: y"])
+        self.assertEqual([output_diagram.svg_size(s)[0] for s in svgs], [100.0, 200.0])
+        self.assertEqual(len(self.runs), 1)
+        self.assertEqual(output_diagram.render_many([]), [])
+
+    def test_failure_names_the_diagram(self):
+        with mock.patch.object(output_diagram, "render",
+                               side_effect=lambda source, theme: (_ for _ in ()).throw(
+                                   SystemExit("the diagram doesn't render: Parse error"))
+                               if "BROKEN" in source else GOOD_SVG):
+            with self.assertRaises(SystemExit) as raised:
+                output_diagram.render_many(["sequenceDiagram\n A->>B: x", "BROKEN"])
+        self.assertTrue(str(raised.exception).startswith("diagram 2: "))
+
+    def test_without_node(self):
+        with mock.patch("output_diagram.shutil.which", return_value=None):
+            with self.assertRaises(output_diagram.NodeMissing):
+                output_diagram.render_many(["sequenceDiagram"])
+
 if __name__ == "__main__":
     unittest.main()

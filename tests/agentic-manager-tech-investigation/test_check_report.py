@@ -11,6 +11,11 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] /
                        'skills/agentic-manager-tech-investigation/scripts'))
 import check_report
+from init_investigation import ledger_skeleton
+
+LEDGER = ledger_skeleton('Acme').replace(
+    '## Decisions and precise evidence gaps\n\nNone yet.',
+    '## Decisions and precise evidence gaps\n\n### G1\n\nEvidence unavailable.')
 
 
 class CheckReportTest(unittest.TestCase):
@@ -19,7 +24,7 @@ class CheckReportTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.folder = Path(self.temp.name)
         self.report = self.folder / 'Acme_Report.md'
-        (self.folder / 'ledgers.md').write_text('# Research\n\n## G1\nEvidence unavailable.\n')
+        (self.folder / 'ledgers.md').write_text(LEDGER)
         prep = []
         parts = ['# Acme\n\nEvidence snapshot: today. [Research ledger](ledgers.md).\n']
         for level, title in check_report.HEADINGS:
@@ -158,6 +163,8 @@ class CheckReportTest(unittest.TestCase):
     def test_interleaved_prose_requires_review_but_titles_are_allowed(self):
         image = '![Current architecture](architecture-as-is.svg)'
         for insertion, warning in (('\n\n#### Search flow', False),
+                                   ('\n\n<div style="width:62.42%; margin:0 auto;">', False),
+                                   ('\n\n<div style="zoom:2">', True),
                                    ('\n\nThis paragraph explains the structure.', True)):
             with self.subTest(insertion=insertion):
                 result = self.check(self.text.replace(image, image + insertion, 1))
@@ -176,6 +183,60 @@ class CheckReportTest(unittest.TestCase):
             with self.subTest(expected=expected):
                 prep.write_text(text)
                 self.assertIn(expected, ' '.join(self.check()['errors']))
+
+    def test_skipped_sections_follow_content_json(self):
+        content = self.folder / 'content.json'
+        content.write_text('{"skip": ["evolution"]}')
+        self.assertIn('H2/H3 headings', ' '.join(self.check()['errors']))
+        text = self.text
+        for title in ('Roadmap', 'Next evolution', 'Target architecture'):
+            start = text.index('### ' + title + '\n')
+            end = text.index('\n### ', start + 4) + 1
+            text = text[:start] + text[end:]
+        self.assertTrue(self.check(text)['ok'], self.check(text))
+        content.unlink()
+        self.assertIn('H2/H3 headings', ' '.join(self.check(text)['errors']))
+
+    def test_ledger_structure(self):
+        ledger = self.folder / 'ledgers.md'
+        finding = ('### F01 — Search is merged\n\n' +
+                   '\n'.join(f'**{field}:** text.' for field in check_report.FINDING_FIELDS))
+        complete = LEDGER.replace('## Findings and validation chains\n\nNone yet.',
+                                  '## Findings and validation chains\n\n' + finding)
+        cases = [
+            ('complete', complete, None, None),
+            ('section order', complete.replace('## Resume here', '## Summary'), 'sections must be exactly', None),
+            ('queue subsections', complete.replace('### Blocked', '### Waiting'), 'queue needs exactly', None),
+            ('duplicate finding', complete + '\n' + finding, 'duplicate findings: F01', None),
+            ('undefined finding', complete.replace('None yet.', 'See F07.', 1), 'never written: F07', None),
+            ('missing fields', complete.replace('**Kind:** text.', ''), None, 'F01 lacks Kind'),
+        ]
+        for name, text, error, warning in cases:
+            with self.subTest(name=name):
+                ledger.write_text(text)
+                result = self.check()
+                self.assertEqual(any(error in e for e in result['errors']) if error else result['errors'] == [],
+                                 True, result)
+                if warning:
+                    self.assertIn(warning, ' '.join(result['warnings']))
+
+    def test_handover_needs_empty_ready_queue_and_reflection(self):
+        ledger = self.folder / 'ledgers.md'
+        ready = LEDGER.replace('### Ready / in progress\n\n', '### Ready / in progress\n\n'
+                               '| Q01 | Start | Read code | Code | — | High | In progress | — |\n\n', 1)
+        reflected = LEDGER.replace('## Correction history\n\nNone yet.',
+                                   '## Correction history\n\n### Reflection\n\nConverged.')
+        cases = [(LEDGER, False, 'Reflection'), (reflected, True, None),
+                 (ready.replace('## Correction history\n\nNone yet.',
+                                '## Correction history\n\n### Reflection\n\nConverged.'), False, 'still ready')]
+        for text, ok, expected in cases:
+            with self.subTest(expected=expected):
+                ledger.write_text(text)
+                self.assertTrue(check_report.check_report(self.report)['ok'])
+                result = check_report.check_report(self.report, handover=True)
+                self.assertEqual(result['ok'], ok, result)
+                if expected:
+                    self.assertIn(expected, ' '.join(result['errors']))
 
     def test_unreadable_missing_and_relative_report(self):
         for path in ('relative.md', self.folder / 'missing.md'):

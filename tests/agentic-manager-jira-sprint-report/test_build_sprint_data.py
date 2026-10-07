@@ -169,17 +169,22 @@ class CarryOverTest(unittest.TestCase):
         self.assertFalse(build.in_sprint_when_closed([carried()], created, None))
 
     def test_only_original_work_is_carried_over(self):
+        # Carry-over describes the commitment: work that came from the previous
+        # sprint but joined after the start, or a later spell of carried work,
+        # is extra, not carried in.
         cases = [
-            ("in the commitment", [carried()], True),
+            ("in the commitment", [carried()], PREVIOUS, [True]),
+            ("no previous sprint on the board", [carried()], None, [False]),
             ("joined after the start", [carried(at("03-02", "08:00")), left(at("03-02", "08:30")),
-                                        joined(at("03-03"))], False),
-            ("new work", [joined(at("03-01"))], False),
+                                        joined(at("03-03"))], PREVIOUS, [False]),
+            ("new work", [joined(at("03-01"))], PREVIOUS, [False]),
+            ("descoped and back: only the first spell", [carried(), left(at("03-04")), joined(at("03-06"))],
+             PREVIOUS, [True, False]),
         ]
-        for name, changes, expected in cases:
+        for name, changes, previous, expected in cases:
             with self.subTest(name):
-                found = build.build_spells(raw("PROJ-1"), changes, context(previous=PREVIOUS), CLOSE)
-                self.assertEqual(found[0]["carriedIn"], expected)
-        self.assertFalse(build.build_spells(raw("PROJ-1"), [carried()], context(), CLOSE)[0]["carriedIn"])
+                found = build.build_spells(raw("PROJ-1"), changes, context(previous=previous), CLOSE)
+                self.assertEqual([s["carriedIn"] for s in found], expected)
 
 
 class SpellsTest(unittest.TestCase):
@@ -249,23 +254,38 @@ class SpellsTest(unittest.TestCase):
                                                  "type": "reestimated", "points": 5, "done": False, "fromPoints": 2})
 
     def test_fields_are_as_at_the_end_or_when_it_left(self):
-        # Removed while To Do, then done outside the sprint: To Do, as when it left.
-        found = self.build([joined(at("02-27")), left(at("03-04")), moved(at("03-06"), "To Do", "Done")],
-                           done("PROJ-1"))
-        self.assertEqual((found[0]["status"], found[0]["outcome"]), ("To Do", "removed"))
-        # Done after the close: open, as at the close.
-        found = self.build([joined(at("02-27")), moved(at("03-14"), "To Do", "Done")], done("PROJ-1"))
-        self.assertEqual((found[0]["status"], found[0]["outcome"]), ("To Do", "not_completed"))
+        # A report run later must give the same figures, so fields are read as
+        # at the close or when the ticket left, never as Jira shows them today.
+        cases = [
+            ("done outside the sprint after leaving: as when it left",
+             [joined(at("02-27")), left(at("03-04")), moved(at("03-06"), "To Do", "Done")], done("PROJ-1"),
+             ("To Do", "removed", None)),
+            ("done after the close: as at the close",
+             [joined(at("02-27")), moved(at("03-14"), "To Do", "Done")], done("PROJ-1"),
+             ("To Do", "not_completed", None)),
+            # A Duplicate counts as completed, as in Jira's report, but is named.
+            ("closed as a duplicate", [joined(at("02-27")), moved(at("03-04"), "To Do", "Duplicate")],
+             raw("PROJ-1", status="Duplicate", resolution="Done"), ("Duplicate", "completed", "duplicate")),
+        ]
+        for name, changes, issue, expected in cases:
+            with self.subTest(name):
+                found = self.build(changes, issue)[0]
+                self.assertEqual((found["status"], found["outcome"], found["closedAsNonDelivery"]), expected)
 
-    def test_only_the_original_spell_is_carried_over(self):
-        found = build.build_spells(raw("PROJ-1"), [carried(), left(at("03-04")), joined(at("03-06"))],
-                                   context(previous=PREVIOUS), CLOSE)
-        self.assertEqual([(s["scope"], s["carriedIn"]) for s in found], [("original", True), ("extra", False)])
-
-    def test_non_delivery(self):
-        found = self.build([joined(at("02-27")), moved(at("03-04"), "To Do", "Duplicate")],
-                           raw("PROJ-1", status="Duplicate", resolution="Done"))
-        self.assertEqual((found[0]["outcome"], found[0]["closedAsNonDelivery"]), ("completed", "duplicate"))
+    def test_epic(self):
+        # An epic fetched for its name shows it; one that wasn't falls back to
+        # its key rather than dropping the ticket from the epic table.
+        issue = raw("PROJ-1", parent="PROJ-100")
+        cases = [
+            ("known epic", issue, {"id-PROJ-100": ("PROJ-100", "Sign-in")}, ("PROJ-100", "Sign-in")),
+            ("epic not fetched", issue, {}, ("PROJ-100", "PROJ-100")),
+            ("no epic", raw("PROJ-1"), {"id-PROJ-100": ("PROJ-100", "Sign-in")}, (None, None)),
+        ]
+        for name, issue, epics, expected in cases:
+            with self.subTest(name):
+                found = build.build_spells(issue, [], context(epics), CLOSE)[0]
+                self.assertEqual((found["parentKey"], found["parentSummary"]), expected)
+                self.assertNotIn("parentId", found)
 
 
 class ReplayTest(unittest.TestCase):
@@ -330,6 +350,7 @@ class BreakdownAndEpicsTest(unittest.TestCase):
             spell("PROJ-11", outcome="removed", parent="PROJ-100",
                   events=[ev("03-02", "committed", done=True), ev("03-03", "reopened"), ev("03-04", "removed")]),
         ]
+        spells[3]["flagged"] = True
         epic = build.build_epics(spells, {"PROJ-100": "Staff sign-in"})[0]
         self.assertEqual(epic["description"], "Staff sign-in")
         self.assertEqual({group: [t["key"] for t in tickets] for group, tickets in epic["scope_groups"].items()},
@@ -338,8 +359,14 @@ class BreakdownAndEpicsTest(unittest.TestCase):
         self.assertEqual([(t["key"], t["reason"]) for t in epic["left_out"]],
                          [("PROJ-2", "done_at_start"), ("PROJ-3", "non_delivery"), ("PROJ-9", "done_at_start"),
                           ("PROJ-10", "done_at_start")])
-        self.assertEqual(epic["scope_groups"]["completed"][0],
-                         {"key": "PROJ-1", "scope": "original", "summary": "PROJ-1", "description": "About PROJ-1"})
+        # Each ticket carries what the commentary needs to describe it,
+        # including its estimate, status and flag.
+        self.assertEqual(epic["scope_groups"]["in_review"][0],
+                         {"key": "PROJ-4", "scope": "original", "points": 2, "status": "In Review", "flagged": True,
+                          "summary": "PROJ-4", "description": "About PROJ-4"})
+        self.assertEqual(epic["left_out"][1],
+                         {"key": "PROJ-3", "scope": "original", "points": 2, "status": "Duplicate", "flagged": False,
+                          "summary": "PROJ-3", "description": "About PROJ-3", "reason": "non_delivery"})
         self.assertEqual(epic["original_stories_done"], 3)
         self.assertEqual(build.build_epics(spells)[0]["description"], "")
 
@@ -365,8 +392,20 @@ class TimelineTest(unittest.TestCase):
             ("2026-03-13", ["sprint_closed"], [])])
         self.assertEqual(rows[1]["events"][0], {"key": "PROJ-2", "scope": "extra", "at": at("03-04"), "type": "joined",
                                                 "points": 1, "done": False})
-        active = build.build_timeline(tickets, "active", "2026-03-02", "2026-03-13", None, "2026-03-10")
-        self.assertEqual([r["labels"] for r in active][-1], ["today"])
+
+    def test_labels(self):
+        # A running sprint is marked at today; a closed one at its close, or
+        # at its planned end when Jira has no close date.
+        cases = [
+            ("closed", "closed", "2026-03-12", ("2026-03-12", ["sprint_closed"])),
+            ("closed without a close date", "closed", None, ("2026-03-13", ["sprint_closed"])),
+            ("active", "active", None, ("2026-03-10", ["today"])),
+        ]
+        for name, status, complete, expected in cases:
+            with self.subTest(name):
+                rows = build.build_timeline([], status, START_DATE, "2026-03-13", complete, "2026-03-10")
+                self.assertEqual([(r["date"], r["labels"]) for r in rows],
+                                 [(START_DATE, ["sprint_start"]), expected])
 
 
 class BurndownTest(unittest.TestCase):
@@ -398,29 +437,32 @@ class CrossCheckTest(unittest.TestCase):
     def check(self, report):
         return build.cross_check(report, ["PROJ-1", "PROJ-2"], ["PROJ-1"], ["PROJ-3", "PROJ-9"], ["PROJ-8"])
 
-    def test_agreeing(self):
-        self.assertEqual(self.check(self.report()), [])
-
-    def test_completed_in_another_sprint_counts_as_completed(self):
-        report = self.report(completed=())
-        report["contents"]["issuesCompletedInAnotherSprint"] = [{"key": "PROJ-1"}]
-        self.assertEqual(self.check(report), [])
-
-    def test_missing_report(self):
-        self.assertIsNone(self.check({}))
-        self.assertIsNone(self.check(None))
-
-    def test_empty_report(self):
-        self.assertIn("this board doesn't serve it", " ".join(self.check(self.report((), (), ())) or []))
-
-    def test_later_moves_are_left_out(self):
-        self.assertEqual(self.check(self.report(punted=("PROJ-3", "PROJ-8", "PROJ-9"))), [])
-
-    def test_differences_both_ways(self):
-        self.assertEqual(self.check(self.report(completed=("PROJ-1", "PROJ-5"), punted=("PROJ-9",))), [
-            "in-scope: ['PROJ-5'] in Jira's sprint report but not in our data",
-            "completed: ['PROJ-5'] in Jira's sprint report but not in our data",
-            "removed: ['PROJ-3'] in our data but not in Jira's sprint report"])
+    def test_cross_check(self):
+        in_another_sprint = self.report(completed=())
+        in_another_sprint["contents"]["issuesCompletedInAnotherSprint"] = [{"key": "PROJ-1"}]
+        cases = [
+            ("agreeing", self.report(), []),
+            # Jira lists work Done in another sprint apart; it is still completed.
+            ("completed in another sprint counts as completed", in_another_sprint, []),
+            # None, not [], so main() can say the report is missing rather than
+            # that the data agrees.
+            ("no report", None, None),
+            ("no contents", {}, None),
+            # Some boards return the report with every bucket empty.
+            ("empty report", self.report((), (), ()),
+             ["Jira's sprint report is empty: this board doesn't serve it. Fetch the sprint again "
+              "with --board, using another scrum board of the project"]),
+            # Jira's buckets show today's membership, so they can't verify
+            # tickets moved after the end.
+            ("tickets moved later are left out", self.report(punted=("PROJ-3", "PROJ-8", "PROJ-9")), []),
+            ("differences both ways", self.report(completed=("PROJ-1", "PROJ-5"), punted=("PROJ-9",)), [
+                "in-scope: ['PROJ-5'] in Jira's sprint report but not in our data",
+                "completed: ['PROJ-5'] in Jira's sprint report but not in our data",
+                "removed: ['PROJ-3'] in our data but not in Jira's sprint report"]),
+        ]
+        for name, report, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(self.check(report), expected)
 
 
 class MembershipSetsTest(unittest.TestCase):
@@ -457,8 +499,12 @@ class MainTest(unittest.TestCase):
         self.report = {"contents": {"issuesNotCompletedInCurrentSprint": [
             {"key": "PROJ-1"}], "puntedIssues": []}}
         self.write_report = True
+        self.previous = None
         self.write_previous = True
         self.fetched_at = "2026-03-16T09:00:00+00:00"
+        # {key: changes}; by default the current issues have none and the
+        # removed ones a removal.
+        self.changelogs = {}
 
     def write(self, name, payload):
         path = os.path.join(self.dir, "_raw", name)
@@ -478,10 +524,10 @@ class MainTest(unittest.TestCase):
         if self.write_report:
             self.write("sprint_report.json", self.report)
         if self.write_previous:
-            self.write("previous_sprint.json", None)
+            self.write("previous_sprint.json", self.previous)
         for issue in self.current + self.removed:
-            self.write(f"changelogs/{issue['key']}.json",
-                       [left("2026-03-04T10:00:00.000+0100")] if issue in self.removed else [])
+            default = [left(at("03-04"))] if issue in self.removed else []
+            self.write(f"changelogs/{issue['key']}.json", self.changelogs.get(issue["key"], default))
         argv = ["build_sprint_data.py", "--report-dir",
                 self.dir]
         with mock.patch.object(sys, "argv", argv), mock.patch("builtins.print"):
@@ -497,8 +543,56 @@ class MainTest(unittest.TestCase):
 
     def test_writes_data(self):
         data = self.run_main()
-        self.assertEqual((data["sprint_start"], data["sprint_end"], [t["outcome"] for t in data["spells"]]),
-                         ("2026-03-02", "2026-03-13", ["not_completed"]))
+        self.assertEqual((data["sprint_start"], data["sprint_end"], data["sprint_complete_date"],
+                          data["as_of_instant"], data["previous_sprint"], [t["outcome"] for t in data["spells"]]),
+                         ("2026-03-02", "2026-03-13", "2026-03-13", self.sprint["completeDate"], None,
+                          ["not_completed"]))
+
+    def test_closed_sprint(self):
+        # One sprint holding each case the report must name apart.
+        self.previous = PREVIOUS
+        self.current = [raw("PROJ-1", points=2, priority={"name": "High"}),
+                        raw("PROJ-2", status="Duplicate", resolution="Done", points=3)]
+        self.removed = [raw("PROJ-3"), raw("PROJ-4")]
+        self.changelogs = {
+            "PROJ-1": [carried()],
+            "PROJ-2": [moved(at("03-04"), "To Do", "Duplicate")],
+            # Moved out after the close: still in scope, but today's Jira
+            # report can't vouch for it.
+            "PROJ-3": [left(at("03-15"))],
+            # Joined and left before the start: in no part of the report.
+            "PROJ-4": [joined(at("02-27")), left(at("02-28"))],
+        }
+        self.report = {"contents": {"completedIssues": [{"key": "PROJ-2"}],
+                                    "issuesNotCompletedInCurrentSprint": [{"key": "PROJ-1"}],
+                                    "puntedIssues": [{"key": "PROJ-3"}, {"key": "PROJ-4"}]}}
+        data = self.run_main()
+        self.assertEqual([(t["key"], t["outcome"], t["carriedIn"]) for t in data["spells"]],
+                         [("PROJ-1", "not_completed", True), ("PROJ-2", "completed", False),
+                          ("PROJ-3", "not_completed", False)])
+        self.assertEqual(data["previous_sprint"], {"id": 6, "name": "Sprint 6", "complete_instant":
+                                                   PREVIOUS["completeDate"], "complete_date": START_DATE})
+        self.assertEqual(data["membership_cross_check_excluded_keys"], ["PROJ-3"])
+        self.assertEqual(data["left_before_start_keys"], ["PROJ-4"])
+        self.assertEqual(data["non_delivery_closures"], {"count": 1, "points": 3, "issues": [
+            {"key": "PROJ-2", "status": "Duplicate", "resolution": "Done", "storyPoints": 3, "marker": "duplicate",
+             "summary": "Summary of PROJ-2"}]})
+        self.assertEqual(data["blocker_candidate_keys"], ["PROJ-1"])
+        self.assertEqual((data["points_estimated_issue_count"], data["points_total_issue_count"]), (2, 3))
+        # The baseline is the whole commitment, Done or not.
+        self.assertEqual(data["burndown_baseline"], 5)
+        self.assertEqual([r["date"] for r in data["burndown"]][-1], "2026-03-13")
+
+    def test_active_sprint_runs_to_the_fetch(self):
+        # A running sprint is described as at the fetch, and its burndown
+        # stops at today rather than running on to the planned end.
+        self.fetched_at = "2026-03-05T09:00:00+00:00"
+        self.sprint.update(state="active", completeDate=None)
+        data = self.run_main()
+        self.assertEqual((data["sprint_status"], data["as_of_instant"], data["today"], data["sprint_complete_date"]),
+                         ("active", self.fetched_at, "2026-03-05", None))
+        self.assertEqual([r["date"] for r in data["burndown"]][-1], "2026-03-05")
+        self.assertEqual(data["timeline"][-1]["labels"], ["today"])
 
     def test_sub_tasks_are_left_out(self):
         self.current.append(
@@ -515,7 +609,9 @@ class MainTest(unittest.TestCase):
             (lambda: self.sprint.update(state="future"),
              "sprint state 'future': only active and closed sprints"),
             (lambda: self.sprint.update(startDate=None),
-             "the sprint has no start date"),
+             "the sprint has no start or end date"),
+            (lambda: self.sprint.update(endDate=None),
+             "the sprint has no start or end date"),
             (change("removed", [raw(
                 "PROJ-1")]), r"\['PROJ-1'\] are both in the sprint and in Jira's removed list"),
             (change("write_report", False), "Jira's sprint report is missing"),
@@ -524,6 +620,12 @@ class MainTest(unittest.TestCase):
              "data differs from Jira's sprint report"),
             (lambda: (self.sprint.update(state="active"), setattr(self, "fetched_at", None)),
              "can't tell the moment the report describes"),
+            # The raw files disagree with each other: the fetch caught the
+            # sprint mid-change, so guessing would misreport it.
+            (lambda: self.changelogs.update({"PROJ-1": [left(at("03-04"))]}),
+             "PROJ-1 is in the sprint but its changelog says it isn't"),
+            (lambda: (setattr(self, "removed", [raw("PROJ-2")]), self.changelogs.update({"PROJ-2": []})),
+             "PROJ-2 is in Jira's removed list but its changelog has no removal from sprint 7"),
         ]
         for apply, expected in cases:
             with self.subTest(expected):

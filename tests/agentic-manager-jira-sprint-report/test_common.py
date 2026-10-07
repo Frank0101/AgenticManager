@@ -19,7 +19,7 @@ from agentic_manager import output_file  # noqa: E402
 class LibraryTest(unittest.TestCase):
     def test_library_names_are_importable_from_here(self):
         from agentic_manager import jira, output_folder
-        for name in ("ISSUE_KEY", "JiraClient", "key_order", "nested", "parse_ts", "value_at"):
+        for name in ("ISSUE_KEY", "JiraClient", "key_order", "nested", "parse_ts", "plain_text", "value_at"):
             self.assertIs(getattr(common, name), getattr(jira, name))
         self.assertIs(common.output_folder, output_folder.output_folder)
 
@@ -55,8 +55,10 @@ class BlockerCandidateTest(unittest.TestCase):
 
 class SprintEventsTest(unittest.TestCase):
     def test_split_ids(self):
-        self.assertEqual(common.split_ids(" 6, 7 ,"), {"6", "7"})
-        self.assertEqual(common.split_ids(None), set())
+        # A changelog's sprint field is a comma-separated list, or empty.
+        for value, expected in [(" 6, 7 ,", {"6", "7"}), ("", set()), (None, set())]:
+            with self.subTest(value=value):
+                self.assertEqual(common.split_ids(value), expected)
 
     def test_add_and_remove_events(self):
         def sprint(created, old, new):
@@ -102,7 +104,9 @@ class SprintMovesTest(unittest.TestCase):
 
     def test_membership_at_exact_instants(self):
         moves = common.sprint_moves([self.ADD], [self.REMOVE], self.CREATED)
-        for instant, expected in [(self.CREATED, True), (self.REMOVE, False), (self.ADD, True)]:
+        # Before its creation the issue was in no sprint.
+        before = "2026-02-28T10:00:00.000+0100"
+        for instant, expected in [(before, False), (self.CREATED, True), (self.REMOVE, False), (self.ADD, True)]:
             with self.subTest(instant=instant):
                 self.assertIs(common.in_sprint_at(
                     moves, common.parse_ts(instant)), expected)
@@ -136,13 +140,22 @@ class HistoryTest(unittest.TestCase):
                 self.assertIs(type(points), type(expected))
 
     def test_status_categories(self):
+        # Changelogs give status ids as strings, the statuses list as numbers.
         self.assertEqual(common.status_categories(
             [{"id": 3, "statusCategory": {"key": "done"}}]), {"3": "done"})
 
+    def test_history_fields(self):
+        # Story points and Flagged are the site's own fields; the rest are Jira's names.
+        self.assertEqual(common.history_fields("customfield_flag", "customfield_points"), {
+            "sprint": "Sprint", "status": "status", "resolution": "resolution", "priority": "priority",
+            "parent": "IssueParentAssociation", "points": "customfield_points", "flagged": "customfield_flag"})
+
     def test_as_of(self):
-        closed = {"state": "closed", "completeDate": "C", "endDate": "E"}
+        # A closed sprint is reported as it closed, whatever the state's case;
+        # any other sprint as it was at the fetch.
+        closed = {"state": "Closed", "completeDate": "C", "endDate": "E"}
         cases = [(closed, "C"), ({**closed, "completeDate": None}, "E"),
-                 ({"state": "active", "endDate": "E"}, "F")]
+                 ({"state": "active", "endDate": "E"}, "F"), ({"state": None}, "F")]
         for sprint, expected in cases:
             with self.subTest(sprint=sprint):
                 self.assertEqual(common.as_of(sprint, "F"), expected)
@@ -185,9 +198,12 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(history.state_at(self.at(9)), {
             "status": "To Do", "statusCategory": "new", "resolution": "Done", "storyPoints": 8,
             "flagged": False, "priority": "Low", "parentId": "200", "parentKey": "PROJ-200"})
-        unset = self.history(raw, [])
-        self.assertEqual((unset.state_at(self.at(5))["storyPoints"], unset.state_at(self.at(5))["flagged"]),
-                         (None, False))
+        # With no changelog the current fields held throughout; without the
+        # site's points or Flagged field the issue has no estimate and no flag.
+        unset = self.history(self.raw(customfield_points=8.0, priority=None), [])
+        self.assertEqual(unset.state_at(self.at(5)), {
+            "status": "To Do", "statusCategory": "new", "resolution": None, "storyPoints": None,
+            "flagged": False, "priority": "", "parentId": None, "parentKey": None})
 
     def test_unknown_status(self):
         # Not in Jira's list of statuses: the current status's category, else a failure.
@@ -201,10 +217,6 @@ class HistoryTest(unittest.TestCase):
 
 
 class FilesTest(unittest.TestCase):
-    def test_report_file(self):
-        self.assertEqual(common.report_file("PROJ_Sprint_7"),
-                         "PROJ_Sprint_7_Sprint_Report.md")
-
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -216,6 +228,10 @@ class FilesTest(unittest.TestCase):
                 module, "output_folder", return_value=(self.folder, False))
             patcher.start()
             self.addCleanup(patcher.stop)
+
+    def test_report_file(self):
+        self.assertEqual(common.report_file("PROJ_Sprint_7"),
+                         "PROJ_Sprint_7_Sprint_Report.md")
 
     def test_write_and_load_json(self):
         path = os.path.join(self.folder, "PROJ_Sprint_7", "_raw", "data.json")
@@ -241,11 +257,14 @@ class FilesTest(unittest.TestCase):
                 self.assertFalse(os.path.exists(path))
 
     def test_load_missing_json(self):
+        # A step run out of order names the file it lacks, not a traceback.
         with self.assertRaisesRegex(SystemExit, "missing /no/such/file.json"):
             common.load_json("/no/such/file.json")
 
     def test_report_label(self):
-        cases = [("PROJ", "Sprint 3", "PROJ_Sprint_3"), ("PROJ", "proj sprint 3", "proj_sprint_3"),
+        # The key is prefixed unless the name starts with it, in any case; each
+        # run of characters unsafe in a file name becomes one underscore.
+        cases =[("PROJ", "Sprint 3", "PROJ_Sprint_3"), ("PROJ", "proj sprint 3", "proj_sprint_3"),
                  ("PROJ", "Q1: Login / Search!", "PROJ_Q1_Login_Search"), (None, None, "Sprint")]
         for project, name, expected in cases:
             with self.subTest(name=name):
@@ -253,39 +272,94 @@ class FilesTest(unittest.TestCase):
 
 
 class QuantitiesTest(unittest.TestCase):
-    def test_number(self):
-        self.assertEqual((common.number(3.0), common.number(
-            2.5), common.number(4)), ("3", "2.5", "4"))
-
-    def test_plural(self):
-        self.assertEqual([common.plural(n, "it", "they") for n in (0, 1, 1.0, 2)],
-                         ["they", "it", "it", "they"])
-
     def test_formats(self):
+        # Each figure has one shape in every part of the report. Exactly 1 is
+        # singular, 1.0 too; 0 is plural; no estimate is "–", never 0.
         cases = [
-            ("unit", [common.unit(1), common.unit(2)], ["ticket", "tickets"]),
-            ("pts", [common.pts(1), common.pts(2.0),
-             common.pts(None)], ["1 pt", "2 pts", "– pts"]),
-            ("amount", [common.qty(1, 3.0), common.qty(7, 7), common.qty(4, None)],
-             ["1 ticket (3 pts)", "7 tickets (7 pts)", "4 tickets (– pts)"]),
-            ("done out of total", [common.ratio(11, 22, 34, 74), common.ratio(1, 1, 2.0, 2)],
-             ["11/22 tickets (34/74 pts)", "1/1 ticket (2/2 pts)"]),
-            ("one ticket", [common.ticket_ref("PROJ-20", 2), common.ticket_ref("PROJ-13", None)],
-             ["PROJ-20 (2 pts)", "PROJ-13 (– pts)"]),
-            ("estimate", [common.estimate(5),
-             common.estimate(None)], ["5", "–"]),
+            (common.number, (3.0,), "3"), (common.number, (2.5,), "2.5"), (common.number, (4,), "4"),
+            (common.plural, (0, "it", "they"), "they"), (common.plural, (1, "it", "they"), "it"),
+            (common.plural, (1.0, "it", "they"), "it"), (common.plural, (2, "it", "they"), "they"),
+            (common.unit, (1,), "ticket"), (common.unit, (0,), "tickets"), (common.unit, (2,), "tickets"),
+            (common.pts, (1,), "1 pt"), (common.pts, (1.0,), "1 pt"), (common.pts, (2.0,), "2 pts"),
+            (common.pts, (0.5,), "0.5 pts"), (common.pts, (0,), "0 pts"), (common.pts, (None,), "– pts"),
+            (common.qty, (1, 3.0), "1 ticket (3 pts)"), (common.qty, (7, 7), "7 tickets (7 pts)"),
+            (common.qty, (4, None), "4 tickets (– pts)"),
+            # The unit follows the total: "1/1 ticket", "0/2 tickets".
+            (common.ratio, (11, 22, 34, 74), "11/22 tickets (34/74 pts)"),
+            (common.ratio, (1, 1, 2.0, 2), "1/1 ticket (2/2 pts)"),
+            (common.ratio, (0, 2, 0, 1), "0/2 tickets (0/1 pts)"),
+            (common.ticket_ref, ("PROJ-20", 2), "PROJ-20 (2 pts)"),
+            (common.ticket_ref, ("PROJ-13", None), "PROJ-13 (– pts)"),
+            (common.estimate, (5,), "5"), (common.estimate, (2.0,), "2"), (common.estimate, (0,), "0"),
+            (common.estimate, (None,), "–"),
+            # A share above zero never reads 0%; nothing to share is n/a.
+            (common.whole_percentage, (1, 3), "33%"), (common.whole_percentage, (2, 3), "67%"),
+            (common.whole_percentage, (2, 4), "50%"), (common.whole_percentage, (5, 5), "100%"),
+            (common.whole_percentage, (0, 5), "0%"), (common.whole_percentage, (1, 300), "<1%"),
+            (common.whole_percentage, (1, 200), "<1%"), (common.whole_percentage, (1, 0), "n/a"),
+            # Just short of the whole never reads as all of it.
+            (common.whole_percentage, (199, 200), ">99%"), (common.whole_percentage, (299, 300), ">99%"),
+            (common.whole_percentage, (99, 100), "99%"),
+            (common.display_date, ("2026-03-02",), "02/03/2026"),
         ]
-        for name, got, expected in cases:
-            with self.subTest(name):
-                self.assertEqual(got, expected)
+        for function, args, expected in cases:
+            with self.subTest(function=function.__name__, args=args):
+                self.assertEqual(function(*args), expected)
 
-    def test_whole_percentage(self):
-        self.assertEqual([common.whole_percentage(part, whole) for part, whole in
-                          ((1, 3), (2, 4), (1, 0), (1, 300), (1, 200), (0, 5), (2, 3))],
-                         ["33%", "50%", "n/a", "<1%", "<1%", "0%", "67%"])
 
-    def test_display_date(self):
-        self.assertEqual(common.display_date("2026-03-02"), "02/03/2026")
+class VocabularyTest(unittest.TestCase):
+    def test_banned_words(self):
+        # Whole words only, in any case: "history", "issued" or "someone" are
+        # fine, and a hyphen splits "twenty-one" into two spelled-out numbers.
+        cases = [
+            ("3 tickets (5 pts) completed; the history of the issued fix, by someone", []),
+            ("Two stories and one issue", [("story or stories", ["stories"]), ("issue or issues", ["issue"]),
+                                           ("spelled-out numbers (write digits)", ["Two", "one"])]),
+            ("A point, then twenty-one Points", [("points (write pts)", ["point", "Points"]),
+                                                 ("spelled-out numbers (write digits)", ["twenty", "one"])]),
+            ("The Story was Closed", [("story or stories", ["Story"]),
+                                      ("closed (write completed, or at the close)", ["Closed"])]),
+        ]
+        for text, expected in cases:
+            with self.subTest(text):
+                self.assertEqual(common.banned_words(text), expected)
+
+    def test_word_count(self):
+        # A link counts as its text, never its URL; hyphenated words count once.
+        cases = [("JavaScript and per-market", 3), ("[PROJ-1 fix](https://acme.test/browse/PROJ-1) done", 3),
+                 ("a  b\nc", 3), ("", 0)]
+        for text, expected in cases:
+            with self.subTest(text):
+                self.assertEqual(common.word_count(text), expected)
+
+    def test_ai_label_follows_the_title(self):
+        # The label is a note after the title, sized in rem so it reads the same
+        # after a heading and in a table cell.
+        self.assertEqual(common.ai("Goal outcome"),
+                         'Goal outcome <sup style="font-size:0.6rem;font-weight:normal">[AI Gen.]</sup>')
+
+
+class ScopeGroupsTest(unittest.TestCase):
+    def test_scope_group_label(self):
+        # Not completed work reads "Open" only while the sprint runs.
+        cases = [("completed", "active", "Completed"), ("in_review", "closed", "In review"),
+                 ("not_completed", "active", "Open"), ("not_completed", "closed", "Not completed"),
+                 ("descoped", "active", "Descoped")]
+        for group, status, expected in cases:
+            with self.subTest(group=group, status=status):
+                self.assertEqual(common.scope_group_label(group, status), expected)
+
+    def test_epic_groups(self):
+        # Only groups with tickets, always in the report's order.
+        epic = {"scope_groups": {"descoped": ["PROJ-2"], "not_completed": [], "in_review": [],
+                                 "completed": ["PROJ-1"]}}
+        self.assertEqual(common.epic_groups(epic), ["completed", "descoped"])
+
+    def test_outcome_total(self):
+        # A row's work however it ended, descoped included; other rows don't count.
+        breakdown = {"original_completed": 3, "original_not_completed": 2, "original_removed": 1,
+                     "extra_completed": 5, "extra_not_completed": 0, "extra_removed": 0}
+        self.assertEqual(common.outcome_total(breakdown, "original"), 6)
 
 
 class TargetCompletionTest(unittest.TestCase):
@@ -296,6 +370,33 @@ class TargetCompletionTest(unittest.TestCase):
                            ticket("PROJ-3", scope="extra"), ticket("PROJ-4", outcome="removed")]}
         self.assertEqual(common.target_completion(
             data), (["PROJ-1"], ["PROJ-1", "PROJ-2", "PROJ-4"]))
+
+
+class AllowedVerdictsTest(unittest.TestCase):
+    def test_allowed_verdicts(self):
+        # A 10-day sprint, 02/03 to 12/03: its halfway day is 07/03.
+        def data(status="active", today="2026-03-06", goal="Ship login"):
+            return {"sprint_status": status, "sprint_goal": goal, "sprint_start": "2026-03-02",
+                    "sprint_end": "2026-03-12", "today": today}
+        cases = [
+            # The day before halfway, or before the start, is too early.
+            (data(), ("Too early to tell",)),
+            (data(today="2026-03-01"), ("Too early to tell",)),
+            # From the halfway day on, including a sprint running past its end.
+            (data(today="2026-03-07"), ("On track", "At risk")),
+            (data(today="2026-03-20"), ("On track", "At risk")),
+            # The halfway day is a whole day: with an odd span its midpoint
+            # is at noon, and the morning of that day can be judged too.
+            ({**data(today="2026-03-06"), "sprint_end": "2026-03-11"}, ("On track", "At risk")),
+            # A closed sprint is judged whenever it closed.
+            (data(status="closed"), ("Fully met", "Partially met", "Not met")),
+            # No goal leaves nothing to judge, closed or not.
+            (data(goal=""), ("No goal set in Jira for this sprint",)),
+            (data(status="closed", goal=""), ("No goal set in Jira for this sprint",)),
+        ]
+        for case, expected in cases:
+            with self.subTest(case):
+                self.assertEqual(common.allowed_verdicts(case), expected)
 
 
 if __name__ == "__main__":

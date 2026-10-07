@@ -1,7 +1,7 @@
 ---
 name: agentic-manager-tech-investigation
 description: Investigates a technical system, proposal, capability or engineering problem by triangulating the team's documentation (the vision), work tracker (the delivery) and source control (the implementation), and iterates until it converges on an evidence-backed account of the current state, the current milestone and the directional target architecture, with a fixed executive/product layer and architect layer, as-is and to-be architecture maps, numbered Mermaid sequence diagrams, and a detailed research queue and evidence ledger. Also produces short outputs, such as an exec summary, from the same full investigation. Use when the user asks to investigate, map or explain a system or proposal, asks what exists today versus what is planned, or asks for its architecture, current milestone, first iteration or target state.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_folder.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/output_diagram.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_report.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_folder.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_investigation.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/build_maps.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/save_example.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/output_diagram.py *)
 ---
 
 # Tech Investigation
@@ -18,6 +18,8 @@ Investigates a technical system, proposal, capability or engineering problem, an
 The result must make sense to a new reader, be useful to the engineers who build it, and stand up against the evidence available.
 
 The investigation's files are written to the `tech-investigations` folder of the output root the user set in the config (`output.root`), or to a temporary folder if none is set. Scripts give you that folder and write the files in it (see [Saving files](#saving-files)); never choose a folder yourself, and never read the config to find it.
+
+You do the research and write what needs judgment: the ledger, what the maps show (`maps.json`) and the report's text (`content.json`). Scripts own everything mechanical: the folder, the ledger's skeleton, the maps' Mermaid and SVGs, the report's template, and the checks.
 
 ## Prerequisite
 
@@ -40,27 +42,35 @@ Other enabled groups, such as a local vault or messaging, aren't evidence for th
 
 ## Saving files
 
-Three scripts handle the output folder: two of the shared library, in the `agentic-manager-utils-lib` skill installed next to this one, and one of this skill. `<lib>` below is the library's folder, `${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager`, and `<scripts>` this skill's `scripts` folder, `${CLAUDE_SKILL_DIR}/scripts`, where `${CLAUDE_SKILL_DIR}` is this skill's folder. Call them by exactly those paths: in Claude Code, the skill pre-approves them there, so they run without a permission prompt. Each prints what's wrong and exits non-zero on failure; handle the diagram exceptions below, and otherwise stop and report it.
+`<lib>` below is the shared library's folder, `${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager`, and `<scripts>` this skill's `scripts` folder, `${CLAUDE_SKILL_DIR}/scripts`, where `${CLAUDE_SKILL_DIR}` is this skill's folder. Call the scripts by exactly those paths: in Claude Code, the skill pre-approves them there, so they run without a permission prompt. Each prints one line of JSON, or what's wrong on standard error with a non-zero exit; handle the cases named below, and otherwise stop and report it. `<investigation>` is the investigation's folder name that `init_investigation.py` prints.
 
-- **The folder:** `python3 <lib>/output_folder.py --name tech-investigations` prints one line of JSON with the `folder`, created if missing, and whether it is `temporary`.
-- **A file:** write every file of this skill, new or changed, with `output_file.py`, never with your own file tools. It takes the file's whole content on standard input, replaces the file if it exists, and creates missing folders on the way. `--path` is relative to `<folder>`:
+| Script                                                                    | What it does                                                                                                         |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `<scripts>/init_investigation.py --topic <Topic> [--format <format>]`     | Creates or finds the investigation's folder and its ledger skeleton, and lists earlier folders and examples (step 1). |
+| `<scripts>/build_maps.py --investigation <investigation> [--png]`         | Builds `mermaids.md` and the three map SVGs from `maps.json` ([The architecture map](#the-architecture-map)).         |
+| `<scripts>/make_report.py --investigation <investigation>`                | Writes `<Topic>_Report.md` from `content.json`, then checks it ([The document](#the-document)).                      |
+| `<scripts>/make_summary.py --investigation <investigation> --format <format>` | Writes a short output, `<format>.md`, from `<format>.json` (step 8).                                          |
+| `<scripts>/check_report.py --report '<absolute report path>' [--handover]` | Checks the report, its local files and the ledger's structure, read-only (step 7).                                   |
+| `<scripts>/save_example.py ...`                                           | Keeps an approved document as an example (step 9).                                                                   |
+| `<scripts>/output_diagram.py --check [--png] < diagram.mmd`               | Renders one diagram to try it, writing nothing to the folder: its `width` and `height`, and a PNG preview with `--png`. |
 
-  ```bash
-  python3 <lib>/output_file.py --name tech-investigations --path '<path inside the folder>' <<'END_OF_FILE'
-  <the file's whole content>
-  END_OF_FILE
-  ```
+Write your own files, `ledgers.md`, `maps.json`, `content.json` and a short output's `<format>.json`, with the library's `output_file.py`, never with your own file tools. It takes the file's whole content on standard input, replaces the file if it exists, and creates missing folders on the way. `--path` is relative to the skill's folder:
 
-  For a small update, read the affected text and use the same command with `--patch`. Standard input is a JSON array of exact replacements:
+```bash
+python3 <lib>/output_file.py --name tech-investigations --path '<investigation>/<file>' <<'END_OF_FILE'
+<the file's whole content>
+END_OF_FILE
+```
 
-  ```json
-  [{"old": "Unique existing text", "new": "Updated text"}]
-  ```
+For a small update, read the affected text and use the same command with `--patch`. Standard input is a JSON array of exact replacements:
 
-  Each nonempty `old` must match exactly once, in order; all edits are validated before writing. Missing or ambiguous matches leave the file unchanged: reread the affected section and retry with sufficient context. Patches cannot create files or write outside the same output folder. Use full writes for new files or substantial reorganisations. Neither mode replaces reading the current content; do not regenerate a long file for a small change.
+```json
+[{"old": "Unique existing text", "new": "Updated text"}]
+```
 
-- **Working files** (map sources being tried, sequence drafts, a working copy of a long report or ledger you keep in step) go in your own scratch or temp folder, not the investigation folder; only finished content goes through the writers. Try layouts with `output_diagram.py --check`, which writes nothing there.
-- **A diagram image:** `python3 <scripts>/output_diagram.py` takes the same `--name` and `--path` (ending in `.svg`) and a Mermaid diagram on standard input, renders it with the Mermaid CLI through Node.js 22.13+, checks that every connection line keeps to the map's line rules (see [The architecture map](#the-architecture-map)), and writes the SVG. If the lines break the rules, it writes nothing and names each bad line: fix the diagram and run it again. If Node.js isn't available, it exits with code `3`. With `--check` (and optionally `--theme dark`), it renders a diagram from standard input, a map or a sequence, without writing anything to the folder: it applies the line rules to a map and prints the rendered `width` and `height`. Add `--png` to also get a PNG preview of the layout in the system temp folder (its `png` path), which you can open as an image to inspect it.
+Each nonempty `old` must match exactly once, in order; all edits are validated before writing. Missing or ambiguous matches leave the file unchanged: reread the affected section and retry with sufficient context. Patches cannot create files or write outside the same output folder. Use full writes for new files or substantial reorganisations. Neither mode replaces reading the current content; do not regenerate a long file for a small change. In `content.json` and `maps.json`, a patch's `old` and `new` are JSON text, escapes included.
+
+Never edit the report, `mermaids.md` or the SVGs: change `content.json` or `maps.json` and run their script again. Working files (diagrams being tried, a working copy of a long ledger you keep in step) go in your own scratch or temp folder, not the investigation folder.
 
 ## Evidence authority
 
@@ -77,7 +87,7 @@ Every claim follows one chain of authority, from most to least authoritative: **
 
 The report describes evidence recorded in the ledger; it does not recommend a design or delivery plan. Future milestones and target architecture may be reconstructed from the team's work tracker and documentation without implementation evidence. Distinguish documented decisions, source-authored proposals and clearly labelled inferences that connect those sources. Cite the underlying sources, including for inferred future direction.
 
-Do not introduce investigator recommendations, preferred backends, new milestones, implementation sequencing, retirement plans or suggested owners. Recording your own proposal in the ledger does not make it evidence. If the sources do not establish a choice, disposition or owner, report it as unresolved. In particular, do not invent decommissioning to make an evolution diagram appear complete. Withdraw unsupported earlier conclusions in the ledger before updating the report and diagrams.
+Do not introduce investigator recommendations, preferred backends, new milestones, implementation sequencing, retirement plans or suggested owners. Recording your own proposal in the ledger does not make it evidence. If the sources do not establish a choice, disposition or owner, report it as unresolved. In particular, do not invent decommissioning to make an evolution diagram appear complete. Showing a component as replaced in a future stage is not a retirement plan: it describes the reconstructed design (see [The architecture map](#the-architecture-map)). Withdraw unsupported earlier conclusions in the ledger before updating the report and diagrams.
 
 Rendering uses the ledger's established findings only. If a missing fact requires research, return to the investigation and update the ledger first; do not fill the gap while writing the report.
 
@@ -175,7 +185,7 @@ For every important component or claim, ask: what does the documentation say sho
 
 ## Ledgers
 
-Keep `<investigation>/ledgers.md` throughout the investigation (see [Saving files](#saving-files)). It is the persistent research record behind the two report layers, with substantially more detail than the report. Use stable IDs to connect actions, sources, findings and components. Keep one current account, with completed actions and concise corrections retained for traceability; do not append copies of earlier ledgers or contradictory status snapshots.
+Keep `<investigation>/ledgers.md` throughout the investigation (see [Saving files](#saving-files)); `init_investigation.py` writes its skeleton: the sections below, in order, with the queue's and the source register's tables. It is the persistent research record behind the two report layers, with substantially more detail than the report. Use stable IDs to connect actions, sources, findings and components. Keep one current account, with completed actions and concise corrections retained for traceability; do not append copies of earlier ledgers or contradictory status snapshots.
 
 ### Use it as the live research plan
 
@@ -197,25 +207,19 @@ Keep entries concise and decision-relevant; the ledger is not a transcript of to
 
 Start the ledger with a short current-state block: investigation scope and phase, decisive finding IDs, next ready action IDs, blockers/decisions and the evidence needed to resolve them, plus the report's review state. Refresh it after material discoveries and before handover. On resuming, read this block and the referenced records first, then expand only as needed.
 
-Keep sections in this order, with exactly these headings: `## Resume here`; `## Research action queue`; `## Boundary, method and access`; `## Revisions and source register` (with `### File reading coverage`); `## Findings and validation chains` (one `### F01 — <short title>` per finding); `## Component inventory and evolution` (which also maps each diagram name to its components); `## Decisions and precise evidence gaps`; `## Correction history`. Record only what has happened: never write a review, correction or answer before it takes place. Store each evidence explanation once in its finding and reference its ID from actions, components and reviews. Retain exact source links in findings or source records, rather than repeating long evidence narratives.
+Keep the skeleton's sections, in its order: `check_report.py` checks them. Write one `### F01 — <short title>` heading per finding, and map each diagram name to its components in `## Component inventory and evolution`. Record only what has happened: never write a review, correction or answer before it takes place. Store each evidence explanation once in its finding and reference its ID from actions, components and reviews. Retain exact source links in findings or source records, rather than repeating long evidence narratives.
 
 ### Research action queue
 
-Place `## Research action queue` immediately after `## Resume here`, with three subsections in order: `### Ready / in progress`, `### Blocked`, and `### Completed`. Keep empty subsections with an explicit “None” so the queue remains visible. Keep completed actions in this queue, not in a separate section farther down the ledger.
+The queue has three subsections, `### Ready / in progress`, `### Blocked` and `### Completed`, each with the action table; keep an empty one's “None” so the queue remains visible. Keep completed actions in this queue, not in a separate section farther down the ledger.
 
 Start this before research, with the initial plan. Append an action whenever reading or review raises a material question, clue, contradiction, dependency or improvement. The starting question is provisional: expand the plan and boundaries as evidence requires. Do not discard a relevant question because it was absent from the initial request.
-
-| ID | Trigger / linked finding | Question or check | Sources and validation required | Depends on | Priority / severity | Status | Outcome / finding IDs |
-| -- | ------------------------ | ----------------- | ------------------------------- | ---------- | ------------------- | ------ | --------------------- |
 
 Process ready actions, prioritizing those that could change the architecture, milestone or conclusions. Actions move from pending to in progress, then to answered/applied, blocked by a precise evidence gap, an open decision with an owner or an explicitly unassigned role, or rejected/out of scope with a reason. Add follow-up actions before closing a parent when its answer exposes new questions. Retry blocked work when new evidence or access makes it actionable. Move resolved actions to the queue’s Completed subsection without changing IDs. Every actionable follow-up has a queue entry; decisions and gaps supplement the queue rather than replacing it. Keep blocked actions visible through a gap or decision ID with its next check and owner; do not leave obsolete pending statuses beside their resolutions.
 
 Review improvements belong in this same queue. Use Critical for a wrong current-state claim, major missing component or confused current/target state; High for unsupported claims, contradictions or wrong boundaries; Medium for incomplete validation, missing interactions or unclear scope; Low for presentation. Record the resolution before considering the review complete.
 
 ### Revisions and source register
-
-| Source ID | Group / evidence kind | Exact reference | Revision / environment / date checked | Material read and findings | Access limits / superseded by |
-| --------- | --------------------- | --------------- | ------------------------------------- | -------------------------- | ---------------------------- |
 
 Use file paths, symbols and commit references for code, configuration paths and environments for deployment, ticket IDs and relevant comments for workflow, and document sections and dates for vision. Record searches and fallback attempts too, including their coverage when nothing was found. Track coverage across architecture, delivery, implementation, security/data, identity/credentials and runtime/operations for all three groups. Earlier investigations are leads to revalidate, not current evidence.
 
@@ -235,7 +239,7 @@ Record the as-is, proposed to-be and milestone change for each component, includ
 
 Keep a concise correction history: the superseded claim, the finding that corrected it, and the report sections or diagrams updated. Preserve the reason a conclusion changed without copying an earlier document.
 
-Maintain one evolving `<Topic>_Report.md` from the reconciled findings. Link its material claims to original evidence and its detailed support in this ledger. When a finding changes, update all affected report sections and diagrams. Handover requires no actionable research or review item left; blocked questions and decisions remain visible with their reason and next step.
+Maintain one evolving `<Topic>_Report.md`, generated from `content.json`, from the reconciled findings. Link its material claims to original evidence and its detailed support in this ledger. When a finding changes, update all affected report sections and diagrams. Handover requires no actionable research or review item left; blocked questions and decisions remain visible with their reason and next step.
 
 ## Component status
 
@@ -254,42 +258,30 @@ Record deployment separately as evidenced for a named environment/revision, expl
 
 ### 1. Define the investigation
 
-Identify the topic, starting questions, provisional system boundaries and initial research plan, plus a destination page if named. Infer these from the request and context; ask only when ambiguity materially changes the investigation. Open the research action queue and expand it throughout discovery. The initial plan must never prevent following material questions that emerge later. Every report serves both executive/product and architect readers using the fixed structure below; do not select one audience or omit a layer.
+Identify the topic, starting questions, provisional system boundaries and initial research plan, plus a destination page if named. Infer these from the request and context; ask only when ambiguity materially changes the investigation. Open the research action queue and expand it throughout discovery. The initial plan must never prevent following material questions that emerge later. Every report serves both executive/product and architect readers using the fixed structure below; do not select one audience or omit a layer. Only the research can show that some sections don't apply (see [Sections that don't apply](#sections-that-dont-apply)), so never narrow the research on that expectation.
 
 **A request for a short output** (an exec summary, "100 words", "keep it simple", a one-paragraph status, a chat-sized update) **is about the output's format, never the investigation's scope or rigor.** Run every step below in full, exactly as for the long document, and write that document; then compress it into the short format as a last step. A later request for more detail, another angle or the full document is then answered from the same investigation, not researched again, unless it asks something the investigation didn't cover.
 
-Then prepare the investigation's folders:
+Then prepare the investigation's folder:
 
-1. Get the `folder` and whether it is `temporary` from `output_folder.py` (see [Saving files](#saving-files)). If it fails, stop here.
-2. Choose a short, filename-safe topic name, `<Topic>`, with capitalised words separated by hyphens, preserving meaningful acronyms: for example `Payments-Retry-Service`. Honour an exact name supplied by the user. Use the same topic name for the folder and full report.
-3. The investigation's own folder is `<Topic>_<YY-MM-DD>` in `<folder>`, with today's date at the end: `<investigation>` below is that relative path, and `<investigation_dir>` its full path. Its files are written there with `--path '<investigation>/<file>'`, which creates it. If it already exists, this is a follow-up: continue the investigation in it.
-4. If `<folder>` holds folders of the same topic on other days (including older date-first names), or `<investigation_dir>` already has files, read them first. An earlier investigation of the topic is a lead to verify, not evidence to copy, since its sources may have changed.
+1. Choose a short, filename-safe topic name, `<Topic>`, with capitalised words separated by hyphens, preserving meaningful acronyms: for example `Payments-Retry-Service`. Honour an exact name supplied by the user.
+2. Run `python3 <scripts>/init_investigation.py --topic <Topic> --format <format>`, where `<format>` is `long-analysis`, or the short format asked for (such as `exec-summary`). If it fails, stop here. It prints the skill's `folder` and whether it is `temporary`, `<investigation>` (`<Topic>_<YY-MM-DD>`, today's date) and its full path `investigation_dir`, and writes the ledger's skeleton there and the examples' index. If `follow_up` is true, the folder existed: continue the investigation in it, reading its `files` first.
+3. Read the folders in `earlier`, the same topic on other days. An earlier investigation of the topic is a lead to verify, not evidence to copy, since its sources may have changed.
+4. Skim one or two of the approved `examples` of that format for tone and voice only; the fixed report structure takes precedence. Never reuse a fact, status or claim from an example: its topic may be stale.
 
-   The full report is `<Topic>_Report.md`; the research ledger is `ledgers.md`, diagram preparation is kept in `mermaids.md`, and map filenames are `architecture-as-is.svg`, `architecture-next.svg` and `architecture-to-be.svg`. For example:
+The folder ends up like this:
 
-   ```text
-   Payments-Retry-Service_26-10-05/
-   ├── ledgers.md
-   ├── mermaids.md
-   ├── Payments-Retry-Service_Report.md
-   ├── architecture-as-is.svg
-   ├── architecture-next.svg
-   └── architecture-to-be.svg
-   ```
-
-5. The approved examples are in `<folder>/_examples`, `<examples_dir>` below, next to the investigations' folders (the underscore lists it first). If it has no `README.md`, write it (`--path '_examples/README.md'`) with this index:
-
-   ```markdown
-   # Examples
-
-   Tech investigations the user approved, kept for their tone, structure and style only. They are never evidence: the topics they describe may have changed since.
-
-   Each example has its own `<Topic>_<YY-MM-DD>--<format>` folder, with a numeric suffix when needed. One line per example, newest first: a link to its document and what makes it a good example.
-
-   ## Index
-   ```
-
-Look in `<examples_dir>` for one or two approved outputs of the format asked for (its `README.md` indexes them), and skim them for tone and voice only; the fixed report structure below takes precedence over examples. Never reuse a fact, status or claim from an example: its topic may be stale.
+```text
+Payments-Retry-Service_26-10-05/
+├── ledgers.md                      you write
+├── maps.json                       you write
+├── content.json                    you write
+├── mermaids.md                     build_maps.py writes
+├── architecture-as-is.svg          build_maps.py writes
+├── architecture-next.svg           build_maps.py writes
+├── architecture-to-be.svg          build_maps.py writes
+└── Payments-Retry-Service_Report.md   make_report.py writes
+```
 
 ### 2. Map the investigation
 
@@ -307,7 +299,7 @@ The inventory is complete when every material component and connection is suppor
 
 ### 3. Maintain the evolving report
 
-Once the component inventory is complete, write `<investigation>/<Topic>_Report.md` in the [document's structure](#the-document), from the evidence so far. Treat its conclusions as hypotheses to test. Update this same file during subsequent research and review; “draft” and “final” describe review states, not separate files or a reason to defer corrections. Keep approved example snapshots separate as described below.
+Once the component inventory is complete, write `maps.json` and run `build_maps.py` (see [The architecture map](#the-architecture-map)), unless the report skips architecture, then write `content.json` and run `make_report.py` (see [The document](#the-document)), from the evidence so far. Fix every problem either lists and run it again. Treat the report's conclusions as hypotheses to test. Update these same files during subsequent research and review, and run the scripts again; “draft” and “final” describe review states, not separate files or a reason to defer corrections. Keep approved example snapshots separate as described below.
 
 ### 4. Review the draft critically
 
@@ -337,127 +329,188 @@ When new questions arise, append them to the queue, go back to the sources, upda
 
 ### 7. Reflect before handing over
 
-Run `python3 <scripts>/check_report.py --report '<absolute report path>'`. Fix every reported error, review warnings, and rerun after corrections. This read-only check covers structure, table citations, local artifacts and diagram order; it does not prove source fidelity, Mermaid syntax, fixed map geometry or actual viewer sizing. Complete those reviews separately. A reference-list entry does not replace a source link beside a material table claim. What it enforces, so you can write for it from the start: every data row of every table, the roadmap and decision tables included, has a source link or a link to a ledger gap, written `ledgers.md#<anchor>` with the heading's GitHub-style anchor (lower case, punctuation dropped, each space a hyphen: `### F03 — Delivery is exploration` is `#f03--delivery-is-exploration`), which the check validates; reference and shortcut links count when a definition names them; the roadmap rows read exactly "Current milestone", "Next milestones" and "Broader product direction"; each map's source sits in `mermaids.md` under its stage heading, which names its SVG file; and a map shown as raw Mermaid because Node.js is missing says its layout is unchecked.
+Run `python3 <scripts>/check_report.py --report '<absolute report path>' --handover` after recording the reflection below. Fix every reported error, review warnings, and rerun after corrections. `make_report.py` already owns the report's template and runs the same check; `--handover` adds what handover needs: no action left ready or in progress, and a `### Reflection` under `## Correction history`. Passing proves structure, not source fidelity, the maps' visual layout or how the real viewer displays the diagrams: complete those reviews separately.
 
 Answer, and record the answers in the ledger as a `### Reflection` subsection of `## Correction history`: what changed between the first and final drafts; which first assumptions were disproved; which components became more concrete; which conflicts were resolved; which conclusions depend on unavailable evidence; which decisions still need a human owner; and why another round is unlikely to improve the document with what is known now. Hand over only when the last answer is clear and defensible.
 
 ### 8. Hand over
 
 - Link both `ledgers.md` and the report. Always give the user a link they can click to open the document: a Markdown link to its full absolute path, such as `[<Topic>_Report.md](<investigation_dir>/<Topic>_Report.md)`.
-- If they asked for a short format, write it to `<investigation>/<format>.md` (for example `exec-summary.md`), show it in the chat and link the full document under it. Otherwise, give a few lines on the headline: the current reality, the current milestone and the main open decision.
+- If they asked for a short format, compress the finished report into it, adding nothing the report doesn't say. Write `<investigation>/<format>.json` (for example `exec-summary.json`) and run `python3 <scripts>/make_summary.py --investigation <investigation> --format <format>`, which writes `<format>.md` with the link to the full report at its end:
+
+  ```json
+  {"title": "Optional heading", "max_words": 100, "body": ["Markdown blocks in the shape the question needs."]}
+  ```
+
+  The body is free: paragraphs, bullets, `##` headings or a table, whatever fits the question; only the title's `#` is the script's. Set `max_words` to the limit the user gave ("100 words"), which the script enforces as a maximum, and leave it out when they gave none. Link the ledger as in the report. Show the result in the chat and link the full document under it. Otherwise, give a few lines on the headline: the current reality, the current milestone and the main open decision.
 - Name every source that was unavailable, and what it leaves unverified.
 - If they named a destination page in an enabled `documentation` source, show what you will write there and publish it only after they approve.
 - If `temporary` is `true`, say the folder is temporary: offer to copy the document somewhere they choose, and mention that setting `output.root` in the config keeps investigations and examples.
 
 ### 9. Keep approved outputs as examples
 
-When the user says they are happy with a document or summary this skill produced, copy it, exactly as approved and with its original filename, into `_examples/<Topic>_<YY-MM-DD>--<format>/` in `<folder>`, where `format` is `long-analysis`, `exec-summary` or another short label for the shape they asked for (such as `slack-update`). Never overwrite an earlier example: if that folder exists, append `--2`, `--3`, and so on, choosing the first unused name. Copy its locally linked documents and images into that example folder too, preserving relative paths, so the approved version remains self-contained after the investigation changes. Use the shared writer for every copied file. Each approved version is kept separately, so the collection shows how the user's style has evolved. Then add one line for it at the top of the `## Index` list in `_examples/README.md`, writing the whole index again: its link and what makes it a good example. If `temporary` is `true`, say the example will be lost when the temporary folder is cleared.
+When the user says they are happy with a document or summary this skill produced, keep it as an example: `python3 <scripts>/save_example.py --investigation <investigation> --file <document> --format <format> --note '<what makes it a good example>'`, where `<format>` is `long-analysis`, `exec-summary` or another short label for the shape they asked for (such as `slack-update`), and the note is one line. It copies the document, exactly as approved, with the local files it links, into a new `_examples` folder (never overwriting an earlier example, so the collection shows how the user's style has evolved), and adds it at the top of the examples' index. If `temporary` is `true`, say the example will be lost when the temporary folder is cleared.
 
 ## The document
 
-Every investigation writes `<Topic>_Report.md` with exactly these two layers and the headings below, in this order, and no other `##` or `###` heading anywhere (use `####` for flow titles and further structure). Keep headings when evidence is missing and explain the gap. The executive/product layer must be independently readable: include essential conclusions, caveats and decisions there even when developed again in the architect layer. Do not add a third engineering layer; detailed implementation evidence belongs in `ledgers.md`. Requested short extracts are additional artifacts, never replacements for this report.
+Every investigation writes `<Topic>_Report.md` with exactly two layers, an executive/product summary and an architect summary, and `make_report.py` owns its template: the title and evidence-snapshot line, every heading, table headers and the roadmap's rows, the fixed opening sentences, the layout of each architecture section, the References labels and the ledger links. You write `content.json`, which holds only the text that needs judgment, then run `python3 <scripts>/make_report.py --investigation <investigation>`. If `content.json` has problems, it writes nothing and lists them all; otherwise it writes the report and prints the check's `errors` and `warnings`, including prose far from its target length, and each sequence's rendered `width`.
+
+```json
+{
+  "title": "<Technical topic>",
+  "skip": [],
+  "evidence_snapshot": "2026-10-05",
+  "problem": ["Paragraph."],
+  "roadmap": {"current": {"outcome": "...", "commitment": "...", "dependencies": "..."},
+              "next": {"outcome": "...", "commitment": "...", "dependencies": "..."},
+              "broader": {"outcome": "...", "commitment": "...", "dependencies": "..."}},
+  "deep_dive": ["Paragraph."],
+  "key_decisions": [{"item": "Decision or risk", "why": "Why it matters, with links", "role": "Not established"}],
+  "architecture": {
+    "current": {"summary": ["Paragraph."],
+                "sequences": [{"title": "Helpdesk API — ticket search",
+                               "lines": ["actor U as Client / operator", "participant H as Helpdesk API",
+                                         "U->>H: Search tickets", "H-->>U: Results or error"]}],
+                "commentary": ["**Helpdesk API:** steps 1–2 ..."]},
+    "next": {"...": "..."},
+    "target": {"...": "..."}
+  },
+  "technical_decisions": [{"decision": "...", "position": "Established position or unresolved choice",
+                           "evidence": "Links", "status": "Open", "owner": "Not established"}],
+  "discrepancies": "One paragraph.",
+  "remaining_gaps": "One paragraph.",
+  "references": {"implementation": ["[README](https://...)"],
+                 "delivery": [{"text": "[PROJ-123](https://...)", "historical": true}],
+                 "vision": []}
+}
+```
+
+- Text is Markdown: paragraphs are list items, table cells and references are one line each. No `#` to `###` headings (`####` for further structure), code fences or HTML.
+- Link the ledger as `[F03](ledger:F03)`: the script resolves the ID to its finding's heading, or to the section whose table row or bold label defines it, and fails on an ID the ledger doesn't have. `[ledger](ledger:)` links the ledger itself.
+- Every table row needs a source link or a ledger link beside its claim; a reference-list entry doesn't replace it. A row whose every cell is a gap ("Not established", "Unverified") needs none, but an unknown owner alone doesn't exempt the rest of the row.
+- `evidence_snapshot` is the date of the evidence; the script writes the snapshot line, which links the ledger.
+
+The executive/product layer must be independently readable: include essential conclusions, caveats and decisions there even when developed again in the architect layer. Do not add a third engineering layer; detailed implementation evidence belongs in `ledgers.md`. Requested short extracts are additional artifacts, never replacements for this report. When evidence is missing for a section, keep it and explain the gap.
+
+### Sections that don't apply
+
+Some questions don't fit every section: "does the team have, or want, a documentation repository?" has no system to draw, and an existing system nothing is changing has no next or target state. Two dimensions can then be left out of the report, by listing them in `skip`:
+
+| `skip`         | When the research shows                                                         | Sections left out                                                        |
+| -------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `architecture` | The subject isn't a system of components and flows: a practice, a team choice. | The whole Architect summary, with its maps.                              |
+| `evolution`    | Nothing is changing it: no active epic or milestone, proposal or decision.     | Roadmap, Next evolution, Target architecture.                            |
+
+- **Skipping shapes the output, never the research.** Investigate all three groups in full, exactly as for a full report: only the finished research can show that a dimension doesn't apply.
+- **Not applicable is not unknown.** Skip `evolution` only when the sources establish that nothing is changing it; when they are silent or unavailable, keep the sections and state the gap. Skip `architecture` only when there is no system to draw, never because its evidence is thin.
+- Record each skip, with its reason and evidence, in the ledger's `## Boundary, method and access`. The report doesn't mention the sections it leaves out; the script checks it against the remaining sections.
+- The executive/product summary always remains, with Problem and intended outcome, Current milestone - deep dive and Key decisions and risks. With `evolution` skipped, `maps.json` holds the current stage alone and `content.json` only `architecture.current`. With `architecture` skipped, there is no `maps.json`, and `content.json` has no `architecture`, `technical_decisions`, `discrepancies`, `remaining_gaps` or `references`: with no References section, every claim keeps its source link beside it.
 
 Write the entire Executive / product summary, including its tables, for a technical leader such as a director of engineering or CTO. Assume familiarity with technical language; focus on capability, maturity, strategic tradeoffs, delivery implications, dependencies and decisions. Use precise technical terms when they clarify the point rather than replacing them with vague descriptions or explaining familiar concepts. Give enough context for unfamiliar project names and organisation-specific terminology. Include low-level implementation detail only when it materially supports a leadership-level conclusion or decision, and explain that implication; keep the full mechanics in Architect. Preserve the distinctions between experiments, implemented capabilities and verified deployment, with source links beside claims. Review this layer independently for clarity, relevance and concision, not for the absence of technical vocabulary. The Architect layer provides the detailed technical account.
 
-```markdown
-# <Technical topic>
+The lengths below are approximate prose targets, excluding headings, diagram source and citations, not exact word counts.
 
-Evidence snapshot: <date, as "5 October 2026">. Code links pin inspected commits; ticket, PR and document links may display later changes. Evidence revisions and access limits are recorded in the [Research ledger](ledgers.md).
+### `problem`: Problem and intended outcome
 
-## Executive / product summary
+In approximately 100 words, explain the problem, who it affects, why it matters and the intended product outcome in plain language.
 
-### Problem and intended outcome
+### `roadmap`: Roadmap
 
-In approximately 100 words, explain the problem, who it affects, why it matters and the intended product outcome in plain language. This is a prose-length target, excluding source links, not an exact word-count requirement.
+Three rows, which the script labels Current milestone, Next milestones and Broader product direction, each with its intended outcome, commitment and evidence, and dependencies:
 
-### Roadmap
+- **`current`:** the outcome being pursued now and its evidenced delivery context.
+- **`next`:** subsequent outcomes in their evidenced order; distinguish committed work from proposals.
+- **`broader`:** the longer-term ambition, including relevant options that are not yet delivery commitments.
 
-A table with fixed columns: stage / intended outcome / commitment and evidence / dependencies. Use exactly these three rows, in order:
+Keep this table a high-level overview; expand the current row in the deep dive rather than packing its delivery detail into the table. Organise the rows around evidenced outcomes and their sequence. Include timing only when sources establish a relevant commitment; do not impose a calendar-based structure. Fill all three rows when evidence is missing and state what is not established. Link claims to their sources. Label proposals and optional directions; do not invent dates, commitments or delivery progress from vision documents.
 
-- **Current milestone:** the outcome being pursued now and its evidenced delivery context.
-- **Next milestones:** subsequent outcomes in their evidenced order; distinguish committed work from proposals.
-- **Broader product direction:** the longer-term ambition, including relevant options that are not yet delivery commitments.
+### `deep_dive`: Current milestone - deep dive
 
-Keep this table a high-level overview; expand the current row in the next section rather than packing its delivery detail into the table. Organise the rows around evidenced outcomes and their sequence. Include timing only when sources establish a relevant commitment; do not impose a calendar-based structure. Keep all three rows when evidence is missing and state what is not established. Link claims to their sources. Label proposals and optional directions; do not invent dates, commitments or delivery progress from vision documents.
+In approximately 200 words, combine current status and the current milestone in one executive deep-dive, right after the roadmap. Explain where things stand today, what this milestone should achieve, the gap between them, essential scope boundaries, success evidence and principal dependencies. Distinguish implemented progress, verified deployment and ticket-reported progress; retain material evidence limits so this layer stands alone. If no milestone is defined in the sources, say that it is not established; when the report skips `evolution`, the deep dive explains where things stand today and that nothing is changing it. Do not repeat the roadmap row verbatim. Keep this explanation at technical-leadership level. Put branch/file inventories, execution steps and detailed validation procedures in Architect; include a specific implementation fact here only when it explains a material delivery risk, tradeoff or decision.
 
-### Current milestone - deep dive
+### `key_decisions`: Key decisions and risks
 
-In approximately 200 words of prose, excluding source links, combine current status and the current milestone in one executive deep-dive immediately after the roadmap. Treat this as a length target, not an exact word-count requirement. Explain where things stand today, what this milestone should achieve, the gap between them, essential scope boundaries, success evidence and principal dependencies. Distinguish implemented progress, verified deployment and ticket-reported progress; retain material evidence limits so this layer stands alone. If no milestone is defined in the sources, say that it is not established. Do not add a separate Current status section or another executive milestone section or repeat the roadmap row verbatim. Keep this explanation at technical-leadership level. Put branch/file inventories, execution steps and detailed validation procedures in Architect; include a specific implementation fact here only when it explains a material delivery risk, tradeoff or decision.
+The script opens with the sentence that these items describe implications of the linked evidence, stating whether the `role` column establishes decision ownership, and writes the table. For each item: the decision or risk; "why it matters", the evidenced consequence with its source links; and the deciding role a source establishes, or "Not established". Name roles, not people, anywhere in the report or the ledger. Don't add investigator assessments here: state only what the evidence implies.
 
-### Key decisions and risks
+Surface only decisions, blockers, risks and uncertainties that warrant technical-leadership attention: material effects on scope, sequencing, investment, ownership, delivery confidence, or operational/security exposure. Use the same director-of-engineering/CTO language as the rest of the executive layer. Explain the evidenced consequence or tradeoff and why it matters now. Keep implementation-level issues in Architect unless their implications meet this threshold. Do not populate this section merely to repeat every technical gap; if no leadership-level item is evidenced, leave the list empty and the script says so.
 
-Open with one sentence saying these items describe implications of the linked evidence, and whether decision ownership is established in the inspected sources. Then a table with fixed columns: decision or risk / why it matters / deciding role. "Why it matters" states the evidenced consequence with its source links; "deciding role" names the role a source establishes, or "Not established". Name roles, not people, anywhere in the report or the ledger. Don't add investigator assessments here: state only what the evidence implies.
+### `architecture`: Current architecture, Next evolution and Target architecture
 
-Surface only decisions, blockers, risks and uncertainties that warrant technical-leadership attention: material effects on scope, sequencing, investment, ownership, delivery confidence, or operational/security exposure. Use the same director-of-engineering/CTO language as the rest of the executive layer. Explain the evidenced consequence or tradeoff and why it matters now. Name an owner only when established by a source; otherwise write "Not established". Keep implementation-level issues in Architect unless their implications meet this threshold. Do not populate this section merely to repeat every technical gap; if no leadership-level item is evidenced, say so. Link the supporting evidence.
+Each stage has a `summary`, its `sequences` and one shared `commentary`. The script lays each section out as summary → the stage's system map → each sequence under its `#### <Component> — <flow>` title (such as `#### Helpdesk API — ticket search`) → `#### Reading the design and flows together` and the commentary. Where evidence can't support a map or a flow, set `map_gap` or `flow_gap` instead, saying what is missing: the section keeps its position with that explicit gap.
 
-## Architect summary
+- **`current`:** start with approximately 300 words explaining the current approach, principal responsibilities and interactions, implementation maturity and material deployment limits. The map establishes the baseline structure and boundaries; the sequences establish the separate entry paths and their meaningful boundaries. Explain logical grouping and material omissions. Keep the detailed inventory, revisions and reading coverage in the ledger. Preserve source links near claims.
+- **`next`:** start with approximately 300 words explicitly comparing the next evolution with Current architecture: what is retained, added, changed or retired; why; and what that enables. Cover the current milestone's technical scope, dependencies, acceptance evidence and material exclusions. When the milestone is discovery (spikes, ADRs, an evaluation), show what its tickets would build to qualify the capability, such as an export or publication job and an evaluation runner, as proposed components with hosting undecided, and a sequence for that qualification flow ending in the human decision it informs. In-flight candidate work outside the milestone's epic stays as labelled candidate context from Current architecture, not part of the next evolution; include subsequent steps only where evidenced, distinguishing commitments from proposals. The diagrams highlight what changed versus Current architecture using explicit labels and consistent names. Keep detailed change tables and execution/validation procedures in the ledger unless a compact detail is necessary to explain the approach; do not append an exhaustive implementation plan to this section.
+- **`target`:** start with approximately 300 words explaining the longer-term approach and how it evolves beyond Next evolution towards the roadmap's broader product direction. Identify retained foundations, further changes, their rationale and resulting capabilities. Separate agreed direction, documented vision and source-backed inference; do not imply that the target is the current milestone's scope. The diagrams highlight the further changes versus Next evolution, not only versus the current baseline. Keep names consistent across stages so the direction is easy to follow.
 
-### Current architecture
+The commentary connects the map's services, stores and boundaries to the numbered interactions and explains the architectural point once, rather than concatenating separate diagram descriptions: aim for approximately 100 words for a single flow, more where multiple flows or material boundaries need explanation. Name the flow by its title's component, then its steps ("**Helpdesk API:** steps 1–3 …"); the script checks that every step named exists in that flow.
 
-Start with approximately 300 words explaining the current approach, principal responsibilities and interactions, implementation maturity and material deployment limits. Then show a system design map followed by focused sequence diagrams for materially distinct flows, followed by one shared commentary explaining the map and sequences together. The map establishes the baseline structure and boundaries; the sequences establish the separate entry paths and their meaningful boundaries. Explain logical grouping and material omissions. Keep the detailed inventory, revisions and reading coverage in the ledger. Preserve source links near claims.
+### `technical_decisions`, `discrepancies`, `remaining_gaps`: Technical decisions and gaps
 
-### Next evolution
+Focus on unresolved technical choices, evidence gaps and missing validation, explaining their impact on the next evolution or target. The script opens with the sentence that the table records source-backed differences and unresolved decisions and does not select an option or assign an owner. Each decision has its established position or unresolved choice, its evidence, its status and its owner (an evidenced role, or "Not established"). `discrepancies` is one paragraph on how material discrepancies were resolved by evidence level (for example a proposed ADR isn't accepted architecture, a feature-branch merge isn't a default-branch release, a ticket status can't override code), and `remaining_gaps` one on the precise remaining gaps, linking the ledger's findings and gaps by ID. Do not fill a column by inventing alternatives or assigning a deciding role. Include unresolved discrepancies between code, tickets and vision; keep resolved rationale alongside the relevant architecture. Link detailed component findings and queue actions in the ledger rather than reproducing research bookkeeping.
 
-Start with approximately 300 words explicitly comparing the next evolution with Current architecture: what is retained, added, changed or retired; why; and what that enables. Cover the current milestone's technical scope, dependencies, acceptance evidence and material exclusions. When the milestone is discovery (spikes, ADRs, an evaluation), show what its tickets would build to qualify the capability, such as an export or publication job and an evaluation runner, as proposed components with hosting undecided, and a sequence for that qualification flow ending in the human decision it informs. In-flight candidate work outside the milestone's epic stays as labelled candidate context from Current architecture, not part of the next evolution; include subsequent steps only where evidenced, distinguishing commitments from proposals. Then show a system design map followed by focused sequence diagrams for materially distinct flows, followed by one shared commentary explaining the map and sequences together. The diagrams highlight what changed versus Current architecture using explicit labels and consistent names. Keep detailed change tables and execution/validation procedures in the ledger unless a compact detail is necessary to explain the approach; do not append an exhaustive implementation plan to this section.
+### `references`: References
 
-### Target architecture
-
-Start with approximately 300 words explaining the longer-term approach and how it evolves beyond Next evolution towards the roadmap's broader product direction. Identify retained foundations, further changes, their rationale and resulting capabilities. Separate agreed direction, documented vision and source-backed inference; do not imply that the target is the current milestone's scope. Then show a system design map followed by focused sequence diagrams for materially distinct flows, followed by one shared commentary explaining the map and sequences together. The diagrams highlight the further changes versus Next evolution, not only versus the current baseline. Keep names consistent across stages so the direction is easy to follow.
-
-The opening-summary and commentary lengths are approximate prose targets, excluding headings, diagram source and citations. Each of these three sections follows summary → system design map → one or more focused sequence diagrams → one shared commentary. Do not interleave explanatory paragraphs between the diagrams. Title each sequence with a `#### <Component> — <flow>` heading (such as `#### Helpdesk API — ticket search`), and put the shared commentary under `#### Reading the design and flows together`. Each sequence numbers its own steps from 1; the commentary names the flow, then its steps ("**Helpdesk API:** steps 1–3 …"). Aim for approximately 100 words of shared commentary for a single flow, allowing more where multiple flows or material boundaries need explanation. Connect the map’s services, stores and boundaries to the numbered interactions and explain the architectural point once, rather than concatenate separate diagram descriptions. Keep preparatory system-map source in `mermaids.md`, not in expandable source blocks in the report.
-
-### Technical decisions and gaps
-
-Focus on unresolved technical choices, evidence gaps and missing validation, explaining their impact on the next evolution or target. Open with one sentence saying the table records source-backed differences and unresolved decisions, and does not select an option or assign an owner. The decision table has fixed columns: decision / established position or unresolved choice / evidence / status / owner (an evidenced role, or "Not established"). After it, one paragraph on how material discrepancies were resolved by evidence level (for example a proposed ADR isn't accepted architecture, a feature-branch merge isn't a default-branch release, a ticket status can't override code), and one on the precise remaining gaps, linking the ledger's findings and gaps by ID. Do not fill a column by inventing alternatives or assigning a deciding role. Include unresolved discrepancies between code, tickets and vision; keep resolved rationale alongside the relevant architecture. Link detailed component findings and queue actions in the ledger rather than reproducing research bookkeeping.
-
-### References
-
-Link every material code/configuration reference, ticket, document and pull request, grouped under bold labels by evidence kind: **Implementation and configuration**, **Delivery**, and **Vision, rationale and reported operational gaps**. Mark historical or superseded sources. Link the research ledger for the full validation trail.
-```
+Link every material code/configuration reference, ticket, document and pull request, under `implementation` (Implementation and configuration), `delivery` (Delivery) and `vision` (Vision, rationale and reported operational gaps). Mark historical or superseded sources with `"historical": true`. The script adds the link to the research ledger for the full validation trail.
 
 ### Diagrams
 
-Maintain `<investigation>/mermaids.md` as the editable system-map preparation file alongside `ledgers.md`. Give each map a stable heading identifying its stage; record its SVG filename and retain its exact Mermaid block. Update this file first when changing a map, then regenerate its SVG. Maintain sequence diagrams directly in the report; do not duplicate them in `mermaids.md`. This file derives from ledger evidence and introduces no new research claims. Before drawing a proposed flow, map each material interaction to a finding and source section that supports its responsibility and endpoints, not just the desired outcome. A list of lifecycle steps does not establish that one service executes them all. Where the actor, runtime or call target is unspecified (such as a call to a resource no configuration sets), label the boundary unresolved or use an explanatory note; do not invent a call or self-action to complete the sequence. Preserve independent author/reviewer or requester/approver roles when sources require separation. The report contains rendered maps and directly rendered sequence blocks, without duplicate map-source details.
+The maps come from `<investigation>/maps.json`, which you write and `build_maps.py` turns into `mermaids.md` and the SVGs; the sequences come from `content.json`. Both derive from ledger evidence and introduce no new research claims. Before drawing a proposed flow, map each material interaction to a finding and source section that supports its responsibility and endpoints, not just the desired outcome. A list of lifecycle steps does not establish that one service executes them all. Where the actor, runtime or call target is unspecified (such as a call to a resource no configuration sets), label the boundary unresolved or use an explanatory note; do not invent a call or self-action to complete the sequence. Preserve independent author/reviewer or requester/approver roles when sources require separation.
 
 In each of Current architecture, Next evolution and Target architecture, use one system design map and as many focused numbered sequences as there are materially distinct flows. Maps show how separate entry paths fit into the overall structure; each sequence explains one coherent flow. Do not combine independent entry paths into a fictional end-to-end operation or use `par` unless they actually execute concurrently within one operation. Preserve comparable flows across stages where they exist, and explain when a flow is introduced, changes or falls outside the milestone. Diagram counts may differ between stages. Keep names, grouping, orientation and participant order consistent where practical to enable comparison. Prefer clarity over implementation granularity: omit details that do not help explain the approach, and group complexity into clearly named logical components whose contents are explained in the summary, commentary or ledger. Simplification must not invent connections, imply deployment, combine incompatible states or hide a material trust boundary.
 
 - Every existing entry path into the capability gets its own component and its own sequence in Current architecture (when no caller is evidenced, the sequence starts from a generic `Client / operator` actor), labelled with its maturity: implemented routes, diagnostic or test routes, development services and experiments or labs that exercise the capability end to end (including ones on branches or removed from the default branch). Simplify inside a path, never by omitting one. Open pull requests built on a development branch belong to that branch's component, labelled as candidate; give them their own sequence only for a materially distinct flow.
 - Draw from the researched inventory, but do not reproduce every component or connection. Record what logical groups represent and any consequential omissions in the ledger. A logical group is not automatically a deployed service or a single runtime.
-- Treat the system map and sequences as two views of the same architecture. Use the same canonical component IDs and displayed names for map nodes and sequence participants; keep status or role qualifiers separate from the name. Maintain the name-to-inventory mapping in the ledger. Do not rename a concrete service to a generic responsibility in a sequence. If a sequence expands an internal module, explicitly identify its parent service, or show it as an internal action of that service. Human-role qualifiers must map clearly to the map’s actors. Match call paths, stores and boundaries as well as wording, and check these correspondences before handover.
+- Treat the system map and sequences as two views of the same architecture. Use the same canonical component IDs and displayed names for map nodes and sequence participants; keep status or role qualifiers separate from the name. Maintain the name-to-inventory mapping in the ledger. Do not rename a concrete service to a generic responsibility in a sequence. If a sequence expands an internal module, explicitly identify its parent service, or show it as an internal action of that service. `make_report.py` checks the correspondence: every participant's name is a node of that stage's map, a human role written as a qualifier in brackets ("Client / operator (source owner)") rather than a new actor, and every call between two participants has a connection the stage's map shows (its reply rides on that connection; self-actions and notes need none). Sequence participants can't break lines: use the map's name on one line.
 - Keep names and abstraction levels consistent across stages. In Next evolution and Target architecture, explicitly label retained, changed and new elements and distinguish proposals from implemented paths. Commentary explains the design delta, not merely the boxes.
 - Show only interactions needed to understand the approach. Use purpose or interface labels as appropriate; exact protocols, identities and stores belong on the diagram only when they affect the explanation. Preserve material data/credential boundaries and failure or human-decision paths.
-- Preserve native Mermaid sequence rendering by default. After rendering the exact sequence sources, compare their SVG viewBox widths and the intended Markdown viewer display width. If fitting each to the same page width makes text sizes materially different (more than about 15%), inspect the actual reader’s preview; shorten or split a too-wide flow without losing material steps, then adjust only narrower diagram containers by the measured width ratio where needed. Record the final visual check and preserve comparable readability, not merely successful Mermaid parsing. If the actual viewer is unavailable, say that display-scale verification remains unverified. If one diagram displays at a different scale, investigate that diagram in the actual reader’s viewer and keep working diagrams unchanged. Do not impose report-wide zoom, CSS, HTML wrappers or font/spacing overrides to fix a local discrepancy; the only wrapper allowed is the single container below. A standalone render or simulated preview does not establish that the real Markdown preview works; preserve a known-good baseline and revert changes that regress it. If the screenshot confirms one narrower diagram is enlarged by fitting the same page width, constrain only that diagram’s container width using a measured ratio to a correctly displayed peer: put `<div style="width:62.42%; margin:0 auto;">` (with the measured percentage) on its own line before the fence, a blank line on each side of the fence, and `</div>` after it. Preserve its Mermaid source and the other diagrams, and verify that the Markdown viewer renders the fence inside the container.
-- When using a sequence, number the principal interactions with `autonumber`, which numbers every arrow, replies included; the commentary's step ranges follow those numbers. The shared commentary after all diagrams may explain related numbered steps together; avoid a long implementation-level step list. Use comparable use cases across stages where useful, without forcing every participant onto another map.
+- A sequence's `lines` are its Mermaid body: `make_report.py` adds `sequenceDiagram` and `autonumber`, which numbers every arrow, replies included, so don't number the messages yourself; the commentary's step ranges follow those numbers. Don't put raw semicolons in message or note text: Mermaid reads them as statement separators. The shared commentary after all diagrams may explain related numbered steps together; avoid a long implementation-level step list. Use comparable use cases across stages where useful, without forcing every participant onto another map.
+- Preserve native Mermaid sequence rendering. `make_report.py` renders every sequence with the pinned renderer, failing on one that doesn't render, prints each one's `width`, and warns when they differ by more than about 15%, which makes text sizes materially different when each is fitted to the same page width. Then inspect the actual reader's preview: shorten or split a too-wide flow without losing material steps. If one narrower diagram displays enlarged, set its `constrain_to` to the title of a correctly displayed peer in the same section: the script wraps only that diagram in a container sized by the measured width ratio. Keep working diagrams unchanged, and verify that the Markdown viewer renders the fence inside the container. Never add zoom, CSS, HTML wrappers or font/spacing overrides yourself. A standalone render or simulated preview does not establish that the real Markdown preview works; preserve a known-good baseline and revert changes that regress it. Record the final visual check in the ledger; if the actual viewer is unavailable, say that display-scale verification remains unverified. If Node.js is unavailable, the script says in the report that sequence syntax is unchecked.
 - Current architecture is the baseline. Next evolution compares with current; Target architecture compares with next. Label retained, added, changed and retired elements or interactions, and explain why changes matter. Identify retirement explicitly rather than silently dropping an element. Change labels are separate from implementation status: a proposed addition is still proposed. If evidence cannot support a required map or flow, retain its position with an explicit gap rather than inventing a flow.
 
 ### The architecture map
 
 - Draw architecture, not only capabilities or workstreams: show the concrete services/processes, material stores, runtime or hosting boundaries and external providers needed to understand the system. Label arrows with meaningful interfaces or data operations. Keep publication writers separate from runtime readers where identities differ. Unknown hosting stays explicitly unknown; a proposed service must not look deployed.
 - Abstract internal modules only when doing so preserves which process runs them, what it calls and where data lives. Do not replace independently deployed systems, POCs or stores with a generic foundation or responsibility box. Keep source-backed current wiring separate from optional candidate behavior and source-authored proposals.
-- Inspect the actual maps visually, including scope outlines, text, edge labels, crossings and styling: render each with `output_diagram.py --check --png` and open the PNG preview as an image. The preview shows the layout in Mermaid's own colours; to see the dark styling and crosses, also look at the written SVG rasterised (on macOS, `qlmanage -t -s 2000 -o <scratch folder> <svg>`). Syntax and coordinate checks alone are insufficient. Hidden layout edges must hide their labels too; connections must not appear to terminate at unrelated nodes or imply junctions where they merely cross.
-- Show distinct POCs and their eventual replacements separately when their lifecycle differs. Distinguish reusing code or patterns from retaining the experimental runtime. Record each source-backed disposition and retirement condition in the ledger. Where disposition is unknown, preserve the component as context and say its future is unresolved; do not recommend retirement or retention.
-- Show all diagram components at the same positions across stages, including components later decommissioned. A red outline identifies the complete architecture carried at that stage, including unchanged components, not only the work introduced in that step. In Current architecture it includes the existing paths and labelled candidate context (development branches, open pull requests, experiments); future jobs stay outside. The outline covers the system's own components, including the stores and cloud resources its code provisions or calls (such as a knowledge base or a graph database), not human actors or third-party sources it reads from. It may be a polygon or several outlines. A component included in one stage stays visible in the next unless its transfer out of the investigated system is explained; decommissioned components remain visible in grey with a source-backed lifecycle label. Where future disposition is unresolved, keep its position and outline for comparison but label it “Future unresolved — current context” in the diagram. Explain in the legend that this context is not a commitment to include it in the future solution. Pending selection or absence of new work is not removal. Outside the outline means not yet included in that stage, with normal appearance. Do not imply that separate experiments inevitably survive as one integrated solution.
-- Before handover, account for every previously included component in the next stage: retained, adapted, decommissioned, explicitly transferred, or unresolved and preserved as context. Record the disposition and any unresolved decision in the ledger. Do not let a component silently lose its outline, or infer retirement from an omitted connection.
-- Connections may change between stages. Colour added or changed arrows red relative to the preceding stage, leaving unchanged arrows neutral. Keep proposed versus implemented connections distinct through line style and labels; red means change, not implementation status. Check that changing edges does not move the components.
-- Reserve greyed-out components for decommissioning and overlay a prominent diagonal cross while keeping names readable. Add the Mermaid class `decommissioned` to rectangular retired nodes; the renderer draws the cross without changing layout. Label confirmed removal `Decommissioned`, and future removal `Planned decommissioning` or `Proposed decommissioning` according to the evidence. Never grey a component merely because it is outside scope, optional or not yet implemented. Do not invent retirement decisions to make the evolution look cleaner.
-- Label shared target context and partial foundations explicitly. Scope highlighting does not prove deployment or integration. Current sequences explain actual entry paths; future maps distinguish agreed plans, proposals and unresolved alternatives. Verify fixed component positions across rendered maps, without requiring identical connections or scope outlines.
-- Prefer Mermaid `flowchart LR` for landscape system maps, wider than tall and close to the proportions of the accompanying sequence diagram. Aim for roughly 1.5:1–2.5:1 width to height as a layout guide, not a hard limit; prioritise readable labels and comparable layouts over an exact ratio: widen labels rather than truncate them, even past the ratio. Inspect the rendered dimensions and regroup or shorten labels when the result is tall or excessively wide; do not stretch the SVG or add empty space to manufacture the ratio. Every connection line must run horizontally, vertically or at 45°, with rounded corners. Begin with `%%{init: {"flowchart": {"curve": "rounded"}, "elk": {"lineHops": "gap"}}}%%`; never select another curve or arc-shaped line hops. The renderer checks this layout constraint.
-- Mermaid techniques for the maps, as the pinned renderer behaves:
-  - It lays flowcharts out with ELK. `flowchart.rankSpacing` and `nodeSpacing` have no effect; to make a wide map more compact, add `"nodePlacementStrategy": "NETWORK_SIMPLEX"` to the `elk` settings and regroup nodes. Don't switch to another layout engine: its lines break the line rules.
-  - Mermaid keywords such as `graph`, `end`, `subgraph`, `style` and `class` can't be node IDs, and a subgraph ID equal to a node ID silently swallows the node: prefix subgraph IDs (`grp_`).
-  - Write a small generator in your scratch folder that emits all three stages' maps from one list of nodes and connections, so the order and the `linkStyle` indexes stay the same.
-  - Give each node a 3-line label: name / status (its current implementation status, the same in every stage) / change label (what it means at that stage) (such as "Future unresolved — current context"), with `&nbsp;` for an empty line; a person's or external system's status line reads "Person" or "External".
-  - Every call in a sequence has a matching connection on the same stage's map (its reply rides on that connection; self-actions and decision notes need none), and every human role in a sequence is one of the map's actors, with the role as a qualifier in brackets ("Client / operator (source owner)") rather than a new actor.
-  - To keep components at the same positions across the three stages, give every stage's map the same nodes and the same connections, in the same order, and keep each label's number of lines the same: write an empty line as `&nbsp;`, since a trailing empty `<br/>` collapses, and fix the label width in `themeCSS` wide enough for the longest label, "Future unresolved — current context" needing about 260px (for example `.node .label div{width:260px !important;max-width:260px !important;white-space:nowrap !important}`), since a wider or wrapped label moves its neighbours; keep connection labels identical across stages too. Then compare the `nodes` positions that `output_diagram.py --check` prints for each stage's map: they must match. Hide a connection a stage doesn't have with `themeCSS` in the init block, `[data-id=L_<from>_<to>_0]{opacity:0}`, which hides its label too; add, remove or reorder nothing. A hidden connection still shapes the layout in every stage: if one stretches the maps, move or regroup its nodes rather than drop it. Drop a source-backed connection only as a last resort, and then explain it in the commentary and the ledger.
-  - Draw proposed connections with `-.->`, and add `.edge-pattern-dotted{stroke-dasharray:6 4 !important}` to `themeCSS`: Mermaid's own inline style otherwise drops a `linkStyle` dash on some connections.
-  - Draw the red outline with a `classDef` on the carried components (for example `classDef carried stroke:#e5484d,stroke-width:3px`) or a styled subgraph, and grey decommissioned components with a `classDef` of their own plus the `decommissioned` class, which only adds the cross.
-  - Sequence participants can't break lines: use the map's name on one line.
-  - Alternatives in one stage: put "Alternative — unresolved" on each alternative's change line rather than moving it into a new subgraph (which would move it), keep it inside the outline only if the sources carry it at that stage, and say in the commentary whether the alternatives exclude each other.
+- Inspect the actual maps visually, including scope outlines, text, edge labels, crossings and styling: `build_maps.py --png` writes a PNG preview of each, which you open as an image. The preview shows the layout in Mermaid's own colours; to see the dark styling and crosses, also look at the written SVG rasterised (on macOS, `qlmanage -t -s 2000 -o <scratch folder> <svg>`). Syntax and coordinate checks alone are insufficient: connections must not appear to terminate at unrelated nodes or imply junctions where they merely cross.
+- Show distinct POCs and their eventual replacements separately when their lifecycle differs. Distinguish reusing code or patterns from retaining the experimental runtime. Record each source-backed disposition and retirement condition in the ledger. Where disposition is unknown and no component of the stage's design takes over its responsibility, preserve the component as context and say its future is unresolved; do not recommend retirement or retention.
+- Show all diagram components at the same positions across stages, including components later decommissioned. A red outline identifies the complete architecture carried at that stage, including unchanged components, not only the work introduced in that step. In Current architecture it includes the existing paths and labelled candidate context (development branches, open pull requests, experiments); future jobs stay outside. The outline covers the system's own components, including the stores and cloud resources its code provisions or calls (such as a knowledge base or a graph database), not human actors or third-party sources it reads from. It may be a polygon or several outlines. A component included in one stage stays visible in the next unless its transfer out of the investigated system is explained; decommissioned and replaced components remain visible in grey with their label. Where future disposition is unresolved, keep its position and outline for comparison but label it “Future unresolved — current context” in the diagram; the legend `build_maps.py` writes explains that this context is not a commitment to include it in the future solution. Pending selection or absence of new work is not removal. Outside the outline means not yet included in that stage, with normal appearance. Do not imply that separate experiments inevitably survive as one integrated solution.
+- Before handover, account for every previously included component in the next stage: retained, adapted, replaced, decommissioned, explicitly transferred, or unresolved and preserved as context. Record the disposition and any unresolved decision in the ledger. Do not let a component silently lose its outline, or infer retirement from an omitted connection.
+- Connections may change between stages: `build_maps.py` colours red each connection added or changed from the preceding stage, leaving unchanged ones neutral. Keep proposed versus implemented connections distinct through line style and labels; red means change, not implementation status.
+- Current architecture is evidence; Next evolution and Target architecture are reconstructions of a design that code can't show yet. Use common sense in them: when a stage's design gives a component's responsibility to another component, show the first as replaced by the second, which `build_maps.py` greys and labels "Replaced by <component>". It says the component is no longer part of that design, not that it is decommissioned. Record the reasoning in the ledger as an inference finding citing the sources of the replacing design, and explain the replacement in the stage's commentary. When the design keeps both, or the sources don't say which responsibility moves, the component stays carried as "Future unresolved — current context".
+- Reserve the cross, on grey, for decommissioning, which needs a source: label confirmed removal `Decommissioned`, and future removal `Planned decommissioning` or `Proposed decommissioning` according to the evidence. Never grey a component merely because it is outside scope, optional or not yet implemented. Do not invent retirement decisions to make the evolution look cleaner.
+- Label shared target context and partial foundations explicitly. Scope highlighting does not prove deployment or integration. Current sequences explain actual entry paths; future maps distinguish agreed plans, proposals and unresolved alternatives.
+- Write the maps in `maps.json`, one list of nodes and connections for all three stages, then run `python3 <scripts>/build_maps.py --investigation <investigation> --png`:
+
+  ```json
+  {
+    "notes": ["What the logical groups contain, and material omissions."],
+    "groups": [{"id": "app", "label": "APP CLUSTER · configured, live state unverified"}],
+    "nodes": [
+      {"id": "U", "name": "Client / operator", "kind": "person"},
+      {"id": "A", "name": "Helpdesk API", "kind": "component", "status": "Implemented", "group": "app"},
+      {"id": "D", "name": "Ticket store", "kind": "store", "status": "Implemented", "group": "app"},
+      {"id": "X", "name": "Search provider", "kind": "external"}
+    ],
+    "connections": [{"from": "U", "to": "A", "label": "HTTP search"}],
+    "stages": {
+      "current": {"carried": ["A", "D"], "labels": {"A": "Current"},
+                  "connections": {"U->A": "implemented"}, "decommissioned": {}, "replaced": {}, "transferred": {}},
+      "next": {"...": "..."},
+      "target": {"...": "..."}
+    }
+  }
+  ```
+
+  - A node's `kind` is `component`, `store` (drawn as a cylinder), `person` or `external`. A component or store has its current implementation `status`, the same in every stage, one of [Component status](#component-status)'s six names without the colour; a person or external system reads "Person" or "External" and is never `carried`.
+  - `stages` holds all three, or `current` alone when the report skips evolution. Each stage lists what it `carried` (the red outline), each node's change label in `labels` (what it means at that stage, such as "Retained", "Added — proposed" or "Future unresolved — current context"), its `decommissioned` nodes with their lifecycle label, the nodes `replaced` in its design with the carried node replacing each (`{"L": "J"}`; never at the current stage), and the nodes `transferred` out of the investigated system, with why.
+  - A stage's `connections` names the connections it has, by `"<from>-><to>"` (or an `id` you give two connections between the same nodes), as `implemented` (solid) or `proposed` (dashed). A connection a stage doesn't have is hidden, not removed: it still shapes the layout, so if one stretches the maps, regroup its nodes rather than drop it. Drop a source-backed connection only as a last resort, and explain it in the commentary and the ledger. Connection labels are the same in every stage.
+  - Alternatives in one stage: put "Alternative — unresolved" on each alternative's change label, keep it carried only if the sources carry it at that stage, and say in the commentary whether the alternatives exclude each other.
+  - The script fails, writing nothing, on an invalid file, on a component carried at one stage that the next neither carries, replaces, decommissions nor transfers, on lines that break the line rules (horizontal, vertical or 45°, with rounded corners), or on a component that moves between stages. A move means a label too wide: widen `label_width` (260px fits "Future unresolved — current context") rather than shorten names.
+- Landscape maps read best: wider than tall and close to the proportions of the accompanying sequence diagrams, roughly 1.5:1–2.5:1 as a guide, not a hard limit. The script warns outside it; prioritise readable labels and comparable layouts over the ratio. To tighten a wide map, regroup nodes or set `"compact": true`; never stretch the SVG or add empty space to manufacture the ratio.
+- If Node.js is unavailable (exit code `3`), the script writes `mermaids.md` only, and `make_report.py` shows each map as Mermaid with the disclosure that its layout is unchecked.
 - Use subgraphs for material runtime or trust boundaries. Label logical groupings and proposed or unverified placement explicitly; a runtime grouping is not required for every deployment unit.
 - Nodes may represent concrete components or logical groups. Show implementation status where it helps avoid confusing current and planned capabilities; split or annotate a group whose members have materially different maturity. Detailed per-component statuses remain in the ledger.
 - In the shared target-context maps, use dashed arrows for proposed connections and open pull requests, and solid arrows for interactions the code has, on the default branch or a labelled development branch. Keep this meaning consistent across stages. Simplify low-level hops without claiming a direct protocol or trust relationship that does not exist.
-- Render maps with `output_diagram.py --theme dark`, using `architecture-as-is.svg`, `architecture-next.svg` and `architecture-to-be.svg` for the current, next and target maps respectively. Embed the SVG before the sequence diagrams and keep its Mermaid source in `mermaids.md`. Re-render whenever its source changes. Sequences stay as Mermaid blocks; place the shared commentary after the last sequence in the section. If Node.js is unavailable (exit code `3`), show the map as Mermaid and disclose that its layout is unchecked.
-- Validate every sequence by rendering its exact Mermaid source with the same pinned renderer before handover, and repeat after edits: `python3 <scripts>/output_diagram.py --check < sequence.mmd` checks it without saving an SVG in the report folder, and its `width` is the viewBox width to compare between sequences. Checking interaction numbering alone does not validate syntax. Avoid raw semicolons in message and note text: Mermaid treats them as statement separators. If rendering is unavailable, disclose that sequence syntax is unchecked.
 
 ### The current milestone
 
@@ -524,7 +577,7 @@ The document is ready only when all of these hold.
 
 - No actionable research question or validation task remains pending; the initial scope has expanded to cover every material discovery.
 - Every finding is traceable to exact evidence and the deepest validation reached.
-- Both fixed report layers are complete, and the executive/product layer stands alone. Each of the first three architect sections has a roughly 300-word opening and a landscape system map and focused sequences for materially distinct flows, followed by one shared commentary connecting structure and flow (roughly 100 words for a single flow, longer where needed for multiple flows); next compares against current and target against next, with change labels distinct from implementation status.
+- Both fixed report layers are complete, apart from sections the research showed don't apply, and the executive/product layer stands alone. Each architecture section the report shows has a roughly 300-word opening and a landscape system map and focused sequences for materially distinct flows, followed by one shared commentary connecting structure and flow (roughly 100 words for a single flow, longer where needed for multiple flows); next compares against current and target against next, with change labels distinct from implementation status.
 - No Critical, High or Medium improvement is still actionable.
 - Every Low improvement is applied or consciously rejected.
 - Every blocked improvement says what evidence or decision is missing.

@@ -235,6 +235,42 @@ def render(source, theme="default", png=None):
     return retirement_crosses(dark_style(svg) if theme == "dark" else svg)
 
 
+def render_many(sources, theme="default"):
+    """[SVG] of each source in `sources`, rendered in one Mermaid CLI run (a
+    Markdown file of their blocks), which saves starting a browser per
+    diagram. If the batch fails, each is rendered alone, so the error names
+    the diagram that doesn't render: SystemExit's message starts with its
+    index, "diagram <n>: ..."."""
+    if not sources:
+        return []
+    npx = shutil.which("npx")
+    if not npx:
+        raise NodeMissing()
+    with tempfile.TemporaryDirectory() as folder:
+        source_path = os.path.join(folder, "diagrams.md")
+        out_path = os.path.join(folder, "out.md")
+        blocks = "\n".join(f"```mermaid\n{source.rstrip()}\n```\n" for source in sources)
+        try:
+            mmdc(npx, source_path, out_path, theme, blocks)
+            svgs = []
+            for number in range(1, len(sources) + 1):
+                with open(os.path.join(folder, f"out-{number}.svg"), encoding="utf-8") as f:
+                    svgs.append(f.read())
+        except (SystemExit, OSError):
+            svgs = None
+    if svgs is None:
+        svgs = []
+        for number, source in enumerate(sources, 1):
+            try:
+                svgs.append(render(source, theme))
+            except NodeMissing:
+                raise
+            except SystemExit as error:
+                raise SystemExit(f"diagram {number}: {error}")
+        return svgs
+    return [retirement_crosses(dark_style(svg) if theme == "dark" else svg) for svg in svgs]
+
+
 def mmdc(npx, source_path, out_path, theme, source):
     """Runs the pinned Mermaid CLI on `source`, writing `out_path` (its
     extension sets the format; a PNG is drawn at PNG_SCALE, to read labels)."""

@@ -41,6 +41,8 @@ class ArgsTest(unittest.TestCase):
             (("--board", "42"), {"board": "42"}),
             (("--sprint-name", "Sprint 3", "--board", "42"),
              {"sprint_name": "Sprint 3", "board": "42"}),
+            (("--sprint-name", "Sprint 3", "--project", "PROJ"),
+             {"sprint_name": "Sprint 3", "project": "PROJ", "active": False}),
         ]
         for args, expected in cases:
             with self.subTest(args=args):
@@ -48,7 +50,8 @@ class ArgsTest(unittest.TestCase):
                 self.assertEqual({k: getattr(parsed, k)
                                  for k in expected}, expected)
 
-    def test_conflicting_selectors(self):
+    def test_rejected_arguments(self):
+        # Conflicting selectors fail rather than one silently winning.
         cases = [
             ("pass exactly one of --sprint-id, --project or --board", ()),
             ("pass exactly one of --sprint-id, --project or --board",
@@ -63,14 +66,13 @@ class ArgsTest(unittest.TestCase):
              ("--sprint-name", "S", "--board", "42", "--active")),
             ("--active applies only to --project or --board",
              ("--sprint-id", "7", "--active")),
+            # Report folders always go in the skill's output folder.
+            ("unrecognized arguments: --out-root",
+             ("--sprint-id", "7", "--out-root", "reports")),
         ]
         for expected, args in cases:
             with self.subTest(args=args):
                 self.assert_rejected(expected, *args)
-
-    def test_the_reports_folder_cant_be_chosen(self):
-        self.assert_rejected("unrecognized arguments: --out-root",
-                             "--sprint-id", "7", "--out-root", "reports")
 
 
 class ReportDirTest(unittest.TestCase):
@@ -91,14 +93,19 @@ class ReportDirTest(unittest.TestCase):
         return fetch_sprint.prepare_report_dir(self.root, os.path.join(self.root, name), sprint_id,
                                                self.logged.append)
 
+    def broken(self, name, text):
+        raw = os.path.join(self.root, name, "_raw")
+        os.makedirs(raw)
+        with open(os.path.join(raw, "sprint.json"), "w", encoding="utf-8") as f:
+            f.write(text)
+        return os.path.join(self.root, name)
+
     def test_stored_sprint_id(self):
-        broken = os.path.join(self.root, "broken", "_raw")
-        os.makedirs(broken)
-        with open(os.path.join(broken, "sprint.json"), "w", encoding="utf-8") as f:
-            f.write("[]")
+        # A folder that isn't a readable report is never taken for one.
         cases = [("a report", self.report("a", 7), "7"),
                  ("no folder", os.path.join(self.root, "missing"), None),
-                 ("a sprint.json that isn't an object", os.path.dirname(broken), None)]
+                 ("a sprint.json that isn't an object", self.broken("list", "[]"), None),
+                 ("a sprint.json that isn't JSON", self.broken("text", "{"), None)]
         for name, folder, expected in cases:
             with self.subTest(name):
                 self.assertEqual(
@@ -112,12 +119,23 @@ class ReportDirTest(unittest.TestCase):
         self.assertEqual(self.logged, [])
 
     def test_earlier_reports_of_the_same_sprint_are_deleted(self):
+        # Only real folders of this sprint go: never another sprint's report,
+        # nor a report elsewhere that a link in the folder points to.
         earlier = self.report("PROJ_Sprint_7_26-03-13", 7)
         other = self.report("PROJ_Sprint_6_26-02-27", 6)
         same_name = self.report("PROJ_Sprint_7_26-03-16", 7)
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        linked = os.path.join(outside.name, "PROJ_Sprint_7_26-03-01")
+        os.makedirs(os.path.join(linked, "_raw"))
+        with open(os.path.join(linked, "_raw", "sprint.json"), "w", encoding="utf-8") as f:
+            json.dump({"id": 7}, f)
+        os.symlink(linked, os.path.join(self.root, "link"))
         self.prepare("PROJ_Sprint_7_26-03-16", 7)
         self.assertFalse(os.path.exists(earlier))
         self.assertTrue(os.path.exists(other))
+        self.assertTrue(os.path.islink(os.path.join(self.root, "link")))
+        self.assertTrue(os.path.exists(os.path.join(linked, "_raw", "sprint.json")))
         self.assertEqual(os.listdir(os.path.join(same_name, "_raw")), [])
         self.assertEqual(sorted(self.logged), [f"deleting earlier report: {earlier}",
                                                f"deleting earlier report: {same_name}"])
@@ -128,43 +146,52 @@ class ReportDirTest(unittest.TestCase):
             self.prepare("PROJ_Sprint_7_26-03-16", 7)
 
     def test_replaces_a_file_or_link_in_the_way(self):
-        target = os.path.join(self.root, "PROJ_Sprint_7_26-03-16")
-        open(target, "w").close()
-        self.prepare("PROJ_Sprint_7_26-03-16", 7)
-        self.assertTrue(os.path.isdir(os.path.join(target, "_raw")))
+        # Whatever holds the destination's name is removed, but a link is
+        # removed itself, never what it points to.
         elsewhere = os.path.join(self.root, "elsewhere")
         os.makedirs(elsewhere)
-        link = os.path.join(self.root, "PROJ_Sprint_8_26-03-30")
-        os.symlink(elsewhere, link)
-        self.prepare("PROJ_Sprint_8_26-03-30", 8)
-        self.assertFalse(os.path.islink(link))
+        cases = [("a file", lambda path: open(path, "w").close()),
+                 ("a link to a folder", lambda path: os.symlink(elsewhere, path)),
+                 ("a broken link", lambda path: os.symlink(os.path.join(self.root, "gone"), path))]
+        for sprint_id, (name, make) in enumerate(cases, start=7):
+            with self.subTest(name):
+                target = os.path.join(self.root, f"PROJ_Sprint_{sprint_id}")
+                make(target)
+                self.prepare(f"PROJ_Sprint_{sprint_id}", sprint_id)
+                self.assertFalse(os.path.islink(target))
+                self.assertTrue(os.path.isdir(os.path.join(target, "_raw")))
         self.assertTrue(os.path.isdir(elsewhere))
 
 
 class PreviousSprintTest(unittest.TestCase):
     def test_previous_sprint(self):
-        def sprint(sprint_id, start, state="closed", board=42):
-            return {"id": sprint_id, "state": state, "startDate": f"2026-{start}T09:00:00.000Z",
-                    "completeDate": f"2026-{start}T10:00:00.000Z" if state == "closed" else None,
+        def sprint(sprint_id, start, state="closed", board=42, completed=True):
+            return {"id": sprint_id, "state": state, "startDate": start and f"2026-{start}T09:00:00.000Z",
+                    "completeDate": f"2026-{start}T10:00:00.000Z" if state == "closed" and completed else None,
                     "originBoardId": board}
         current = sprint(7, "03-04", state="active")
         cases = [
-            ("the latest start before this one",
+            ("the latest start before this one", current,
              [sprint(5, "02-04"), sprint(6, "02-18"), current], 6),
-            ("from another board, after a move to this one", [sprint(6, "02-18", board=41)], 6),
-            ("still running", [sprint(5, "02-04"), sprint(6, "02-18", state="active")], 5),
-            ("started after this one", [sprint(5, "02-04"), sprint(8, "03-18")], 5),
-            ("none before it", [sprint(8, "03-18")], None),
+            # After a team moves board, its earlier sprints keep the old origin.
+            ("from another board, after a move to this one", current, [sprint(6, "02-18", board=41)], 6),
+            ("still running", current, [sprint(5, "02-04"), sprint(6, "02-18", state="active")], 5),
+            ("closed without a completion date", current,
+             [sprint(5, "02-04"), sprint(6, "02-18", completed=False)], 5),
+            ("started after this one", current, [sprint(5, "02-04"), sprint(8, "03-18")], 5),
+            ("none before it", current, [sprint(8, "03-18")], None),
+            ("a sprint never started", sprint(7, None, state="active"), [sprint(6, "02-18")], None),
         ]
-        for name, sprints, expected in cases:
+        for name, this, sprints, expected in cases:
             with self.subTest(name):
-                previous = fetch_sprint.previous_sprint(current, sprints)
+                previous = fetch_sprint.previous_sprint(this, sprints)
                 self.assertEqual(previous and previous["id"], expected)
-        self.assertIsNone(fetch_sprint.previous_sprint({"id": 7, "startDate": None}, [sprint(6, "02-18")]))
 
 
 class HelpersTest(unittest.TestCase):
     def test_project_key_of(self):
+        # --project wins; otherwise an issue key up to its last hyphen; with
+        # neither, no key.
         cases = [("PROJ", [], "PROJ"),
                  (None, [{"key": "ABC-DEF-12"}], "ABC-DEF"), (None, [], None)]
         for project, issues, expected in cases:

@@ -1,65 +1,36 @@
 """
-Draw the report's three charts as SVG from <report_dir>/data.json, using
-only the standard library.
+Draw the report's three charts as SVG from <report_dir>/data.json, using only
+the standard library.
 
 Usage:
     python3 make_charts.py --report-dir <report_dir>
     python3 make_charts.py --report-dir <report_dir> --print-series   # burndown numbers only
 
-Writes outcome-tickets.svg, outcome-pts.svg and burndown.svg.
+Outcome charts (tickets and pts): how the counted spells ended (see
+build_sprint_data.py), as Completed, Not completed (Open while running) and
+Descoped, in three bars on one scale: carry-over, new commitment and extra. A
+bracket joins the first two as the commitment. Both charts share one layout so
+they read as a pair.
 
-Outcome charts: the final situation of the spells (see build_sprint_data.py),
-in three bars on one shared scale, each split into Completed, Not completed
-and Descoped: the original commitment's work carried over from the previous
-sprint, its new work, and the extra scope added later. An original spell that
-ended with the ticket leaving is Descoped, whatever its state; an extra spell
-that did isn't counted, as it was never part of the commitment. The original
-commitment is the sprint target's pool. A bracket joins the first two as the original commitment. The longest bar spans
-the full bar width and the others are sized against it. Both charts share one
-layout: the same width, the labels in the same place, and the bars taking
-the width the labels leave. The points chart's title notes partial estimation when some issues
-have no points.
+Burndown: four series, checked by validate_series before drawing.
 
-Burndown: points remaining for every calendar day of the sprint (through the
-close date, if it closed after its end date), four series.
+  Commitment          open pts of the original commitment
+  Commitment + extra  the same plus later scope; never below the commitment
+  Ideal               from the same baseline, flat on the start day and over
+                      weekends, then even per weekday to zero at the end
+  Spread              commitment minus ideal: positive is behind
 
-  Commitment (blue, solid)         remaining original commitment.
-  Commitment + extra (violet, dash) the same plus scope added later; never
-                                   below blue.
-  Ideal (green, dashed)            the commitment, held through the start day,
-                                   then burned evenly per later weekday to zero
-                                   by sprint end; flat over weekends.
-  Spread (red, dotted)             committed minus ideal: positive is behind.
+  * Both lines replay the same events as every other part of the report, at
+    each day's estimates, so the burndown can't contradict the timeline.
+  * The start day has two points at the same x: the whole commitment at the
+    start, Done or not, then that day's reading. The drop between them is work
+    already Done and that day's changes, not delivery pace, so it is vertical.
+  * Readings are end of day, except the last: the exact close, or the fetch.
+    For a closed sprint, work finished after the close still counts as open.
+  * A running sprint past its end date stops at the end date.
 
-Rules the burndown follows, checked by validate_series before drawing:
-
-  * Both lines replay the tickets' events (see build_sprint_data.py), the
-    same events every other part of the report is built from: on each day,
-    the open points of the tickets then in the sprint, at that day's
-    estimates.
-  * Blue and violet are end-of-day readings, except on the last day, which
-    stops at the exact close (or, for an active sprint, the fetch). The start
-    day gets two points at the same x: the baseline, which is the whole
-    original commitment at the start, at the estimates it had then and
-    including work already Done, then that day's end-of-day reading, drawn as
-    a vertical movement reflecting work already Done at the start and that
-    day's closures, removals, reopening and estimate changes.
-  * The ideal starts from the same baseline and assumes no burn on the start
-    day; it starts sloping on the next weekday.
-  * Each day has one x position: its values, its tick and its weekend band
-    share it. A weekend day's band runs from the previous day's tick to its
-    own, because the space between two ticks is the later day passing.
-  * Actuals stop at today (active), or at the end date if an active sprint
-    has run past it, or at the close date (closed). For a closed
-    sprint the last value is what was left open: work finished after the
-    close, even later the same day, still counts as open. Reopening,
-    re-estimation and removals appear on the day they happened; extra work
-    appears while in the sprint and leaves the burndown when removed. An active snapshot uses
-    the fetch instant for the current day.
-
-Colours were checked for colour-blind separation; blue and violet are close
-for deuteranopia, so each series also has its own dash pattern, repeated in
-the legend. Keep the four patterns distinct.
+Blue and violet are close for deuteranopia, so each series also has its own
+dash pattern, repeated in the legend; keep the four patterns distinct.
 """
 import argparse
 import html
@@ -304,6 +275,8 @@ def build_series(data):
     actuals = {parse_date(row["date"]): row for row in data["burndown"]}
     sprint_start, sprint_end = parse_date(
         data["sprint_start"]), parse_date(data["sprint_end"])
+    if not actuals:
+        raise SystemExit("data.json has no burndown readings; build the sprint data again")
     last_actual = max(actuals)
 
     baseline = data["burndown_baseline"]
@@ -355,8 +328,10 @@ def validate_series(series, data):
             problems.append(f"ideal rises on {row['date']}")
         if not is_weekday(row["date"]) and row["ideal"] != previous["ideal"]:
             problems.append(f"ideal changes over the weekend on {row['date']}")
-    end_row = next(r for r in closes if r["date"] == series["sprint_end"])
-    if series["weekdays"] and end_row["ideal"] != 0:
+    end_row = next((r for r in closes if r["date"] == series["sprint_end"]), None)
+    if end_row is None:
+        problems.append("no point on the sprint's end date")
+    elif series["weekdays"] and end_row["ideal"] != 0:
         problems.append("ideal doesn't reach zero by sprint end")
     for row in rows:
         if row["committed"] is not None:
@@ -511,8 +486,8 @@ def main():
         print_series(series)
         return
     charts = {
-        "outcome_stories": outcome_chart(data, is_points=False),
-        "outcome_points": outcome_chart(data, is_points=True),
+        "outcome_tickets": outcome_chart(data, is_points=False),
+        "outcome_pts": outcome_chart(data, is_points=True),
         "burndown": burndown_chart(data, series),
     }
     for name, content in charts.items():

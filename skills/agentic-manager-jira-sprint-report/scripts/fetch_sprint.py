@@ -119,7 +119,7 @@ def previous_sprint(sprint, board_sprints):
         return None
     candidates = [
         s for s in board_sprints
-        if (s.get("state") or "").lower() == "closed" and str(s["id"]) != str(sprint["id"])
+        if (s.get("state") or "").lower() == "closed"
         and s.get("startDate") and s.get("completeDate") and parse_ts(s["startDate"]) < parse_ts(start)
     ]
     return max(candidates, key=lambda s: parse_ts(s["startDate"]), default=None)

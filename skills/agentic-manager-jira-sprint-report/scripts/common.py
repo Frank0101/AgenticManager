@@ -10,7 +10,7 @@ import json
 import os
 import re
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
@@ -29,13 +29,14 @@ REPORTS_FOLDER = "jira-sprint-reports"
 RAW_DIR = "_raw"
 DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
+BRIEF_FILE = "brief.json"
 CHART_FILES = {
-    "outcome_stories": "outcome-tickets.svg",
-    "outcome_points": "outcome-pts.svg",
+    "outcome_tickets": "outcome-tickets.svg",
+    "outcome_pts": "outcome-pts.svg",
     "burndown": "burndown.svg",
 }
 
-# data.json's key for the issues without an epic.
+# data.json's key for the tickets without an epic.
 NO_EPIC = "__no_epic__"
 
 # Blocker candidates: flagged, in a blocked-type status, or high priority and
@@ -236,6 +237,42 @@ def report_label(project_key, sprint_name):
     return re.sub(r"[^A-Za-z0-9.-]+", "_", name).strip("_")
 
 
+# --- The report's vocabulary and formats
+#
+# Exec readers compare reports sprint to sprint, so each idea has one word and
+# each figure one shape; a synonym reads as a different thing. make_report.py
+# writes every figure with the helpers below, check_report.py fails a report
+# that breaks a rule, and make_report.py rejects the agent's text that does.
+#
+#   Words       a work item is a ticket (never story or issue); the unit is pts
+#               (never points); tickets are completed (never closed: "closed"
+#               appears only in the timeline's "(sprint closed)" label).
+#   Labels      Commitment (in the sprint at its start), Extra (added after
+#               it), Descoped, and Not completed, or Open while the sprint runs.
+#               Capitalised in labels and tags, lower case in running text.
+#   Amounts     "7 tickets (7 pts)"; done out of total "11/22 tickets
+#               (34/74 pts)", never a bare ratio; a share "6 tickets | 27% of
+#               commitment (13 pts | 18%)"; inside a chart bar, for space only,
+#               "3 (50%)".
+#   Tickets     one as "KEY (N pts)", or "KEY (– pts)" with no estimate; several
+#               as the amount then the keys, sorted: "3 tickets (5 pts) were
+#               descoped (PROJ-11, PROJ-12, PROJ-13)"; a re-estimate as
+#               "PROJ-15 (5 → 3 pts)". The timeline's commentary quotes each
+#               ticket at its estimate at the time; anywhere else a ticket has
+#               its latest estimate, as a reader looking it up would see.
+#   Epics       "KEY: Name", or "(no epic)".
+#   Numbers     digits, never "one" to "twenty"; whole percentages, "<1%" for a
+#               share above zero that would round to 0%, and ">99%" for one
+#               below the whole that would round to 100%: rounding must never
+#               show work as none or all done when it isn't.
+#   Dates       DD/MM/YYYY.
+#   Style       bold only for a label that introduces a value ("Open:"); no em
+#               dashes. Copied Jira text (the goal, sprint and epic names) keeps
+#               its own wording and is exempt from these rules.
+#
+# Word limits count words separated by spaces in the agent's text only:
+# "JavaScript" and "per-market" are 1 word each.
+
 def number(value):
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
@@ -246,11 +283,6 @@ def plural(count, one, many):
     """The word for `count` things: `one` for exactly 1, else `many`."""
     return one if count == 1 else many
 
-
-# The report's vocabulary and formats (see the skill's Vocabulary and
-# formatting section): a work item is a ticket; an amount of work is
-# "N tickets (N pts)", a part of a whole "N/M tickets (N/M pts)", one ticket
-# "KEY (N pts)", percentages are whole numbers.
 
 def unit(count):
     return plural(count, "ticket", "tickets")
@@ -278,15 +310,68 @@ def ticket_ref(key, points):
     return f"{key} ({pts(points)})"
 
 
-# The header table's goal verdicts: content.json's goal_verdict must be one of
-# those for the sprint's state, or NO_GOAL_VERDICT when Jira has no goal.
+def estimate(points):
+    """An estimate for display: "–" when there is none."""
+    return "–" if points is None else number(points)
+
+
+def whole_percentage(part, whole):
+    """A share as a whole percentage, "<1%" or ">99%" where rounding would
+    show a share as none or all of the whole."""
+    if not whole:
+        return "n/a"
+    share = part * 100 / whole
+    rounded = f"{share:.0f}"
+    if share > 0 and rounded == "0":
+        return "<1%"
+    if share < 100 and rounded == "100":
+        return ">99%"
+    return f"{rounded}%"
+
+
+def display_date(iso_date):
+    return datetime.strptime(iso_date, "%Y-%m-%d").strftime("%d/%m/%Y")
+
+
+# The words the rules above ban, with what to write instead.
+BANNED_WORDS = (("story or stories", r"\bstor(?:y|ies)\b"), ("issue or issues", r"\bissues?\b"),
+                ("points (write pts)", r"\bpoints?\b"),
+                ("spelled-out numbers (write digits)",
+                 r"\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|"
+                 r"fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b"),
+                ("closed (write completed, or at the close)", r"\bclosed\b"))
+
+
+def banned_words(text):
+    """[(rule, words found)] for each banned word the text uses."""
+    found = []
+    for rule, pattern in BANNED_WORDS:
+        words = re.findall(pattern, text, re.I)
+        if words:
+            found.append((rule, words))
+    return found
+
+
+def word_count(text):
+    return len(re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text).split())
+
+
+# The goal verdicts the agent chooses from, word for word. A running sprint
+# can't be judged before its halfway day: too little is done to tell.
 GOAL_VERDICTS = {"closed": ("Fully met", "Partially met", "Not met"),
-                 "active": ("On track", "At risk", "Too early to tell")}
-NO_GOAL_VERDICT = "No goal set in Jira for this sprint"
+                 "early": ("Too early to tell",),
+                 "active": ("On track", "At risk"),
+                 "no_goal": ("No goal set in Jira for this sprint",)}
 
 
 def allowed_verdicts(data):
-    return GOAL_VERDICTS[data["sprint_status"]] if data["sprint_goal"] else (NO_GOAL_VERDICT,)
+    if not data["sprint_goal"]:
+        return GOAL_VERDICTS["no_goal"]
+    if data["sprint_status"] == "closed":
+        return GOAL_VERDICTS["closed"]
+    start, end, today = (date.fromisoformat(data[k]) for k in ("sprint_start", "sprint_end", "today"))
+    early = today < start + (end - start) / 2
+    return GOAL_VERDICTS["early" if early else "active"]
 
 
 # How each piece of work in the outcome charts ended, and their rows: the
@@ -296,26 +381,27 @@ OUTCOME_ROWS = ("original", "carried_in", "new", "extra")
 
 
 # The groups of an epic's commentary, in the order it shows them (see
-# build_sprint_data.py's scope_group), and the commentary's word limit.
+# build_sprint_data.py's scope_group).
 SCOPE_GROUPS = ("completed", "in_review", "not_completed", "descoped")
+
+# Word limits, so the report stays short enough for an exec to read: the
+# timeline's commentary before its caveats, each epic's commentary, and the
+# Key Achievements and Blockers & Risks paragraphs; and the most retro notes.
+COMMENTARY_WORDS = 100
 EPIC_COMMENTARY_WORDS = 60
+SUMMARY_WORDS = 80
+RETRO_NOTES = 5
+
 # Marks the parts of the report the agent writes, on their heading or label;
 # everything else is generated from data.json and checked.
-AI_LABEL = "[AI Generated]"
+AI_LABEL = "[AI Gen.]"
 
 
 def ai(title):
-    """A heading or label of an AI-written part."""
-    return f"{title} {AI_LABEL}"
-
-
-# The word limit of the Key Achievements and Blockers & Risks paragraphs, and
-# the most retro notes.
-SUMMARY_WORDS = 80
-RETRO_NOTES = 5
-# The note make_report.py accepts on the first run, before the agent has read
-# the report; the check fails while it is there.
-RETRO_PLACEHOLDER = "To be written?"
+    """A heading or label of an AI-written part. The label is a small superscript
+    after the title it marks: a note for the reader, not part of the title. Its
+    size is in rem, so it reads the same after a heading and in a table cell."""
+    return f'{title} <sup style="font-size:0.6rem;font-weight:normal">{AI_LABEL}</sup>'
 
 
 def scope_group_label(group, status):
@@ -337,29 +423,10 @@ def outcome_total(breakdown, row):
     return sum(breakdown[f"{row}_{outcome}"] for outcome in OUTCOMES)
 
 
-def estimate(points):
-    """An estimate for display: "–" when there is none."""
-    return "–" if points is None else number(points)
-
-
-def whole_percentage(part, whole):
-    """A share as a whole percentage, "<1%" for a share above zero that
-    would round to 0%."""
-    if not whole:
-        return "n/a"
-    share = part * 100 / whole
-    rounded = f"{share:.0f}"
-    return "<1%" if share > 0 and rounded == "0" else f"{rounded}%"
-
-
-def display_date(iso_date):
-    return datetime.strptime(iso_date, "%Y-%m-%d").strftime("%d/%m/%Y")
-
-
 def target_completion(data):
-    """(closed_keys, pool_keys) for the sprint target metric: the original
+    """(completed keys, commitment keys) for the sprint target: the original
     commitment's spells, and those completed. A ticket already Done at the
-    start counts as closed unless it was reopened; one that left the sprint,
+    start counts as completed unless it was reopened; one that left the sprint,
     never, even if it came back."""
     original = [t for t in data["spells"] if t["scope"] == "original"]
     return ([t["key"] for t in original if t["outcome"] == "completed"], [t["key"] for t in original])
