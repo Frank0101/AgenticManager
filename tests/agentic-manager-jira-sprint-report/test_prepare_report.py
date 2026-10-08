@@ -79,14 +79,6 @@ class MainTest(unittest.TestCase):
                                            "content_path": "PROJ_Sprint_7_26-03-16/content.json"})
         self.assertEqual(err, "wrote data.json\n")
 
-    def test_help(self):
-        for flag in ("-h", "--help"):
-            with self.subTest(flag):
-                out, _, runs = self.main(flag)
-                self.assertIn(
-                    "Usage (the same sprint selectors as fetch_sprint.py)", out)
-                self.assertEqual(runs, [])
-
 
 if __name__ == "__main__":
     unittest.main()

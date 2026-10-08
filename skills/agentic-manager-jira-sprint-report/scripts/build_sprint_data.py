@@ -45,10 +45,10 @@ after the end are left out of the comparison
 """
 import argparse
 import os
-from datetime import datetime, time, timedelta, timezone, tzinfo
+from datetime import datetime, time, timedelta, tzinfo
 
 from common import (DATA_FILE, NO_EPIC, OUTCOME_ROWS, OUTCOMES, RAW_DIR, SCOPE_GROUPS, History,
-                    add_and_remove_events, as_of, in_sprint_at, is_blocker_candidate, issue_moves, key_order,
+                    add_and_remove_events, as_of, in_sprint_at, blocker_candidate_keys, issue_moves, key_order,
                     load_json, nested, outcome_total, parse_ts, plain_text, report_timezone, split_ids, sprint_moves,
                     status_categories, write_json)
 
@@ -66,10 +66,6 @@ DESCRIPTION_CHARS = 2000
 # When changes share an instant: estimates, then status, then sprint moves, so
 # a ticket completed and removed in one edit is completed, then removed.
 CHANGE_ORDER = {"points": 0, "status": 1, "move": 2}
-
-
-def load_optional(path, default):
-    return load_json(path) if os.path.exists(path) else default
 
 
 def sprint_date(ts, zone, end_of_period=False):
@@ -91,9 +87,9 @@ class Context:
     """What every ticket is built with: the sprint, the site's fields and
     statuses, and the epics' names."""
 
-    def __init__(self, sprint_id, start_ts, start_date, categories, fields, epic_names, reporting_zone: tzinfo = timezone.utc,
-                 previous=None):
-        self.sprint_id, self.start_ts, self.start_date = sprint_id, start_ts, start_date
+    def __init__(self, sprint_id, start_ts, categories, fields, epic_names, reporting_zone: tzinfo,
+                 previous):
+        self.sprint_id, self.start_ts = sprint_id, start_ts
         self.reporting_zone = reporting_zone
         self.categories = categories
         self.flagged_field, self.points_field = fields
@@ -238,16 +234,18 @@ def build_spells(raw, changes, context, moment):
             "key": raw["key"],
             "summary": fields.get("summary"),
             "description": description(fields),
-            "type": nested(fields, ["issuetype", "name"]),
-            "assignee": nested(fields, ["assignee", "displayName"]),
-            "created": fields.get("created"),
-            "labels": fields.get("labels") or [],
             **state,
             "parentKey": parent_key,
             "parentSummary": parent_summary,
             "scope": scope,
             "carriedIn": scope == "original" and carried,
             "events": events,
+            # What the events say, stored so no view derives it again.
+            "doneAtStart": events[0]["done"],
+            "reopened": any(e["type"] == "reopened" for e in events),
+            "reestimated": any(e["type"] == "reestimated" for e in events),
+            # A later spell of a ticket that left and returned.
+            "cameBack": len(spells) > 0,
             "outcome": outcome,
             # Its latest estimate: at the end, or when it left.
             "points": last["points"],
@@ -285,13 +283,24 @@ def outcome_breakdown(spells):
     return counts, points
 
 
+def target_completion(spells):
+    """The sprint target: the original commitment's spells, and those that
+    ended completed. A ticket already Done at the start counts as completed
+    unless it was reopened; one that left the sprint, never, even if it came
+    back."""
+    original = [s for s in spells if s["scope"] == "original"]
+    done = [s for s in original if s["outcome"] == "completed"]
+    return {"completed": len(done), "total": len(original),
+            "completed_points": sum(s["points"] or 0 for s in done),
+            "total_points": sum(s["points"] or 0 for s in original)}
+
+
 def scope_group(spell):
     """(the commentary group of a counted spell, or None, why it is left out).
     Work Done when its spell began and never reopened was done before it,
     even if it was then descoped."""
     if spell["outcome"] == "removed":
-        done_throughout = spell["events"][0]["done"] and not any(
-            e["type"] == "reopened" for e in spell["events"])
+        done_throughout = spell["doneAtStart"] and not spell["reopened"]
         return (None, "done_at_start") if done_throughout else ("descoped", None)
     if spell["outcome"] == "not_completed":
         return ("in_review" if "review" in (spell["status"] or "").lower() else "not_completed"), None
@@ -458,7 +467,7 @@ def main():
     fields = (meta.get("flagged_field"), meta.get("story_points_field"))
     sprint = load_json(os.path.join(raw_dir, "sprint.json"))
     sprint_id = str(sprint["id"])
-    report = load_optional(os.path.join(raw_dir, "sprint_report.json"), {})
+    report = load_json(os.path.join(raw_dir, "sprint_report.json"))
 
     # Sub-tasks are left out: Jira's sprint report and board totals count only
     # standard issues, with sub-task work rolled into the parent. The raw files
@@ -467,43 +476,27 @@ def main():
         return [i for i in issues if not nested(i.get("fields"), ["issuetype", "subtask"])]
     current_raw = standard(
         load_json(os.path.join(raw_dir, "sprint_issues.json")))
-    removed_raw = standard(load_optional(
-        os.path.join(raw_dir, "punted_issues.json"), []))
+    removed_raw = standard(load_json(
+        os.path.join(raw_dir, "punted_issues.json")))
     if not current_raw and not removed_raw:
         raise SystemExit("the sprint has no issues; nothing to report")
 
-    status = (sprint.get("state") or "").lower()
-    if status not in {"active", "closed"}:
-        raise SystemExit(
-            f"sprint state {status!r}: only active and closed sprints can be reported")
-    if not sprint.get("startDate") or not sprint.get("endDate"):
-        raise SystemExit("the sprint has no start or end date")
+    status = sprint["state"].lower()
     zone = report_timezone(meta.get("report_timezone"))
-    if not os.path.exists(os.path.join(raw_dir, "previous_sprint.json")):
-        raise SystemExit(
-            "no previous_sprint.json, so carry-over can't be told apart; fetch the sprint again")
     previous = load_json(os.path.join(raw_dir, "previous_sprint.json"))
     start = sprint_date(sprint.get("startDate"), zone)
     end = sprint_date(sprint.get("endDate"), zone, end_of_period=True)
     complete = sprint_date(sprint.get("completeDate"), zone)
-    # Required timestamps were checked above.
-    assert start is not None and end is not None
 
-    parents = load_optional(os.path.join(raw_dir, "parents.json"), [])
+    parents = load_json(os.path.join(raw_dir, "parents.json"))
     changes = load_changelogs(os.path.join(
         raw_dir, "changelogs"), current_raw + removed_raw)
-    context = Context(sprint_id, sprint["startDate"], start,
+    context = Context(sprint_id, sprint["startDate"],
                       status_categories(load_json(os.path.join(
                           raw_dir, "statuses.json"))), fields,
                       epic_names(current_raw + removed_raw, parents), zone, previous)
-    moment = as_of(sprint, meta.get("fetched_at"))
-    if not moment:
-        raise SystemExit("can't tell the moment the report describes (no close date or fetch time); "
-                         "fetch the sprint again")
-    today = sprint_date(meta.get("fetched_at"), zone)
-    if not today:
-        raise SystemExit(
-            "no fetch timestamp for the report date; fetch the sprint again")
+    moment = as_of(sprint, meta["fetched_at"])
+    today = sprint_date(meta["fetched_at"], zone)
     overlap = {i["key"] for i in current_raw} & {i["key"] for i in removed_raw}
     if overlap:
         raise SystemExit(
@@ -553,8 +546,6 @@ def main():
     data = {
         "sprint_id": sprint["id"],
         "sprint_name": sprint.get("name"),
-        "board_id": meta.get("board_id"),
-        "project_key": meta.get("project_key"),
         "label": meta.get("label"),
         "base_url": meta.get("base_url"),
         "sprint_status": status,
@@ -562,9 +553,6 @@ def main():
         "sprint_start": start,
         "sprint_end": end,
         "sprint_complete_date": complete,
-        # The raw instants, so the timezone conversion above can be audited.
-        "sprint_start_instant": sprint.get("startDate"),
-        "sprint_end_instant": sprint.get("endDate"),
         # The moment the spells' events and fields run to: the close, or the fetch.
         "as_of_instant": moment,
         "report_timezone": zone.key,
@@ -588,9 +576,10 @@ def main():
         # Jira's current buckets cannot independently verify these issues'
         # historical membership, which is reconstructed from their changes.
         "membership_cross_check_excluded_keys": later_moves,
-        "blocker_candidate_keys": [
-            t["key"] for t in counted if t["outcome"] != "removed"
-            and is_blocker_candidate(t["flagged"], t["status"], t["statusCategory"], t["priority"])],
+        "blocker_candidate_keys": blocker_candidate_keys(
+            all_raw, changes, context.categories, context.flagged_field, context.points_field,
+            sprint_id, parse_ts(moment)),
+        "target_completion": target_completion(spells),
         "epics": build_epics(spells, epic_descriptions(parents)),
         "timeline": build_timeline(spells, status, start, end, complete, today),
         # The burndown's first point: the whole commitment at the start, Done or

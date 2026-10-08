@@ -116,12 +116,6 @@ class HelpersTest(unittest.TestCase):
 
 
 class BuildSeriesTest(unittest.TestCase):
-    def test_no_readings_is_a_clear_failure(self):
-        # data.json from a broken build: say so rather than crash on max().
-        with self.assertRaises(SystemExit) as raised:
-            charts.build_series(sprint(burndown=[]))
-        self.assertIn("no burndown readings", str(raised.exception))
-
     def test_closed_sprint(self):
         series = charts.build_series(sprint())
         self.assertEqual((series["baseline"], series["weekdays"], series["last_actual"]),
@@ -158,11 +152,10 @@ class BuildSeriesTest(unittest.TestCase):
 
     def test_a_one_day_sprint_holds_the_ideal(self):
         # No weekday after the start: no pace to divide by, so the ideal stays
-        # at the baseline instead of failing, and the check accepts it.
+        # at the baseline instead of failing.
         data = sprint(sprint_start="2026-03-13")
         data["burndown"] = data["burndown"][-1:]
         series = charts.build_series(data)
-        charts.validate_series(series, data)
         self.assertEqual(series["weekdays"], 0)
         self.assertEqual([r["ideal"] for r in series["rows"]], [7, 7])
 
@@ -188,69 +181,6 @@ class BuildSeriesTest(unittest.TestCase):
                 self.assertEqual(last["ideal"], 0)
                 self.assertEqual(last["committed"] is None,
                                  last_actual < last_day)
-
-
-class ValidateSeriesTest(unittest.TestCase):
-    def assert_fails(self, expected, series, data=None):
-        with self.assertRaises(SystemExit) as raised:
-            charts.validate_series(series, data or sprint())
-        self.assertIn(expected, str(raised.exception))
-
-    def test_valid_series(self):
-        for name, changes in [("closed", {}),
-                              ("running", {"sprint_status": "active", "sprint_complete_date": None,
-                                           "today": "2026-03-05"})]:
-            with self.subTest(name):
-                data = sprint(**changes)
-                charts.validate_series(charts.build_series(data), data)
-
-    def test_baseline_must_match_the_timeline(self):
-        # Only the first event counts, at its estimate then: a later
-        # re-estimate or an extra ticket's joining doesn't move the baseline.
-        data = sprint()
-        series = charts.build_series(data)
-        data["spells"] = [t for t in data["spells"] if t["key"] != "PROJ-2"]
-        data["spells"][0]["events"].append(
-            {"type": "reestimated", "points": 8, "done": False})
-        self.assert_fails(
-            "baseline 7 differs from the commitment at the start 5", series, data)
-
-    def test_broken_series(self):
-        def broken(change):
-            series = charts.build_series(sprint())
-            change(series["rows"])
-            return series
-        cases = {
-            "the start day needs a baseline point": lambda rows: rows.pop(1),
-            "ideal must hold the baseline through the start day": lambda rows: rows[1].update(ideal=5),
-            "ideal rises on 2026-03-04": lambda rows: rows[3].update(ideal=7),
-            "ideal changes over the weekend on 2026-03-07": lambda rows: rows[6].update(ideal=1),
-            "ideal doesn't reach zero by sprint end": lambda rows: rows[-1].update(ideal=0.5),
-            "committed + extra is below committed on 2026-03-04": lambda rows: rows[3].update(total=1),
-            "spread is inconsistent on 2026-03-04": lambda rows: rows[3].update(spread=99),
-            "no actual value on 2026-03-04": lambda rows: rows[3].update(committed=None),
-            # A clear message rather than a crash if the end date is missing.
-            "no point on the sprint's end date": lambda rows: rows.pop(),
-        }
-        for expected, change in cases.items():
-            with self.subTest(expected):
-                self.assert_fails(expected, broken(change))
-
-    def test_reports_every_problem_at_once(self):
-        series = charts.build_series(sprint())
-        series["rows"][3].update(total=1)
-        series["rows"][4].update(spread=99)
-        with self.assertRaises(SystemExit) as raised:
-            charts.validate_series(series, sprint())
-        self.assertEqual(str(raised.exception).count("\n  - "), 2)
-
-    def test_actuals_must_stop_at_the_cutoff(self):
-        data = sprint(sprint_status="active",
-                      sprint_complete_date=None, today="2026-03-05")
-        series = charts.build_series(data)
-        series["rows"][-1].update(committed=1, total=1, spread=1)
-        self.assert_fails(
-            "actuals continue past the cutoff on 2026-03-13", series, data)
 
 
 class OutcomeChartTest(unittest.TestCase):

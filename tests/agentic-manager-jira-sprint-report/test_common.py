@@ -16,14 +16,6 @@ import common  # noqa: E402
 from agentic_manager import output_file  # noqa: E402
 
 
-class LibraryTest(unittest.TestCase):
-    def test_library_names_are_importable_from_here(self):
-        from agentic_manager import jira, output_folder
-        for name in ("ISSUE_KEY", "JiraClient", "key_order", "nested", "parse_ts", "plain_text", "value_at"):
-            self.assertIs(getattr(common, name), getattr(jira, name))
-        self.assertIs(common.output_folder, output_folder.output_folder)
-
-
 class ReportTimezoneTest(unittest.TestCase):
     def test_report_timezone(self):
         # A named zone keeps its clock changes; anything else is refused
@@ -145,12 +137,6 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(common.status_categories(
             [{"id": 3, "statusCategory": {"key": "done"}}]), {"3": "done"})
 
-    def test_history_fields(self):
-        # Story points and Flagged are the site's own fields; the rest are Jira's names.
-        self.assertEqual(common.history_fields("customfield_flag", "customfield_points"), {
-            "sprint": "Sprint", "status": "status", "resolution": "resolution", "priority": "priority",
-            "parent": "IssueParentAssociation", "points": "customfield_points", "flagged": "customfield_flag"})
-
     def test_as_of(self):
         # A closed sprint is reported as it closed, whatever the state's case;
         # any other sprint as it was at the fetch.
@@ -231,10 +217,6 @@ class FilesTest(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def test_report_file(self):
-        self.assertEqual(common.report_file("PROJ_Sprint_7"),
-                         "PROJ_Sprint_7_Sprint_Report.md")
-
     def test_write_and_load_json(self):
         path = os.path.join(self.folder, "PROJ_Sprint_7", "_raw", "data.json")
         common.write_json(path, {"x": [1]})
@@ -249,11 +231,11 @@ class FilesTest(unittest.TestCase):
         os.symlink(self.tmp, os.path.join(self.folder, "link"))
         cases = [
             ("a sibling folder", os.path.join(self.tmp, "other", "data.json"),
-             "where sprint reports are written"),
+             "without \\.\\."),
             ("the parent folder", os.path.join(self.tmp, "data.json"),
-             "where sprint reports are written"),
+             "without \\.\\."),
             ("through a symbolic link", os.path.join(self.folder, "link", "data.json"),
-             "where sprint reports are written"),
+             "without \\.\\."),
         ]
         for name, path, expected in cases:
             with self.subTest(name):
@@ -345,12 +327,6 @@ class VocabularyTest(unittest.TestCase):
             with self.subTest(text):
                 self.assertEqual(common.word_count(text), expected)
 
-    def test_ai_label_follows_the_title(self):
-        # The label is a note after the title, sized in rem so it reads the same
-        # after a heading and in a table cell.
-        self.assertEqual(common.ai("Goal outcome"),
-                         'Goal outcome <sup style="font-size:0.6rem;font-weight:normal">[AI Gen.]</sup>')
-
 
 class ScopeGroupsTest(unittest.TestCase):
     def test_scope_group_label(self):
@@ -363,28 +339,6 @@ class ScopeGroupsTest(unittest.TestCase):
             with self.subTest(group=group, status=status):
                 self.assertEqual(common.scope_group_label(
                     group, status), expected)
-
-    def test_epic_groups(self):
-        # Only groups with tickets, always in the report's order.
-        epic = {"scope_groups": {"descoped": ["PROJ-2"], "not_completed": [], "in_review": [],
-                                 "completed": ["PROJ-1"]}}
-        self.assertEqual(common.epic_groups(epic), ["completed", "descoped"])
-
-    def test_outcome_total(self):
-        # A row's work however it ended, descoped included; other rows don't count.
-        breakdown = {"original_completed": 3, "original_not_completed": 2, "original_removed": 1,
-                     "extra_completed": 5, "extra_not_completed": 0, "extra_removed": 0}
-        self.assertEqual(common.outcome_total(breakdown, "original"), 6)
-
-
-class TargetCompletionTest(unittest.TestCase):
-    def test_target_completion(self):
-        def ticket(key, scope="original", outcome="completed"):
-            return {"key": key, "scope": scope, "outcome": outcome}
-        data = {"spells": [ticket("PROJ-1"), ticket("PROJ-2", outcome="not_completed"),
-                           ticket("PROJ-3", scope="extra"), ticket("PROJ-4", outcome="removed")]}
-        self.assertEqual(common.target_completion(
-            data), (["PROJ-1"], ["PROJ-1", "PROJ-2", "PROJ-4"]))
 
 
 class AllowedVerdictsTest(unittest.TestCase):

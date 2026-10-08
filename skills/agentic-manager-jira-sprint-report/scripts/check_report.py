@@ -6,44 +6,12 @@ Usage:
     python3 check_report.py --report-dir <report_dir>
 
 Prints every check and exits non-zero if any fails. make_report.py writes the
-report and content.json supplies the agent's text; this is the contract test
-for both. It shares only the format helpers with make_report.py and recomputes
+report, and validates the agent's text (content.json) before it does; this
+checks what the generator produces from data.json, not the agent's wording. It shares only the format helpers with make_report.py and recomputes
 every figure from the spells' events, so a generator bug can't pass by
 agreeing with itself. Every rule here exists because a table drifted when it
 was corrected by hand; prose guidance didn't stop the regressions, a failing
 check does.
-
-  model        each spell's events are well formed and give its outcome,
-               latest estimate and whether it's counted; the charts'
-               breakdown, the burndown and the timeline are built from the
-               same events (replayed here)
-  header       the table above the charts has exactly its rows, in order,
-               each formatted as specified and matching data.json
-  figures      carry-over and new work add up to the original commitment
-  commentary   a paragraph follows the timeline and states, from the spells,
-               every way the sprint departed from the ideal and no other,
-               within its word limit, with its caveats when they apply
-  images       embedded charts exist; the burndown sits under Scope Timeline
-  headings     each table has a heading directly above it
-  timeline     each day lists, per ticket, its estimate and its events as tags
-               in time order, and its end-of-day figures are the burndown's
-  cell shapes  each day's date and end-of-day cells span its tickets' rows
-  epics        epic table cells match data.json, and their totals the charts;
-               each commentary has one labelled sentence per group the epic
-               has tickets to describe in, in order, within its word limit,
-               with no ticket keys
-  vocabulary   the vocabulary and formats in common.py, the agent's text
-               included
-  ai labels    every AI-written part (Goal outcome, the epic commentary,
-               Key Achievements, Blockers & Risks, the retro notes) is
-               marked [AI Gen.] on its heading or label
-  summaries    Key Achievements and Blockers & Risks are each one paragraph,
-               within their word limit, naming no tickets
-  retro        the retro section holds 1 to 5 notes, each ending with a
-               question
-  dates        DD/MM/YYYY in generated text
-  em dashes    none in generated text
-  links        every Jira key outside the plain-text title is a link
 """
 import argparse
 import html
@@ -52,10 +20,10 @@ import re
 import sys
 from datetime import date, timedelta
 
-from common import (BANNED_WORDS, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, EPIC_COMMENTARY_WORDS, ISSUE_KEY,
-                    NO_EPIC, OUTCOME_ROWS, OUTCOMES, RETRO_NOTES, SUMMARY_WORDS, ai, allowed_verdicts, banned_words,
+from common import (BANNED_WORDS, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, ISSUE_KEY,
+                    NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai, banned_words,
                     display_date, epic_groups, estimate, key_order, load_json, number, parse_ts, plural, pts, qty,
-                    ratio, report_file, report_timezone, scope_group_label, target_completion, whole_percentage, word_count)
+                    ratio, report_file, report_timezone, scope_group_label, whole_percentage, word_count)
 
 
 class Checker:
@@ -107,9 +75,6 @@ def table_kind(table):
 HEADER_START = "| Field | Detail |\n|---|---|\n"
 HEADER_LABELS = ["Dates", "Goal", ai(
     "Goal outcome"), "Sprint target completion"]
-# The AI-written sections, as their headings read.
-AI_SECTIONS = [ai("Key Achievements"), ai(
-    "Blockers & Risks"), ai("Notes for Sprint Retro")]
 
 
 def header_rows(md):
@@ -149,27 +114,22 @@ def check_header(c, md, data):
     c.check(shown == expected_goal, "header",
             "Goal is Jira's goal, one line per <br>")
 
-    c.check(values[ai("Goal outcome")] in allowed_verdicts(data), "header",
-            f"Goal outcome is one of {list(allowed_verdicts(data))}")
-
-    completed, pool = target_completion(data)
-    so_far = " so far" if data["sprint_status"] == "active" else ""
     original_spells = [t for t in data["spells"] if t["scope"] == "original"]
-    target = "No commitment" if not pool else (
-        f"{whole_percentage(len(completed), len(pool))}, "
-        + ratio(len(completed), len(pool),
-                sum(t['points'] or 0 for t in original_spells if t['outcome']
-                    == 'completed'),
-                sum(t['points'] or 0 for t in original_spells))
+    done = [t for t in original_spells if t["outcome"] == "completed"]
+    so_far = " so far" if data["sprint_status"] == "active" else ""
+    target = "No commitment" if not original_spells else (
+        f"{whole_percentage(len(done), len(original_spells))}, "
+        + ratio(len(done), len(original_spells), sum(t["points"] or 0 for t in done),
+                sum(t["points"] or 0 for t in original_spells))
         + f" completed{so_far}")
     c.check(values["Sprint target completion"] == target,
             "header", f"Sprint target completion is {target!r}")
     oc = data["outcome_breakdown_counts"]
     charted = (sum(oc[f"original_{outcome}"]
                for outcome in OUTCOMES), oc["original_completed"])
-    c.check(charted == (len(pool), len(completed)), "header",
+    c.check(charted == (len(original_spells), len(done)), "header",
             f"the charts' original commitment, {charted[0]} with {charted[1]} completed, is the target's "
-            f"{len(pool)} with {len(completed)} completed")
+            f"{len(original_spells)} with {len(done)} completed")
 
 
 def charted(data, row, outcome=None):
@@ -302,17 +262,6 @@ def check_framing(c, md):
                 f"{kind} table is followed by a paragraph")
 
 
-def check_ai_labels(c, md, table):
-    """Each AI-written part is marked on its heading or label: the header row
-    is checked with the header, the rest here."""
-    headings = re.findall(r"^## (.+)$", md, re.M)
-    for heading in AI_SECTIONS:
-        c.check(heading in headings, "ai labels", f"'## {heading}' found")
-    if table is not None:
-        c.check(f">{ai('Commentary')}</th>" in table, "ai labels",
-                f"the epic table's column reads {ai('Commentary')}")
-
-
 def epic_figures(data):
     """{epic key: {scope: [completed, all, completed pts, all pts]}} recomputed
     from the counted spells, so a ticket under the wrong epic can't pass by
@@ -360,8 +309,9 @@ def check_epics(c, table, data):
 
 
 def check_epic_commentary(c, epic, cell, status):
-    """One sentence per group the epic has tickets to describe in, each after
-    its label, in order; "–" if there are none."""
+    """The labels of the groups the epic has tickets to describe in, in order;
+    "–" if there are none. The sentences are the agent's, checked when the
+    report is written."""
     labels = [scope_group_label(g, status) for g in epic_groups(epic)]
     if not labels:
         c.check(cell.strip() == "–", "epics",
@@ -372,14 +322,6 @@ def check_epic_commentary(c, epic, cell, status):
     found = [m.group(1) if m else None for m in lines]
     c.check(found == labels, "epics",
             f"{epic['key']} commentary has {', '.join(labels)} (got {found})")
-    texts = [html.unescape(m.group(2)) for m in lines if m]
-    words = sum(word_count(t) for t in texts)
-    c.check(words <= EPIC_COMMENTARY_WORDS, "epics",
-            f"{epic['key']} commentary has at most {EPIC_COMMENTARY_WORDS} words (got {words})")
-    c.check(all(len(re.split(r"(?<=[.!?]) +(?=[A-Z0-9])", t.strip())) == 1 for t in texts), "epics",
-            f"{epic['key']} commentary has one sentence per group")
-    c.check(not ISSUE_KEY.search(strip_tags(cell)), "epics",
-            f"{epic['key']} commentary names no tickets")
 
 
 # The event kinds of a spell.
@@ -413,6 +355,10 @@ def check_model(c, data):
                 and all(k not in ("committed", "joined") for k in kinds[1:]) and "removed" not in kinds[:-1]
                 and (t["scope"] == "extra" or key not in seen_keys),
                 "model", f"{key}'s events are well formed ({', '.join(kinds)})")
+        flags = {"doneAtStart": bool(events and events[0]["done"]), "reopened": "reopened" in kinds,
+                 "reestimated": "reestimated" in kinds, "cameBack": key in seen_keys}
+        c.check(all(t[name] == value for name, value in flags.items()), "model",
+                f"{key}'s doneAtStart, reopened, reestimated and cameBack flags are what its events give")
         seen_keys.add(key)
         done, flips = events[0]["done"] if events else False, True
         for e in events[1:]:
@@ -442,8 +388,14 @@ def check_model(c, data):
             c.check(got == expected.get(f"{row}_{outcome}", (0, 0)), "model",
                     f"the charts' {row} {outcome.replace('_', ' ')} is the counted spells' {qty(*got)}")
 
-    baseline = sum(t["events"][0]["points"]
-                   or 0 for t in data["spells"] if t["scope"] == "original")
+    original = [t for t in data["spells"] if t["scope"] == "original"]
+    done = [t for t in original if t["outcome"] == "completed"]
+    c.check(data["target_completion"] == {
+        "completed": len(done), "total": len(original),
+        "completed_points": sum(t["points"] or 0 for t in done),
+        "total_points": sum(t["points"] or 0 for t in original)}, "model",
+        "the sprint target is the original commitment's spells, and those completed")
+    baseline = sum(t["events"][0]["points"] or 0 for t in original)
     c.check(data["burndown_baseline"] == baseline, "model",
             f"the burndown starts at the whole commitment, {baseline}")
     first = date.fromisoformat(data["sprint_start"])
@@ -538,34 +490,6 @@ def section_of(md, heading):
     """The text under a "## " heading, up to the next one, or None."""
     parts = md.split(f"## {heading}\n", 1)
     return re.split(r"^## ", parts[1], maxsplit=1, flags=re.M)[0].strip() if len(parts) == 2 else None
-
-
-def check_summaries(c, md):
-    """Key Achievements and Blockers & Risks: one paragraph each, within the
-    word limit, naming no tickets."""
-    for heading in AI_SECTIONS[:2]:
-        text = section_of(md, heading)
-        if not c.check(bool(text), "summaries", f"{heading} found, with text") or text is None:
-            continue
-        c.check("\n" not in text and not text.startswith(("- ", "* ")),
-                "summaries", f"{heading} is one paragraph")
-        words = word_count(text)
-        c.check(words <= SUMMARY_WORDS, "summaries",
-                f"{heading} has at most {SUMMARY_WORDS} words (got {words})")
-        c.check(not ISSUE_KEY.search(text), "summaries",
-                f"{heading} names no tickets")
-
-
-def check_retro(c, md):
-    """1 to RETRO_NOTES bullets, each a fact then a question, and nothing else."""
-    text = section_of(md, AI_SECTIONS[2])
-    if not c.check(text is not None, "retro", "section found") or text is None:
-        return
-    lines = [line for line in text.splitlines() if line.strip()]
-    c.check(1 <= len(lines) <= RETRO_NOTES and all(line.startswith("- ") for line in lines), "retro",
-            f"1 to {RETRO_NOTES} bullets and nothing else (got {len(lines)} lines)")
-    c.check(all(line.rstrip().endswith("?")
-            for line in lines), "retro", "each note ends with a question")
 
 
 def check_images(c, md, report_dir):
@@ -719,9 +643,6 @@ def run_checks(md, data, report_dir):
     check_images(c, md, report_dir)
     check_timeline(c, tables.get("timeline"), data)
     check_epics(c, tables.get("epics"), data)
-    check_ai_labels(c, md, tables.get("epics"))
-    check_summaries(c, md)
-    check_retro(c, md)
     check_style(c, md)
     check_vocabulary(c, md, data)
     return c

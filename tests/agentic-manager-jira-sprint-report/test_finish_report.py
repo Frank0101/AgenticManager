@@ -74,16 +74,6 @@ class FinishReportTest(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(self.finish(results), (code, printed, runs))
 
-    def test_run(self):
-        # Each script runs on the report folder, its stderr merged into stdout.
-        with mock.patch.object(finish_report.subprocess, "run") as run:
-            finish_report.run("make_charts.py", self.dir)
-        command, kwargs = run.call_args.args[0], run.call_args.kwargs
-        self.assertEqual((command[0], os.path.basename(command[1]), command[2:]),
-                         (sys.executable, "make_charts.py", ["--report-dir", self.dir]))
-        self.assertEqual((kwargs["stdout"], kwargs["stderr"]),
-                         (subprocess.PIPE, subprocess.STDOUT))
-
 
 if __name__ == "__main__":
     unittest.main()

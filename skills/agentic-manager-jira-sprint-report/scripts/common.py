@@ -66,6 +66,24 @@ def is_blocker_candidate(flagged, status, status_category, priority):
     return status_category != "done" and (priority or "").lower() in HIGH_PRIORITIES
 
 
+def blocker_candidate_keys(issues, changes, categories, flagged_field, points_field, sprint_id, moment):
+    """The keys of the standard issues in the sprint at `moment` that were
+    flagged, blocked or high priority and not done then. The fetch uses it to
+    choose the comments to download and the build stores it in data.json, so
+    both name the same tickets."""
+    keys = []
+    for issue in issues:
+        if nested(issue.get("fields"), ["issuetype", "subtask"]):
+            continue
+        if not in_sprint_at(issue_moves(issue, changes[issue["key"]], sprint_id), moment):
+            continue
+        then = History(issue, changes[issue["key"]], categories,
+                       flagged_field, points_field).state_at(moment)
+        if is_blocker_candidate(then["flagged"], then["status"], then["statusCategory"], then["priority"]):
+            keys.append(issue["key"])
+    return keys
+
+
 # The fields whose history the report reads, by the name changelogs/<KEY>.json
 # stores their changes under, and how Jira's changelog names them. The story
 # points and Flagged fields are the site's own custom fields.
@@ -213,14 +231,11 @@ def load_json(path):
 
 def write_report_file(path, text):
     """Writes `text` to `path`, creating missing folders, through the shared
-    writer, so nothing is written outside the skill's output folder. Exits,
-    writing nothing, if `path` isn't inside it."""
+    writer, which exits, writing nothing, if `path` isn't inside the skill's
+    output folder."""
     folder, _ = output_folder(REPORTS_FOLDER)
     relative = os.path.relpath(
         os.path.realpath(path), os.path.realpath(folder))
-    if relative.split(os.sep)[0] == os.pardir:
-        raise SystemExit(
-            f"{path} is not inside {folder}, where sprint reports are written")
     write_output_file(REPORTS_FOLDER, relative, text.encode("utf-8"))
 
 
@@ -424,12 +439,3 @@ def epic_groups(epic):
 def outcome_total(breakdown, row):
     """All the work of an outcome_breakdown row, however it ended."""
     return sum(breakdown[f"{row}_{outcome}"] for outcome in OUTCOMES)
-
-
-def target_completion(data):
-    """(completed keys, commitment keys) for the sprint target: the original
-    commitment's spells, and those completed. A ticket already Done at the
-    start counts as completed unless it was reopened; one that left the sprint,
-    never, even if it came back."""
-    original = [t for t in data["spells"] if t["scope"] == "original"]
-    return ([t["key"] for t in original if t["outcome"] == "completed"], [t["key"] for t in original])

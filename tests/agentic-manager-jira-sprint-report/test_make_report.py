@@ -447,13 +447,9 @@ class ValidateContentTest(unittest.TestCase):
              {"retro_notes": ["Why?"] * 6}),
             ("retro_notes must be a list of 1-5",
              {"retro_notes": ["A fact without a question."]}),
-            ("scope_notes is no longer used", {
-             "scope_notes": ["Added for the demo."]}),
             ('goal_verdict must be one of: "Fully met", "Partially met", "Not met"', {
              "goal_verdict": ""}),
             ("goal_verdict must be one of", {"goal_verdict": "Mostly met"}),
-            ("delivery_commentary is no longer used", {
-             "delivery_commentary": "Delivery centred on login."}),
             ("epic_commentary must map each epic key to its groups' sentences",
              {"epic_commentary": []}),
             ("epic_commentary.PROJ-100 must map each group to a sentence",

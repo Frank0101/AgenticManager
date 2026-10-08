@@ -8,49 +8,22 @@ Usage (exactly one sprint selector):
     python3 fetch_sprint.py --board 42 [--active]
     python3 fetch_sprint.py --sprint-name "Sprint 3" --project PROJ   (or --board 42)
 
-Report folders go in the skill's output folder: <output root>/jira-sprint-reports
-if the config sets output.root, else <system temp>/agentic-manager/jira-sprint-reports
-(see output_folder.py).
+Prints one line of JSON on stdout (the sprint, its report folder and whether
+that folder is temporary); progress goes to stderr. The raw data goes to
+<report_dir>/_raw.
 
-The report folder is <label>_<YY-MM-DD> in it, where label is the project key and
-sprint name (e.g. PROJ_Sprint_3). Every run starts from scratch: once the sprint is
-fetched, any earlier report folder there for the same sprint is deleted, then the
-new one is written. There is no reuse mode.
-
-Only active and closed sprints can be reported; a future sprint fails before
+Every run starts from scratch: once the sprint is fetched, any earlier report
+folder for the same sprint is deleted, so there is no stale state to reuse.
+Only active and closed sprints can be reported; a future one fails before
 anything is deleted.
-
-Prints one line of JSON on stdout:
-    {"sprint_id": ..., "sprint_name": ..., "sprint_state": ..., "label": ..., "report_dir": ...,
-     "temporary": ...}
-"temporary" is true when output.root isn't set, so report folders go to the system
-temp folder.
-Progress goes to stderr.
-
-Writes into <report_dir>/_raw:
-    _meta.json             what was fetched, when, from where, and the field ids used
-    sprint.json            the sprint
-    previous_sprint.json   the closed sprint, of those the board lists, that started
-                           last before this one, or null if there is none
-    sprint_issues.json     issues currently in the sprint
-    sprint_report.json     Jira's own sprint report
-    punted_issues.json     issues removed from the sprint, same shape as sprint_issues
-    statuses.json          every status of the site, with its category
-    changelogs/<KEY>.json  every change, of every current and removed issue, to the
-                           fields the report reads (sprint, status, resolution,
-                           points, flag, priority, parent)
-    parents.json           every epic the issues belong to, or belonged to before a
-                           change of parent, with its description
-    comments/<KEY>.json    comments of blocker candidates, excluding those created
-                           or edited after the moment the report describes
 
 The report describes the sprint as it was when it closed, or, for an active
 sprint, at the fetch: issues' fields are rebuilt from their changelogs, so a
 later edit changes nothing. Descriptions are the exception: Jira keeps no
-usable history of them, so they are as they read at the fetch. Comment bodies
-edited after that moment are excluded because their earlier text isn't fetched.
-Nothing is computed here beyond choosing which comments and epics to fetch;
-build_sprint_data.py does the rest from these files.
+usable history of them, so they are as they read at the fetch. Comments
+created or edited after that moment are excluded because their earlier text
+isn't fetched. Nothing is computed here beyond choosing which comments and
+epics to fetch; build_sprint_data.py does the rest.
 """
 import argparse
 import json
@@ -60,15 +33,14 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
-from common import (RAW_DIR, REPORTS_FOLDER, History, JiraClient, as_of, history_fields, in_sprint_at,
-                    is_blocker_candidate, issue_moves, nested, output_folder, parse_ts, report_label,
-                    report_timezone, status_categories, write_json)
+from common import (RAW_DIR, REPORTS_FOLDER, JiraClient, as_of, blocker_candidate_keys, history_fields, nested,
+                    output_folder, parse_ts, report_label, report_timezone, status_categories, write_json)
 
 MAX_WORKERS = 8
 # Issue fields the report needs, besides the site's Flagged and story points fields.
 BASE_FIELDS = [
-    "summary", "status", "issuetype", "assignee", "created", "resolution",
-    "priority", "parent", "labels", "description",
+    "summary", "status", "issuetype", "created", "resolution", "priority", "parent",
+    "description",
 ]
 
 
@@ -236,19 +208,9 @@ def main():
     parents = client.issues_by_ids(parent_ids, ["summary", "description"])
 
     # Comments are fetched only for blocker candidates, as they were at the
-    # moment the report describes; build_sprint_data.py computes the same list
-    # from the same history.
-    blocker_keys = []
-    for issue in sprint_issues + punted_issues:
-        if nested(issue.get("fields"), ["issuetype", "subtask"]):
-            continue
-        if not in_sprint_at(issue_moves(issue, changelogs[issue["key"]], sprint_id), moment):
-            continue
-        then = History(issue, changelogs[issue["key"]], categories,
-                       flagged_field, points_field).state_at(moment)
-        if is_blocker_candidate(then["flagged"], then["status"], then["statusCategory"],
-                                then["priority"]):
-            blocker_keys.append(issue["key"])
+    # moment the report describes.
+    blocker_keys = blocker_candidate_keys(sprint_issues + punted_issues, changelogs, categories,
+                                          flagged_field, points_field, sprint_id, moment)
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         comments = dict(
             zip(blocker_keys, pool.map(client.comments, blocker_keys)))
@@ -277,9 +239,6 @@ def main():
         "fetched_at": fetched_at,
         "report_timezone": reporting_zone.key,
         "base_url": client.base_url,
-        "fetched_by": me,
-        "board_id": board_id,
-        "project_key": project_key,
         "label": label,
         "flagged_field": flagged_field,
         "story_points_field": points_field,

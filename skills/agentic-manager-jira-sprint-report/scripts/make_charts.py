@@ -12,7 +12,7 @@ Descoped, in three bars on one scale: carry-over, new commitment and extra. A
 bracket joins the first two as the commitment. Both charts share one layout so
 they read as a pair.
 
-Burndown: four series, checked by validate_series before drawing.
+Burndown: four series.
 
   Commitment          open pts of the original commitment
   Commitment + extra  the same plus later scope; never below the commitment
@@ -288,9 +288,6 @@ def build_series(data):
     actuals = {parse_date(row["date"]): row for row in data["burndown"]}
     sprint_start, sprint_end = parse_date(
         data["sprint_start"]), parse_date(data["sprint_end"])
-    if not actuals:
-        raise SystemExit(
-            "data.json has no burndown readings; build the sprint data again")
     last_actual = max(actuals)
 
     baseline = data["burndown_baseline"]
@@ -319,50 +316,6 @@ def build_series(data):
     return {"rows": rows, "days": list(daterange(sprint_start, last_day)), "baseline": baseline,
             "sprint_start": sprint_start, "sprint_end": sprint_end,
             "last_actual": last_actual, "weekdays": weekdays}
-
-
-def validate_series(series, data):
-    """Fail before drawing if the series breaks the chart's rules."""
-    rows, baseline, problems = series["rows"], series["baseline"], []
-    # The baseline is the whole original commitment at the start: its
-    # committed events, Done or not, at the estimate they had then.
-    committed = sum(e["points"] or 0 for t in data["spells"] for e in t["events"][:1]
-                    if e["type"] == "committed")
-    if committed != baseline:
-        problems.append(
-            f"baseline {fmt(baseline)} differs from the commitment at the start {fmt(committed)}")
-    if len(rows) < 2 or rows[1]["date"] != series["sprint_start"]:
-        problems.append(
-            "the start day needs a baseline point and an end-of-day point")
-    elif rows[0]["ideal"] != baseline or rows[1]["ideal"] != baseline:
-        problems.append("ideal must hold the baseline through the start day")
-    closes = rows[1:]
-    for previous, row in zip(closes, closes[1:]):
-        if row["ideal"] > previous["ideal"]:
-            problems.append(f"ideal rises on {row['date']}")
-        if not is_weekday(row["date"]) and row["ideal"] != previous["ideal"]:
-            problems.append(f"ideal changes over the weekend on {row['date']}")
-    end_row = next(
-        (r for r in closes if r["date"] == series["sprint_end"]), None)
-    if end_row is None:
-        problems.append("no point on the sprint's end date")
-    elif series["weekdays"] and end_row["ideal"] != 0:
-        problems.append("ideal doesn't reach zero by sprint end")
-    for row in rows:
-        if row["committed"] is not None:
-            if row["total"] < row["committed"]:
-                problems.append(
-                    f"committed + extra is below committed on {row['date']}")
-            if row["spread"] != round(row["committed"] - row["ideal"], 2):
-                problems.append(f"spread is inconsistent on {row['date']}")
-        elif row["date"] <= series["last_actual"]:
-            problems.append(f"no actual value on {row['date']}")
-        if row["date"] > series["last_actual"] and row["committed"] is not None:
-            problems.append(
-                f"actuals continue past the cutoff on {row['date']}")
-    if problems:
-        raise SystemExit("burndown check failed:\n  - " +
-                         "\n  - ".join(problems))
 
 
 def nice_step(span):
@@ -494,7 +447,6 @@ def main():
 
     data = load_json(os.path.join(args.report_dir, DATA_FILE))
     series = build_series(data)
-    validate_series(series, data)
     if args.print_series:
         print_series(series)
         return

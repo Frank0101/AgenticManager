@@ -65,6 +65,9 @@ O, C, X = "original", "carried", "extra"
 CASES = [
     ("open at start, done", [add(3), done(6)], "Done", 2, "done",
      [(O, "completed", 2, True, ["committed 04", "completed 06"])]),
+    # Changelog entries are ordered by their instant, whatever order Jira lists them in.
+    ("changes listed out of order", [done(6), add(3)], "Done", 2, "done",
+     [(O, "completed", 2, True, ["committed 04", "completed 06"])]),
     ("open at start, open at the close", [add(3)], "To Do", 2, "open",
      [(O, "not_completed", 2, True, ["committed 04"])]),
     ("done only after the close", [add(3), done(14)], "Done", 2, "open",
@@ -202,7 +205,7 @@ class CasesTest(ReportTest):
                 if not expected:
                     self.assertIn(
                         key_of(index), data["left_before_start_keys"])
-                for spell, (scope, outcome, points, counted, events) in zip(spells, expected):
+                for position, (spell, (scope, outcome, points, counted, events)) in enumerate(zip(spells, expected)):
                     self.assertEqual(
                         (spell["scope"], spell["carriedIn"]), (X if scope == X else O, scope == C))
                     self.assertEqual(
@@ -210,6 +213,9 @@ class CasesTest(ReportTest):
                     self.assertEqual([shown(e, ":" in wanted) for e, wanted in zip(
                         spell["events"], events)], events)
                     self.assertEqual(len(spell["events"]), len(events))
+                    self.assertEqual((spell["doneAtStart"], spell["reopened"], spell["reestimated"], spell["cameBack"]),
+                                     (" done" in events[0], any(e.startswith("reopened") for e in events),
+                                      any(e.startswith("reestimated") for e in events), position > 0))
 
     def test_the_whole_report_agrees_with_the_events(self):
         # check_report.py has already passed on it; these replay the events

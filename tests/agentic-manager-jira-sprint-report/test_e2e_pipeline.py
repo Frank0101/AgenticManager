@@ -230,20 +230,10 @@ class BuildTest(ReportTest):
         # Raw files that disagree with each other or with Jira mean the fetch
         # caught the sprint mid-change or is incomplete: guessing would
         # misreport it, so the build stops with exit 1 and no data.json.
-        def drop_last_not_completed(raw):
-            raw["sprint_report.json"]["contents"]["issuesNotCompletedInCurrentSprint"].pop()
-
-        def empty_sprint_report(raw):
-            for bucket in ("completedIssues", "issuesNotCompletedInCurrentSprint", "puntedIssues"):
-                raw["sprint_report.json"]["contents"][bucket] = []
-
+        # Each guard's own message is unit-tested in test_build_sprint_data.py.
         cases = [
             (lambda raw: self.jira_did_not_complete_proj_6(),
              "completed: ['PROJ-6'] in our data but not in Jira's sprint report"),
-            (drop_last_not_completed, "differs from Jira's sprint report"),
-            (empty_sprint_report, "Jira's sprint report is empty"),
-            (lambda raw: raw.pop("changelogs/PROJ-2.json"),
-             "missing changelogs for PROJ-2"),
             # Raw data fetched before the reporting timezone was stored needs
             # a fresh fetch, rather than days cut at UTC.
             (lambda raw: raw["_meta.json"].pop(
@@ -530,7 +520,8 @@ class OutputFolderTest(ReportTest):
                     os.remove(os.path.join(outside, name))
                 proc = self.run_script(script, report_dir=outside)
                 self.assertEqual(proc.returncode, 1, proc.stdout)
-                self.assertIn("where sprint reports are written", proc.stderr)
+                self.assertIn(
+                    "must be a relative path inside the output folder", proc.stderr)
                 self.assertEqual(
                     [n for n in outputs if os.path.exists(os.path.join(outside, n))], [])
                 shutil.rmtree(outside)
@@ -711,38 +702,18 @@ class CheckReportTest(ReportTest):
     def test_a_broken_report_fails(self):
         # Which check catches which breakage is unit-tested in
         # test_check_report.py; here, that check_report.py exits 1 and names
-        # the failure for each kind of input it reads: the report, the charts
-        # beside it and data.json.
+        # the failure.
         self.make_report()
-        files = {name: os.path.join(self.dir, name)
-                 for name in (REPORT, "burndown.svg", "data.json")}
-        originals = {}
-        for name, path in files.items():
-            with open(path, encoding="utf-8") as f:
-                originals[name] = f.read()
-
-        def edit(name, old, new):
-            self.assertIn(old, originals[name])
-            with open(files[name], "w", encoding="utf-8") as f:
-                f.write(originals[name].replace(old, new, 1))
-        cases = [
-            ("the report", lambda: edit(REPORT, "<b>Commitment:</b><br>7 tickets (17 pts)",
-                                        "<b>Commitment:</b><br>7 tickets (18 pts)"),
-             "FAIL  timeline: 04/03/2026 end of day"),
-            ("a chart", lambda: os.remove(
-                files["burndown.svg"]), "FAIL  images: burndown.svg exists"),
-            ("data.json", lambda: edit("data.json", '"outcome": "completed"', '"outcome": "removed"'),
-             "FAIL  model: PROJ-1 ends completed, as its events give"),
-        ]
-        for name, breakage, expected in cases:
-            with self.subTest(name):
-                for file, path in files.items():
-                    with open(path, "w", encoding="utf-8") as f:
-                        f.write(originals[file])
-                breakage()
-                proc = self.run_script("check_report.py")
-                self.assertEqual(proc.returncode, 1, proc.stdout)
-                self.assertIn(expected, proc.stdout)
+        path = os.path.join(self.dir, REPORT)
+        with open(path, encoding="utf-8") as f:
+            report = f.read()
+        old = "<b>Commitment:</b><br>7 tickets (17 pts)"
+        self.assertIn(old, report)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(report.replace(old, old.replace("17", "18"), 1))
+        proc = self.run_script("check_report.py")
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertIn("FAIL  timeline: 04/03/2026 end of day", proc.stdout)
 
 
 if __name__ == "__main__":

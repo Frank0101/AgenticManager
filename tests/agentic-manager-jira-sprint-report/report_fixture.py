@@ -65,6 +65,17 @@ TICKETS = [
 ]
 
 
+def with_flags(spells):
+    """The derived facts the model stores on each spell, from its events."""
+    seen = set()
+    for spell in spells:
+        kinds = [e["type"] for e in spell["events"]]
+        spell.update(doneAtStart=spell["events"][0]["done"], reopened="reopened" in kinds,
+                     reestimated="reestimated" in kinds, cameBack=spell["key"] in seen)
+        seen.add(spell["key"])
+    return spells
+
+
 def sprint_data(**changes):
     data = {
         "report_timezone": "Europe/London", "base_url": BASE, "label": "PROJ_Sprint_7", "sprint_name": "Sprint 7",
@@ -82,7 +93,7 @@ def sprint_data(**changes):
         data["sprint_complete_date"] or data["sprint_end"])
     if "as_of_instant" not in changes:
         data["as_of_instant"] = f"{cutoff_day}T17:00:00.000+0000"
-    tickets = data["spells"]
+    tickets = with_flags(data["spells"])
     counts, points = build.outcome_breakdown(tickets)
     non_delivery = [t for t in tickets if t["closedAsNonDelivery"]]
     original = [t for t in tickets if t["scope"] == "original"]
@@ -96,6 +107,7 @@ def sprint_data(**changes):
         "epics": build.build_epics(tickets, {"PROJ-100": "Staff sign in with their work account."}),
         "timeline": build.build_timeline(tickets, data["sprint_status"], data["sprint_start"], data["sprint_end"],
                                          data["sprint_complete_date"], data["today"]),
+        "target_completion": build.target_completion(tickets),
         "burndown_baseline": sum(t["events"][0]["points"] or 0 for t in original),
         "burndown": build.build_burndown(tickets, data["sprint_start"], cutoff_day, data["as_of_instant"],
                                          timezone.utc),

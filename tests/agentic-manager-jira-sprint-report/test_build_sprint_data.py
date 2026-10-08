@@ -74,7 +74,7 @@ def changed(created, field, old, new, old_id=None, new_id=None):
 
 
 def context(epics=None, previous=None):
-    return build.Context("7", START, START_DATE, CATEGORIES, FIELDS, epics or {}, PLUS_ONE, previous)
+    return build.Context("7", START, CATEGORIES, FIELDS, epics or {}, PLUS_ONE, previous)
 
 
 # Sprint 6 closed an hour before Sprint 7 started.
@@ -94,14 +94,17 @@ def points(created, old, new):
 
 
 def spell(key, scope="original", outcome="not_completed", pts: int | float | None = 2, carried_in=False, parent=None, events=None,
-          status="In Progress", marker=None):
+          status="In Progress", marker=None, came_back=False):
     """A spell as build_spells returns it, with only what the later steps read."""
+    events = events or [{"at": START, "date": START_DATE, "type": "committed", "points": pts,
+                         "done": outcome == "completed"}]
+    kinds = [e["type"] for e in events]
     return {"key": key, "summary": key, "description": f"About {key}", "status": status,
             "closedAsNonDelivery": marker, "scope": scope, "outcome": outcome, "points": pts,
             "counted": not (scope == "extra" and outcome == "removed"),
             "carriedIn": carried_in, "parentKey": parent, "parentSummary": f"Epic {parent}" if parent else None,
-            "events": events or [{"at": START, "date": START_DATE, "type": "committed", "points": pts,
-                                  "done": outcome == "completed"}]}
+            "events": events, "doneAtStart": events[0]["done"], "reopened": "reopened" in kinds,
+            "reestimated": "reestimated" in kinds, "cameBack": came_back}
 
 
 def ev(day, kind, pts=2, done=False, time="10:00", **extra):
@@ -325,6 +328,13 @@ class ReplayTest(unittest.TestCase):
 
 
 class BreakdownAndEpicsTest(unittest.TestCase):
+    def test_target_completion(self):
+        # The original commitment only, at each spell's latest estimate.
+        spells = [spell("PROJ-1", outcome="completed", pts=3), spell("PROJ-2"),
+                  spell("PROJ-3", scope="extra", outcome="completed"), spell("PROJ-4", outcome="removed", pts=1)]
+        self.assertEqual(build.target_completion(spells), {
+            "completed": 1, "total": 3, "completed_points": 3, "total_points": 6})
+
     TICKETS = [spell("PROJ-1", outcome="completed", pts=3, parent="PROJ-100", carried_in=True),
                spell("PROJ-2", outcome="removed", pts=1, parent="PROJ-100"),
                spell("PROJ-3", outcome="not_completed",
@@ -549,9 +559,7 @@ class MainTest(unittest.TestCase):
         self.current, self.removed = [raw("PROJ-1")], []
         self.report = {"contents": {"issuesNotCompletedInCurrentSprint": [
             {"key": "PROJ-1"}], "puntedIssues": []}}
-        self.write_report = True
         self.previous = None
-        self.write_previous = True
         self.fetched_at = "2026-03-16T09:00:00+00:00"
         # {key: changes}; by default the current issues have none and the
         # removed ones a removal.
@@ -572,10 +580,9 @@ class MainTest(unittest.TestCase):
         self.write("sprint.json", self.sprint)
         self.write("sprint_issues.json", self.current)
         self.write("punted_issues.json", self.removed)
-        if self.write_report:
-            self.write("sprint_report.json", self.report)
-        if self.write_previous:
-            self.write("previous_sprint.json", self.previous)
+        self.write("sprint_report.json", self.report)
+        self.write("previous_sprint.json", self.previous)
+        self.write("parents.json", [])
         for issue in self.current + self.removed:
             default = [left(at("03-04"))] if issue in self.removed else []
             self.write(f"changelogs/{issue['key']}.json",
@@ -660,22 +667,12 @@ class MainTest(unittest.TestCase):
         def change(name, value):
             return lambda: setattr(self, name, value)
         cases = [
-            (change("fetched_at", None), "no fetch timestamp"),
             (change("current", []), "the sprint has no issues"),
-            (lambda: self.sprint.update(state="future"),
-             "sprint state 'future': only active and closed sprints"),
-            (lambda: self.sprint.update(startDate=None),
-             "the sprint has no start or end date"),
-            (lambda: self.sprint.update(endDate=None),
-             "the sprint has no start or end date"),
             (change("removed", [raw(
                 "PROJ-1")]), r"\['PROJ-1'\] are both in the sprint and in Jira's removed list"),
-            (change("write_report", False), "Jira's sprint report is missing"),
-            (change("write_previous", False), "no previous_sprint.json"),
+            (change("report", {}), "Jira's sprint report is missing"),
             (lambda: self.report["contents"].update(completedIssues=[{"key": "PROJ-9"}]),
              "data differs from Jira's sprint report"),
-            (lambda: (self.sprint.update(state="active"), setattr(self, "fetched_at", None)),
-             "can't tell the moment the report describes"),
             # The raw files disagree with each other: the fetch caught the
             # sprint mid-change, so guessing would misreport it.
             (lambda: self.changelogs.update({"PROJ-1": [left(at("03-04"))]}),

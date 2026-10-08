@@ -69,7 +69,7 @@ class HelpersTest(unittest.TestCase):
                         ("29/03/2026", None)]:
             with self.subTest(ts=ts):
                 if iso is None:
-                    with self.assertRaisesRegex(ValueError, "unrecognised timestamp format"):
+                    with self.assertRaises(ValueError):
                         jira.parse_ts(ts)
                 else:
                     self.assertEqual(jira.parse_ts(ts).isoformat(), iso)

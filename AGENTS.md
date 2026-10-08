@@ -81,6 +81,15 @@ AI-written content goes only where it needs judgment: it costs tokens, and it ca
 
 Such skills use only the Python standard library (charts are drawn as SVG by hand), so they need Python 3.14+ and, for timezone conversion, IANA timezone data from the system or the `tzdata` package.
 
+### Model, views and checker
+
+Script-owned skills follow a model-view approach, with the checker as a separate witness:
+
+- **Model.** One script works out every fact the output needs, once, from the raw data, and stores it in a data file such as `data.json`: events, outcomes, flags (reopened, came back, done at start), totals, blocker candidates. A derived fact is computed there and nowhere else, including a fact that is a simple condition on events.
+- **Views.** Everything that renders (tables, charts, timeline, burndown, commentary, a brief for the agent) reads the stored facts and never derives them again. When a view needs a fact the model doesn't hold, add it to the model, so every view agrees by construction.
+- **Checker.** The checker recomputes figures from the model's most basic data (the events) independently of the views, and checks the stored derived facts against them, so a bug in the model can't pass by agreeing with itself. This is the one deliberate duplication.
+- **Tests** follow the same split: the model's logic is tested on its own, with one table of cases; a view is tested against a model fixture, not by re-deriving the model's facts.
+
 ### The sprint report
 
 The agent writes only the goal verdict, each epic's commentary, Key Achievements, Blockers & Risks and the retro notes, each marked with a small `[AI Gen.]` label. The timeline's commentary is generated, not written: what departed from the ideal sprint is a fact of the data. The rules for figures, formats and wording, and the reasons for them, are in the scripts' header comments: `build_sprint_data.py` (the model of a ticket's time in the sprint), `common.py` (the vocabulary and formats), `make_report.py` (the report's layout) and `make_charts.py` (the charts).

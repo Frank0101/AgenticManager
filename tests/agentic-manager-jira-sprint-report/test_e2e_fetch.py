@@ -273,17 +273,10 @@ class FetchTest(unittest.TestCase):
             # of the report.
             (lambda: setattr(FakeJira, "removed", fixture.REMOVED[1:]), ["--sprint-id", "7"], 1,
              "removed issue(s) could not be fetched: ['" + fixture.REMOVED[0]["key"] + "']"),
-            # Usage errors exit 2: one case here for the command line; every
-            # conflicting selector is covered in test_fetch_sprint.py.
-            (None, ["--sprint-id", "7", "--project", "PROJ"],
-             2, "pass exactly one of"),
-            # Config problems name the setting, never its value.
+            # Config problems name the setting, never its value; the other
+            # cases (not enabled, not filled in) are tested with the library.
             (config(**{"api-token": "wrong-token"}),
              ["--project", "PROJ"], 1, "`api-token`"),
-            (config(enabled=False), ["--project", "PROJ"],
-             1, "sources.workflow.jira-api is not enabled"),
-            (config(**{"api-token": "<token>"}),
-             ["--project", "PROJ"], 1, "not filled in: api-token"),
             (config(**{"base-url": "http://127.0.0.1:9"}),
              ["--project", "PROJ"], 1, "your `base-url` setting"),
             (no_config, ["--project", "PROJ"], 1,

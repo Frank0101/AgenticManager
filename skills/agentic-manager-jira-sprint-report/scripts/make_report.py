@@ -6,33 +6,15 @@ Usage:
     python3 make_report.py --report-dir <report_dir>
 
 Writes <report_dir>/<label>_Sprint_Report.md. Everything but content.json's
-text is generated here, in the vocabulary and formats set out in common.py.
-The agent's parts are marked [AI Gen.], so a reader knows which text is
-interpretation and which is data. check_report.py checks the result.
+text is generated here, in the vocabulary and formats set out in common.py: a
+fixed layout lets readers find the same figure in the same place in every
+report, and the agent's parts are marked [AI Gen.] so they can tell
+interpretation from data. check_report.py checks the result.
 
-The report, top to bottom:
-
-  Header       a fixed table, these rows in this order: Dates (start–end, plus
-               "(completed DD/MM/YYYY)" if it closed on another day), Goal
-               (Jira's, one line per <br>), Goal outcome [AI Gen.], Sprint
-               target completion ("X%, N/M tickets (N/M pts) completed", "so
-               far" while running). A fixed table lets readers find the same
-               figure in every report.
-  Charts       the two outcome charts (make_charts.py).
-  Timeline     the burndown, then a table in 75% type, one row per ticket with
-               events that day: Date (spanning the day's rows), Ticket (its
-               estimate at the end of the day), Events (tags in time order) and
-               End of day (spanning: the commitment on the first day, then the
-               burndown's readings as "Still open"). Every spell is shown,
-               including extra work added and descoped again, which the final
-               figures don't count: the history hides nothing.
-  Commentary   the paragraph under the timeline, generated, not written,
-               because what departed from the ideal sprint (all committed on
-               the first day, completed steadily, nothing left) is a fact of
-               the data. See commentary() for its rules.
-  Epics        per epic, Commitment and Extra as "N/M tickets (N/M pts)", and
-               the agent's Commentary [AI Gen.].
-  AI sections  Key Achievements, Blockers & Risks, Notes for Sprint Retro.
+The timeline's commentary is generated, not written, because what departed
+from the ideal sprint is a fact of the data. Every spell is shown in the
+timeline, including extra work added and descoped again, which the final
+figures don't count: the history hides nothing.
 
 The agent's text is validated before anything is written, each problem naming
 the content.json field to fix, so it is fixed where it was written. Bare Jira
@@ -49,7 +31,7 @@ from typing import cast
 from common import (CHART_FILES, COMMENTARY_WORDS, CONTENT_FILE, DATA_FILE, EPIC_COMMENTARY_WORDS, ISSUE_KEY,
                     NO_EPIC, RETRO_NOTES, SCOPE_GROUPS, SUMMARY_WORDS, ai, allowed_verdicts, banned_words,
                     display_date, epic_groups, estimate, key_order, load_json, parse_ts, plural, pts, qty, ratio,
-                    report_file, scope_group_label, target_completion, ticket_ref, unit, whole_percentage,
+                    report_file, scope_group_label, ticket_ref, unit, whole_percentage,
                     word_count, write_report_file)
 
 
@@ -92,6 +74,13 @@ def strip_em_dashes(value):
     if isinstance(value, list):
         return [strip_em_dashes(v) for v in value]
     return value
+
+
+# Phrases of the commentary, each with the shorter form used when the text is
+# over its word limit: one place for both, so they can't drift apart.
+RETURNED = ("counting as descoped and then as extra", "descoped, then extra")
+UNESTIMATED = ("of them without an estimate", "unestimated")
+FROM_COMMITMENT = ("of them from the commitment", "from the commitment")
 
 
 class Report:
@@ -221,15 +210,12 @@ class Report:
     def target_completion_value(self):
         """The original commitment's spells completed: their whole percentage,
         then the ratios."""
-        closed, pool = target_completion(self.data)
-        if not pool:
+        target = self.data["target_completion"]
+        if not target["total"]:
             return "No commitment"
-        original = [s for s in self.data["spells"] if s["scope"] == "original"]
-        done_points = sum(
-            s["points"] or 0 for s in original if s["outcome"] == "completed")
         so_far = " so far" if self.data["sprint_status"] == "active" else ""
-        return (f"{whole_percentage(len(closed), len(pool))}, "
-                f"{ratio(len(closed), len(pool), done_points, sum(s['points'] or 0 for s in original))} "
+        return (f"{whole_percentage(target['completed'], target['total'])}, "
+                f"{ratio(target['completed'], target['total'], target['completed_points'], target['total_points'])} "
                 f"completed{so_far}")
 
     # --- generated prose
@@ -254,11 +240,8 @@ class Report:
         text = self.commentary_text(name_up_to=3)
         if word_count(text) > COMMENTARY_WORDS:
             text = self.commentary_text(name_up_to=0)
-            text = text.replace(
-                "counting as descoped and then as extra", "descoped, then extra")
-            text = text.replace("of them without an estimate", "unestimated")
-            text = text.replace(
-                "of them from the commitment", "from the commitment")
+            for long, short in (RETURNED, UNESTIMATED, FROM_COMMITMENT):
+                text = text.replace(long, short)
         return " ".join([text] + self.commentary_caveats())
 
     def mentioned(self, spells, one, many, name_up_to=3):
@@ -304,7 +287,7 @@ class Report:
         sentences = []
 
         already = [dict(s, points=s["events"][0]["points"])
-                   for s in original if s["events"][0]["done"]]
+                   for s in original if s["doneAtStart"]]
         descoped = [s for s in original if s["outcome"] == "removed"]
         parts = []
         if already:
@@ -326,7 +309,7 @@ class Report:
         if extra:
             unestimated = [s for s in extra if s["points"] is None]
             parts.append(say(extra, "was added as extra", "were added as extra")
-                         + (f", {qty(len(unestimated), None)} of them without an estimate"
+                         + (f", {qty(len(unestimated), None)} {UNESTIMATED[0]}"
                             if unestimated and len(extra) > 1 else ""))
         if dropped:
             parts.append(say(dropped, "was added and descoped again, so it doesn't count",
@@ -334,20 +317,17 @@ class Report:
         if parts:
             sentences.append("; ".join(parts))
 
-        returns = [s for i, s in enumerate(spells)
-                   if s["events"][0]["type"] == "joined" and any(o["key"] == s["key"] for o in spells[:i])]
-        reopened = [s for s in spells if any(
-            e["type"] == "reopened" for e in s["events"])]
-        reestimated = [s for s in spells if any(
-            e["type"] == "reestimated" for e in s["events"])]
+        returns = [s for s in spells if s["cameBack"]]
+        reopened = [s for s in spells if s["reopened"]]
+        reestimated = [s for s in spells if s["reestimated"]]
         parts = []
         if reopened:
             parts.append(say(reopened, "was reopened", "were reopened"))
         if reestimated:
             parts.append(self.reestimates(reestimated, name_up_to))
         if returns:
-            parts.append(say(returns, "left the sprint and came back, counting as descoped and then as extra",
-                             "left the sprint and came back, counting as descoped and then as extra"))
+            came_back = f"left the sprint and came back, {RETURNED[0]}"
+            parts.append(say(returns, came_back, came_back))
         if parts:
             sentence = ", ".join(
                 parts[:-1]) + (" and " if len(parts) > 1 else "") + parts[-1]
@@ -365,7 +345,7 @@ class Report:
         else:
             committed_open = qty(len(open_original), sum(
                 s["points"] or 0 for s in open_original))
-            of_them = f", {committed_open} of them from the commitment"
+            of_them = f", {committed_open} {FROM_COMMITMENT[0]}"
         if d["sprint_status"] == "active":
             left = self.days_left(", with ")
             sentences.append(f"{total} {plural(len(open_spells), 'is', 'are')} open{of_them}{left}"
@@ -439,9 +419,6 @@ class Report:
 
 def validate_content(content, data):
     problems = []
-    if "scope_notes" in content:
-        problems.append(
-            "scope_notes is no longer used: the timeline's commentary is generated from the data")
     for field in ("key_achievements", "blockers_risks"):
         if not isinstance(content.get(field), str) or not content[field].strip():
             problems.append(
@@ -451,9 +428,6 @@ def validate_content(content, data):
             or any(not isinstance(n, str) or not n.strip().endswith("?") for n in notes)):
         problems.append(
             f"retro_notes must be a list of 1-{RETRO_NOTES} notes, each ending with a question")
-    if "delivery_commentary" in content:
-        problems.append(
-            "delivery_commentary is no longer used: each epic's commentary says what it delivered")
     if content.get("goal_verdict") not in allowed_verdicts(data):
         problems.append("goal_verdict must be one of: " +
                         ", ".join(f'"{v}"' for v in allowed_verdicts(data)))
@@ -482,8 +456,8 @@ def validate_content(content, data):
 
 def text_problems(content, data):
     """The rules for the AI-written text, each problem naming the field to fix.
-    check_report.py checks the finished report again; failing here first keeps
-    the fix next to the text that needs it."""
+    This is the only place they are enforced, so the fix stays next to the text
+    that needs it."""
     problems, texts = [], [("key_achievements", content["key_achievements"], SUMMARY_WORDS),
                            ("blockers_risks", content["blockers_risks"], SUMMARY_WORDS)]
     for epic in data["epics"]:

@@ -7,23 +7,8 @@ Basic auth (email + token). The token is never printed or written to any file;
 errors name a setting, never its value. If you add debug output here, print
 URLs and status codes only, never headers.
 
-Endpoints used:
-
-  /rest/api/3/myself                                  auth check
-  /rest/api/3/field                                   custom field ids (Flagged, story points)
-  /rest/agile/1.0/board?projectKeyOrId=<KEY>          boards of a project
-  /rest/agile/1.0/board/<id>/sprint?state=<state>     sprints of a board
-  /rest/agile/1.0/sprint/<id>                         sprint metadata
-  /rest/agile/1.0/sprint/<id>/issue                   issues in a sprint
-  /rest/api/3/search/jql                              issues by key or id
-  /rest/api/3/issue/<key>/changelog                   field history
-  /rest/api/3/status                                  every status and its category
-  /rest/api/3/issue/<key>/comment                     comments
-  /rest/greenhopper/1.0/rapidviewconfig/editmodel.json  board estimation field
-  /rest/greenhopper/1.0/rapid/charts/sprintreport     Jira's own sprint report
-
-The greenhopper endpoints are internal, not part of Atlassian's documented API,
-so they could change without notice. The sprint report is still required: it
+The greenhopper endpoints (board estimation field, sprint report) are internal,
+not part of Atlassian's documented API, so they could change without notice. The sprint report is still required: it
 is the only source of `puntedIssues` (issues removed from a sprint). Once an
 issue leaves a sprint its own Sprint field no longer mentions it, so the public
 API can't find it. If its shape changes, sprint_report() fails rather than
@@ -72,13 +57,7 @@ def nested(node, path, default=None):
 def parse_ts(ts):
     """Parse both timestamp shapes Jira emits: issue and changelog stamps carry
     a literal offset ("...+0100"), the Agile API's sprint dates end in "Z"."""
-    normalised = ts[:-1] + "+0000" if ts.endswith("Z") else ts
-    for fmt in ("%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z"):
-        try:
-            return datetime.strptime(normalised, fmt)
-        except ValueError:
-            continue
-    raise ValueError(f"unrecognised timestamp format: {ts!r}")
+    return datetime.fromisoformat(ts)
 
 
 # Atlassian Document Format nodes that end a line of text.
