@@ -283,7 +283,6 @@ def main():
         "label": label,
         "flagged_field": flagged_field,
         "story_points_field": points_field,
-        "blocker_candidate_keys": blocker_keys,
     })
     log(f"raw data written to {raw_dir}")
     print(json.dumps({"sprint_id": sprint["id"], "sprint_name": sprint.get("name"),

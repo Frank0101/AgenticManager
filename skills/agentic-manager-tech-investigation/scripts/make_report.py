@@ -58,7 +58,8 @@ import os
 import re
 
 from common import (CONTENT, COMMENTARY_HEADING, FOLDER_NAME, LEDGER, MAPS_SPEC,
-                    MERMAIDS, REPORT_SUFFIX, ROADMAP_ROWS, SKIPS, STAGES, headings, markdown, report_stages,
+                    REPORT_SUFFIX, ROADMAP_ROWS, SKIPS, STAGES, connection_key, headings, markdown,
+                    report_stages,
                     investigation_dir, load_json, table, topic_of, write_output_file)
 import check_report
 import output_diagram
@@ -231,7 +232,7 @@ def check_against_map(content, sequence, spec, key):
     shown = spec["stages"][key].get("connections", {})
     pairs = set()
     for connection in spec.get("connections", []):
-        if (connection.get("id") or f"{connection['from']}->{connection['to']}") in shown:
+        if connection_key(connection) in shown:
             pairs |= {(connection["from"], connection["to"]),
                       (connection["to"], connection["from"])}
     aliases = {}
@@ -294,19 +295,6 @@ def check_steps(content, flows, commentary, where):
                                           f"{label or targets[0].title} has {most}")
 
 
-def raw_map(folder, title):
-    """The stage's map source in mermaids.md, for the fallback, or None."""
-    try:
-        with open(os.path.join(folder, MERMAIDS), encoding="utf-8") as f:
-            text = f.read()
-    except OSError:
-        return None
-    entry = re.search(
-        rf"^## {re.escape(title)} — System map\n(.*?)(?=^## |\Z)", text, re.M | re.S)
-    block = entry and re.search(r"```mermaid\n(.*?)```", entry[1], re.S)
-    return block[1] if block else None
-
-
 def parse_stages(content, spec, shown):
     """{stage: (its content, [Sequence])} of the `shown` stages, each
     sequence checked against the stage's map and the template's rules."""
@@ -339,7 +327,7 @@ def parse_stages(content, spec, shown):
     return stages
 
 
-def stage_section(content, folder, key, title, filename, stage, flows, rendered):
+def stage_section(content, folder, key, title, filename, stage, flows):
     """The lines of one architecture section: summary, map, titled
     sequences, gaps and notes, then the shared commentary."""
     where = f"architecture.{key}"
@@ -351,21 +339,15 @@ def stage_section(content, folder, key, title, filename, stage, flows, rendered)
     content.length(commentary, TARGETS["commentary"],
                    f"{where}.commentary", upper=len(flows) < 2)
     check_steps(content, flows, commentary, where)
-    lines, notes = summary[:], []
+    lines = summary[:]
     if stage.get("map_gap"):
         lines.append("**Map evidence gap:** " +
                      content.text(stage["map_gap"], f"{where}.map_gap"))
     elif os.path.isfile(os.path.join(folder, filename)):
         lines.append(f"![{title}]({filename})")
     else:
-        source = raw_map(folder, title)
-        if source is None:
-            content.errors.append(
-                f"{where}: {filename} is missing: run build_maps.py, or set map_gap")
-        else:
-            lines.append(f"```mermaid\n{source.rstrip()}\n```")
-            notes.append(
-                "Map layout is unchecked: Node.js wasn't available to render it.")
+        content.errors.append(
+            f"{where}: {filename} is missing: run build_maps.py, or set map_gap")
     for sequence in flows:
         lines.append(f"#### {sequence.title}")
         fence = f"```mermaid\n{sequence.source}```"
@@ -387,30 +369,23 @@ def stage_section(content, folder, key, title, filename, stage, flows, rendered)
                      content.text(stage["flow_gap"], f"{where}.flow_gap"))
     elif not flows:
         content.errors.append(f"{where}: needs a sequence, or a flow_gap")
-    if flows and not rendered:
-        notes.append(
-            "Sequence syntax is unchecked: Node.js wasn't available to render it.")
-    return lines + notes + [f"#### {COMMENTARY_HEADING}"] + commentary
+    return lines + [f"#### {COMMENTARY_HEADING}"] + commentary
 
 
 def measure(content, flows):
     """Renders every sequence in one run to check its syntax and set its
-    width. Returns whether they were rendered."""
+    width."""
     if not flows:
-        return True
+        return
     try:
         svgs = output_diagram.render_many([s.source for s in flows])
-    except output_diagram.NodeMissing:
-        content.warnings.append(
-            "Node.js isn't available: sequence syntax and widths are unchecked")
-        return False
     except SystemExit as error:
         number, _, message = str(error).partition(": ")
         index = int(number.split()[-1]) - \
             1 if number.startswith("diagram ") else 0
         content.errors.append(
             f"{flows[index].title}: doesn't render: {message or error}")
-        return False
+        return
     for sequence, svg in zip(flows, svgs):
         sequence.width, _ = output_diagram.svg_size(svg)
     widths = [s.width for s in flows if s.width]
@@ -418,7 +393,6 @@ def measure(content, flows):
         content.warnings.append(
             "sequence widths differ by more than 15%: check the report in its viewer, and only if one "
             "displays enlarged, set its constrain_to to a correctly displayed peer")
-    return True
 
 
 def references(content):
@@ -524,7 +498,8 @@ def build(content, folder, spec):
     stages = parse_stages(content, spec, shown)
     flows = [s for _, stage_flows in stages.values() for s in stage_flows]
     # Rendering takes a while: only when the content is otherwise valid.
-    rendered = measure(content, flows) if not content.errors else False
+    if not content.errors:
+        measure(content, flows)
     parts = [f"# {content.text(data.get('title'), 'title', inline=True)}",
              f"Evidence snapshot: {snapshot(content, data.get('evidence_snapshot'))}. Code links pin inspected "
              "commits; ticket, PR and document links may display later changes. Evidence revisions and "
@@ -543,7 +518,7 @@ def build(content, folder, spec):
         parts.append(f"### {title}")
         if key in stages:
             parts += stage_section(content, folder, key,
-                                   title, filename, *stages[key], rendered)
+                                   title, filename, *stages[key])
     parts += ["### Technical decisions and gaps",
               "The table records source-backed differences and unresolved decisions. "
               "It does not select an option or assign an owner.",

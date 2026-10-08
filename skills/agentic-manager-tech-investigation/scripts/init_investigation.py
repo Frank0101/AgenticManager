@@ -28,6 +28,7 @@ import re
 from common import (EXAMPLES, FOLDER_NAME, INVESTIGATION, LEDGER, LEDGER_SECTIONS,
                     QUEUE_HEADER, QUEUE_SUBSECTIONS, SOURCE_HEADER, TOPIC, output_folder,
                     table, write_output_file)
+import output_diagram
 
 EXAMPLES_INDEX = """# Examples
 
@@ -133,6 +134,9 @@ def main(argv=None):
     parser.add_argument("--format", help="the output asked for, such as long-analysis or exec-summary, "
                                          "to list its approved examples")
     args = parser.parse_args(argv)
+    # The maps and sequences are drawn and checked with Node.js: ask for it
+    # now, before any research, rather than when the report is built.
+    output_diagram.find_npx()
     print(json.dumps(init(args.topic, args.format)))
 
 

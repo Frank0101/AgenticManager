@@ -331,18 +331,9 @@ class MakeReportTest(unittest.TestCase):
             any("differ by more than 15%" in w for w in result["warnings"]))
 
     def test_missing_map(self):
-        # Without Node.js, the map's source from mermaids.md stands in for its
-        # SVG, unchecked, and so do the sequences; without mermaids.md too,
-        # the report can't be written.
+        # The map's SVG is required: without it (build_maps.py not run), the
+        # report can't be written.
         os.remove(os.path.join(self.folder, MAPS[0]))
-        result = self.make(render=output_diagram.NodeMissing())
-        self.assertTrue(result["ok"], result)
-        text = self.report()
-        self.assertIn("```mermaid\nflowchart LR\n  A --> B\n```", text)
-        self.assertIn("Map layout is unchecked", text)
-        self.assertEqual(text.count("Sequence syntax is unchecked"), 3)
-        os.remove(os.path.join(self.folder, "Acme-Search_Report.md"))
-        os.remove(os.path.join(self.folder, "mermaids.md"))
         self.assertIn(
             "architecture-as-is.svg is missing: run build_maps.py", self.problems(content()))
 

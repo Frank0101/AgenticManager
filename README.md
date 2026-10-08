@@ -12,7 +12,7 @@ npx skills add Frank0101/AgenticManager --skill '*' --agent claude-code codex -g
 
 ## Use without installing
 
-You can also clone the repo and start Claude Code or Codex inside it: the skills are available there without installing them, so you need Node.js only for the tech investigation's architecture map.
+You can also clone the repo and start Claude Code or Codex inside it: the skills are available there without installing them, so you need Node.js only for the tech investigation's diagrams.
 
 ```bash
 git clone https://github.com/Frank0101/AgenticManager.git
@@ -44,7 +44,7 @@ npx skills list -g --json | jq -r '.[] | select(.source == "Frank0101/AgenticMan
 
 ## Requirements
 
-- **Node.js 18+**, to install skills with `npx`. Drawing the tech investigation's architecture map as an image requires **Node.js 22.13+**, which the pinned Mermaid CLI needs, and the CLI's Puppeteer headless browser. If rendering reports a missing `chrome-headless-shell`, install it with `npx -y -p @mermaid-js/mermaid-cli@12.0.0 puppeteer browsers install chrome-headless-shell`. Without Node.js the map is left as a Mermaid diagram for your viewer to draw.
+- **Node.js 18+**, to install skills with `npx`. The tech investigation also needs **Node.js 22.13+**: the pinned Mermaid CLI, with Puppeteer's headless browser, draws and checks its architecture maps and sequence diagrams. Without it the investigation stops at its first step and asks you to install it. If rendering reports a missing `chrome-headless-shell`, install it with `npx -y -p @mermaid-js/mermaid-cli@12.0.0 puppeteer browsers install chrome-headless-shell`.
 - **Python 3.14+**, available as `python3` where the agent runs. Skills use it to check your config and to run their scripts. Sprint reports also need IANA timezone data, normally provided by macOS and Linux. If it is missing, install it with `python3 -m pip install tzdata`.
 
 ## Configuration
@@ -73,24 +73,18 @@ Ask the agent in your own words.
 
 ### Sprint reports
 
-For example, "how did the last PROJ sprint go?". Reports are written to the `jira-sprint-reports` folder of your `output.root`, or to a temporary folder if you haven't set one; the agent gives you a link to open them.
+For example, "how did the last PROJ sprint go?". It works for a closed sprint or one still running, and reports the goal outcome, what was delivered against what was committed, a scope timeline with a burndown, delivery by epic, risks and notes for the retro. Figures are always as they were when the sprint closed (for a running sprint, when you asked), so the same sprint gives the same report whenever you ask. The few parts that need judgment are written by the agent and marked "[AI Gen.]": the goal outcome, the epic commentary, key achievements, blockers and risks, and the retro notes. Everything else is generated from Jira's data and checked.
 
-Fetching the same sprint again replaces its previous report folders, including their reports and written commentary. Keep a copy elsewhere if you want to retain an earlier version.
+Reports are written to the `jira-sprint-reports` folder of your `output.root`, or to a temporary folder if you haven't set one; the agent gives you a link to open them. Asking again for the same sprint replaces its previous report folder, including the written commentary, so keep a copy elsewhere if you want to retain an earlier version.
 
-Report dates use the Jira API account's timezone, saved with the fetched data. An active report's snapshot date comes from the saved fetch timestamp. If Jira does not return a usable timezone, the fetch stops and asks you to check that account's timezone.
-
-The burndown uses each day's closing status, estimates and sprint membership. On the day a sprint closes it stops at the exact closing time; an active sprint's current day stops at the fetch time, including when it runs past its planned end. The ideal line follows the planned dates; if there is no weekday after the start, it stays flat at the initial commitment. Later changes are excluded from a closed sprint's figures. Work that was already Done at the start remains in the original commitment when reopened; its estimate returns to the open commitment from that day.
-
-Jira's goal, sprint names and epic names keep their original wording. The timeline commentary uses historical estimates for the events it describes; AI-written sections use each ticket's latest estimate for the reported period.
-
-Blocker evidence excludes comments created or edited after the sprint closed, or after the fetch timestamp for an active sprint, because their earlier text is unavailable.
+Dates use your Jira account's timezone. If Jira doesn't return a usable one, the report stops and asks you to check the account's timezone.
 
 ### Tech investigations
 
 For example, "investigate how the payments retry service works today and what its next milestone should be", or "give me a 100-word exec summary of the acme search rewrite". A short summary is always built on a full investigation, so it takes as long as the full document, and you can then ask for more detail without the agent starting again.
 
-The agent reads every source you've enabled through `mcp` or `cli` in the three groups. Code and configuration establish current reality; the work tracker explains delivery context and milestones; documentation supplies general vision. Conflicts are resolved in that authority order. Merged code establishes implementation, while deployment needs separate evidence. Sources reached through `api` or `fs` aren't used. If a group has no such source, the agent tells you how to enable one and asks whether to go on without it: what depends on that group is then marked unverified. If no group has one, it stops.
+The agent reads the sources you've enabled through `mcp` or `cli` in `documentation` (the vision), `workflow` (the delivery) and `source_control` (the implementation). Where they disagree, code and configuration win over the work tracker, and the work tracker over documentation. If a group has no such source, the agent tells you how to enable one and asks whether to go on without it; what depends on that group is then marked unverified. If no group has one, it stops. Sources reached through `api` or `fs` aren't used.
 
-Every full report has two layers: an executive/product account of the problem, scope, roadmap and current milestone, followed by an architect account of the current architecture, next evolution and target architecture, with system maps and flow diagrams. Future direction comes from source-backed plans and proposals; the report does not recommend a design. Unknown component futures and owners remain explicitly unresolved. When the research shows there is no system to draw, or nothing changing it, the report leaves out the architect summary or the roadmap and future stages; the research ledger records why. The report is updated as research and review progress, with a separate research ledger recording the evidence, open questions and next checks.
+Every full report has two layers: an executive account of the problem, scope, roadmap and current milestone, and an architect account of the current architecture, the next evolution and the target architecture, with system maps and flow diagrams. The report doesn't recommend a design: future direction comes from source-backed plans and proposals, and what isn't known stays marked as unresolved. When there is no system to draw, or nothing changing it, the report leaves out the architect summary or the later stages, and the research ledger records why.
 
-Investigations are written to the `tech-investigations` folder of your `output.root`, or to a temporary folder if you haven't set one: one folder per topic and day, named `<Topic>_<YY-MM-DD>` (for example `Payments-Retry-Service_26-10-05`), containing `<Topic>_Report.md`, `ledgers.md`, what the agent wrote for the report and the maps (`content.json` and `maps.json`), the system-map sources in `mermaids.md`, the architecture images, and any short output you asked for, such as `exec-summary.md`. The report and the maps are generated from those files, so their structure is the same every time. When you tell the agent you're happy with a document or summary, it keeps a copy in the `_examples` folder there, listed first, and uses those as models of tone and voice for later investigations, never as evidence or as replacements for the fixed report structure.
+Investigations are written to the `tech-investigations` folder of your `output.root`, or to a temporary folder if you haven't set one: one folder per topic and day, such as `Payments-Retry-Service_26-10-05`, holding the report, the research ledger, the architecture images and any short output you asked for. When you tell the agent you're happy with a document or summary, it keeps a copy in the `_examples` folder there and uses those as models of tone and voice for later investigations, never as evidence.

@@ -408,7 +408,6 @@ class ChartsTest(ReportTest):
 
     def test_ticket_first_added_after_close_is_explained_without_being_counted(self):
         self.raw["changelogs/PROJ-7.json"] = [fixture.added(16)]
-        self.raw["_meta.json"]["blocker_candidate_keys"] = []
         data, md = self.make_report()
         self.assertNotIn("PROJ-7", [s["key"] for s in data["spells"]])
         self.assertEqual(data["left_before_start_keys"], ["PROJ-11"])

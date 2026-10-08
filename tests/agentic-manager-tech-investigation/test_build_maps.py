@@ -7,6 +7,7 @@
 import json
 import os
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -122,6 +123,8 @@ class ValidateTest(unittest.TestCase):
                 kind="service"), "kind must be one of"),
             ("unknown group", lambda s: s["nodes"][1].update(
                 group="nope"), "unknown group"),
+            ("duplicate group id", lambda s: s["groups"].append(
+                dict(s["groups"][0])), "group ids must be unique"),
             ("duplicate name", lambda s: s["nodes"][2].update(
                 name="Search API"), "names must be unique"),
             ("unknown end", lambda s: s["connections"]
@@ -136,6 +139,8 @@ class ValidateTest(unittest.TestCase):
              "implemented or proposed"),
             ("unknown connection", lambda s: s["stages"]["current"]["connections"].update({"A->X": "proposed"}),
              "unknown connection"),
+            ("transfer without a reason", lambda s: s["stages"]["next"].setdefault("transferred", {}).update(A=" "),
+             "with a reason"),
             ("bad decommissioning", lambda s: s["stages"]["next"]["decommissioned"].update(L="Gone"),
              "decommissioning must be one of"),
             ("dropped from outline", lambda s: s["stages"]["next"]["carried"].remove("A"),
@@ -308,6 +313,25 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(result["maps"]["next"]["width"], 200)
         self.assertEqual(result["warnings"], [])
 
+    def test_png_previews_go_to_the_temp_folder(self):
+        # --png renders each map once more, for a look at it: the previews are
+        # in the temp folder (here the test's own), never the investigation's.
+        rendered = [svg(200, 100, NODES)] * 3
+        before = self.files()
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(tempfile, "tempdir", tmp), \
+                mock.patch.object(output_diagram, "render_many", return_value=rendered), \
+                mock.patch.object(output_diagram, "render") as render:
+            result = build_maps.build(INVESTIGATION, png=True)
+            self.assertEqual(set(result["png"]), set(result["maps"]))
+            for stage, preview in result["png"].items():
+                self.assertEqual(os.path.dirname(
+                    os.path.dirname(preview)), tmp, stage)
+                self.assertEqual(os.path.basename(preview), f"{stage}.png")
+        self.assertEqual(render.call_count, 3)
+        self.assertEqual(sorted(os.listdir(self.folder)),
+                         sorted(before + ["architecture-as-is.svg", "architecture-next.svg",
+                                          "architecture-to-be.svg", "mermaids.md"]))
+
     def test_invalid_spec_or_layout_writes_nothing(self):
         moved = [svg(200, 100, NODES)] * 2 + [svg(200, 100, NODES[:1])]
         with mock.patch.object(output_diagram, "render_many", return_value=moved):
@@ -327,15 +351,13 @@ class BuildTest(unittest.TestCase):
         render.assert_not_called()
         self.assertEqual(self.files(), ["maps.json"])
 
-    def test_without_node_writes_preparation_and_removes_stale_maps(self):
-        with open(os.path.join(self.folder, "architecture-as-is.svg"), "w") as f:
-            f.write("<svg/>")
-        with mock.patch.object(output_diagram, "render_many", side_effect=output_diagram.NodeMissing()), \
-                mock.patch("sys.stderr"):
-            with self.assertRaises(SystemExit) as raised:
+    def test_without_node_writes_nothing(self):
+        # Node.js is required: without it nothing is drawn or checked, so
+        # nothing is written, and the error asks for it.
+        with mock.patch.object(output_diagram.shutil, "which", return_value=None):
+            with self.assertRaisesRegex(SystemExit, "Node.js 22.13 or newer is needed"):
                 build_maps.build(INVESTIGATION)
-        self.assertEqual(raised.exception.code, 3)
-        self.assertEqual(self.files(), ["maps.json", "mermaids.md"])
+        self.assertEqual(self.files(), ["maps.json"])
 
 
 if __name__ == "__main__":

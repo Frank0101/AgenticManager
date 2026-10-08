@@ -21,7 +21,7 @@ from common import CHART_FILES  # noqa: E402
 from make_report import Report, tag  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
-from report_fixture import BASE, CONTENT, ev, ticket, sprint_data  # noqa: E402
+from report_fixture import BASE, CONTENT, TICKETS, ev, ticket, sprint_data  # noqa: E402
 
 # The [AI Gen.] label as make_report renders it.
 AI = ' <sup style="font-size:0.6rem;font-weight:normal">[AI Gen.]</sup>'
@@ -145,6 +145,12 @@ class ChecksTest(unittest.TestCase):
                                     as_of_instant="2026-03-16T12:00:00Z", spells=[ticket("PROJ-1", [
                                         ev(2, "committed", 2), ev(15, "completed", 2, done=True)], "completed")]),
              {}, [("Nothing is open", "1 ticket (2 pts) is open", "commentary: states that nothing")]),
+            # All the work was added after the start: the report says so
+            # rather than a ratio of nothing.
+            ("no commitment", sprint_data(spells=[t for t in TICKETS if t["key"] == "PROJ-3"]), {},
+             [("Nothing was committed at the start", "All 0 tickets (0 pts) in the commitment stayed in the sprint",
+               "commentary: states that nothing was committed"),
+              ("No commitment", "n/a, 0/0 tickets (0/0 pts) completed", "header: Sprint target completion")]),
             ("membership not checked against Jira", sprint_data(membership_cross_check_excluded_keys=["PROJ-6"]), {},
              [("is reconstructed from changelogs", "is assumed",
                "commentary: states the membership cross-check limitation")]),
@@ -339,6 +345,9 @@ class ChecksTest(unittest.TestCase):
              "model: the burndown on 02/03/2026 is the spells' open tickets and pts"),
             ("the baseline", lambda d: d.update(burndown_baseline=99),
              "model: the burndown starts at the whole commitment, 9"),
+            # The epic table is recomputed from the spells, not trusted from data.json.
+            ("a ticket under the wrong epic", lambda d: d["spells"][0].update(parentKey=None),
+             "epics: PROJ-100 shows"),
             ("the timeline", lambda d: d["timeline"][1]["events"].clear(),
              "model: the timeline holds exactly the spells' events"),
             ("the breakdown", lambda d: d["outcome_breakdown_points"].update(extra_completed=5),

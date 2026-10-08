@@ -19,7 +19,7 @@ from common import CHART_FILES, NO_EPIC  # noqa: E402
 from make_report import Report  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
-from report_fixture import BASE, CONTENT, ev, sprint_data, ticket  # noqa: E402
+from report_fixture import BASE, CONTENT, TICKETS, ev, sprint_data, ticket  # noqa: E402
 
 # The [AI Gen.] label as rendered: a small superscript after the title, so it
 # reads as a note on the heading or label, not part of it.
@@ -102,6 +102,9 @@ class HeaderTest(unittest.TestCase):
             ("closed late, without a goal", {"sprint_complete_date": "2026-03-16", "sprint_goal": ""},
              table("02/03/2026–13/03/2026 (completed 16/03/2026)", "*No goal was set in Jira for this sprint*",
                    "60%, 3/5 tickets (6/10 pts) completed")),
+            # All the work was added after the start: no ratio of nothing.
+            ("no commitment", {"spells": [t for t in TICKETS if t["scope"] == "extra"]},
+             table("02/03/2026–13/03/2026", "Ship login", "No commitment")),
             ("blank goal", {"sprint_goal": "   "},
              table("02/03/2026–13/03/2026", "*No goal was set in Jira for this sprint*",
                    "60%, 3/5 tickets (6/10 pts) completed")),
@@ -235,6 +238,9 @@ class ProseTest(unittest.TestCase):
              "sprint and came back, counting as descoped and then as extra. 1 ticket (2 pts) is open, all of it "
              "extra, with 3 days left. PROJ-5 (2 pts) was resolved as Duplicate or Won't Do and counts as "
              "completed."),
+            ("no commitment", {"spells": [t for t in TICKETS if t["scope"] == "extra" and t["key"] == "PROJ-3"]},
+             "Nothing was committed at the start. PROJ-3 (1 pt) was added as extra. Everything in the sprint "
+             "was completed by the close."),
             # Nothing departed from the ideal, so there is nothing else to say.
             ("ideal", {"spells": ideal},
              "The 1 ticket (3 pts) in the commitment stayed in the sprint. Everything in the sprint was "

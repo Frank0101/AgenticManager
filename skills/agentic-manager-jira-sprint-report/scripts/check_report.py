@@ -155,12 +155,13 @@ def check_header(c, md, data):
     completed, pool = target_completion(data)
     so_far = " so far" if data["sprint_status"] == "active" else ""
     original_spells = [t for t in data["spells"] if t["scope"] == "original"]
-    target = (f"{whole_percentage(len(completed), len(pool))}, "
-              + ratio(len(completed), len(pool),
-                      sum(t['points'] or 0 for t in original_spells if t['outcome']
-                          == 'completed'),
-                      sum(t['points'] or 0 for t in original_spells))
-              + f" completed{so_far}")
+    target = "No commitment" if not pool else (
+        f"{whole_percentage(len(completed), len(pool))}, "
+        + ratio(len(completed), len(pool),
+                sum(t['points'] or 0 for t in original_spells if t['outcome']
+                    == 'completed'),
+                sum(t['points'] or 0 for t in original_spells))
+        + f" completed{so_far}")
     c.check(values["Sprint target completion"] == target,
             "header", f"Sprint target completion is {target!r}")
     oc = data["outcome_breakdown_counts"]
@@ -217,8 +218,9 @@ def check_commentary(c, md, data):
             f"at most {COMMENTARY_WORDS} words before its caveats (got {word_count(core)})")
     spells = data["spells"]
     original = [s for s in spells if s["scope"] == "original"]
-    c.check(f"{qty(len(original), data['burndown_baseline'])} in the commitment" in text, "commentary",
-            f"states the commitment, {qty(len(original), data['burndown_baseline'])}")
+    committed = qty(len(original), data["burndown_baseline"])
+    c.check((f"{committed} in the commitment" if original else "Nothing was committed at the start") in text,
+            "commentary", f"states the commitment, {committed}" if original else "states that nothing was committed")
     descoped = [s for s in original if s["outcome"] == "removed"]
     extra = [s for s in spells if s["scope"] == "extra" and s["counted"]]
     for kind, items in (("descoped", descoped), ("added as extra", extra)):
@@ -311,9 +313,29 @@ def check_ai_labels(c, md, table):
                 f"the epic table's column reads {ai('Commentary')}")
 
 
+def epic_figures(data):
+    """{epic key: {scope: [completed, all, completed pts, all pts]}} recomputed
+    from the counted spells, so a ticket under the wrong epic can't pass by
+    agreeing with data.json's own epic figures."""
+    figures = {}
+    for spell in (s for s in data["spells"] if s["counted"]):
+        row = figures.setdefault(spell["parentKey"] or NO_EPIC, {
+                                 "original": [0] * 4, "extra": [0] * 4})[spell["scope"]]
+        points = spell["points"] or 0
+        row[1] += 1
+        row[3] += points
+        if spell["outcome"] == "completed":
+            row[0] += 1
+            row[2] += points
+    return figures
+
+
 def check_epics(c, table, data):
     if not c.check(table is not None, "epics", "table found"):
         return
+    figures = epic_figures(data)
+    c.check({e["key"] for e in data["epics"]} == set(figures), "epics",
+            f"the epics are the spells' epics {sorted(figures, key=key_order)}")
     for epic in data["epics"]:
         title = f"<td>{epic['name']}</td>" if epic["key"] == NO_EPIC else f">{epic['key']}: "
         row = next((r for r in rows_of(table) if title in r), None)
@@ -322,11 +344,10 @@ def check_epics(c, table, data):
         cells = cells_of(row)[1:3]
         expected = []
         for kind in ("original", "extra"):
-            if epic[f"{kind}_stories_total"] == 0:
-                expected.append("–")
-            else:
-                expected.append(ratio(*(epic[f"{kind}_{part}"] for part in
-                                        ("stories_done", "stories_total", "points_done", "points_total"))))
+            done, total, done_pts, total_pts = figures.get(
+                epic["key"], {}).get(kind, [0] * 4)
+            expected.append(ratio(done, total, done_pts,
+                            total_pts) if total else "–")
         c.check(cells == expected, "epics",
                 f"{epic['key']} shows {' '.join(expected)} (got {' '.join(cells)})")
         check_epic_commentary(c, epic, cells_of(row)[3], data["sprint_status"])

@@ -179,7 +179,6 @@ class CasesTest(ReportTest):
             contents[BUCKETS[bucket]].append({"key": key_of(index)})
         self.raw.update({"sprint_issues.json": current, "punted_issues.json": punted,
                          "sprint_report.json": {"contents": contents}})
-        self.raw["_meta.json"]["blocker_candidate_keys"] = []
         self.content.update(key_achievements="Every case was reported.", blockers_risks="Nothing to report.",
                             retro_notes=["Every case was reported: did any surprise the team?"])
 

@@ -205,6 +205,11 @@ class FetchTest(unittest.TestCase):
         self.assertNotIn(TOKEN, proc.stdout + proc.stderr)
         return proc
 
+    def comment_files(self, out):
+        """The tickets whose comments were fetched: the blocker candidates."""
+        folder = os.path.join(out["report_dir"], "_raw", "comments")
+        return sorted(f[:-5] for f in os.listdir(folder)) if os.path.isdir(folder) else []
+
     def raw(self, out, name):
         with open(os.path.join(out["report_dir"], "_raw", name), encoding="utf-8") as f:
             return json.load(f)
@@ -268,14 +273,10 @@ class FetchTest(unittest.TestCase):
             # of the report.
             (lambda: setattr(FakeJira, "removed", fixture.REMOVED[1:]), ["--sprint-id", "7"], 1,
              "removed issue(s) could not be fetched: ['" + fixture.REMOVED[0]["key"] + "']"),
-            # Conflicting selectors fail rather than one silently winning.
+            # Usage errors exit 2: one case here for the command line; every
+            # conflicting selector is covered in test_fetch_sprint.py.
             (None, ["--sprint-id", "7", "--project", "PROJ"],
              2, "pass exactly one of"),
-            (None, ["--sprint-id", "7", "--active"], 2,
-             "--active applies only to --project or --board"),
-            (None, ["--sprint-name", "Sprint 7"], 2,
-             "needs exactly one of --project or --board"),
-            (None, [], 2, "pass exactly one of"),
             # Config problems name the setting, never its value.
             (config(**{"api-token": "wrong-token"}),
              ["--project", "PROJ"], 1, "`api-token`"),
@@ -345,7 +346,6 @@ class FetchTest(unittest.TestCase):
         # the board's, not "Story Points"
         self.assertEqual(meta["story_points_field"], fixture.POINTS_FIELD)
         self.assertEqual(meta["flagged_field"], fixture.FLAGGED_FIELD)
-        self.assertEqual(meta["blocker_candidate_keys"], ["PROJ-7"])
         self.assertEqual(self.raw(out, "changelogs/PROJ-6.json"),
                          fixture.CHANGELOGS["PROJ-6"])
         self.assertEqual(os.listdir(os.path.join(
@@ -392,8 +392,7 @@ class FetchTest(unittest.TestCase):
         with mock.patch.dict(fixture.CHANGELOGS, changelogs), mock.patch.dict(fixture.COMMENTS, comments), \
                 mock.patch.object(fixture, "CURRENT", current):
             out = self.assert_fetches("--project", "PROJ")
-        self.assertEqual(self.raw(out, "_meta.json")[
-                         "blocker_candidate_keys"], ["PROJ-7"])
+        self.assertEqual(self.comment_files(out), ["PROJ-7"])
         self.assertEqual([c["id"] for c in self.raw(
             out, "comments/PROJ-7.json")], ["1", "4"])
         self.assertEqual(self.raw(out, "parents.json"), FakeJira.parents)
@@ -430,8 +429,7 @@ class FetchTest(unittest.TestCase):
                         mock.patch.dict(fixture.CHANGELOGS, {"PROJ-7": changes}):
                     out = self.assert_fetches("--project", "PROJ")
                 expected = [] if added_after else ["PROJ-7"]
-                self.assertEqual(self.raw(out, "_meta.json")[
-                                 "blocker_candidate_keys"], expected)
+                self.assertEqual(self.comment_files(out), expected)
                 self.assertEqual("/rest/api/3/issue/PROJ-7/comment" in FakeJira.requests,
                                  not added_after)
 
@@ -453,8 +451,11 @@ class FetchTest(unittest.TestCase):
             out["report_dir"], "brief.json"))
         self.assertEqual(out["content_path"], f"{folder}/content.json")
         self.assertIn("[matches Jira's sprint report]", proc.stderr)
-        self.assertTrue(os.path.exists(
-            os.path.join(out["report_dir"], "data.json")))
+        # The fetch decides whose comments to fetch, and the build recomputes
+        # the blocker candidates from the same history: they must agree.
+        with open(os.path.join(out["report_dir"], "data.json"), encoding="utf-8") as f:
+            self.assertEqual(self.comment_files(out), json.load(f)[
+                             "blocker_candidate_keys"])
         with open(out["brief"], encoding="utf-8") as f:
             brief = json.load(f)
         self.assertEqual(brief["sprint"]["name"], fixture.SPRINT["name"])

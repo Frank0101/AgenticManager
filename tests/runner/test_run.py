@@ -1,4 +1,6 @@
-"""Unit tests for the repository's test runner, using isolated fixture suites."""
+# Unit tests for tests/run.py, the test runner, using isolated fixture suites.
+# They have a folder of their own: run.py discovers any tests/<name>/ folder.
+# Run with: python3 tests/run.py runner
 import contextlib
 import importlib.util
 import io

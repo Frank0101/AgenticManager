@@ -6,6 +6,7 @@
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from unittest import mock
@@ -186,9 +187,13 @@ class CheckTest(unittest.TestCase):
                          "api": [88.0, 34.5], "db_store": [280.25, -4.0]})
 
     def test_png_preview_goes_to_the_temp_folder(self):
-        result, render = self.check(
-            "sequenceDiagram\n  A->>B: 1. Hi\n", '<svg viewBox="0 0 1 1">', png=True)
-        self.assertTrue(result["png"].endswith("preview.png"))
+        # The temp folder is the test's own, so no preview folder is left behind.
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(tempfile, "tempdir", tmp):
+            result, render = self.check(
+                "sequenceDiagram\n  A->>B: 1. Hi\n", '<svg viewBox="0 0 1 1">', png=True)
+            self.assertEqual(os.path.dirname(
+                os.path.dirname(result["png"])), tmp)
+        self.assertEqual(os.path.basename(result["png"]), "preview.png")
         self.assertEqual(render.call_args.args[2], result["png"])
 
     def test_refuses_empty_or_binary_input(self):
@@ -199,13 +204,12 @@ class CheckTest(unittest.TestCase):
 
 class RenderTest(unittest.TestCase):
     def test_without_node(self):
-        # Exit code 3 tells the caller to fall back to unchecked Mermaid.
+        # Node.js is required, with no unchecked fallback: the message asks for it.
         for name, call in (("render", lambda: output_diagram.render("flowchart TB")),
                            ("render_many", lambda: output_diagram.render_many(["sequenceDiagram"]))):
             with self.subTest(name), mock.patch.object(output_diagram.shutil, "which", return_value=None):
-                with self.assertRaises(output_diagram.NodeMissing) as raised:
+                with self.assertRaisesRegex(SystemExit, "Node.js 22.13 or newer is needed"):
                     call()
-                self.assertEqual(raised.exception.code, 3)
 
     def test_render_failures(self):
         cases = [

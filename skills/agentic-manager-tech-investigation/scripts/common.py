@@ -158,6 +158,12 @@ def table(header, rows):
     return "\n".join(lines)
 
 
+def connection_key(connection):
+    """A map connection's identity in maps.json: its id, else from->to. The
+    stages' `connections` and the sequences' checks both look it up by this."""
+    return connection.get("id") or f"{connection.get('from')}->{connection.get('to')}"
+
+
 def escape_cell(text):
     return re.sub(r"(?<!\\)\|", r"\\|", " ".join(str(text).split()))
 
@@ -168,29 +174,11 @@ def slug(heading):
     return re.sub(r"[^\w\- ]", "", heading.strip().lower()).replace(" ", "-")
 
 
-def fenced_blanked(text):
-    """`text` with the lines of fenced code blanked, so headings inside code
-    aren't taken for headings."""
-    out, opened = [], None
-    for line in text.splitlines(keepends=True):
-        match = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
-        if opened is None and match:
-            opened = match[1]
-            out.append("\n")
-        elif opened is not None:
-            if match and match[1][0] == opened[0] and len(match[1]) >= len(opened):
-                opened = None
-            out.append("\n")
-        else:
-            out.append(line)
-    return "".join(out)
-
-
 def headings(text):
     """[(level, title, anchor)] of a Markdown text's headings, with -1, -2...
     on repeated anchors, as viewers number them."""
     seen, found = {}, []
-    for match in re.finditer(r"^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$", fenced_blanked(text), re.M):
+    for match in re.finditer(r"^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$", markdown(text)[0], re.M):
         base = slug(match[2])
         count = seen.get(base, 0)
         seen[base] = count + 1

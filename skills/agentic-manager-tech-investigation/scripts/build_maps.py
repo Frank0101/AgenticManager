@@ -57,18 +57,16 @@ Writes mermaids.md and the three SVGs, and prints one line of JSON: the path of
 mermaids.md, each map's path, width and height, any warnings, whether the folder
 is temporary, and with --png a PNG preview of each in the system temp folder (in
 Mermaid's own colours). Map validation, rendering and layout errors exit 1
-without writing maps. A PNG-preview error can occur after the maps are saved.
-If Node.js isn't available, it writes mermaids.md, removes stale SVGs so
-the report falls back to the Mermaid source, and exits 3.
+without writing maps. A PNG-preview error can occur after the maps are saved. Rendering needs
+Node.js, and there is no fallback without it (see output_diagram.py).
 """
 import argparse
 import json
 import os
 import re
-import sys
 import tempfile
 
-from common import (FOLDER_NAME, MAPS_SPEC, MERMAIDS, STAGE_FILES, STAGE_TITLES, STAGES,
+from common import (FOLDER_NAME, MAPS_SPEC, MERMAIDS, STAGE_TITLES, STAGES, connection_key,
                     investigation_dir, load_json, write_output_file)
 import output_diagram
 
@@ -102,10 +100,6 @@ LEGEND = (
     "outside the outline aren't included at that stage yet. Every stage has the same "
     "components and connections, so positions stay fixed; a connection a stage doesn't "
     "have is hidden and implies no call.")
-
-
-def connection_key(connection):
-    return connection.get("id") or f"{connection.get('from')}->{connection.get('to')}"
 
 
 def validate(spec):
@@ -437,19 +431,8 @@ def build(relative, png=False):
         raise SystemExit(
             "maps.json has problems, so nothing was written:\n  - " + "\n  - ".join(errors))
     maps = sources(spec)
-    try:
-        rendered = output_diagram.render_many(
-            [maps[key] for key, _, _ in shown_stages(spec)], "dark")
-    except output_diagram.NodeMissing:
-        write_output_file(
-            FOLDER_NAME, f"{relative}/{MERMAIDS}", preparation(spec, maps).encode("utf-8"))
-        for filename in STAGE_FILES.values():
-            path = os.path.join(folder, filename)
-            if os.path.isfile(path):
-                os.remove(path)
-        print(output_diagram.NodeMissing.MESSAGE +
-              "; wrote mermaids.md only", file=sys.stderr)
-        raise
+    rendered = output_diagram.render_many(
+        [maps[key] for key, _, _ in shown_stages(spec)], "dark")
     svgs = dict(zip([key for key, _, _ in shown_stages(spec)], rendered))
     errors, warnings, sizes = check_rendered(svgs)
     if errors:

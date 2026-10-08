@@ -222,6 +222,8 @@ class Report:
         """The original commitment's spells completed: their whole percentage,
         then the ratios."""
         closed, pool = target_completion(self.data)
+        if not pool:
+            return "No commitment"
         original = [s for s in self.data["spells"] if s["scope"] == "original"]
         done_points = sum(
             s["points"] or 0 for s in original if s["outcome"] == "completed")
@@ -311,9 +313,12 @@ class Report:
         if descoped:
             parts.append(say(descoped, "was descoped", "were descoped"))
         committed = qty(len(original), d["burndown_baseline"])
-        sentences.append(f"Of the {committed} in the commitment, " + ", and ".join(parts) if parts
-                         else f"{'The' if len(original) == 1 else 'All'} {committed} in the commitment stayed in the "
-                         "sprint")
+        if not original:
+            sentences.append("Nothing was committed at the start")
+        else:
+            sentences.append(f"Of the {committed} in the commitment, " + ", and ".join(parts) if parts
+                             else f"{'The' if len(original) == 1 else 'All'} {committed} in the commitment stayed in "
+                             "the sprint")
 
         extra = [s for s in spells if s["scope"] == "extra" and s["counted"]]
         dropped = [s for s in spells if not s["counted"]]

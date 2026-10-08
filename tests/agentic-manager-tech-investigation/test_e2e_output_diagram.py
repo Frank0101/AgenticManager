@@ -81,11 +81,12 @@ class OutputDiagramScriptTest(unittest.TestCase):
 
     def test_failures(self):
         # name: (PATH, the SVG the fake renders, exit code, expected on stderr)
+        # Node.js is required: without it, an exit asking for it, not a fallback.
         empty_bin = os.path.join(self.root, "empty-bin")
         os.makedirs(empty_bin)
         cases = [
             ("without Node.js", empty_bin, SIZED_SVG,
-             3, "Node.js (npx) is not available"),
+             1, "Node.js 22.13 or newer is needed"),
             ("a diagram that doesn't render", None, "",
              1, "doesn't render: Parse error on line 2"),
             ("slanted lines", None, BAD_SVG, 1, "lines break the rules"),

@@ -8,6 +8,7 @@ import sys
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest import mock
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
@@ -15,6 +16,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_report  # noqa: E402
 import init_investigation  # noqa: E402
+import output_diagram  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from investigation_fixture import temp_output  # noqa: E402
 
@@ -24,6 +26,14 @@ TODAY = date(2026, 10, 5)
 class InitTest(unittest.TestCase):
     def setUp(self):
         self.folder = temp_output(self)
+
+    def test_asks_for_node_before_creating_anything(self):
+        # The maps and sequences need Node.js, so the first script asks for it
+        # before any research is done, not when the report is built.
+        with mock.patch.object(output_diagram.shutil, "which", return_value=None):
+            with self.assertRaisesRegex(SystemExit, "Node.js 22.13 or newer is needed"):
+                init_investigation.main(["--topic", "Acme-Search"])
+        self.assertFalse(os.path.exists(self.folder))
 
     def test_new_investigation_then_a_follow_up(self):
         # A new investigation starts with a ledger skeleton that passes the

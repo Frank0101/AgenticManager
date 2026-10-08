@@ -251,15 +251,17 @@ def report_label(project_key, sprint_name):
 #               it), Descoped, and Not completed, or Open while the sprint runs.
 #               Capitalised in labels and tags, lower case in running text.
 #   Amounts     "7 tickets (7 pts)"; done out of total "11/22 tickets
-#               (34/74 pts)", never a bare ratio; a share "6 tickets | 27% of
-#               commitment (13 pts | 18%)"; inside a chart bar, for space only,
-#               "3 (50%)".
+#               (34/74 pts)", never a bare ratio; a share "6 tickets (27% of
+#               commitment)" or "13 pts (18% of commitment)"; inside a chart
+#               bar, for space only, "3 (50%)".
 #   Tickets     one as "KEY (N pts)", or "KEY (– pts)" with no estimate; several
 #               as the amount then the keys, sorted: "3 tickets (5 pts) were
 #               descoped (PROJ-11, PROJ-12, PROJ-13)"; a re-estimate as
 #               "PROJ-15 (5 → 3 pts)". The timeline's commentary quotes each
-#               ticket at its estimate at the time; anywhere else a ticket has
-#               its latest estimate, as a reader looking it up would see.
+#               ticket at its estimate when its stay in the sprint ended (work
+#               already Done at the start, at its estimate then); anywhere else
+#               a ticket has its latest estimate, as a reader looking it up
+#               would see.
 #   Epics       "KEY: Name", or "(no epic)".
 #   Numbers     digits, never "one" to "twenty"; whole percentages, "<1%" for a
 #               share above zero that would round to 0%, and ">99%" for one

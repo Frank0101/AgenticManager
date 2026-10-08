@@ -24,10 +24,6 @@
       ]
     },
     {
-      "root": "tests/agentic-manager-utils-refactoring",
-      "extraPaths": ["skills/agentic-manager-utils-refactoring/scripts"]
-    },
-    {
       "root": "tests/agentic-manager-utils-lib",
       "extraPaths": ["skills/agentic-manager-utils-lib"]
     },

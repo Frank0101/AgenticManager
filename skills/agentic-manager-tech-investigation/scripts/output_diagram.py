@@ -25,9 +25,10 @@ a PNG preview to the system temp folder and adds its "png" path, to inspect the
 layout visually; the preview has Mermaid's own colours, not the dark theme's
 restyling or the retirement crosses.
 
-Fails with a message on stderr: exit 3 if Node.js (npx) isn't available, so
-the caller can fall back to the Mermaid source; exit 1 if the diagram doesn't
-render or a flowchart breaks the line rules.
+Fails with a message on stderr and exit 1 if Node.js (npx) isn't available, the
+diagram doesn't render or a flowchart breaks the line rules. Node.js is
+required, not optional: there is no unchecked fallback, because a map or
+sequence nobody has rendered can't be known to draw.
 """
 import argparse
 import json
@@ -64,15 +65,6 @@ MAX_CORNER = 20.0
 
 PATH = re.compile(r"<path\b[^>]*>")
 TOKEN = re.compile(r"[A-Za-z]|-?\d*\.?\d+(?:[eE][-+]?\d+)?")
-
-
-class NodeMissing(SystemExit):
-    """Node.js (npx) isn't available. Exits with code 3, so a caller can fall
-    back to the Mermaid source."""
-    MESSAGE = "Node.js (npx) is not available, so the diagram can't be rendered"
-
-    def __init__(self):
-        super().__init__(3)
 
 
 def angle(start, end):
@@ -206,13 +198,22 @@ def dark_style(svg):
     return svg[:end] + "".join(rules) + svg[end:]
 
 
+def find_npx():
+    """The npx that runs the Mermaid CLI, or an exit asking for Node.js: the
+    diagrams are drawn and checked only through it, so without it there is
+    nothing to continue with."""
+    npx = shutil.which("npx")
+    if not npx:
+        raise SystemExit("Node.js 22.13 or newer is needed to draw and check the diagrams: "
+                         "install it, then run this again")
+    return npx
+
+
 def render(source, theme="default", png=None):
     """The SVG Mermaid draws from `source` in `theme`, and, given a `png`
     path, a PNG of it there too. Exits if Node.js is missing or the diagram
     doesn't render."""
-    npx = shutil.which("npx")
-    if not npx:
-        raise NodeMissing()
+    npx = find_npx()
     with tempfile.TemporaryDirectory() as folder:
         source_path = os.path.join(folder, "diagram.mmd")
         svg_path = os.path.join(folder, "diagram.svg")
@@ -232,9 +233,7 @@ def render_many(sources, theme="default"):
     index, "diagram <n>: ..."."""
     if not sources:
         return []
-    npx = shutil.which("npx")
-    if not npx:
-        raise NodeMissing()
+    npx = find_npx()
     with tempfile.TemporaryDirectory() as folder:
         source_path = os.path.join(folder, "diagrams.md")
         out_path = os.path.join(folder, "out.md")
@@ -253,8 +252,6 @@ def render_many(sources, theme="default"):
         for number, source in enumerate(sources, 1):
             try:
                 svgs.append(render(source, theme))
-            except NodeMissing:
-                raise
             except SystemExit as error:
                 raise SystemExit(f"diagram {number}: {error}")
         return svgs
@@ -401,11 +398,7 @@ def parse_args(argv=None):
 
 def main():
     args = parse_args()
-    try:
-        print(json.dumps(check_diagram(sys.stdin.buffer.read(), args.theme, args.png)))
-    except NodeMissing:
-        print(NodeMissing.MESSAGE, file=sys.stderr)
-        raise
+    print(json.dumps(check_diagram(sys.stdin.buffer.read(), args.theme, args.png)))
 
 
 if __name__ == "__main__":

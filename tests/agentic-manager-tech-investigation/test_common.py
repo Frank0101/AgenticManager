@@ -126,14 +126,29 @@ class MarkdownTest(unittest.TestCase):
                 self.assertEqual(common.slug(heading), anchor)
 
     def test_headings(self):
-        # Headings inside fenced code are not headings; a repeated anchor is
-        # numbered as viewers number it.
-        text = ("# Title\n\n## Repeat\n\n```text\n## Not a heading\n```\n\n~~~~\n# Nor this\n~~~~\n\n"
-                "### Repeat ###\n\n## Repeat\n")
-        self.assertEqual(common.headings(text), [(1, "Title", "title"), (2, "Repeat", "repeat"),
-                                                 (3, "Repeat", "repeat-1"), (2, "Repeat", "repeat-2")])
-        self.assertEqual(common.fenced_blanked(
-            "a\n```\nb\n```\nc\n"), "a\n\n\n\nc\n")
+        # Headings inside fenced code are not headings, and a fence closes only
+        # on a bare fence line ("```python" inside code doesn't close it); a
+        # repeated anchor is numbered as viewers number it.
+        cases = [
+            ("fences and repeats",
+             "# Title\n\n## Repeat\n\n```text\n## Not a heading\n```\n\n~~~~\n# Nor this\n~~~~\n\n"
+             "### Repeat ###\n\n## Repeat\n",
+             [(1, "Title", "title"), (2, "Repeat", "repeat"), (3, "Repeat", "repeat-1"),
+              (2, "Repeat", "repeat-2")]),
+            ("a fence line with a language inside code",
+             "# Title\n\n```text\n```python\n## Still code\n```\n\n## Real\n",
+             [(1, "Title", "title"), (2, "Real", "real")]),
+        ]
+        for name, text, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(common.headings(text), expected)
+
+    def test_connection_key(self):
+        # A connection is known by its id, else by its ends.
+        self.assertEqual(common.connection_key(
+            {"id": "c1", "from": "a", "to": "b"}), "c1")
+        self.assertEqual(common.connection_key(
+            {"from": "a", "to": "b"}), "a->b")
 
 
 if __name__ == "__main__":

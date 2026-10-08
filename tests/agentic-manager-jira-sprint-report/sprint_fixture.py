@@ -195,7 +195,6 @@ def raw_files():
             "fetched_at": "2026-03-16T09:00:00+00:00", "base_url": "https://acme.atlassian.net",
             "fetched_by": "Alex Example", "board_id": BOARD_ID, "project_key": "PROJ",
             "label": "PROJ_Sprint_7", "flagged_field": FLAGGED_FIELD, "story_points_field": POINTS_FIELD,
-            "blocker_candidate_keys": ["PROJ-7"],
         },
         "sprint.json": SPRINT,
         "previous_sprint.json": PREVIOUS_SPRINT,

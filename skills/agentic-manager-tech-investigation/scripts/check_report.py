@@ -228,15 +228,9 @@ def check_report(report, handover=False):
                      if start <= a < end and language == "mermaid" and diagram_kind(source) == "sequenceDiagram"]
         raw_maps = [(a, b) for a, b, language, source in fences
                     if start <= a < end and language == "mermaid" and diagram_kind(source) in ("flowchart", "graph")]
-        fallback = bool(raw_maps and not maps and re.search(
-            r"layout[^.\n]*unchecked", section, re.I))
-        if raw_maps and not fallback:
+        if raw_maps:
             errors.append(
                 f"{title}: remove duplicated map source from report; keep it in mermaids.md.")
-        if fallback:
-            maps = raw_maps
-            warnings.append(
-                f"{title}: unchecked-layout Mermaid map fallback; inspect when rendering becomes available.")
         if not maps and not has_gap(section, r"\b(map|architecture|structure)\b"):
             errors.append(
                 f"{title}: embed {filename} before its sequences, or record an explicit map evidence gap.")

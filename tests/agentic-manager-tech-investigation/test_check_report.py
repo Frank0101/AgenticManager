@@ -95,9 +95,6 @@ class CheckReportTest(unittest.TestCase):
             ("explicit evidence gaps instead of the map and flow", self.text[:start]
              + "Map evidence gap: architecture placement is unavailable.\n\n"
              "Flow evidence gap: sequence not established. [G1](ledgers.md#g1).\n\n" + self.text[end:], 0),
-            ("the documented fallback without Node.js", self.text.replace(
-                image, "Node.js unavailable; map layout is unchecked.\n\n"
-                "```mermaid\nflowchart LR\nClient --> Service\n```"), 1),
             # Between a map and its sequence, a title or a width container is
             # fine; anything else is for the agent to review.
             ("a title after the map", self.text.replace(
@@ -164,6 +161,9 @@ class CheckReportTest(unittest.TestCase):
              "embed architecture-as-is.svg"),
             ("duplicate map", self.text.replace(
                 image, image + "\n" + flowchart), "duplicated map source"),
+            # No fallback: Node.js is required, so the map is its SVG, never its source.
+            ("map source instead of its image", self.text.replace(
+                image, flowchart.strip()), "duplicated map source"),
             ("appendix map source", self.text +
              flowchart, "not elsewhere in the report"),
         ]
