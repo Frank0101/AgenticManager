@@ -1,38 +1,33 @@
-"""Renders a Mermaid diagram, such as the architecture map, to SVG in the
-skill's output folder (see the agentic-manager-utils-lib skill's
-output_folder.py), so the document shows it the same way in every viewer, and
-checks its connection lines.
+"""Renders a Mermaid diagram, such as an architecture map or a sequence, with
+the Mermaid CLI, so it shows the same way in every viewer, and checks a map's
+connection lines. build_maps.py and make_report.py use its functions; run as a
+script, it tries one diagram:
 
-    python3 output_diagram.py --name <folder name> --path <relative .svg path> [--theme dark] < diagram.mmd
-    python3 output_diagram.py --check [--theme dark] [--png] < diagram.mmd
+    python3 output_diagram.py [--theme dark] [--png] < diagram.mmd
 
---name and --path are as for the library's output_file.py; the path must end
-in .svg. The diagram is read from standard input as UTF-8 and rendered with the
-Mermaid CLI, pinned to MERMAID_CLI, through npx, so it needs Node.js 22.13+. Mermaid's
+The diagram is read from standard input as UTF-8 and rendered with the Mermaid
+CLI, pinned to MERMAID_CLI, through npx, so it needs Node.js 22.13+. Mermaid's
 default look gives each subgraph its own colour. --theme "default" keeps it on
 white; "dark" draws it on a dark background, with each subgraph tinted in its
 own colour and the nodes, text and lines restyled to suit (see dark_style()).
 
-Every connection line must keep to these rules, or nothing is written:
-straight segments only horizontal, vertical or at 45 degrees, and every change
-of direction a short rounded corner whose two legs are at those angles too.
-Mermaid draws lines that pass with the "rounded" curve and line hops drawn as
-gaps, not arcs:
+Every connection line of a map must keep to these rules: straight segments
+only horizontal, vertical or at 45 degrees, and every change of direction a
+short rounded corner whose two legs are at those angles too. Mermaid draws
+lines that pass with the "rounded" curve and line hops drawn as gaps, not arcs:
 `%%{init: {"flowchart": {"curve": "rounded"}, "elk": {"lineHops": "gap"}}}%%`.
 
---check renders the diagram, a map or a sequence, without writing anything to
-the output folder: it applies the line rules to a flowchart, and prints one
-line of JSON with the rendered "width" and "height", and for a flowchart each
-node's position, as "nodes": {id: [x, y]}, to check that a map's components
-stay in place across stages. With --png it also writes
-a PNG preview to the system temp folder and adds its "png" path, to inspect
-the layout visually; the preview has Mermaid's own colours, not the dark
-theme's restyling or the retirement crosses.
+The script writes nothing to the output folder: it applies the line rules to a
+flowchart, and prints one line of JSON with the rendered "width" and "height",
+and for a flowchart each node's position, as "nodes": {id: [x, y]}, to check
+that a map's components stay in place across stages. With --png it also writes
+a PNG preview to the system temp folder and adds its "png" path, to inspect the
+layout visually; the preview has Mermaid's own colours, not the dark theme's
+restyling or the retirement crosses.
 
-Otherwise prints one line of JSON: {"path": ..., "temporary": bool}. Fails with a message
-on stderr: exit 3 if Node.js (npx) isn't available, so the caller can fall back
-to the Mermaid source; exit 1 if the diagram doesn't render, breaks the line
-rules, or the path or config is wrong.
+Fails with a message on stderr: exit 3 if Node.js (npx) isn't available, so
+the caller can fall back to the Mermaid source; exit 1 if the diagram doesn't
+render or a flowchart breaks the line rules.
 """
 import argparse
 import json
@@ -43,13 +38,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-
-# The agentic-manager-utils-lib skill, installed next to this one.
-LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                       "..", "..", "agentic-manager-utils-lib")
-sys.path.insert(0, LIB_DIR)
-from agentic_manager.output_file import target, write_output_file  # noqa: E402
-from agentic_manager.output_folder import folder_name, output_folder  # noqa: E402
 
 # The Mermaid CLI the rules were checked against; it knows the "rounded" curve.
 MERMAID_CLI = "@mermaid-js/mermaid-cli@12.0.0"
@@ -197,7 +185,8 @@ def dark_style(svg):
     # colours and can leave a changed edge grey while its arrowhead stays red.
     # Keeping the rule's position and specificity preserves the CSS cascade.
     svg = re.sub(
-        r'(' + re.escape(root) + r'\s+\.flowchart-link\s*\{[^}]*?\bstroke\s*:\s*)[^;}]+',
+        r'(' + re.escape(root) +
+        r'\s+\.flowchart-link\s*\{[^}]*?\bstroke\s*:\s*)[^;}]+',
         lambda match: match.group(1) + DARK['line'], svg, count=1)
     rules = [f'{root} [data-color-id="{ident}"].cluster:not(.swimlane) rect'
              f'{{fill:{color} !important;fill-opacity:{DARK_TINT} !important;stroke:{color} !important;}}'
@@ -249,7 +238,8 @@ def render_many(sources, theme="default"):
     with tempfile.TemporaryDirectory() as folder:
         source_path = os.path.join(folder, "diagrams.md")
         out_path = os.path.join(folder, "out.md")
-        blocks = "\n".join(f"```mermaid\n{source.rstrip()}\n```\n" for source in sources)
+        blocks = "\n".join(
+            f"```mermaid\n{source.rstrip()}\n```\n" for source in sources)
         try:
             mmdc(npx, source_path, out_path, theme, blocks)
             svgs = []
@@ -316,9 +306,11 @@ def node_positions(svg):
     positions = {}
     for tag in NODE.findall(svg):
         found_id = re.search(r'\bid="(?:[^"]*-)?flowchart-(.+)-\d+"', tag)
-        found_at = re.search(r'translate\(\s*([-\d.]+)[ ,]+([-\d.]+)\s*\)', tag)
+        found_at = re.search(
+            r'translate\(\s*([-\d.]+)[ ,]+([-\d.]+)\s*\)', tag)
         if found_id and found_at:
-            positions[found_id.group(1)] = [float(found_at.group(1)), float(found_at.group(2))]
+            positions[found_id.group(1)] = [float(
+                found_at.group(1)), float(found_at.group(2))]
     return positions
 
 
@@ -332,41 +324,59 @@ def check_diagram(source, theme="default", png=False):
         raise SystemExit("the diagram is not UTF-8 text")
     if not text.strip():
         raise SystemExit("the diagram is empty")
-    preview = os.path.join(tempfile.mkdtemp(prefix="diagram-"), "preview.png") if png else None
+    preview = os.path.join(tempfile.mkdtemp(
+        prefix="diagram-"), "preview.png") if png else None
     svg = render(text, theme, preview)
     if is_flowchart(text):
         problems = line_problems(svg)
         if problems:
-            raise SystemExit("the diagram's lines break the rules:\n  - " + "\n  - ".join(problems[:20]))
+            raise SystemExit(
+                "the diagram's lines break the rules:\n  - " + "\n  - ".join(problems[:20]))
     width, height = svg_size(svg)
-    result = {"width": width, "height": height}
+    result: dict[str, object] = {"width": width, "height": height}
     if is_flowchart(text):
         result["nodes"] = node_positions(svg)
     return {**result, **({"png": preview} if preview else {})}
 
 
 def retirement_crosses(svg):
-    """Cross rectangular Mermaid nodes classed `decommissioned`, without
+    """Cross rectangular and cylinder nodes classed `decommissioned`, without
     changing geometry. Insert behind the label so names remain readable.
     This visual marker does not determine whether retirement is confirmed.
     """
-    node_rect = re.compile(
-        r'(<g\b[^>]*class="[^"]*\bnode\b[^"]*"[^>]*>\s*<rect\b[^>]*>)')
+    node_shape = re.compile(
+        r'(<g\b[^>]*class="[^"]*\bnode\b[^"]*"[^>]*>\s*<(?:rect|path)\b[^>]*>)')
 
     def mark(match):
         tag = match.group(1)
-        classes = re.search(r'class="([^"]*)"', tag).group(1).split()
-        if "decommissioned" not in classes:
+        classes = re.search(r'class="([^"]*)"', tag)
+        if classes is None or "decommissioned" not in classes.group(1).split():
             return tag
-        rect = tag[tag.index("<rect"):]
-        values = {}
-        for name in ("x", "y", "width", "height"):
-            found = re.search(rf'\b{name}="([^"]+)"', rect)
-            try:
-                values[name] = float(found.group(1)) if found else 0
-            except ValueError:
+        shape = tag[tag.rindex("<"):]
+        if shape.startswith("<rect"):
+            values = {}
+            for name in ("x", "y", "width", "height"):
+                found = re.search(rf'\b{name}="([^"]+)"', shape)
+                try:
+                    values[name] = float(found.group(1)) if found else 0
+                except ValueError:
+                    return tag
+            x, y, w, h = (values[n] for n in ("x", "y", "width", "height"))
+        else:
+            # Mermaid's cylinder starts with its top ellipse, then a vertical
+            # side. Its translated bounds include both ellipse radii in height.
+            number = r'(-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)'
+            path = re.search(r'\bd="M' + number + ',' + number + ' a' + number + ','
+                             + number + r' 0,0,0 ' +
+                             number + r',0 a[^a-z]+ l0,'
+                             + number + r' a', shape)
+            at = re.search(r'\btransform="translate\(' +
+                           number + r',\s*' + number + r'\)"', shape)
+            if 'outer-path' not in shape or path is None or at is None:
                 return tag
-        x, y, w, h = (values[n] for n in ("x", "y", "width", "height"))
+            start_x, start_y, _, radius_y, w, side = map(float, path.groups())
+            offset_x, offset_y = map(float, at.groups())
+            x, y, h = start_x + offset_x, start_y - radius_y + offset_y, side + 2 * radius_y
         if not all(math.isfinite(v) for v in (x, y, w, h)) or min(w, h) <= 12:
             return tag
         x1, y1, x2, y2 = x + 5, y + 5, x + w - 5, y + h - 5
@@ -376,65 +386,26 @@ def retirement_crosses(svg):
                  'stroke-width:4px!important;stroke-opacity:0.65;pointer-events:none"/>')
         return tag + cross
 
-    return node_rect.sub(mark, svg)
-
-
-def write_output_diagram(name, relative, source, theme="default"):
-    """(path, temporary): renders `source` (bytes of Mermaid text), in
-    `theme`, to the SVG `relative` inside the skill's output folder `name`,
-    after checking its lines, and returns the file's absolute path and whether
-    the folder is the temporary one."""
-    if not relative.lower().endswith(".svg"):
-        raise SystemExit(f"{relative!r} must end in .svg")
-    try:
-        text = source.decode("utf-8")
-    except UnicodeDecodeError:
-        raise SystemExit("the diagram is not UTF-8 text")
-    if not text.strip():
-        raise SystemExit("the diagram is empty")
-    folder, _ = output_folder(name)
-    target(folder, relative)
-    svg = render(text, theme)
-    problems = line_problems(svg)
-    if problems:
-        raise SystemExit("the diagram's lines break the rules, so nothing was written:\n  - "
-                         + "\n  - ".join(problems[:20]))
-    return write_output_file(name, relative, svg.encode("utf-8"))
+    return node_shape.sub(mark, svg)
 
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Render a Mermaid diagram from standard input to an SVG in a skill's output folder.")
-    parser.add_argument("--name", type=folder_name,
-                        help="the skill's own folder, such as tech-investigations")
-    parser.add_argument("--path",
-                        help="where the .svg goes inside that folder")
+        description="Render a Mermaid diagram from standard input, check it and print its size.")
     parser.add_argument("--theme", choices=sorted(THEMES), default="default",
                         help="default (on white) or dark (on a dark background)")
-    parser.add_argument("--check", action="store_true",
-                        help="only render and check the diagram, and print its size; write nothing")
     parser.add_argument("--png", action="store_true",
-                        help="with --check, also write a PNG preview to the system temp folder")
-    args = parser.parse_args(argv)
-    if not args.check and not (args.name and args.path):
-        parser.error("--name and --path are required, unless --check")
-    if args.png and not args.check:
-        parser.error("--png goes with --check")
-    return args
+                        help="also write a PNG preview to the system temp folder")
+    return parser.parse_args(argv)
 
 
 def main():
     args = parse_args()
     try:
-        if args.check:
-            print(json.dumps(check_diagram(sys.stdin.buffer.read(), args.theme, args.png)))
-            return
-        path, temporary = write_output_diagram(
-            args.name, args.path, sys.stdin.buffer.read(), args.theme)
+        print(json.dumps(check_diagram(sys.stdin.buffer.read(), args.theme, args.png)))
     except NodeMissing:
         print(NodeMissing.MESSAGE, file=sys.stderr)
         raise
-    print(json.dumps({"path": path, "temporary": temporary}))
 
 
 if __name__ == "__main__":

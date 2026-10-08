@@ -6,9 +6,9 @@ import os
 import tempfile
 from unittest import mock
 
+from common import FINDING_FIELDS
 from agentic_manager import config, output_folder
 from init_investigation import ledger_skeleton
-from check_report import FINDING_FIELDS
 
 INVESTIGATION = "Acme-Search_26-10-05"
 
@@ -32,10 +32,14 @@ SPEC = {
                {"id": "jobs", "label": "PROPOSED JOBS · hosting undecided"}],
     "nodes": [
         {"id": "U", "name": "Client / operator", "kind": "person"},
-        {"id": "A", "name": "Search API", "kind": "component", "status": "Implemented", "group": "app"},
-        {"id": "D", "name": "Search index", "kind": "store", "status": "Implemented", "group": "app"},
-        {"id": "L", "name": "Legacy indexer", "kind": "component", "status": "Legacy or superseded", "group": "app"},
-        {"id": "J", "name": "Publish job", "kind": "component", "status": "No implementation found", "group": "jobs"},
+        {"id": "A", "name": "Search API", "kind": "component",
+            "status": "Implemented", "group": "app"},
+        {"id": "D", "name": "Search index", "kind": "store",
+            "status": "Implemented", "group": "app"},
+        {"id": "L", "name": "Legacy indexer", "kind": "component",
+            "status": "Legacy or superseded", "group": "app"},
+        {"id": "J", "name": "Publish job", "kind": "component",
+            "status": "No implementation found", "group": "jobs"},
         {"id": "X", "name": "Embedding API", "kind": "external"},
     ],
     "connections": [
@@ -122,7 +126,8 @@ def temp_output(test):
     root = os.path.realpath(tmp.name)
     path = os.path.join(root, "config.json")
     with open(path, "w", encoding="utf-8") as f:
-        json.dump({"sources": {}, "output": {"root": os.path.join(root, "out")}}, f)
+        json.dump({"sources": {}, "output": {
+                  "root": os.path.join(root, "out")}}, f)
     for target, attribute, value in ((config, "CONFIG_PATH", path),
                                      (output_folder, "TEMP_ROOT", os.path.join(root, "temp"))):
         patcher = mock.patch.object(target, attribute, value)

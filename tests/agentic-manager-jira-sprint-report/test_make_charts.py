@@ -11,6 +11,7 @@
 # Done, so the start day drops to 6 by its end; the ideal burns the 7 over 9
 # later weekdays.
 import contextlib
+import html
 import io
 import os
 import re
@@ -60,8 +61,7 @@ def sprint(**changes):
         "points_estimated_issue_count": 4, "points_total_issue_count": 4,
     }
     data.update(changes)
-    last = min(data["today"], data["sprint_end"]
-               ) if data["sprint_status"] == "active" else data["sprint_complete_date"]
+    last = data["today"] if data["sprint_status"] == "active" else data["sprint_complete_date"]
     if last > "2026-03-13":
         data["burndown"] += [{"date": f"2026-03-{day:02d}", "committed": 2, "total": 2}
                              for day in range(14, int(last[-2:]) + 1)]
@@ -87,29 +87,32 @@ def bar_widths(chart):
 
 
 class HelpersTest(unittest.TestCase):
-    def test_formatting(self):
-        self.assertEqual(charts.fmt(3.0), "3")
-        self.assertEqual(charts.fmt(2.5), "2.5")
-        self.assertEqual(charts.esc('<a "b">'), "&lt;a &quot;b&quot;&gt;")
-        self.assertEqual([charts.unit_label(n, p) for n, p in ((1, True), (2, True), (1, False), (2, False))],
-                         ["pt", "pts", "ticket", "tickets"])
+    def test_helpers(self):
+        days = list(charts.daterange(date(2026, 3, 6), date(2026, 3, 9)))
+        cases = [
+            ("fmt, a whole number", charts.fmt(3.0), "3"),
+            ("fmt, a fraction", charts.fmt(2.5), "2.5"),
+            ("esc", charts.esc('<a "b">'), "&lt;a &quot;b&quot;&gt;"),
+            ("unit_label", [charts.unit_label(n, p) for n, p in ((1, True), (2, True), (1, False), (2, False))],
+             ["pt", "pts", "ticket", "tickets"]),
+            ("nice_step", [charts.nice_step(s)
+             for s in (5, 12, 30, 300, 20000)], [1, 2, 5, 50, 3000]),
+            ("daterange, both ends included", [
+             d.day for d in days], [6, 7, 8, 9]),
+            ("is_weekday", [charts.is_weekday(d)
+             for d in days], [True, False, False, True]),
+        ]
+        for name, got, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(got, expected)
 
     def test_text_width(self):
         # Wide letters measure wider than narrow ones, and bold wider still:
         # the label column and the fit-inside-a-bar decisions rely on it.
-        self.assertGreater(charts.text_width("WWW", 12), charts.text_width("iii", 12))
+        self.assertGreater(charts.text_width("WWW", 12),
+                           charts.text_width("iii", 12))
         self.assertAlmostEqual(charts.text_width("Done", 12, bold=True),
                                charts.text_width("Done", 12) * 1.08)
-
-    def test_nice_step(self):
-        self.assertEqual([charts.nice_step(s)
-                         for s in (5, 12, 30, 300, 20000)], [1, 2, 5, 50, 3000])
-
-    def test_days(self):
-        days = list(charts.daterange(date(2026, 3, 6), date(2026, 3, 9)))
-        self.assertEqual([d.day for d in days], [6, 7, 8, 9])
-        self.assertEqual([charts.is_weekday(d)
-                         for d in days], [True, False, False, True])
 
 
 class BuildSeriesTest(unittest.TestCase):
@@ -164,9 +167,8 @@ class BuildSeriesTest(unittest.TestCase):
         self.assertEqual([r["ideal"] for r in series["rows"]], [7, 7])
 
     def test_where_the_actuals_and_the_chart_end(self):
-        # Actuals stop at the close, or for a running sprint at today but
-        # never past the end date; the days run to the end date, or to a
-        # later close, where the ideal is already zero.
+        # Actuals stop at the close or fetch; the chart runs at least to the
+        # planned end, and later actuals keep an ideal of zero.
         active = {"sprint_status": "active", "sprint_complete_date": None}
         cases = [
             ("closed on its end date", {}, date(2026, 3, 13), date(2026, 3, 13)),
@@ -175,15 +177,17 @@ class BuildSeriesTest(unittest.TestCase):
             ("running", {**active, "today": "2026-03-05"},
              date(2026, 3, 5), date(2026, 3, 13)),
             ("running past its end", {**active, "today": "2026-03-18"},
-             date(2026, 3, 13), date(2026, 3, 13)),
+             date(2026, 3, 18), date(2026, 3, 18)),
         ]
         for name, changes, last_actual, last_day in cases:
             with self.subTest(name):
                 series = charts.build_series(sprint(**changes))
-                self.assertEqual((series["last_actual"], series["days"][-1]), (last_actual, last_day))
+                self.assertEqual(
+                    (series["last_actual"], series["days"][-1]), (last_actual, last_day))
                 last = series["rows"][-1]
                 self.assertEqual(last["ideal"], 0)
-                self.assertEqual(last["committed"] is None, last_actual < last_day)
+                self.assertEqual(last["committed"] is None,
+                                 last_actual < last_day)
 
 
 class ValidateSeriesTest(unittest.TestCase):
@@ -206,7 +210,8 @@ class ValidateSeriesTest(unittest.TestCase):
         data = sprint()
         series = charts.build_series(data)
         data["spells"] = [t for t in data["spells"] if t["key"] != "PROJ-2"]
-        data["spells"][0]["events"].append({"type": "reestimated", "points": 8, "done": False})
+        data["spells"][0]["events"].append(
+            {"type": "reestimated", "points": 8, "done": False})
         self.assert_fails(
             "baseline 7 differs from the commitment at the start 5", series, data)
 
@@ -253,10 +258,12 @@ class OutcomeChartTest(unittest.TestCase):
         # Titles, row sublabels and the bracket's lines: each original row as
         # a share of the commitment, the extra and the commitment as shares of
         # the total.
-        empty = breakdown(original=(0, 0, 0), carried_in=(0, 0, 0), new=(0, 0, 0), extra=(0, 0, 0))
+        empty = breakdown(original=(0, 0, 0), carried_in=(
+            0, 0, 0), new=(0, 0, 0), extra=(0, 0, 0))
         no_previous = sprint(previous_sprint=None, outcome_breakdown_counts=breakdown(
             original=(1, 1, 1), carried_in=(0, 0, 0), new=(1, 1, 1), extra=(1, 0, 0)))
-        running = {"sprint_status": "active", "sprint_complete_date": None, "today": "2026-03-05"}
+        running = {"sprint_status": "active",
+                   "sprint_complete_date": None, "today": "2026-03-05"}
         cases = [
             ("tickets", sprint(), False,
              ["Sprint 7: Sprint Outcome (4 tickets)</text>", ">3 tickets</text>", ">(75% of total)</text>",
@@ -269,11 +276,13 @@ class OutcomeChartTest(unittest.TestCase):
             # says how many do.
             ("partial estimation", sprint(points_estimated_issue_count=3), True,
              ["Sprint 7: Sprint Outcome (10 pts) (3/4 tickets estimated)"], []),
-            ("tickets ignore estimation", sprint(points_estimated_issue_count=3), False, [], ["estimated"]),
+            ("tickets ignore estimation", sprint(
+                points_estimated_issue_count=3), False, [], ["estimated"]),
             ("no previous sprint", no_previous, False,
              ["Carried over (no previous sprint)", "0 tickets (0% of commitment)"], []),
             # Work not done yet isn't "not completed" while the sprint runs.
-            ("running sprint", sprint(**running), False, [">Open</text>"], ["Not completed"]),
+            ("running sprint", sprint(**running), False,
+             [">Open</text>"], ["Not completed"]),
             # Nothing to share out: no percentages rather than "n/a".
             ("empty sprint", sprint(outcome_breakdown_counts=empty), False,
              ["Sprint Outcome (0 tickets)", ">0 tickets</text>"], ["% of", "n/a"]),
@@ -296,7 +305,8 @@ class OutcomeChartTest(unittest.TestCase):
         self.assertIn(">Commitment</text>", chart)
         # From the top of the first bar to the bottom of the second.
         self.assertRegex(chart, r'<path d="M [\d.]+ 56 H [\d.]+ V 152 ')
-        legend = re.findall(r'height="12" fill="[^"]+"/>\n<text [^>]*>([^<]+)<', chart)
+        legend = re.findall(
+            r'height="12" fill="[^"]+"/>\n<text [^>]*>([^<]+)<', chart)
         self.assertEqual(legend, ["Completed", "Not completed", "Descoped"])
 
     def test_bars_share_one_scale(self):
@@ -320,11 +330,14 @@ class OutcomeChartTest(unittest.TestCase):
 
     def test_both_charts_share_one_layout(self):
         def layout(chart):
-            width = float(
-                re.search(r'<svg [^>]*width="([\d.]+)"', chart).group(1))
+            width_match = re.search(r'<svg [^>]*width="([\d.]+)"', chart)
+            assert width_match is not None, "chart has no SVG width"
+            width = float(width_match.group(1))
             bars = [(float(x), float(w)) for x, w in
                     re.findall(r'<rect x="([\d.]+)" y="[\d.]+" width="([\d.]+)" height="40"', chart)]
-            bracket = re.search(r'<path d="M ([\d.]+)', chart).group(1)
+            bracket_match = re.search(r'<path d="M ([\d.]+)', chart)
+            assert bracket_match is not None, "chart has no commitment bracket"
+            bracket = bracket_match.group(1)
             return width, min(x for x, _ in bars), max(x + w for x, w in bars), bracket
         long_name = sprint(previous_sprint={
                            "id": 6, "name": "A sprint with a much longer name than usual"})
@@ -361,7 +374,8 @@ class OutcomeChartTest(unittest.TestCase):
         # with no room beside it (the longest bar), each kept inside, as the
         # bare number if only that fits, and the rest joined over its start.
         cases = [
-            ("all inside", single_row("new", (8, 8, 0), extra=(16, 0, 0)), ["inside 8 (50%)", "inside 8 (50%)"]),
+            ("all inside", single_row("new", (8, 8, 0), extra=(
+                16, 0, 0)), ["inside 8 (50%)", "inside 8 (50%)"]),
             ("joined beside the bar", single_row("new", (100, 1, 0), extra=(400, 0, 0)),
              ["beside Completed: 100 (99%); Not completed: 1 (1%)"]),
             ("shortened inside", single_row("new", (8, 7, 1)),
@@ -388,9 +402,38 @@ class OutcomeChartTest(unittest.TestCase):
                     elif abs(x - (end + 8)) < 0.2:
                         placed.append(f"beside {content}")
                     else:
-                        self.assertTrue(any(abs(x - (rx + rw / 2)) < 0.2 for rx, rw in rects), x)
+                        self.assertTrue(
+                            any(abs(x - (rx + rw / 2)) < 0.2 for rx, rw in rects), x)
                         placed.append(f"inside {content}")
                 self.assertEqual(placed, expected)
+
+    def test_fallback_labels_do_not_overlap_retained_labels(self):
+        for name in ("Sprint 6", "A sprint with a much longer name than usual"):
+            for values in ((60, 1, 1), (1, 60, 1), (1, 1, 60)):
+                for is_points in (False, True):
+                    with self.subTest(name=name, values=values, is_points=is_points):
+                        field = "outcome_breakdown_points" if is_points else "outcome_breakdown_counts"
+                        data = sprint(previous_sprint={"id": 6, "name": name},
+                                      **{field: single_row("new", values)})
+                        chart = charts.outcome_chart(data, is_points)
+                        labels = []
+                        for x, y, anchor, label in re.findall(
+                                r'<text x="([\d.]+)" y="([\d.]+)" font-size="12" '
+                                r'fill="[^"]+" text-anchor="(\w+)" font-weight="bold">([^<]+)</text>', chart):
+                            x, y = float(x), float(y)
+                            if not 112 <= y <= 152:
+                                continue
+                            label = html.unescape(label)
+                            width = charts.text_width(label, 12, True)
+                            left = x - width / 2 if anchor == "middle" else x
+                            labels.append((left, left + width, y, label))
+                        self.assertEqual(len(labels), 2)
+                        a, b = labels
+                        self.assertTrue(a[1] <= b[0] or b[1] <= a[0] or abs(a[2] - b[2]) >= 16,
+                                        labels)
+                        joined = " ".join(label for *_, label in labels)
+                        self.assertIn("60 (97%)", joined)
+                        self.assertEqual(joined.count("1 (2%)"), 2)
 
 
 class BurndownChartTest(unittest.TestCase):
@@ -401,8 +444,11 @@ class BurndownChartTest(unittest.TestCase):
         self.assertIn("Sprint 7: Burndown", chart)
         self.assertIn("Commitment of 7 pts at the start on 02/03/2026 · ideal paced over 9 later weekdays · "
                       "actuals to 13/03/2026 (sprint closed)", chart)
-        self.assertEqual(chart.count(f'fill="{charts.WEEKEND}"'), 2)  # one weekend
-        self.assertEqual(len(re.findall(r'<text [^>]*rotate\(-45', chart)), 12)  # a date per day
+        self.assertEqual(chart.count(
+            f'fill="{charts.WEEKEND}"'), 2)  # one weekend
+        self.assertEqual(
+            # a date per day
+            len(re.findall(r'<text [^>]*rotate\(-45', chart)), 12)
 
     def test_series_lines_and_legend(self):
         # Blue and violet are close for deuteranopia, so each series has its
@@ -415,7 +461,8 @@ class BurndownChartTest(unittest.TestCase):
                            chart)
         legend = re.findall(r'<line [^>]*stroke="([^"]+)" stroke-width="[\d.]+" stroke-linecap="round"'
                             r'(?: stroke-dasharray="([^"]+)")?/>', chart)
-        expected = [(spec["color"], spec["dash"] or "") for spec in charts.SERIES.values()]
+        expected = [(spec["color"], spec["dash"] or "")
+                    for spec in charts.SERIES.values()]
         self.assertEqual([(color, dash) for _, color, dash in lines], expected)
         self.assertEqual(legend, expected)
         for spec in charts.SERIES.values():
@@ -430,13 +477,16 @@ class BurndownChartTest(unittest.TestCase):
         # to the left; the total's only where it differs (04/03 to 08/03).
         data = sprint()
         chart = charts.burndown_chart(data, charts.build_series(data))
+
         def values(key):
             return re.findall(rf'fill="{charts.SERIES[key]["color"]}" text-anchor="(\w+)" font-weight="bold">'
                               r'([\d.]+)</text>', chart)
         committed = values("committed")
         self.assertEqual(committed[0], ("end", "7"))
-        self.assertEqual([v for _, v in committed[1:]], ["6", "6", "6", "2", "2", "2", "2", "2", "2", "2", "2", "2"])
-        self.assertEqual([v for _, v in values("total")], ["9", "5", "5", "5", "5"])
+        self.assertEqual([v for _, v in committed[1:]], [
+                         "6", "6", "6", "2", "2", "2", "2", "2", "2", "2", "2", "2"])
+        self.assertEqual([v for _, v in values("total")],
+                         ["9", "5", "5", "5", "5"])
 
     def test_cutoff(self):
         # The label names why the actuals stop, right of the line or, near
@@ -445,7 +495,8 @@ class BurndownChartTest(unittest.TestCase):
         cases = [
             ("closed", {}, "sprint closed", "end"),
             ("running", {**active, "today": "2026-03-05"}, "today", "start"),
-            ("running past its end", {**active, "today": "2026-03-18"}, "sprint end", "start"),
+            ("running past its end", {
+             **active, "today": "2026-03-18"}, "today", "start"),
         ]
         for name, changes, label, anchor in cases:
             with self.subTest(name):
@@ -457,26 +508,30 @@ class BurndownChartTest(unittest.TestCase):
 
 
 class PrintSeriesTest(unittest.TestCase):
-    def print_lines(self, data):
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out):
-            charts.print_series(charts.build_series(data))
-        return out.getvalue().splitlines()
-
-    def test_closed_sprint(self):
-        lines = self.print_lines(sprint())
-        self.assertEqual(lines[0], "baseline 7 pts committed at the start on 2026-03-02; "
-                                   "ideal over 9 later weekdays; actuals to 2026-03-13")
-        self.assertEqual(lines[2].split(), ["2026-03-02",
-                         "Mon", "start", "7", "7", "7", "0"])
-        self.assertEqual(lines[3].split(), ["2026-03-02",
-                         "Mon", "close", "6", "6", "7", "-1"])
-        self.assertEqual(lines[-1].split(), ["2026-03-13",
-                         "Fri", "close", "2", "2", "0", "2"])
-
-    def test_days_past_the_cutoff_show_only_the_ideal(self):
-        lines = self.print_lines(sprint(sprint_status="active", sprint_complete_date=None, today="2026-03-05"))
-        self.assertEqual(lines[-1].split(), ["2026-03-13", "Fri", "close", "-", "-", "0", "-"])
+    def test_print_series(self):
+        # {line number: its words}: the header, then each point's date,
+        # weekday, point, committed, total, ideal and spread; days past the
+        # cutoff show only the ideal.
+        running = {"sprint_status": "active",
+                   "sprint_complete_date": None, "today": "2026-03-05"}
+        cases = [
+            ("closed", sprint(), {
+                0: "baseline 7 pts committed at the start on 2026-03-02; "
+                   "ideal over 9 later weekdays; actuals to 2026-03-13".split(),
+                2: ["2026-03-02", "Mon", "start", "7", "7", "7", "0"],
+                3: ["2026-03-02", "Mon", "close", "6", "6", "7", "-1"],
+                -1: ["2026-03-13", "Fri", "close", "2", "2", "0", "2"]}),
+            ("running", sprint(**running),
+             {-1: ["2026-03-13", "Fri", "close", "-", "-", "0", "-"]}),
+        ]
+        for name, data, expected in cases:
+            with self.subTest(name):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    charts.print_series(charts.build_series(data))
+                lines = out.getvalue().splitlines()
+                self.assertEqual({n: lines[n].split()
+                                 for n in expected}, expected)
 
 
 if __name__ == "__main__":

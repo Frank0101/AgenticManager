@@ -34,7 +34,7 @@ class OutputScriptsTest(unittest.TestCase):
         self.config = os.path.join(
             self.root, ".config", "agentic-manager", "config.json")
         self.reports = os.path.join(self.root, "my reports")
-        # name: (output settings, the skill's folder, whether it is temporary)
+        # name: (output settings, the skill's output folder, whether it is temporary)
         temp = os.path.join(self.root, "agentic-manager",
                             "tech-investigations")
         self.folders = [
@@ -64,7 +64,13 @@ class OutputScriptsTest(unittest.TestCase):
         self.assertNotIn(TOKEN, out + err)
         return proc.returncode, out, err
 
-    def test_output_folder_prints_and_creates_the_folder(self):
+    def test_scripts_in_each_folder(self):
+        # As a skill uses them: output_folder.py prints and creates the folder,
+        # output_file.py writes a file in it, then patches it, and refuses the
+        # same patch again, as its old text is gone.
+        relative = "Payments-Retry_26-03-29/ledgers.md"
+        patch = json.dumps(
+            [{"old": "# Payments retry", "new": "# Updated report"}])
         for name, output, folder, temporary in self.folders:
             with self.subTest(name):
                 self.write_config(output)
@@ -74,41 +80,25 @@ class OutputScriptsTest(unittest.TestCase):
                 self.assertEqual(json.loads(out), {
                                  "folder": folder, "temporary": temporary})
                 self.assertTrue(os.path.isdir(folder))
-
-    def test_output_file_writes_the_file(self):
-        for name, output, folder, temporary in self.folders:
-            with self.subTest(name):
-                self.write_config(output)
-                code, out, err = self.run_script(FILE_SCRIPT, "--name", "tech-investigations",
-                                                 "--path", "2026-03-29--payments-retry/ledgers.md",
-                                                 content=CONTENT)
-                self.assertEqual(code, 0, err)
-                path = os.path.join(
-                    folder, "2026-03-29--payments-retry", "ledgers.md")
-                self.assertEqual(json.loads(out), {
-                                 "path": path, "temporary": temporary})
-                with open(path, encoding="utf-8") as f:
-                    self.assertEqual(f.read(), CONTENT)
-
-    def test_patch_command_updates_and_rejects_stale_context(self):
-        self.write_config({"root": self.reports})
-        args = ("--name", "tech-investigations", "--path", "report.md")
-        code, out, err = self.run_script(FILE_SCRIPT, *args, content=CONTENT)
-        self.assertEqual(code, 0, err)
-        target = json.loads(out)
-        patch = json.dumps([{"old": "# Payments retry", "new": "# Updated report"}])
-        code, out, err = self.run_script(FILE_SCRIPT, *args, "--patch", content=patch)
-        self.assertEqual(code, 0, err)
-        self.assertEqual(json.loads(out), target)
-        code, out, err = self.run_script(FILE_SCRIPT, *args, "--patch", content=patch)
-        self.assertEqual(code, 1)
-        self.assertEqual(out, "")
-        self.assertIn("match exactly once", err)
-        with open(target["path"], encoding="utf-8") as f:
-            self.assertEqual(f.read(), CONTENT.replace("# Payments retry", "# Updated report"))
+                args = ("--name", "tech-investigations", "--path", relative)
+                written = {"path": os.path.join(
+                    folder, relative), "temporary": temporary}
+                for extra, content in (((), CONTENT), (("--patch",), patch)):
+                    code, out, err = self.run_script(
+                        FILE_SCRIPT, *args, *extra, content=content)
+                    self.assertEqual(code, 0, err)
+                    self.assertEqual(json.loads(out), written)
+                code, out, err = self.run_script(
+                    FILE_SCRIPT, *args, "--patch", content=patch)
+                self.assertEqual((code, out), (1, ""))
+                self.assertIn("match exactly once", err)
+                with open(written["path"], encoding="utf-8") as f:
+                    self.assertEqual(f.read(), CONTENT.replace(
+                        "# Payments retry", "# Updated report"))
 
     def test_failures(self):
-        # name: (script, whether a config exists, arguments, exit code, expected on stderr)
+        # name: (script, whether a config exists, arguments, exit code,
+        # expected on stderr)
         cases = [
             ("folder without a config", FOLDER_SCRIPT, False, ["--name", "x"], 1,
              "agentic-manager-utils-check-config"),

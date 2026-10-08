@@ -16,7 +16,8 @@
 #
 # Prints one line of JSON:
 #   success: {"ok": true, "path": ..., "template": ..., "created": bool, "sources": {...}}
-#   failure: {"ok": false, "path": ..., "template": ..., "created": bool, "errors": ["...", ...]}
+#   failure: {"ok": false, "path": ..., "template": ..., "created": bool,
+#             "errors": ["...", ...]}
 #            (exit code 1)
 #
 # The config is only ever written by --init, and never overwritten.

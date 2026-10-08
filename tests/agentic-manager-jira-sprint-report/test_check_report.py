@@ -47,11 +47,31 @@ class HelpersTest(unittest.TestCase):
         for name, checks, code, printed in cases:
             with self.subTest(name):
                 c = check_report.Checker()
-                self.assertEqual([c.check(*args) for args in checks], [ok for ok, _, _ in checks])
+                self.assertEqual([c.check(*args)
+                                 for args in checks], [ok for ok, _, _ in checks])
                 out = io.StringIO()
                 with contextlib.redirect_stdout(out):
                     self.assertEqual(c.report(), code)
                 self.assertEqual(out.getvalue(), printed)
+
+    def test_ratio_units_with_fractional_operands(self):
+        for ratio in ("2/3", "2/2.5", "0.5/2", "0.5/2.5", "0/0.5"):
+            for suffix in (" ticket", " tickets", " pts", "", ".", " ptsx"):
+                with self.subTest(ratio=ratio, suffix=suffix):
+                    c = check_report.Checker()
+                    check_report.check_vocabulary(
+                        c, ratio + suffix, {"spells": []})
+                    failures = [f for f in c.failures if f.startswith(
+                        "vocabulary: ratios only as")]
+                    if suffix in (" ticket", " tickets", " pts"):
+                        self.assertEqual(failures, [])
+                    else:
+                        self.assertEqual(failures, [
+                            f"vocabulary: ratios only as N/M tickets (N/M pts) ['{ratio}']"])
+        c = check_report.Checker()
+        check_report.check_vocabulary(c, "02/03/2026", {"spells": []})
+        self.assertFalse(any(f.startswith("vocabulary: ratios only as")
+                         for f in c.failures))
 
 
 class ChecksTest(unittest.TestCase):
@@ -71,7 +91,8 @@ class ChecksTest(unittest.TestCase):
         one of its messages."""
         prefix = expected if ":" in expected else f"{expected}: "
         failures = self.failures(md, data)
-        self.assertTrue(any(f.startswith(prefix) for f in failures), f"no {prefix!r} failure in {failures}")
+        self.assertTrue(any(f.startswith(prefix)
+                        for f in failures), f"no {prefix!r} failure in {failures}")
 
     def replace(self, old, new):
         """The report with `old`, which must appear in it, replaced by `new`."""
@@ -84,8 +105,12 @@ class ChecksTest(unittest.TestCase):
                             "At risk"),
                  "closed late": ({"sprint_complete_date": "2026-03-16"}, "Partially met"),
                  "no goal": ({"sprint_goal": ""}, "No goal set in Jira for this sprint"),
+                 "blank goal": ({"sprint_goal": "   "}, "No goal set in Jira for this sprint"),
+                 "blank goal lines": ({"sprint_goal": "\n \n"}, "No goal set in Jira for this sprint"),
                  # Jira's goal, with its keys linked and pipes escaped, reads back as Jira's.
                  "a goal over several lines": ({"sprint_goal": "Ship login\nFix PROJ-1 | export"}, "Partially met"),
+                 "literal HTML and entities": ({"sprint_goal": "Ship <beta> & preserve &amp;\nFix PROJ-1 | export"},
+                                               "Partially met"),
                  "no previous sprint": ({"previous_sprint": None}, "Partially met")}
         for name, (changes, verdict) in cases.items():
             with self.subTest(name):
@@ -104,14 +129,18 @@ class ChecksTest(unittest.TestCase):
         copied["epics"][0]["name"] = source
         retro = {"retro_notes": ["PROJ-1 (5 pts) changed: was it ready?"]}
         cases = [
+            ("literal goal markup", sprint_data(sprint_goal="Ship <beta> & preserve &amp;"), {},
+             [("Ship &lt;beta&gt;", "Ship <beta>", "header"),
+              ("preserve &amp;amp;", "preserve &amp;", "header")]),
             # Events are ordered by instant, not by their text: 09:30+0100 is
             # before 09:00+0000.
             ("instants across offsets",
-             sprint_data(spells=[ticket("PROJ-1", offsets, "not_completed", status="In Progress")]), {},
+             sprint_data(
+                 spells=[ticket("PROJ-1", offsets, "not_completed", status="In Progress")]), {},
              [(tag("completed") + tag("reopened"), tag("reopened") + tag("completed"),
                "timeline: 06/03/2026 lists")]),
-            # Past the end date the burndown stops with the ticket still open;
-            # the commentary must state the current outcome.
+            # Past the planned end both the burndown and commentary keep
+            # tracking work through the fetch.
             ("overdue", sprint_data(sprint_status="active", sprint_complete_date=None, today="2026-03-16",
                                     as_of_instant="2026-03-16T12:00:00Z", spells=[ticket("PROJ-1", [
                                         ev(2, "committed", 2), ev(15, "completed", 2, done=True)], "completed")]),
@@ -131,7 +160,8 @@ class ChecksTest(unittest.TestCase):
              retro, [("PROJ-1) (2 pts) was already Done", "PROJ-1) (5 pts) was already Done", "vocabulary"),
                      ("(5 pts) changed", "(2 pts) changed", "vocabulary")]),
             ("estimate when descoped", sprint_data(spells=[
-                ticket("PROJ-1", [ev(2, "committed", 2), ev(4, "removed", 2)], "removed"),
+                ticket("PROJ-1", [ev(2, "committed", 2),
+                       ev(4, "removed", 2)], "removed"),
                 ticket("PROJ-1", [ev(5, "joined", 5)], "not_completed", scope="extra")]),
              retro, [("PROJ-1) (2 pts) was descoped", "PROJ-1) (5 pts) was descoped", "vocabulary"),
                      ("(5 pts) changed", "(2 pts) changed", "vocabulary")]),
@@ -148,19 +178,46 @@ class ChecksTest(unittest.TestCase):
              [(f"[PROJ-91]({BASE}/browse/PROJ-91)", "PROJ-91", "links"),
               (f'<a href="{BASE}/browse/PROJ-100">PROJ-100: Login &lt;beta&gt;</a>', "PROJ-100: Login", "links")]),
             ("an epic with nothing to describe",
-             sprint_data(spells=[s for s in sprint_data()["spells"] if s["key"] in ("PROJ-4", "PROJ-5")]),
+             sprint_data(spells=[s for s in sprint_data()[
+                         "spells"] if s["key"] in ("PROJ-4", "PROJ-5")]),
              {"epic_commentary": {}}, [("<td>–</td>\n</tr>", "<td>Done.</td>\n</tr>", "epics: PROJ-100 has no scope")]),
         ]
         for name, data, content, breakages in cases:
             md = Report(data, {**copy.deepcopy(CONTENT), **content}).build()
-            failures = check_report.run_checks(md, data, self.tmp.name).failures
+            failures = check_report.run_checks(
+                md, data, self.tmp.name).failures
             for check in {expected.split(":")[0] for _, _, expected in breakages}:
                 with self.subTest(name, check=check):
-                    self.assertEqual([f for f in failures if f.startswith(f"{check}:")], [])
+                    self.assertEqual(
+                        [f for f in failures if f.startswith(f"{check}:")], [])
             for old, new, expected in breakages:
                 with self.subTest(name, old=old, expected=expected):
                     self.assertIn(old, md)
                     self.assert_fails(expected, md.replace(old, new, 1), data)
+
+    def test_caveats_require_every_affected_ticket(self):
+        for kind in ("membership", "non_delivery"):
+            for count in (99, 100):
+                with self.subTest(kind=kind, count=count):
+                    keys = [f"PROJ-{n}" for n in range(100, 100 + count)]
+                    if kind == "membership":
+                        data = sprint_data(
+                            membership_cross_check_excluded_keys=keys)
+                    else:
+                        data = sprint_data(spells=[ticket(key, [ev(2, "committed", 1),
+                                                                ev(3, "completed", 1, done=True)], "completed", marker="duplicate") for key in keys])
+                    report = Report(data, CONTENT)
+                    md = report.timeline_table() + "\n\n" + report.commentary()
+                    valid = check_report.Checker()
+                    check_report.check_commentary(valid, md, data)
+                    self.assertEqual(valid.failures, [])
+                    for replacement in ("", "PROJ-999"):
+                        broken = md.replace(
+                            report.md_key(keys[-1]), replacement)
+                        checked = check_report.Checker()
+                        check_report.check_commentary(checked, broken, data)
+                        self.assertTrue(any("caveat names every affected ticket" in failure
+                                            for failure in checked.failures), checked.failures)
 
     def test_each_check_catches_its_breakage(self):
         proj_6 = f'<a href="{BASE}/browse/PROJ-6">PROJ-6</a>'
@@ -168,13 +225,17 @@ class ChecksTest(unittest.TestCase):
             ("timeline", ">Descoped</span>", ">Removed</span>"),
             ("timeline", f'>Descoped</span></td></tr>\n<tr><td style="white-space:nowrap">{proj_6}',
              f'>Completed</span></td></tr>\n<tr><td style="white-space:nowrap">{proj_6}'),
-            ("timeline", ">Re-estimated: 2 → 3 pts</span>", ">Re-estimated: 3 pts</span>"),
+            ("timeline", ">Re-estimated: 2 → 3 pts</span>",
+             ">Re-estimated: 3 pts</span>"),
             ("timeline", f"{proj_6} (2 pts)", f"{proj_6} (3 pts)"),
-            ("timeline", "<br>1 ticket (2 pts) with extra", "<br>1 ticket (3 pts) with extra"),
-            ("timeline", "<b>Commitment:</b><br>5 tickets (9 pts)", "<b>Commitment:</b><br>5 tickets (10 pts)"),
+            ("timeline", "<br>1 ticket (2 pts) with extra",
+             "<br>1 ticket (3 pts) with extra"),
+            ("timeline", "<b>Commitment:</b><br>5 tickets (9 pts)",
+             "<b>Commitment:</b><br>5 tickets (10 pts)"),
             ("timeline", "<b>Still open:</b>", "<b>Open:</b>"),
             ("timeline", ">03/03/2026</td>", ">07/03/2026</td>"),
-            ("timeline: the days are the timeline's, in order (6)", ">04/03/2026</td>", ">05/04/2026</td>"),
+            ("timeline: the days are the timeline's, in order (6)",
+             ">04/03/2026</td>", ">05/04/2026</td>"),
             ("cell shapes", '<td rowspan="5" style', '<td rowspan="4" style'),
             ("commentary: states 2 tickets (4 pts) descoped",
              "2 tickets (4 pts) were descoped", "2 tickets (5 pts) were descoped"),
@@ -190,34 +251,45 @@ class ChecksTest(unittest.TestCase):
             ("commentary: at most 100 words before its caveats",
              "At the close,", "At the close, after a long and eventful sprint full of changes that the team handled "
              "with care, attention and a great deal of patience across many working days and meetings, " * 2),
-            ("commentary: the timeline is followed by its commentary", Report(self.data, CONTENT).commentary(), ""),
+            ("commentary: the timeline is followed by its commentary",
+             Report(self.data, CONTENT).commentary(), ""),
             ("epics: PROJ-100 has a row", ">PROJ-100: ", ">PROJ-101: "),
-            ("epics", "<td>3/5 tickets (6/10 pts)</td>", "<td>3/6 tickets (6/10 pts)</td>"),
+            ("epics", "<td>3/5 tickets (6/10 pts)</td>",
+             "<td>3/6 tickets (6/10 pts)</td>"),
             ("epics", "<b>Not completed:</b>", "<b>Open:</b>"),
             ("epics", "<br><b>Descoped:</b> Sign-in audit logging &amp; the admin screen were dropped.", ""),
             ("epics", "Staff can sign in with a password.",
              "Staff can sign in with a password. They can also reset it by email."),
-            ("epics", "Staff can sign in with a password.", "Staff can sign in with a password, " + "and more " * 20),
-            ("epics", "Staff can sign in with a password.", "Staff can sign in with a password (PROJ-1)."),
+            ("epics", "Staff can sign in with a password.",
+             "Staff can sign in with a password, " + "and more " * 20),
+            ("epics", "Staff can sign in with a password.",
+             "Staff can sign in with a password (PROJ-1)."),
             ("ai labels", f"## Key Achievements{AI}", "## Key Achievements"),
             ("ai labels", f"Commentary{AI}</th>", "Commentary</th>"),
             ("header", f"| Goal outcome{AI} |", "| Goal outcome |"),
             ("header", "| Field | Detail |", "| Item | Detail |"),
-            ("header", "| Dates | 02/03/2026–13/03/2026 |", "| Dates | 02/03/2026 to 13/03/2026 |"),
+            ("header", "| Dates | 02/03/2026–13/03/2026 |",
+             "| Dates | 02/03/2026 to 13/03/2026 |"),
             ("header", "| Goal | Ship login |", "| Goal | Ship it |"),
-            ("header", f"| Goal outcome{AI} | Partially met |", f"| Goal outcome{AI} | Mostly met |"),
+            ("header", f"| Goal outcome{AI} | Partially met |",
+             f"| Goal outcome{AI} | Mostly met |"),
             ("header", "| Sprint target completion |", "| Target |"),
-            ("header", "3/5 tickets (6/10 pts) completed", "3/5 tickets (6/11 pts) completed"),
+            ("header", "3/5 tickets (6/10 pts) completed",
+             "3/5 tickets (6/11 pts) completed"),
             ("header", "| 60%, 3/5 tickets", "| 3/5 tickets"),
             # The carry-over row was removed on purpose: the charts show it.
             ("header", "3/5 tickets (6/10 pts) completed |",
              "3/5 tickets (6/10 pts) completed |\n| Carried over from Sprint 6 | 1 ticket |"),
             ("summaries", "Login shipped: staff", "Login shipped (PROJ-1): staff"),
-            ("summaries", "Login shipped: staff", "Login shipped" + " and more" * 40 + ": staff"),
-            ("summaries", "Nothing from the commitment", "- Nothing from the commitment"),
+            ("summaries", "Login shipped: staff",
+             "Login shipped" + " and more" * 40 + ": staff"),
+            ("summaries", "Nothing from the commitment",
+             "- Nothing from the commitment"),
             ("retro", "should it have stayed out?", "it should have stayed out."),
-            ("retro", "should it have stayed out?\n", "should it have stayed out?\n\nA closing remark.\n"),
-            ("images", "## Scope Timeline\n\n![Sprint burndown](burndown.svg)", "## Scope Timeline"),
+            ("retro", "should it have stayed out?\n",
+             "should it have stayed out?\n\nA closing remark.\n"),
+            ("images",
+             "## Scope Timeline\n\n![Sprint burndown](burndown.svg)", "## Scope Timeline"),
             ("em dashes", "Partially met", "Partially met — mostly"),
             ("dates", "02/03/2026–", "2026-03-02–"),
             ("links", "Login shipped", "PROJ-9 and login shipped"),
@@ -230,8 +302,10 @@ class ChecksTest(unittest.TestCase):
             ("vocabulary", "Login shipped", "Login shipped 3/5"),
             ("vocabulary", "Login shipped", "Login shipped 3 tickets / 4 pts"),
             ("vocabulary", "Login shipped", "**Login** shipped"),
-            ("vocabulary", f"[PROJ-1]({BASE}/browse/PROJ-1) (3 pts)", f"[PROJ-1]({BASE}/browse/PROJ-1)"),
-            ("vocabulary", f"[PROJ-1]({BASE}/browse/PROJ-1) (3 pts)", f"[PROJ-1]({BASE}/browse/PROJ-1) (5 pts)"),
+            ("vocabulary", f"[PROJ-1]({BASE}/browse/PROJ-1) (3 pts)",
+             f"[PROJ-1]({BASE}/browse/PROJ-1)"),
+            ("vocabulary", f"[PROJ-1]({BASE}/browse/PROJ-1) (3 pts)",
+             f"[PROJ-1]({BASE}/browse/PROJ-1) (5 pts)"),
             ("vocabulary", f"were descoped ([PROJ-2]({BASE}/browse/PROJ-2), [PROJ-6]({BASE}/browse/PROJ-6))",
              f"were descoped ([PROJ-6]({BASE}/browse/PROJ-6), [PROJ-2]({BASE}/browse/PROJ-2))"),
         ]
@@ -255,6 +329,12 @@ class ChecksTest(unittest.TestCase):
             ("a second original spell", lambda d: d["spells"][2].update(scope="original", events=[
                 dict(d["spells"][2]["events"][0], type="committed")]),
              "model: PROJ-2's events are well formed (committed)"),
+            ("missing final burndown days", lambda d: d["burndown"].pop(),
+             "model: the burndown covers every day"),
+            ("missing middle burndown day", lambda d: d["burndown"].pop(1),
+             "model: the burndown covers every day"),
+            ("duplicate burndown day", lambda d: d["burndown"].append(d["burndown"][-1]),
+             "model: the burndown covers every day"),
             ("the burndown", lambda d: d["burndown"][0].update(committed=99),
              "model: the burndown on 02/03/2026 is the spells' open tickets and pts"),
             ("the baseline", lambda d: d.update(burndown_baseline=99),
@@ -275,14 +355,19 @@ class ChecksTest(unittest.TestCase):
                 breakage(data)
                 self.assert_fails(expected, data=data)
 
-    def test_missing_chart(self):
-        os.remove(os.path.join(self.tmp.name, CHART_FILES["burndown"]))
-        self.assert_fails("images", self.md)
-
-    def test_missing_tables_and_sections(self):
-        failures = self.failures("# Sprint Summary\n\nNothing here.\n")
-        for expected in ("timeline: table found", "epics: table found", "retro: section found"):
-            self.assertIn(expected, failures)
+    def test_missing_parts(self):
+        # A chart beside the report, or the tables and sections in it.
+        cases = [
+            ("a chart", lambda: os.remove(os.path.join(self.tmp.name, CHART_FILES["burndown"])), self.md,
+             ["images"]),
+            ("tables and sections", lambda: None, "# Sprint Summary\n\nNothing here.\n",
+             ["timeline: table found", "epics: table found", "retro: section found"]),
+        ]
+        for name, remove, md, expected in cases:
+            with self.subTest(name):
+                remove()
+                for failure in expected:
+                    self.assert_fails(failure, md)
 
     def test_framing(self):
         # Only the timeline and epic tables need a heading above them.

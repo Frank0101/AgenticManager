@@ -90,7 +90,8 @@ def plain_text(value):
     """A rich-text field (a description or a comment) as plain text, whether
     Jira returns it in Atlassian Document Format, as API v3 does, or as a
     string, as the Agile API does; "" for none. Line breaks between blocks are
-    kept, other whitespace collapsed."""
+    kept, other whitespace collapsed. ADF date timestamps become UTC calendar
+    dates in DD/MM/YYYY format."""
     if not value:
         return ""
     if isinstance(value, str):
@@ -104,7 +105,11 @@ def plain_text(value):
                 parts.append(node.get("text", ""))
             elif kind == "hardBreak":
                 parts.append(" " if in_cell else "\n")
-            elif kind in ("mention", "emoji", "status", "date"):
+            elif kind == "date":
+                date = datetime.fromtimestamp(
+                    int(attrs["timestamp"]) / 1000, timezone.utc)
+                parts.append(date.strftime("%d/%m/%Y"))
+            elif kind in ("mention", "emoji", "status"):
                 parts.append(
                     str(attrs.get("text") or attrs.get("shortName") or ""))
             elif kind in ("inlineCard", "blockCard", "embedCard"):
@@ -167,11 +172,10 @@ class JiraClient:
                     f"Jira returned 403 Forbidden for {path}: the account lacks permission.")
             if e.code == 404:
                 raise NotFound(path)
-            body = e.read().decode("utf-8", "replace")[:400]
-            raise SystemExit(f"Jira returned {e.code} for {path}: {body}")
-        except URLError as e:
+            raise SystemExit(f"Jira returned {e.code} for {path}.")
+        except URLError:
             raise SystemExit(
-                f"could not reach {self.base_url} (your `base-url` setting): {e.reason}")
+                f"could not reach Jira. Check your `base-url` setting in {SOURCE} and the connection.")
 
     def whoami(self):
         """The authenticated user profile, including displayName and timeZone."""
@@ -295,7 +299,7 @@ class JiraClient:
             batch = page.get("issues", [])
             out.extend(batch)
             token = page.get("nextPageToken")
-            if not token or not batch:
+            if not token:
                 break
         return out
 

@@ -27,7 +27,9 @@ Burndown: four series, checked by validate_series before drawing.
     already Done and that day's changes, not delivery pace, so it is vertical.
   * Readings are end of day, except the last: the exact close, or the fetch.
     For a closed sprint, work finished after the close still counts as open.
-  * A running sprint past its end date stops at the end date.
+  * A running sprint past its end date continues through the fetch date;
+    the ideal keeps its final planned value. With no weekday after the start,
+    it stays at the baseline rather than inventing a daily burn rate.
 
 Blue and violet are close for deuteranopia, so each series also has its own
 dash pattern, repeated in the legend; keep the four patterns distinct.
@@ -224,15 +226,26 @@ def outcome_chart(data, is_points):
                     inside.append((short, seg))
                 else:
                     outside.append((lbl, seg))
-        for lbl, (sx, seg_w, *_rest, label_color) in inside:
-            body.append(text(sx + seg_w / 2, y + 24, lbl,
-                        anchor="middle", bold=True, color=label_color))
+        inside_y = outside_y = y + 24
+        outside_x = x + 8
         if outside:
             joined = "; ".join(f"{seg[4]}: {lbl}" for lbl, seg in outside)
             fits = x + 8 + text_width(joined, 12,
                                       True) <= width - OUTCOME_MARGIN
-            body.append(text(x + 8 if fits else left +
-                        8, y + 24, joined, bold=True))
+            if not fits:
+                outside_x = left + 8
+            outside_end = outside_x + text_width(joined, 12, True)
+            # A fallback over the bar can meet a retained label. Give them
+            # separate lines within the same row when their bounds overlap.
+            if any(outside_x < seg[0] + seg[1] / 2 + text_width(lbl, 12, True) / 2
+                   and outside_end > seg[0] + seg[1] / 2 - text_width(lbl, 12, True) / 2
+                   for lbl, seg in inside):
+                inside_y, outside_y = y + 16, y + 36
+        for lbl, (sx, seg_w, *_rest, label_color) in inside:
+            body.append(text(sx + seg_w / 2, inside_y, lbl,
+                        anchor="middle", bold=True, color=label_color))
+        if outside:
+            body.append(text(outside_x, outside_y, joined, bold=True))
 
     # The bracket joins the two original rows, from the top of the first bar
     # to the bottom of the second.
@@ -276,7 +289,8 @@ def build_series(data):
     sprint_start, sprint_end = parse_date(
         data["sprint_start"]), parse_date(data["sprint_end"])
     if not actuals:
-        raise SystemExit("data.json has no burndown readings; build the sprint data again")
+        raise SystemExit(
+            "data.json has no burndown readings; build the sprint data again")
     last_actual = max(actuals)
 
     baseline = data["burndown_baseline"]
@@ -285,8 +299,8 @@ def build_series(data):
 
     rows = [{"date": sprint_start, "label": "start", "committed": baseline, "total": baseline,
              "ideal": baseline, "spread": 0}]
-    # A sprint closed after its end date runs to the close; the ideal is
-    # already zero by then.
+    # Actuals after the planned end run to the close or fetch; the ideal keeps
+    # its final planned value (the baseline when there were no later weekdays).
     last_day = max(sprint_end, last_actual)
     burned = 0
     for day in daterange(sprint_start, last_day):
@@ -328,7 +342,8 @@ def validate_series(series, data):
             problems.append(f"ideal rises on {row['date']}")
         if not is_weekday(row["date"]) and row["ideal"] != previous["ideal"]:
             problems.append(f"ideal changes over the weekend on {row['date']}")
-    end_row = next((r for r in closes if r["date"] == series["sprint_end"]), None)
+    end_row = next(
+        (r for r in closes if r["date"] == series["sprint_end"]), None)
     if end_row is None:
         problems.append("no point on the sprint's end date")
     elif series["weekdays"] and end_row["ideal"] != 0:
@@ -406,8 +421,6 @@ def burndown_chart(data, series):
                 f'stroke="{MUTED}" stroke-width="1" stroke-dasharray="2 3"/>')
     if data["sprint_status"] != "active":
         cutoff_label = "sprint closed"
-    elif series["last_actual"] < parse_date(data["today"]):
-        cutoff_label = "sprint end"
     else:
         cutoff_label = "today"
     # Right of the line, or left of it when it would run off the chart.

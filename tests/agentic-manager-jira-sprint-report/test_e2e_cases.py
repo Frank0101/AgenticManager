@@ -113,7 +113,8 @@ CASES = [
      [(C, "removed", 2, True, ["committed 04", "removed 06"]), (X, "not_completed", 2, True, ["joined 08"])]),
     ("left Sprint 6 before it closed, then committed", [left_previous(2), add(3)], "To Do", 2, "open",
      [(O, "not_completed", 2, True, ["committed 04"])]),
-    ("joined and left before the start", [add(3), rem(4, "09:00")], "To Do", 2, "punted", []),
+    ("joined and left before the start", [
+     add(3), rem(4, "09:00")], "To Do", 2, "punted", []),
     ("descoped after the close", [add(3), rem(14)], "To Do", 2, "open",
      [(O, "not_completed", 2, True, ["committed 04"])]),
     ("re-estimated 2 to 5, done", [add(3), estimate(6, 2, 5), done(8)], "Done", 5, "done",
@@ -152,7 +153,8 @@ CASES = [
      [(X, "not_completed", 1, True, ["joined 05:2", "reestimated 07:1"])]),
 ]
 CREATED_IN_SPRINT = "extra, created in the running sprint"
-BUCKETS = {"done": "completedIssues", "open": "issuesNotCompletedInCurrentSprint", "punted": "puntedIssues"}
+BUCKETS = {"done": "completedIssues",
+           "open": "issuesNotCompletedInCurrentSprint", "punted": "puntedIssues"}
 
 
 def key_of(index):
@@ -162,11 +164,14 @@ def key_of(index):
 class CasesTest(ReportTest):
     def setUp(self):
         super().setUp()
-        self.raw = {k: v for k, v in self.raw.items() if not k.startswith(("changelogs/", "comments/"))}
+        self.raw = {k: v for k, v in self.raw.items(
+        ) if not k.startswith(("changelogs/", "comments/"))}
         current, punted = [], []
-        contents = {bucket: [] for bucket in (*BUCKETS.values(), "issuesCompletedInAnotherSprint")}
+        contents = {bucket: [] for bucket in (
+            *BUCKETS.values(), "issuesCompletedInAnotherSprint")}
         for index, (name, changes, status, points, bucket, _) in enumerate(CASES):
-            created = ts(6, "09:00") if name == CREATED_IN_SPRINT else ts(1, "08:00")
+            created = ts(6, "09:00") if name == CREATED_IN_SPRINT else ts(
+                1, "08:00")
             issue = fx.issue(key_of(index), points, status, created,
                              "Done" if status in ("Done", "Duplicate") else None)
             (punted if bucket == "punted" else current).append(issue)
@@ -188,18 +193,23 @@ class CasesTest(ReportTest):
             text = f"{e['type']} {e['date'][8:]}" + (" done" if e["done"] and e["type"] in (
                 "committed", "joined") else "")
             if with_points:
-                text += ":" + ("-" if e["points"] is None else f"{e['points']:g}")
+                text += ":" + ("-" if e["points"]
+                               is None else f"{e['points']:g}")
             return text
         for index, (name, *_, expected) in enumerate(CASES):
             with self.subTest(name):
                 spells = by_key.get(key_of(index), [])
                 self.assertEqual(len(spells), len(expected))
                 if not expected:
-                    self.assertIn(key_of(index), data["left_before_start_keys"])
+                    self.assertIn(
+                        key_of(index), data["left_before_start_keys"])
                 for spell, (scope, outcome, points, counted, events) in zip(spells, expected):
-                    self.assertEqual((spell["scope"], spell["carriedIn"]), (X if scope == X else O, scope == C))
-                    self.assertEqual((spell["outcome"], spell["points"], spell["counted"]), (outcome, points, counted))
-                    self.assertEqual([shown(e, ":" in wanted) for e, wanted in zip(spell["events"], events)], events)
+                    self.assertEqual(
+                        (spell["scope"], spell["carriedIn"]), (X if scope == X else O, scope == C))
+                    self.assertEqual(
+                        (spell["outcome"], spell["points"], spell["counted"]), (outcome, points, counted))
+                    self.assertEqual([shown(e, ":" in wanted) for e, wanted in zip(
+                        spell["events"], events)], events)
                     self.assertEqual(len(spell["events"]), len(events))
 
     def test_the_whole_report_agrees_with_the_events(self):
@@ -222,7 +232,10 @@ class CasesTest(ReportTest):
         # Reading the timeline as a reader does, from its tags and each
         # ticket's estimate, gives the burndown on every day: nothing moves it
         # unseen.
-        table = re.search(r'<table style="font-size:75%">.*?</table>', md, re.S)[0]
+        table_match = re.search(
+            r'<table style="font-size:75%">.*?</table>', md, re.S)
+        assert table_match is not None, "report has no timeline table"
+        table = table_match[0]
         days, day = {}, None
         for row in re.findall(r"<tr>(.*?)</tr>", table, re.S)[1:]:
             cells = re.findall(r"<td([^>]*)>(.*?)</td>", row, re.S)
@@ -231,7 +244,10 @@ class CasesTest(ReportTest):
                 days[day] = []
                 cells = cells[1:-1]
             if len(cells) == 2:
-                key, shown_estimate = re.search(r">(PROJ-\d+)</a> \(([^ )]+) pts?\)", cells[0][1]).groups()
+                ticket_match = re.search(
+                    r">(PROJ-\d+)</a> \(([^ )]+) pts?\)", cells[0][1])
+                assert ticket_match is not None, "timeline cell has no ticket and estimate"
+                key, shown_estimate = ticket_match.groups()
                 days[day].append((key, 0 if shown_estimate == "–" else float(shown_estimate),
                                   re.findall(r">([^<]+)</span>", cells[1][1])))
         first_day = next(iter(days))
@@ -241,7 +257,8 @@ class CasesTest(ReportTest):
             for key, points, tags in rows:
                 for tag in tags:
                     if tag == "Added":
-                        stories[key] = [True, points, day == first_day and key not in stories]
+                        stories[key] = [True, points, day ==
+                                        first_day and key not in stories]
                     elif tag in ("Already done", "Completed", "Descoped"):
                         stories[key][0] = False
                     elif tag == "Reopened":
@@ -253,7 +270,8 @@ class CasesTest(ReportTest):
         for reading in data["burndown"]:
             day = "/".join(reversed(reading["date"].split("-")))
             last = replayed.get(day, last)
-            self.assertEqual(last, (reading["committed"], reading["total"]), day)
+            self.assertEqual(
+                last, (reading["committed"], reading["total"]), day)
 
 
 if __name__ == "__main__":

@@ -98,10 +98,10 @@ def as_of(sprint, fetched_at):
 
 
 class History:
-    """One issue as it was at any past moment, rebuilt from its current fields
-    and the changes in its changelog. Nothing reported about an issue comes
-    from its current state unless the changelog says it held then too, so a
-    report on a past sprint gives the same figures whenever it is run."""
+    """An issue's tracked fields used for figures and blocker classification,
+    rebuilt at a past moment from current values and changelog changes.
+    These fields use current values only when the changelog shows they held
+    then too, so past sprint figures stay the same when the report is rerun."""
 
     def __init__(self, raw, changes, categories, flagged_field, points_field):
         self.fields = raw.get("fields") or {}
@@ -135,7 +135,7 @@ class History:
         return self.status_at(instant)[1] == "done"
 
     def state_at(self, instant):
-        """Everything the report shows about the issue, as it was at the instant."""
+        """Tracked fields for figures and blocker classification at the instant."""
         status, category = self.status_at(instant)
         _, resolution = self._at(
             "resolution", instant, (None, self._current(["resolution", "name"])))
@@ -365,11 +365,12 @@ GOAL_VERDICTS = {"closed": ("Fully met", "Partially met", "Not met"),
 
 
 def allowed_verdicts(data):
-    if not data["sprint_goal"]:
+    if not data["sprint_goal"].strip():
         return GOAL_VERDICTS["no_goal"]
     if data["sprint_status"] == "closed":
         return GOAL_VERDICTS["closed"]
-    start, end, today = (date.fromisoformat(data[k]) for k in ("sprint_start", "sprint_end", "today"))
+    start, end, today = (date.fromisoformat(data[k]) for k in (
+        "sprint_start", "sprint_end", "today"))
     early = today < start + (end - start) / 2
     return GOAL_VERDICTS["early" if early else "active"]
 

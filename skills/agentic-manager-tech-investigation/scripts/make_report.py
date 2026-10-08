@@ -46,8 +46,9 @@ stage's map (maps.json), renders every sequence in one run to check its syntax
 and measure its width, and wraps a sequence with "constrain_to" in a container
 sized by the measured ratio to that peer.
 
-Prints one line of JSON: the report's path, the check's errors and warnings,
-and each sequence's rendered width. Exits 1 if content.json is invalid (writing
+Prints one line of JSON: the report's path, whether the folder is temporary,
+whether the report passes the check ("ok"), its errors and warnings, and each
+sequence's rendered width. Exits 1 if content.json is invalid (writing
 nothing) or the written report fails the check.
 """
 import argparse
@@ -57,7 +58,7 @@ import os
 import re
 
 from common import (CONTENT, COMMENTARY_HEADING, FOLDER_NAME, LEDGER, MAPS_SPEC,
-                    MERMAIDS, REPORT_SUFFIX, ROADMAP_ROWS, SKIPS, STAGES, headings, report_stages,
+                    MERMAIDS, REPORT_SUFFIX, ROADMAP_ROWS, SKIPS, STAGES, headings, markdown, report_stages,
                     investigation_dir, load_json, table, topic_of, write_output_file)
 import check_report
 import output_diagram
@@ -72,8 +73,10 @@ TARGETS = {"problem": 100, "deep_dive": 200, "summary": 300, "commentary": 100}
 # materially different sizes when fitted to one page width.
 WIDTH_SPREAD = 1.15
 
-PARTICIPANT = re.compile(r"^\s*(?:create\s+)?(participant|actor)\s+(\S+)(?:\s+as\s+(.+?))?\s*$")
-MESSAGE = re.compile(r"^\s*([^\s:+\-<>]+)\s*(-->>|->>|-->|->|--x|-x|--\)|-\))\s*[+-]?\s*([^\s:+\-<>]+)\s*:(.*)$")
+PARTICIPANT = re.compile(
+    r"^\s*(?:create\s+)?(participant|actor)\s+(\S+)(?:\s+as\s+(.+?))?\s*$")
+MESSAGE = re.compile(
+    r"^\s*([^\s:+\-<>]+)\s*(-->>|->>|-->|->|--x|-x|--\)|-\))\s*[+-]?\s*([^\s:+\-<>]+)\s*:(.*)$")
 QUALIFIER = re.compile(r"\s*\([^()]*\)\s*$")
 LEDGER_LINK = re.compile(r"\]\(ledger:([A-Za-z]+\d+)?\)")
 STEPS = re.compile(r"\bsteps?\s+(\d+)(?:\s*[–-]\s*(\d+))?", re.I)
@@ -109,11 +112,14 @@ class Content:
             self.errors.append(f"{where}: needs text")
             return ""
         if re.search(r"^ {0,3}#{1,3}\s", value, re.M):
-            self.errors.append(f"{where}: no # to ### headings; the template sets them (#### is fine)")
+            self.errors.append(
+                f"{where}: no # to ### headings; the template sets them (#### is fine)")
         if re.search(r"<div\b|^ {0,3}(```|~~~)", value, re.M | re.I):
-            self.errors.append(f"{where}: no code fences or <div> wrappers; sequences go in \"sequences\"")
+            self.errors.append(
+                f"{where}: no code fences or <div> wrappers; sequences go in \"sequences\"")
         if inline and "\n" in value.strip():
-            self.errors.append(f"{where}: one line, for a table cell or list item")
+            self.errors.append(
+                f"{where}: one line, for a table cell or list item")
         return self.links(value.strip(), where)
 
     def paragraphs(self, key, where, value=None):
@@ -130,7 +136,8 @@ class Content:
                 return f"]({LEDGER})"
             anchor = self.ledger.anchor(ident)
             if anchor is None:
-                self.errors.append(f"{where}: ledger:{ident} matches no heading, table row or bold label in {LEDGER}")
+                self.errors.append(
+                    f"{where}: ledger:{ident} matches no heading, table row or bold label in {LEDGER}")
                 return match[0]
             return f"]({LEDGER}#{anchor})"
         return LEDGER_LINK.sub(resolve, text)
@@ -138,7 +145,8 @@ class Content:
     def length(self, texts, target, where, upper=True):
         count = sum(words(t) for t in texts)
         if count < target / 2 or (upper and count > target * 1.5):
-            self.warnings.append(f"{where}: {count} words; the target is about {target}")
+            self.warnings.append(
+                f"{where}: {count} words; the target is about {target}")
 
 
 class Ledger:
@@ -151,6 +159,7 @@ class Ledger:
         except OSError:
             self.text = ""
         self.headings = headings(self.text)
+        self.prose = markdown(self.text)[0]
 
     def anchor(self, ident):
         for _, title, anchor in self.headings:
@@ -158,7 +167,7 @@ class Ledger:
                 return anchor
         # Defined in a table's first cell or as a bold label: its section.
         definition = re.search(rf"^\s*(?:\|\s*{re.escape(ident)}\s*\||[-*]\s+\*\*{re.escape(ident)}\b)",
-                               self.text, re.M)
+                               self.prose, re.M)
         if not definition:
             return None
         before = headings(self.text[:definition.start()])
@@ -168,7 +177,8 @@ class Ledger:
 class Sequence:
     def __init__(self, title, lines, constrain_to):
         self.title, self.lines, self.constrain_to = title, lines, constrain_to
-        self.source = "sequenceDiagram\n    autonumber\n" + "".join(f"    {line}\n" for line in lines)
+        self.source = "sequenceDiagram\n    autonumber\n" + \
+            "".join(f"    {line}\n" for line in lines)
         self.steps = sum(1 for line in lines if MESSAGE.match(line))
         self.width = None
 
@@ -180,27 +190,35 @@ class Sequence:
 def sequences(content, stage, where):
     """[Sequence] of a stage, checked for the template's rules."""
     result = []
-    for index, item in enumerate(stage.get("sequences") or [], 1):
+    items = stage.get("sequences", [])
+    if not isinstance(items, list):
+        content.errors.append(f"{where}.sequences: needs a list")
+        return result
+    for index, item in enumerate(items, 1):
         at = f"{where} sequence {index}"
         if not isinstance(item, dict):
             content.errors.append(f"{at}: must be an object")
             continue
         title = item.get("title")
         if not isinstance(title, str) or " — " not in title or "\n" in title:
-            content.errors.append(f"{at}: title must read \"<Component> — <flow>\"")
+            content.errors.append(
+                f"{at}: title must read \"<Component> — <flow>\"")
             title = str(title)
         lines = item.get("lines")
         if not isinstance(lines, list) or not all(isinstance(line, str) for line in lines) or not lines:
-            content.errors.append(f"{title}: lines must be a list of Mermaid lines")
+            content.errors.append(
+                f"{title}: lines must be a list of Mermaid lines")
             continue
-        lines = [line.rstrip() for line in lines
+        lines = [line.rstrip() for item in lines for line in item.splitlines()
                  if line.strip() and line.strip() not in ("sequenceDiagram", "autonumber")]
         for line in lines:
             if ";" in re.sub(r"#\w+;", "", line):
-                content.errors.append(f"{title}: raw semicolon in {line.strip()!r}; Mermaid reads it as a new statement")
+                content.errors.append(
+                    f"{title}: raw semicolon in {line.strip()!r}; Mermaid reads it as a new statement")
             message = MESSAGE.match(line)
             if message and re.match(r"\s*\d+[.)]\s", message[4]):
-                content.errors.append(f"{title}: {line.strip()!r} numbers its step; autonumber does")
+                content.errors.append(
+                    f"{title}: {line.strip()!r} numbers its step; autonumber does")
         result.append(Sequence(title, lines, item.get("constrain_to")))
     return result
 
@@ -214,26 +232,31 @@ def check_against_map(content, sequence, spec, key):
     pairs = set()
     for connection in spec.get("connections", []):
         if (connection.get("id") or f"{connection['from']}->{connection['to']}") in shown:
-            pairs |= {(connection["from"], connection["to"]), (connection["to"], connection["from"])}
+            pairs |= {(connection["from"], connection["to"]),
+                      (connection["to"], connection["from"])}
     aliases = {}
     for line in sequence.lines:
         participant = PARTICIPANT.match(line)
         if participant:
             name = QUALIFIER.sub("", participant[3] or participant[2])
             if name not in names:
-                content.errors.append(f"{sequence.title}: participant {name!r} is not a node of the {key} map")
+                content.errors.append(
+                    f"{sequence.title}: participant {name!r} is not a node of the {key} map")
             aliases[participant[2]] = names.get(name)
     for line in sequence.lines:
         message = MESSAGE.match(line)
-        if not message or message[1] == message[3]:
+        if not message:
             continue
         for end in (message[1], message[3]):
             if end not in aliases:
                 name = QUALIFIER.sub("", end)
                 if name not in names:
-                    content.errors.append(f"{sequence.title}: {end!r} is not a node of the {key} map")
+                    content.errors.append(
+                        f"{sequence.title}: {end!r} is not a node of the {key} map")
                 aliases[end] = names.get(name)
         first, second = aliases.get(message[1]), aliases.get(message[3])
+        if message[1] == message[3]:
+            continue
         if first and second and (first, second) not in pairs:
             content.errors.append(f"{sequence.title}: {line.strip()!r} has no connection between "
                                   f"{first} and {second} on the {key} map")
@@ -247,16 +270,26 @@ def check_steps(content, flows, commentary, where):
         spans += [(m[1].strip(), m.end(), marks[i + 1].start() if i + 1 < len(marks) else len(paragraph))
                   for i, m in enumerate(marks)]
         for label, start, end in spans:
+            steps = list(STEPS.finditer(paragraph[start:end]))
+            if not steps:
+                continue
             if label is None:
                 targets = flows if len(flows) == 1 else []
             else:
                 targets = [s for s in flows if s.component == label]
             if not targets:
+                content.errors.append(
+                    f"{where}: commentary step references need a matching flow; "
+                    "use **<Component>:** with a sequence component")
                 continue
             most = max(s.steps for s in targets)
-            for match in STEPS.finditer(paragraph[start:end]):
+            for match in steps:
+                first = int(match[1])
                 last = int(match[2] or match[1])
-                if last > most:
+                if first < 1 or first > last:
+                    content.errors.append(f"{where}: the commentary's step range {first}–{last} "
+                                          "must start at 1 or later and run forwards")
+                elif last > most:
                     content.errors.append(f"{where}: the commentary names step {last}, but "
                                           f"{label or targets[0].title} has {most}")
 
@@ -268,7 +301,8 @@ def raw_map(folder, title):
             text = f.read()
     except OSError:
         return None
-    entry = re.search(rf"^## {re.escape(title)} — System map\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+    entry = re.search(
+        rf"^## {re.escape(title)} — System map\n(.*?)(?=^## |\Z)", text, re.M | re.S)
     block = entry and re.search(r"```mermaid\n(.*?)```", entry[1], re.S)
     return block[1] if block else None
 
@@ -290,9 +324,17 @@ def parse_stages(content, spec, shown):
             content.errors.append(f"architecture.{key}: missing")
             continue
         flows = sequences(content, stage, f"architecture.{key}")
-        if spec is not None and key in (spec.get("stages") or {}):
-            for sequence in flows:
-                check_against_map(content, sequence, spec, key)
+        if spec is not None:
+            if key in (spec.get("stages") or {}):
+                for sequence in flows:
+                    check_against_map(content, sequence, spec, key)
+            elif not stage.get("map_gap"):
+                content.errors.append(
+                    f"architecture.{key}: maps.json has no {key} stage for the shown map; "
+                    "add the stage or record a map_gap")
+            elif flows:
+                content.warnings.append(
+                    f"maps.json has no {key} stage: sequences aren't checked against the map")
         stages[key] = (stage, flows)
     return stages
 
@@ -301,45 +343,53 @@ def stage_section(content, folder, key, title, filename, stage, flows, rendered)
     """The lines of one architecture section: summary, map, titled
     sequences, gaps and notes, then the shared commentary."""
     where = f"architecture.{key}"
-    summary = content.paragraphs("summary", f"{where}.summary", stage.get("summary"))
+    summary = content.paragraphs(
+        "summary", f"{where}.summary", stage.get("summary"))
     content.length(summary, TARGETS["summary"], f"{where}.summary")
-    commentary = content.paragraphs("commentary", f"{where}.commentary", stage.get("commentary"))
-    content.length(commentary, TARGETS["commentary"], f"{where}.commentary", upper=len(flows) < 2)
+    commentary = content.paragraphs(
+        "commentary", f"{where}.commentary", stage.get("commentary"))
+    content.length(commentary, TARGETS["commentary"],
+                   f"{where}.commentary", upper=len(flows) < 2)
     check_steps(content, flows, commentary, where)
     lines, notes = summary[:], []
     if stage.get("map_gap"):
-        lines.append("**Map evidence gap:** " + content.text(stage["map_gap"], f"{where}.map_gap"))
+        lines.append("**Map evidence gap:** " +
+                     content.text(stage["map_gap"], f"{where}.map_gap"))
     elif os.path.isfile(os.path.join(folder, filename)):
         lines.append(f"![{title}]({filename})")
     else:
         source = raw_map(folder, title)
         if source is None:
-            content.errors.append(f"{where}: {filename} is missing: run build_maps.py, or set map_gap")
+            content.errors.append(
+                f"{where}: {filename} is missing: run build_maps.py, or set map_gap")
         else:
             lines.append(f"```mermaid\n{source.rstrip()}\n```")
-            notes.append("Map layout is unchecked: Node.js wasn't available to render it.")
+            notes.append(
+                "Map layout is unchecked: Node.js wasn't available to render it.")
     for sequence in flows:
         lines.append(f"#### {sequence.title}")
         fence = f"```mermaid\n{sequence.source}```"
         if sequence.constrain_to:
-            peer = next((s for s in flows if s.title == sequence.constrain_to), None)
+            peer = next((s for s in flows if s.title ==
+                        sequence.constrain_to), None)
             if peer is None or peer is sequence:
-                content.errors.append(f"{sequence.title}: constrain_to names no other sequence of this section")
+                content.errors.append(
+                    f"{sequence.title}: constrain_to names no other sequence of this section")
             elif sequence.width and peer.width:
                 percent = round(sequence.width / peer.width * 100, 2)
                 fence = f'<div style="width:{percent:g}%; margin:0 auto;">\n\n{fence}\n\n</div>'
             else:
-                content.warnings.append(f"{sequence.title}: constrain_to needs both widths, so it isn't applied")
+                content.warnings.append(
+                    f"{sequence.title}: constrain_to needs both widths, so it isn't applied")
         lines.append(fence)
-    if not flows:
-        if stage.get("flow_gap"):
-            lines.append("**Flow evidence gap:** " + content.text(stage["flow_gap"], f"{where}.flow_gap"))
-        else:
-            content.errors.append(f"{where}: needs a sequence, or a flow_gap")
-    elif stage.get("flow_gap"):
-        lines.append("**Flow evidence gap:** " + content.text(stage["flow_gap"], f"{where}.flow_gap"))
+    if stage.get("flow_gap"):
+        lines.append("**Flow evidence gap:** " +
+                     content.text(stage["flow_gap"], f"{where}.flow_gap"))
+    elif not flows:
+        content.errors.append(f"{where}: needs a sequence, or a flow_gap")
     if flows and not rendered:
-        notes.append("Sequence syntax is unchecked: Node.js wasn't available to render it.")
+        notes.append(
+            "Sequence syntax is unchecked: Node.js wasn't available to render it.")
     return lines + notes + [f"#### {COMMENTARY_HEADING}"] + commentary
 
 
@@ -351,12 +401,15 @@ def measure(content, flows):
     try:
         svgs = output_diagram.render_many([s.source for s in flows])
     except output_diagram.NodeMissing:
-        content.warnings.append("Node.js isn't available: sequence syntax and widths are unchecked")
+        content.warnings.append(
+            "Node.js isn't available: sequence syntax and widths are unchecked")
         return False
     except SystemExit as error:
         number, _, message = str(error).partition(": ")
-        index = int(number.split()[-1]) - 1 if number.startswith("diagram ") else 0
-        content.errors.append(f"{flows[index].title}: doesn't render: {message or error}")
+        index = int(number.split()[-1]) - \
+            1 if number.startswith("diagram ") else 0
+        content.errors.append(
+            f"{flows[index].title}: doesn't render: {message or error}")
         return False
     for sequence, svg in zip(flows, svgs):
         sequence.width, _ = output_diagram.svg_size(svg)
@@ -371,21 +424,27 @@ def measure(content, flows):
 def references(content):
     refs = content.data.get("references")
     if not isinstance(refs, dict):
-        content.errors.append("references: needs implementation, delivery and vision lists")
+        content.errors.append(
+            "references: needs implementation, delivery and vision lists")
         refs = {}
     lines = []
     for key, label in (("implementation", "Implementation and configuration"), ("delivery", "Delivery"),
                        ("vision", "Vision, rationale and reported operational gaps")):
         items = refs.get(key, [])
+        if not isinstance(items, list):
+            content.errors.append(f"references.{key}: needs a list")
+            items = []
         lines.append(f"**{label}**")
         if not items:
             lines.append("None in the inspected sources.")
             continue
         entries = []
         for index, item in enumerate(items, 1):
-            text, historical = (item.get("text"), item.get("historical")) if isinstance(item, dict) else (item, False)
+            text, historical = (item.get("text"), item.get(
+                "historical")) if isinstance(item, dict) else (item, False)
             text = content.text(text, f"references.{key} {index}", inline=True)
-            entries.append(f"- {text}" + (" (historical)" if historical else ""))
+            entries.append(
+                f"- {text}" + (" (historical)" if historical else ""))
         lines.append("\n".join(entries))
     lines.append(f"The [research ledger]({LEDGER}) holds the full validation trail: revisions, searches, "
                  "the component inventory, reconciled findings, decisions and limitations.")
@@ -395,7 +454,8 @@ def references(content):
 def key_decisions(content):
     items = content.data.get("key_decisions")
     if not isinstance(items, list):
-        content.errors.append("key_decisions: needs a list, empty when no item is evidenced")
+        content.errors.append(
+            "key_decisions: needs a list, empty when no item is evidenced")
         return []
     if not items:
         return ["No decision, blocker or risk in the inspected evidence warrants technical-leadership attention."]
@@ -404,7 +464,8 @@ def key_decisions(content):
         item = item if isinstance(item, dict) else {}
         rows.append([content.text(item.get(field), f"key_decisions {index}.{field}", inline=True)
                      for field in ("item", "why", "role")])
-    unknown = [row[2].strip(" *_").casefold() == NOT_ESTABLISHED for row in rows]
+    unknown = [row[2].strip(" *_").casefold() ==
+               NOT_ESTABLISHED for row in rows]
     ownership = ("Decision ownership is not established in the inspected sources." if all(unknown)
                  else "The inspected sources establish the deciding role for each item." if not any(unknown)
                  else "The inspected sources establish the deciding role for some items only; "
@@ -417,11 +478,13 @@ def skipped(content):
     """The dimensions content.json skips, checked."""
     skip = content.data.get("skip", [])
     if not isinstance(skip, list) or not all(isinstance(d, str) for d in skip):
-        content.errors.append("skip: must list the dimensions left out, architecture or evolution")
+        content.errors.append(
+            "skip: must list the dimensions left out, architecture or evolution")
         return []
     for dimension in skip:
         if dimension not in SKIPS:
-            content.errors.append(f"skip: only {' or '.join(SKIPS)} can be skipped, not {dimension!r}")
+            content.errors.append(
+                f"skip: only {' or '.join(SKIPS)} can be skipped, not {dimension!r}")
     return [d for d in SKIPS if d in skip]
 
 
@@ -429,12 +492,15 @@ def build(content, folder, spec):
     """(report text, [Sequence])."""
     data = content.data
     skip = skipped(content)
-    roadmap = data.get("roadmap") if isinstance(data.get("roadmap"), dict) else {}
+    roadmap = data.get("roadmap")
+    roadmap = roadmap if isinstance(roadmap, dict) else {}
     if "evolution" in skip and roadmap:
-        content.errors.append("roadmap: evolution is skipped, so the report has no roadmap")
+        content.errors.append(
+            "roadmap: evolution is skipped, so the report has no roadmap")
     rows = []
     for key, label in ROADMAP_ROWS if "evolution" not in skip else ():
-        row = roadmap.get(key) if isinstance(roadmap.get(key), dict) else {}
+        row = roadmap.get(key)
+        row = row if isinstance(row, dict) else {}
         rows.append([label] + [content.text(row.get(field), f"roadmap.{key}.{field}", inline=True)
                                for field in ("outcome", "commitment", "dependencies")])
     problem = content.paragraphs("problem", "problem")
@@ -444,7 +510,8 @@ def build(content, folder, spec):
     architect = "architecture" not in skip
     for key in ("technical_decisions", "discrepancies", "remaining_gaps", "references"):
         if not architect and key in data:
-            content.errors.append(f"{key}: architecture is skipped, so the report has no Architect summary")
+            content.errors.append(
+                f"{key}: architecture is skipped, so the report has no Architect summary")
     decisions = data.get("technical_decisions") if architect else []
     if architect and (not isinstance(decisions, list) or not decisions):
         content.errors.append("technical_decisions: needs a list of decisions")
@@ -468,14 +535,15 @@ def build(content, folder, spec):
         parts += ["### Roadmap",
                   table(["Stage", "Intended outcome", "Commitment and evidence", "Dependencies"], rows)]
     parts += ["### Current milestone - deep dive", *deep_dive,
-             "### Key decisions and risks", *key_decisions(content)]
+              "### Key decisions and risks", *key_decisions(content)]
     if not architect:
         return "\n\n".join(parts) + "\n", []
     parts.append("## Architect summary")
     for key, title, filename in shown:
         parts.append(f"### {title}")
         if key in stages:
-            parts += stage_section(content, folder, key, title, filename, *stages[key], rendered)
+            parts += stage_section(content, folder, key,
+                                   title, filename, *stages[key], rendered)
     parts += ["### Technical decisions and gaps",
               "The table records source-backed differences and unresolved decisions. "
               "It does not select an option or assign an owner.",
@@ -492,16 +560,20 @@ def make_report(relative):
     with the problems if content.json is invalid."""
     folder, _, temporary = investigation_dir(relative)
     topic = topic_of(folder)
-    content = Content(load_json(os.path.join(folder, CONTENT)), Ledger(os.path.join(folder, LEDGER)))
+    content = Content(load_json(os.path.join(folder, CONTENT)),
+                      Ledger(os.path.join(folder, LEDGER)))
     spec_path = os.path.join(folder, MAPS_SPEC)
     spec = load_json(spec_path) if os.path.isfile(spec_path) else None
-    if spec is None and "architecture" not in (content.data.get("skip") or []):
-        content.warnings.append("maps.json is missing: sequences aren't checked against the maps")
+    skip = content.data.get("skip", [])
+    if spec is None and not (isinstance(skip, list) and "architecture" in skip):
+        content.warnings.append(
+            "maps.json is missing: sequences aren't checked against the maps")
     text, flows = build(content, folder, spec)
     if content.errors:
         raise SystemExit("content.json has problems, so nothing was written:\n  - "
                          + "\n  - ".join(content.errors))
-    path, _ = write_output_file(FOLDER_NAME, f"{relative}/{topic}{REPORT_SUFFIX}", text.encode("utf-8"))
+    path, _ = write_output_file(
+        FOLDER_NAME, f"{relative}/{topic}{REPORT_SUFFIX}", text.encode("utf-8"))
     check = check_report.check_report(path)
     return {"path": path, "temporary": temporary, "ok": check["ok"], "errors": check["errors"],
             "warnings": content.warnings + check["warnings"],
@@ -509,7 +581,8 @@ def make_report(relative):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Write the report from content.json, then check it.")
+    parser = argparse.ArgumentParser(
+        description="Write the report from content.json, then check it.")
     parser.add_argument("--investigation", required=True,
                         help="the investigation's folder, <Topic>_<YY-MM-DD>, inside tech-investigations")
     result = make_report(parser.parse_args(argv).investigation)

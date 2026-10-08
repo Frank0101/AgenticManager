@@ -50,11 +50,12 @@ import html
 import os
 import re
 import sys
+from datetime import date, timedelta
 
 from common import (BANNED_WORDS, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, EPIC_COMMENTARY_WORDS, ISSUE_KEY,
-                    NO_EPIC, OUTCOMES, RETRO_NOTES, SUMMARY_WORDS, ai, allowed_verdicts, banned_words, display_date,
-                    epic_groups, estimate, key_order, load_json, number, parse_ts, plural, pts, qty, ratio,
-                    report_file, scope_group_label, target_completion, whole_percentage, word_count)
+                    NO_EPIC, OUTCOME_ROWS, OUTCOMES, RETRO_NOTES, SUMMARY_WORDS, ai, allowed_verdicts, banned_words,
+                    display_date, epic_groups, estimate, key_order, load_json, number, parse_ts, plural, pts, qty,
+                    ratio, report_file, report_timezone, scope_group_label, target_completion, whole_percentage, word_count)
 
 
 class Checker:
@@ -104,7 +105,8 @@ def table_kind(table):
 
 
 HEADER_START = "| Field | Detail |\n|---|---|\n"
-HEADER_LABELS = ["Dates", "Goal", ai("Goal outcome"), "Sprint target completion"]
+HEADER_LABELS = ["Dates", "Goal", ai(
+    "Goal outcome"), "Sprint target completion"]
 # The AI-written sections, as their headings read.
 AI_SECTIONS = [ai("Key Achievements"), ai(
     "Blockers & Risks"), ai("Notes for Sprint Retro")]
@@ -142,8 +144,8 @@ def check_header(c, md, data):
                    r"\1", goal).replace("\\|", "|")
     lines = [line.strip()
              for line in data["sprint_goal"].splitlines() if line.strip()]
-    expected_goal = "<br>".join(
-        lines) if lines else "*No goal was set in Jira for this sprint*"
+    expected_goal = "<br>".join(html.escape(line, quote=False)
+                                for line in lines) if lines else "*No goal was set in Jira for this sprint*"
     c.check(shown == expected_goal, "header",
             "Goal is Jira's goal, one line per <br>")
 
@@ -155,14 +157,15 @@ def check_header(c, md, data):
     original_spells = [t for t in data["spells"] if t["scope"] == "original"]
     target = (f"{whole_percentage(len(completed), len(pool))}, "
               + ratio(len(completed), len(pool),
-                      sum(t['points'] or 0 for t in original_spells if t['outcome'] == 'completed'),
+                      sum(t['points'] or 0 for t in original_spells if t['outcome']
+                          == 'completed'),
                       sum(t['points'] or 0 for t in original_spells))
               + f" completed{so_far}")
     c.check(values["Sprint target completion"] == target,
             "header", f"Sprint target completion is {target!r}")
     oc = data["outcome_breakdown_counts"]
-    charted = (sum(oc[f"original_{outcome}"] for outcome in ("completed", "not_completed", "removed")),
-               oc["original_completed"])
+    charted = (sum(oc[f"original_{outcome}"]
+               for outcome in OUTCOMES), oc["original_completed"])
     c.check(charted == (len(pool), len(completed)), "header",
             f"the charts' original commitment, {charted[0]} with {charted[1]} completed, is the target's "
             f"{len(pool)} with {len(completed)} completed")
@@ -263,6 +266,14 @@ def check_commentary(c, md, data):
             "states the non-delivery closures" if non_delivery else "states no non-delivery closures")
     c.check(("is reconstructed from changelogs" in text) == bool(excluded), "commentary",
             "states the membership cross-check limitation" if excluded else "states no cross-check limitation")
+    caveat_keys = [(CAVEATS[0], {s["key"] for s in spells
+                                 if s["counted"] and s["closedAsNonDelivery"]}),
+                   (CAVEATS[1], excluded)]
+    for marker, expected_keys in caveat_keys:
+        shown_keys = {key for sentence in sentences if marker in sentence
+                      for key in ISSUE_KEY.findall(sentence)}
+        c.check(shown_keys == expected_keys, "commentary",
+                f"the {marker} caveat names every affected ticket and no others")
 
 
 def check_framing(c, md):
@@ -403,7 +414,7 @@ def check_model(c, data):
             count, points = expected.get(f"{row}_{t['outcome']}", (0, 0))
             expected[f"{row}_{t['outcome']}"] = (
                 count + 1, points + (t["points"] or 0))
-    for row in ("original", "carried_in", "new", "extra"):
+    for row in OUTCOME_ROWS:
         for outcome in OUTCOMES:
             got = (data["outcome_breakdown_counts"][f"{row}_{outcome}"],
                    data["outcome_breakdown_points"][f"{row}_{outcome}"])
@@ -414,6 +425,13 @@ def check_model(c, data):
                    or 0 for t in data["spells"] if t["scope"] == "original")
     c.check(data["burndown_baseline"] == baseline, "model",
             f"the burndown starts at the whole commitment, {baseline}")
+    first = date.fromisoformat(data["sprint_start"])
+    last = parse_ts(data["as_of_instant"]).astimezone(
+        report_timezone(data["report_timezone"])).date()
+    expected_dates = [(first + timedelta(days=offset)).isoformat()
+                      for offset in range((last - first).days + 1)]
+    c.check([row["date"] for row in data["burndown"]] == expected_dates, "model",
+            "the burndown covers every day from the sprint start through the report cutoff, in order")
     for row in data["burndown"]:
         committed = total = committed_stories = total_stories = 0
         for t in data["spells"]:
@@ -506,7 +524,7 @@ def check_summaries(c, md):
     word limit, naming no tickets."""
     for heading in AI_SECTIONS[:2]:
         text = section_of(md, heading)
-        if not c.check(bool(text), "summaries", f"{heading} found, with text"):
+        if not c.check(bool(text), "summaries", f"{heading} found, with text") or text is None:
             continue
         c.check("\n" not in text and not text.startswith(("- ", "* ")),
                 "summaries", f"{heading} is one paragraph")
@@ -520,7 +538,7 @@ def check_summaries(c, md):
 def check_retro(c, md):
     """1 to RETRO_NOTES bullets, each a fact then a question, and nothing else."""
     text = section_of(md, AI_SECTIONS[2])
-    if not c.check(text is not None, "retro", "section found"):
+    if not c.check(text is not None, "retro", "section found") or text is None:
         return
     lines = [line for line in text.splitlines() if line.strip()]
     c.check(1 <= len(lines) <= RETRO_NOTES and all(line.startswith("- ") for line in lines), "retro",
@@ -589,8 +607,8 @@ def historical_references(data):
 
 
 def check_vocabulary(c, md, data):
-    """The report's vocabulary and formats (see the skill's Vocabulary and
-    formatting section), excluding copied Jira fields."""
+    """The report's vocabulary and formats (see common.py's "The report's
+    vocabulary and formats"), excluding copied Jira fields."""
     md = generated_text(md)
     text = re.sub(r'<a href="[^"]*">([^<]+)</a>', r"\1",
                   re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", md))
@@ -598,12 +616,13 @@ def check_vocabulary(c, md, data):
     words = re.sub(r"<[^>]+>", " ", text)
     found = dict(banned_words(words.replace("(sprint closed)", "")))
     for rule, _ in BANNED_WORDS:
-        c.check(rule not in found, "vocabulary", f"no {rule} {found.get(rule, [])[:3] or ''}".strip())
+        c.check(rule not in found, "vocabulary",
+                f"no {rule} {found.get(rule, [])[:3] or ''}".strip())
     decimals = re.findall(r"\d+\.\d+%", words)
     c.check(not decimals, "vocabulary",
             f"whole percentages only {decimals[:3] or ''}".strip())
     bare = re.findall(
-        r"(?<![\d/.])\d+/\d+(?![\d/])(?! (?:tickets?|pts)\b)", words)
+        r"(?<![\d/.])\d+(?:\.\d+)?/\d+(?:\.\d+)?(?![\d/])(?!\.\d)(?! (?:tickets?|pts)\b)", words)
     c.check(not bare, "vocabulary",
             f"ratios only as N/M tickets (N/M pts) {bare[:3] or ''}".strip())
     old = re.findall(r"\d+ (?:tickets?|stories|story) / ", words)

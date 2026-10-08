@@ -32,9 +32,13 @@ python3 <scripts>/prepare_report.py <selector>
 | a board id                | `--board 42` (add `--active` as needed)   |
 | a sprint name             | `--sprint-name "Sprint 3" --project PROJ` |
 
-If the user doesn't say which project, board or sprint, ask; don't guess. A bare number is tried as `--sprint-id`, then as `--board` if Jira returns 404. If the script fails, report its message. Two failures have a fix: a discrepancy with Jira's sprint report usually means the sprint changed during the fetch, so run it again; an empty sprint report means the board doesn't serve it, so retry with `--board` and another scrum board of the project.
+Preparing a sprint again replaces all earlier report folders for that sprint, including their `content.json` and completed reports.
+
+If the user doesn't say which project, board or sprint, ask; don't guess. A bare number is tried as `--sprint-id`, then as `--board` if Jira returns 404. If the script fails, report its message. Two failures have a fix: a discrepancy with Jira's sprint report usually means the sprint changed during the fetch, so run it again; an empty sprint report means the board doesn't serve it, so retry with `--sprint-name "<original exact name>" --board <other board>` using another scrum board of the project. Verify that the returned sprint ID matches the original before continuing; stop if it differs.
 
 It prints one line of JSON with `report_dir`, `temporary`, `brief` and `content_path`. Read the `brief`: the sprint and its goal, the verdicts you can choose from, each epic's tickets with their commentary `group`, `scope` (`original` is the commitment, `extra` was added later), latest `points`, `status`, `flagged`, description and, for blocker candidates, their comments, and `report_facts`, the report's own figures in its exact wording.
+
+Comments created or edited after the sprint closed, or after the fetch timestamp for an active sprint, are excluded: their earlier text isn't available as historical blocker evidence.
 
 ## 2. Write content.json
 
@@ -61,7 +65,7 @@ END_OF_FILE
 
 Write the parts in this order.
 
-**Goal themes.** A theme is usually the text before a goal line's colon ("Search" in "Search: let staff find past orders"). Its tickets are those of the epic whose name contains the theme's word, plus any ticket whose summary names it, in any epic. If a mapping isn't obvious, ask the user to confirm it.
+**Goal themes.** A theme is usually the text before a goal line's colon ("Search" in "Search: let staff find past orders"). For goal assessment, use the brief's `goal_tickets`: every original commitment ticket, with its `epic_key`, `epic_name`, `summary`, `points` and `outcome` (`completed`, `not_completed` or `removed`, meaning descoped). A theme's tickets are those of the epic whose name contains the theme's word, plus any ticket whose summary names it, in any epic. If a mapping isn't obvious, ask the user to confirm it. This list includes work already Done at the start and non-delivery completions so the goal's commitment is complete; use only the tickets under `epics` for epic commentary and achievements.
 
 **`epic_commentary`**: for every epic in the brief, one sentence per `group` it has tickets in, and none for the others; `{}` for an epic with none. Say what changed for users or the system ("Staff can now sign in with their work account"), using the epic's description for context and each ticket's summary and description. Merge small items. At most 60 words per epic. Describe a ticket with no description from its summary alone; if a whole group has only bare summaries, add that "the tickets carry no detail".
 
@@ -69,7 +73,7 @@ Write the parts in this order.
 
 **`blockers_risks`**: one paragraph of at most 80 words on the commitment still open: tickets with `scope` `original` in the `in_review` and `not_completed` groups. Group them by goal theme, then by epic, and say what the open work holds back. Give a reason only where a comment states one ("under discussion with Security"), and say when a ticket is `flagged`. If nothing from the commitment is open, say so.
 
-**`goal_verdict`**: one of the brief's `goal_verdicts`, word for word. A theme is met when none of its commitment tickets is open at the end (not completed or in review); extra work doesn't decide it, and descoped work doesn't count against it. Closed sprint: "Fully met" if every theme is met, "Not met" if none is, otherwise "Partially met". Running sprint, past its halfway day: "At risk" if any theme has more than half its commitment pts open, otherwise "On track". If part of a theme maps to no ticket, judge by the tickets that do, and raise it when you tell the user the report is ready.
+**`goal_verdict`**: one of the brief's `goal_verdicts`, word for word. A theme is met when none of its commitment tickets is open at the end (the `not_completed` outcome in `goal_tickets`, including work in review); extra work doesn't decide it, and descoped work doesn't count against it. Closed sprint: "Fully met" if every theme is met, "Not met" if none is, otherwise "Partially met". Running sprint, past its halfway day: "At risk" if any theme has more than half its commitment pts open, otherwise "On track". If part of a theme maps to no ticket, judge by the tickets that do, and raise it when you tell the user the report is ready.
 
 **`retro_notes`**: 1 to 5 notes for the team's retro, each a fact followed by a question ending with "?". Look across the report for what most departed from the plan and what the team can learn from it: patterns between epics, the timeline and the goal, not only the largest figure. Quote figures and ticket references word for word from `report_facts`, or as `KEY (N pts)` with the brief's `points`; don't derive new figures. Frame causes as questions, never as findings the data can't show.
 
@@ -85,7 +89,7 @@ Rules for all of it (`finish_report.py` rejects text that breaks the ones it can
 python3 <scripts>/finish_report.py --report-dir <report_dir>
 ```
 
-It draws the charts, writes the report and checks it, printing only what failed. Fix `content.json` and run it again until it passes. Never edit the report by hand, and never give the user a report that fails.
+It draws the charts, writes the report and checks it, printing only what failed. For content failures, fix `content.json` and run it again until it passes. For data, model or chart failures, report the failed checks to the user; changing prose cannot repair them. Never edit the report by hand, and never give the user a report that fails.
 
 ## 4. Tell the user
 

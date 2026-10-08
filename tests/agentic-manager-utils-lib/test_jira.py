@@ -25,9 +25,11 @@ TOKEN = "s3cret-token"
 class FakeJira(BaseHTTPRequestHandler):
     """Answers each path from `routes`: a payload, or a function of the query
     that returns one. A payload of (code, body) sends that status. Any other
-    path is a 404. Every request is recorded in `requests` as (path, query)."""
+    path is a 404. Every request is recorded in `requests` as (path, query),
+    and its Authorization header in `authorizations`."""
     routes = {}
     requests = []
+    authorizations = []
 
     def log_message(self, format, *args):
         pass
@@ -36,6 +38,7 @@ class FakeJira(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         query = {k: v[0] for k, v in parse_qs(url.query).items()}
         FakeJira.requests.append((url.path, query))
+        FakeJira.authorizations.append(self.headers.get("Authorization"))
         answer = FakeJira.routes.get(
             url.path, (404, {"errorMessages": ["not found"]}))
         if callable(answer):
@@ -58,15 +61,18 @@ def pages(*pages_by_start):
 
 class HelpersTest(unittest.TestCase):
     def test_parse_ts(self):
+        # Jira's formats, with or without milliseconds; None: a format it
+        # doesn't use is refused rather than guessed.
         for ts, iso in [("2026-03-29T10:00:00.000+0100", "2026-03-29T10:00:00+01:00"),
                         ("2026-03-29T10:00:00+0200", "2026-03-29T10:00:00+02:00"),
-                        ("2026-03-29T09:00:00.000Z", "2026-03-29T09:00:00+00:00")]:
+                        ("2026-03-29T09:00:00.000Z", "2026-03-29T09:00:00+00:00"),
+                        ("29/03/2026", None)]:
             with self.subTest(ts=ts):
-                self.assertEqual(jira.parse_ts(ts).isoformat(), iso)
-
-    def test_parse_ts_unknown_format(self):
-        with self.assertRaisesRegex(ValueError, "unrecognised timestamp format"):
-            jira.parse_ts("29/03/2026")
+                if iso is None:
+                    with self.assertRaisesRegex(ValueError, "unrecognised timestamp format"):
+                        jira.parse_ts(ts)
+                else:
+                    self.assertEqual(jira.parse_ts(ts).isoformat(), iso)
 
     def test_key_order(self):
         keys = ["PROJ-10", "ABC-3", "PROJ-2", "PROJ-x"]
@@ -110,6 +116,11 @@ class HelpersTest(unittest.TestCase):
             ("empty string", "", ""),
             ("wiki text", "Line one\n\n  Line   two ", "Line one\nLine two"),
             ("document", adf, "Goal\nLet staff sign in\nwith SSO.\nAsk @Ann\nhttps://acme.test\nA | B"),
+            ("date", {"type": "date", "attrs": {
+             "timestamp": "1690344879000"}}, "26/07/2023"),
+            ("date in prose", para(txt("Blocked until "),
+             {"type": "date", "attrs": {"timestamp": "1690344879000"}}, txt(".")),
+             "Blocked until 26/07/2023."),
         ]
         for name, value, expected in cases:
             with self.subTest(name):
@@ -129,9 +140,13 @@ class ClientTest(unittest.TestCase):
         cls.server.server_close()
 
     def setUp(self):
+        self.reset_jira()
+        self.client = self.make_client(self.base_url + "/")
+
+    def reset_jira(self):
         FakeJira.routes = {}
         FakeJira.requests = []
-        self.client = self.make_client(self.base_url + "/")
+        FakeJira.authorizations = []
 
     def make_client(self, base_url):
         settings = {"base-url": base_url,
@@ -153,51 +168,45 @@ class ClientTest(unittest.TestCase):
 
     # --- requests and errors
 
-    def test_base_url_trailing_slash_is_dropped(self):
-        self.assertEqual(self.client.base_url, self.base_url)
-
-    def test_whoami(self):
+    def test_whoami_with_basic_auth_at_the_base_url(self):
+        # The base-url's trailing slash is dropped, and every request carries
+        # the email and token as basic auth.
         profile = {"displayName": "Alex Example", "timeZone": "Europe/London"}
         FakeJira.routes["/rest/api/3/myself"] = profile
+        self.assertEqual(self.client.base_url, self.base_url)
         self.assertEqual(self.client.whoami(), profile)
+        self.assertEqual(FakeJira.authorizations, [
+                         "Basic bWVAYWNtZS50ZXN0OnMzY3JldC10b2tlbg=="])
 
-    def test_sends_basic_auth(self):
-        seen = []
-        FakeJira.routes["/rest/api/3/myself"] = lambda q: {"displayName": "x"}
-
-        class Recording(FakeJira):
-            def do_GET(self):
-                seen.append(self.headers.get("Authorization"))
-                super().do_GET()
-        server = ThreadingHTTPServer(("127.0.0.1", 0), Recording)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        try:
-            self.make_client(
-                f"http://127.0.0.1:{server.server_address[1]}").whoami()
-        finally:
-            server.shutdown()
-            server.server_close()
-        self.assertEqual(seen, ["Basic bWVAYWNtZS50ZXN0OnMzY3JldC10b2tlbg=="])
-
-    def test_error_statuses(self):
-        for code, body, expected in [
-                (401, {}, "401 Unauthorized for /rest/api/3/myself. Check that your `api-token`"),
-                (403, {}, "403 Forbidden for /rest/api/3/myself"),
-                (500, {"errorMessages": ["boom"]},
-                 'Jira returned 500 for /rest/api/3/myself: {"errorMessages": ["boom"]}')]:
-            with self.subTest(code=code):
-                FakeJira.routes["/rest/api/3/myself"] = (code, body)
-                self.assert_exits(expected, self.client.whoami)
-
-    def test_404_is_not_found(self):
-        error = self.assert_exits(
-            "404 Not Found for /rest/api/3/myself", self.client.whoami)
-        self.assertIsInstance(error, jira.NotFound)
-
-    def test_unreachable_site(self):
-        client = self.make_client("http://127.0.0.1:9")
-        self.assert_exits("could not reach http://127.0.0.1:9 (your `base-url` setting)",
-                          client.whoami)
+    def test_errors(self):
+        # name: (Jira's answer, the client's base-url if not the fake's,
+        # expected in the message, the error's type)
+        cases = [
+            ("401", (401, {}), None, "401 Unauthorized for /rest/api/3/myself. Check that your `api-token`",
+             SystemExit),
+            ("403", (403, {}), None, "403 Forbidden for /rest/api/3/myself", SystemExit),
+            ("500", (500, {"errorMessages": ["boom"]}), None,
+             'Jira returned 500 for /rest/api/3/myself.', SystemExit),
+            ("reflected token", (500, {"errorMessages": [TOKEN]}), None,
+             'Jira returned 500 for /rest/api/3/myself.', SystemExit),
+            # A missing resource has its own type, so callers can tell it apart.
+            ("404", None, None, "404 Not Found for /rest/api/3/myself", jira.NotFound),
+            ("unreachable site", None, "http://127.0.0.1:9",
+             "could not reach Jira. Check your `base-url` setting", SystemExit),
+        ]
+        for name, answer, base_url, expected, kind in cases:
+            with self.subTest(name):
+                self.reset_jira()
+                if answer:
+                    FakeJira.routes["/rest/api/3/myself"] = answer
+                client = self.make_client(
+                    base_url) if base_url else self.client
+                self.assertIsInstance(self.assert_exits(
+                    expected, client.whoami), kind)
+        with mock.patch.object(jira, "urlopen", side_effect=jira.URLError(TOKEN)):
+            error = self.assert_exits(
+                "could not reach Jira", self.client.whoami)
+        self.assertNotIn(self.client.base_url, str(error))
 
     # --- queries and paging
 
@@ -252,28 +261,37 @@ class ClientTest(unittest.TestCase):
                                  for _, q in FakeJira.requests], starts)
 
     def test_issues_by_keys_follows_the_page_token(self):
-        def search(query):
-            if "nextPageToken" not in query:
-                return {"issues": [{"key": "PROJ-1"}], "nextPageToken": "t2"}
-            return {"issues": [{"key": "PROJ-2"}]}
-        FakeJira.routes["/rest/api/3/search/jql"] = search
-        issues = self.client.issues_by_keys(["PROJ-1", "PROJ-2"], ["summary"])
-        self.assertEqual([i["key"] for i in issues], ["PROJ-1", "PROJ-2"])
-        self.assertEqual(FakeJira.requests[0]
-                         [1]["jql"], "key in (PROJ-1,PROJ-2)")
-        self.assertEqual(FakeJira.requests[1][1]["nextPageToken"], "t2")
+        for first in ([{"key": "PROJ-1"}], []):
+            with self.subTest(first=first):
+                def search(query):
+                    if "nextPageToken" not in query:
+                        return {"issues": first, "nextPageToken": "t2"}
+                    return {"issues": [{"key": "PROJ-2"}]}
+                FakeJira.requests = []
+                FakeJira.routes["/rest/api/3/search/jql"] = search
+                issues = self.client.issues_by_keys(
+                    ["PROJ-1", "PROJ-2"], ["summary"])
+                self.assertEqual(issues, first + [{"key": "PROJ-2"}])
+                self.assertEqual(
+                    FakeJira.requests[0][1]["jql"], "key in (PROJ-1,PROJ-2)")
+                self.assertEqual(
+                    FakeJira.requests[1][1]["nextPageToken"], "t2")
 
-    def test_issues_by_keys_without_keys_asks_nothing(self):
-        self.assertEqual(self.client.issues_by_keys([], ["summary"]), [])
-        self.assertEqual(FakeJira.requests, [])
-
-    def test_issues_by_ids(self):
+    def test_issues_by_keys_and_ids(self):
+        # Each searches by its JQL; with nothing to look up, it asks nothing
+        # rather than a query that matches every issue.
         FakeJira.routes["/rest/api/3/search/jql"] = {
             "issues": [{"key": "PROJ-100"}]}
-        self.assertEqual(self.client.issues_by_ids(
-            ["1001"], ["summary"]), [{"key": "PROJ-100"}])
-        self.assertEqual(FakeJira.requests[0][1]["jql"], "id in (1001)")
-        self.assertEqual(self.client.issues_by_ids([], ["summary"]), [])
+        cases = [("keys", self.client.issues_by_keys, ["PROJ-100"], "key in (PROJ-100)"),
+                 ("ids", self.client.issues_by_ids, ["1001"], "id in (1001)")]
+        for name, search, values, jql in cases:
+            with self.subTest(name):
+                FakeJira.requests = []
+                self.assertEqual(search([], ["summary"]), [])
+                self.assertEqual(FakeJira.requests, [])
+                self.assertEqual(search(values, ["summary"]), [
+                                 {"key": "PROJ-100"}])
+                self.assertEqual(FakeJira.requests[0][1]["jql"], jql)
 
     def test_field_changes_reads_every_page_names_fields_and_sorts_by_instant(self):
         def entry(created, *items):
@@ -342,18 +360,21 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(FakeJira.requests[0][1]["rapidViewId"], "42")
 
     def test_sprint_report(self):
+        # None: a report without its removed issues is refused, as it can't
+        # be checked against.
         report = {"contents": {"puntedIssues": []}}
-        FakeJira.routes["/rest/greenhopper/1.0/rapid/charts/sprintreport"] = report
-        self.assertEqual(self.client.sprint_report(42, 7), report)
-        self.assertEqual(FakeJira.requests[0][1], {
-                         "rapidViewId": "42", "sprintId": "7"})
-
-    def test_sprint_report_in_an_unexpected_shape(self):
-        for body in ({}, {"contents": {}}):
+        for body, expected in ((report, report), ({}, None), ({"contents": {}}, None)):
             with self.subTest(body=body):
+                self.reset_jira()
                 FakeJira.routes["/rest/greenhopper/1.0/rapid/charts/sprintreport"] = body
-                self.assert_exits("unexpected shape (no contents.puntedIssues)",
-                                  lambda: self.client.sprint_report(42, 7))
+                if expected is None:
+                    self.assert_exits("unexpected shape (no contents.puntedIssues)",
+                                      lambda: self.client.sprint_report(42, 7))
+                else:
+                    self.assertEqual(
+                        self.client.sprint_report(42, 7), expected)
+                self.assertEqual(FakeJira.requests[0][1], {
+                                 "rapidViewId": "42", "sprintId": "7"})
 
     # --- fields
 
@@ -394,51 +415,64 @@ class ClientTest(unittest.TestCase):
         return {"id": sprint_id, "name": name or f"Sprint {sprint_id}", "state": state,
                 "completeDate": complete, "endDate": None, "originBoardId": board}
 
-    def test_find_sprint_by_id(self):
-        FakeJira.routes["/rest/agile/1.0/sprint/7"] = {"id": 7}
-        self.assertEqual(self.client.find_sprint(sprint_id="7"), {"id": 7})
+    def test_find_sprint(self):
+        # Each case finds sprint 7, logging only the warnings given.
+        def kanban_and_scrum():
+            self.boards({"id": 41, "type": "kanban"},
+                        {"id": 42, "type": "scrum"})
+            self.board_sprints(42, self.sprint(6, complete="2026-02-27T16:00:00.000Z"),
+                               self.sprint(
+                                   7, complete="2026-03-13T16:00:00.000Z"),
+                               self.sprint(8, state="active"))
 
-    def test_find_latest_closed_sprint_on_the_projects_scrum_boards(self):
-        self.boards({"id": 41, "type": "kanban"}, {"id": 42, "type": "scrum"})
-        self.board_sprints(42, self.sprint(6, complete="2026-02-27T16:00:00.000Z"),
-                           self.sprint(7, complete="2026-03-13T16:00:00.000Z"),
-                           self.sprint(8, state="active"))
-        self.assertEqual(self.client.find_sprint(project="PROJ")["id"], 7)
-        self.assertNotIn("/rest/agile/1.0/board/41/sprint", self.paths())
-
-    def test_latest_sprint_compares_instants_and_falls_back_to_end_date(self):
-        for field in ("completeDate", "endDate"):
-            with self.subTest(field=field):
-                older = self.sprint(6)
-                newer = self.sprint(7)
+        def latest_by(field):
+            # 17:30+02:00 is 15:30Z: earlier than sprint 7, despite the string.
+            def setup():
+                older, newer = self.sprint(6), self.sprint(7)
                 older[field] = "2026-03-13T17:30:00+0200"
                 newer[field] = "2026-03-13T16:00:00Z"
                 self.board_sprints(42, older, newer, self.sprint(5))
-                self.assertEqual(self.client.find_sprint(board_id=42)["id"], 7)
+            return setup
 
-    def test_find_sprint_dedupes_across_boards_and_warns(self):
-        self.boards({"id": 42, "type": "scrum"}, {"id": 43, "type": "scrum"})
-        shared = self.sprint(7, complete="2026-03-13T16:00:00.000Z")
-        self.board_sprints(42, shared)
-        self.board_sprints(43, shared, self.sprint(
-            5, complete="2026-01-30T16:00:00.000Z", board=43))
-        warnings = []
-        self.assertEqual(self.client.find_sprint(
-            project="PROJ", log=warnings.append)["id"], 7)
-        self.assertEqual(len(warnings), 1)
-        self.assertIn("closed sprints span several boards", warnings[0])
-
-    def test_find_active_sprint(self):
-        self.board_sprints(42, self.sprint(6), self.sprint(7, state="active"))
-        self.assertEqual(self.client.find_sprint(
-            board_id=42, active=True)["id"], 7)
-
-    def test_find_sprint_by_name_in_any_state(self):
-        self.board_sprints(42, self.sprint(6), self.sprint(
-            7, state="active", name="Sprint X"))
-        self.assertEqual(self.client.find_sprint(
-            board_id=42, name="Sprint X")["id"], 7)
-        self.assertNotIn("state", FakeJira.requests[0][1])
+        def shared_by_two_boards():
+            self.boards({"id": 42, "type": "scrum"},
+                        {"id": 43, "type": "scrum"})
+            shared = self.sprint(7, complete="2026-03-13T16:00:00.000Z")
+            self.board_sprints(42, shared)
+            self.board_sprints(43, shared, self.sprint(
+                5, complete="2026-01-30T16:00:00.000Z", board=43))
+        # name: (Jira's boards and sprints, selectors, warnings expected)
+        cases = [
+            ("by id", lambda: FakeJira.routes.update({"/rest/agile/1.0/sprint/7": {"id": 7}}),
+             {"sprint_id": "7"}, []),
+            # Only the project's scrum boards are asked, not kanban board 41.
+            ("the latest closed on the project's scrum boards",
+             kanban_and_scrum, {"project": "PROJ"}, []),
+            ("the latest by completion instant", latest_by(
+                "completeDate"), {"board_id": 42}, []),
+            ("the latest by end instant, without a completion",
+             latest_by("endDate"), {"board_id": 42}, []),
+            ("one sprint on two boards, counted once", shared_by_two_boards, {"project": "PROJ"},
+             ["closed sprints span several boards"]),
+            ("the active one", lambda: self.board_sprints(42, self.sprint(6), self.sprint(7, state="active")),
+             {"board_id": 42, "active": True}, []),
+            ("by name, in any state",
+             lambda: self.board_sprints(42, self.sprint(
+                 6), self.sprint(7, state="active", name="Sprint X")),
+             {"board_id": 42, "name": "Sprint X"}, []),
+        ]
+        for name, setup, selectors, warnings in cases:
+            with self.subTest(name):
+                self.reset_jira()
+                setup()
+                logged = []
+                self.assertEqual(self.client.find_sprint(
+                    log=logged.append, **selectors)["id"], 7)
+                self.assertEqual(len(logged), len(warnings), logged)
+                for warning, expected in zip(logged, warnings):
+                    self.assertIn(expected, warning)
+                self.assertNotIn(
+                    "/rest/agile/1.0/board/41/sprint", self.paths())
 
     def test_find_sprint_failures(self):
         cases = [

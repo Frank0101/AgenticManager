@@ -47,9 +47,11 @@ def ledger_skeleton(topic):
         parts.append(f"## {section}")
         if section == "Research action queue":
             for subsection in QUEUE_SUBSECTIONS:
-                parts += [f"### {subsection}", table(QUEUE_HEADER, []), "None."]
+                parts += [f"### {subsection}",
+                          table(QUEUE_HEADER, []), "None."]
         elif section == "Revisions and source register":
-            parts += [table(SOURCE_HEADER, []), "### File reading coverage", "None yet."]
+            parts += [table(SOURCE_HEADER, []),
+                      "### File reading coverage", "None yet."]
         else:
             parts.append("None yet.")
     return "\n\n".join(parts) + "\n"
@@ -84,11 +86,14 @@ def examples(folder, wanted):
     root = os.path.join(folder, EXAMPLES)
     found = []
     for name in os.listdir(root) if os.path.isdir(root) else []:
-        match = re.fullmatch(r".+_\d\d-\d\d-\d\d--(?P<format>.+?)(?:--\d+)?", name)
+        match = re.fullmatch(
+            r".+_\d\d-\d\d-\d\d--(?P<format>.+?)(?:--\d+)?", name)
         path = os.path.join(root, name)
         if match and match["format"] == wanted and os.path.isdir(path):
-            documents = sorted(f for f in os.listdir(path) if f.endswith(".md"))
+            documents = sorted(f for f in os.listdir(path)
+                               if f.endswith(".md"))
             found.append({"folder": path, "documents": documents})
+
     def newest(example):
         # A later copy of the same day's example has a higher --<n>.
         name = os.path.basename(example["folder"])
@@ -107,9 +112,11 @@ def init(topic, wanted=None, today=None):
     follow_up = os.path.isdir(path)
     files = sorted(os.listdir(path)) if follow_up else []
     if not os.path.isfile(os.path.join(path, LEDGER)):
-        write_output_file(FOLDER_NAME, f"{relative}/{LEDGER}", ledger_skeleton(topic).encode("utf-8"))
+        write_output_file(
+            FOLDER_NAME, f"{relative}/{LEDGER}", ledger_skeleton(topic).encode("utf-8"))
     if not os.path.isfile(os.path.join(folder, EXAMPLES, "README.md")):
-        write_output_file(FOLDER_NAME, f"{EXAMPLES}/README.md", EXAMPLES_INDEX.encode("utf-8"))
+        write_output_file(
+            FOLDER_NAME, f"{EXAMPLES}/README.md", EXAMPLES_INDEX.encode("utf-8"))
     result = {"folder": folder, "temporary": temporary, "investigation": relative,
               "investigation_dir": path, "follow_up": follow_up, "files": files,
               "earlier": earlier(folder, topic, relative)}
@@ -119,8 +126,10 @@ def init(topic, wanted=None, today=None):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Prepare an investigation's folder.")
-    parser.add_argument("--topic", required=True, help="such as Payments-Retry-Service")
+    parser = argparse.ArgumentParser(
+        description="Prepare an investigation's folder.")
+    parser.add_argument("--topic", required=True,
+                        help="such as Payments-Retry-Service")
     parser.add_argument("--format", help="the output asked for, such as long-analysis or exec-summary, "
                                          "to list its approved examples")
     args = parser.parse_args(argv)

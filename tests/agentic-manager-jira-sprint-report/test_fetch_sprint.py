@@ -26,14 +26,10 @@ class ArgsTest(unittest.TestCase):
         with mock.patch.object(sys, "argv", ["fetch_sprint.py", *args]):
             return fetch_sprint.parse_args()
 
-    def assert_rejected(self, expected, *args):
-        err = io.StringIO()
-        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as raised:
-            self.parse(*args)
-        self.assertEqual(raised.exception.code, 2)
-        self.assertIn(expected, err.getvalue())
-
-    def test_valid_selectors(self):
+    def test_arguments(self):
+        # Each case is the parsed selectors, or, for arguments refused as a
+        # usage error, the message: conflicting selectors fail rather than
+        # one silently winning.
         cases = [
             (("--sprint-id", "7"), {"sprint_id": "7"}),
             (("--project", "PROJ", "--active"),
@@ -43,36 +39,35 @@ class ArgsTest(unittest.TestCase):
              {"sprint_name": "Sprint 3", "board": "42"}),
             (("--sprint-name", "Sprint 3", "--project", "PROJ"),
              {"sprint_name": "Sprint 3", "project": "PROJ", "active": False}),
+            ((), "pass exactly one of --sprint-id, --project or --board"),
+            (("--sprint-id", "7", "--board", "42"),
+             "pass exactly one of --sprint-id, --project or --board"),
+            (("--sprint-name", "S", "--sprint-id", "7"),
+             "--sprint-name can't be combined with --sprint-id"),
+            (("--sprint-name", "S"),
+             "--sprint-name needs exactly one of --project or --board"),
+            (("--sprint-name", "S", "--project", "PROJ", "--board", "42"),
+             "--sprint-name needs exactly one of --project or --board"),
+            (("--sprint-name", "S", "--board", "42", "--active"),
+             "--active can't be combined with --sprint-name"),
+            (("--sprint-id", "7", "--active"),
+             "--active applies only to --project or --board"),
+            # Report folders always go in the skill's output folder.
+            (("--sprint-id", "7", "--out-root", "reports"),
+             "unrecognized arguments: --out-root"),
         ]
         for args, expected in cases:
             with self.subTest(args=args):
-                parsed = self.parse(*args)
-                self.assertEqual({k: getattr(parsed, k)
-                                 for k in expected}, expected)
-
-    def test_rejected_arguments(self):
-        # Conflicting selectors fail rather than one silently winning.
-        cases = [
-            ("pass exactly one of --sprint-id, --project or --board", ()),
-            ("pass exactly one of --sprint-id, --project or --board",
-             ("--sprint-id", "7", "--board", "42")),
-            ("--sprint-name can't be combined with --sprint-id",
-             ("--sprint-name", "S", "--sprint-id", "7")),
-            ("--sprint-name needs exactly one of --project or --board",
-             ("--sprint-name", "S")),
-            ("--sprint-name needs exactly one of --project or --board",
-             ("--sprint-name", "S", "--project", "PROJ", "--board", "42")),
-            ("--active can't be combined with --sprint-name",
-             ("--sprint-name", "S", "--board", "42", "--active")),
-            ("--active applies only to --project or --board",
-             ("--sprint-id", "7", "--active")),
-            # Report folders always go in the skill's output folder.
-            ("unrecognized arguments: --out-root",
-             ("--sprint-id", "7", "--out-root", "reports")),
-        ]
-        for expected, args in cases:
-            with self.subTest(args=args):
-                self.assert_rejected(expected, *args)
+                if isinstance(expected, dict):
+                    parsed = self.parse(*args)
+                    self.assertEqual({k: getattr(parsed, k)
+                                     for k in expected}, expected)
+                    continue
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as raised:
+                    self.parse(*args)
+                self.assertEqual(raised.exception.code, 2)
+                self.assertIn(expected, err.getvalue())
 
 
 class ReportDirTest(unittest.TestCase):
@@ -104,7 +99,8 @@ class ReportDirTest(unittest.TestCase):
         # A folder that isn't a readable report is never taken for one.
         cases = [("a report", self.report("a", 7), "7"),
                  ("no folder", os.path.join(self.root, "missing"), None),
-                 ("a sprint.json that isn't an object", self.broken("list", "[]"), None),
+                 ("a sprint.json that isn't an object",
+                  self.broken("list", "[]"), None),
                  ("a sprint.json that isn't JSON", self.broken("text", "{"), None)]
         for name, folder, expected in cases:
             with self.subTest(name):
@@ -135,7 +131,8 @@ class ReportDirTest(unittest.TestCase):
         self.assertFalse(os.path.exists(earlier))
         self.assertTrue(os.path.exists(other))
         self.assertTrue(os.path.islink(os.path.join(self.root, "link")))
-        self.assertTrue(os.path.exists(os.path.join(linked, "_raw", "sprint.json")))
+        self.assertTrue(os.path.exists(
+            os.path.join(linked, "_raw", "sprint.json")))
         self.assertEqual(os.listdir(os.path.join(same_name, "_raw")), [])
         self.assertEqual(sorted(self.logged), [f"deleting earlier report: {earlier}",
                                                f"deleting earlier report: {same_name}"])
@@ -174,13 +171,17 @@ class PreviousSprintTest(unittest.TestCase):
             ("the latest start before this one", current,
              [sprint(5, "02-04"), sprint(6, "02-18"), current], 6),
             # After a team moves board, its earlier sprints keep the old origin.
-            ("from another board, after a move to this one", current, [sprint(6, "02-18", board=41)], 6),
-            ("still running", current, [sprint(5, "02-04"), sprint(6, "02-18", state="active")], 5),
+            ("from another board, after a move to this one",
+             current, [sprint(6, "02-18", board=41)], 6),
+            ("still running", current, [
+             sprint(5, "02-04"), sprint(6, "02-18", state="active")], 5),
             ("closed without a completion date", current,
              [sprint(5, "02-04"), sprint(6, "02-18", completed=False)], 5),
-            ("started after this one", current, [sprint(5, "02-04"), sprint(8, "03-18")], 5),
+            ("started after this one", current, [
+             sprint(5, "02-04"), sprint(8, "03-18")], 5),
             ("none before it", current, [sprint(8, "03-18")], None),
-            ("a sprint never started", sprint(7, None, state="active"), [sprint(6, "02-18")], None),
+            ("a sprint never started", sprint(
+                7, None, state="active"), [sprint(6, "02-18")], None),
         ]
         for name, this, sprints, expected in cases:
             with self.subTest(name):
@@ -189,6 +190,29 @@ class PreviousSprintTest(unittest.TestCase):
 
 
 class HelpersTest(unittest.TestCase):
+    def test_comments_as_of(self):
+        before = "2026-03-13T15:59:59Z"
+        cutoff = "2026-03-13T16:00:00Z"
+        after = "2026-03-13T16:00:01Z"
+        cases = [
+            ({"created": before, "updated": before}, True),
+            ({"created": before, "updated": cutoff}, True),
+            ({"created": before, "updated": after}, False),
+            ({"created": cutoff, "updated": cutoff}, True),
+            ({"created": after, "updated": before}, False),
+            ({"created": before}, True),
+            ({"created": cutoff}, True),
+            ({"created": after}, False),
+            ({"created": before, "updated": None}, True),
+            ({"updated": after}, False),
+            ({}, True),
+        ]
+        for dates, included in cases:
+            with self.subTest(dates=dates):
+                comment = {**dates, "body": "Waiting on a dependency."}
+                self.assertEqual(fetch_sprint.comments_as_of(
+                    [comment], fetch_sprint.parse_ts(cutoff)), [comment] if included else [])
+
     def test_project_key_of(self):
         # --project wins; otherwise an issue key up to its last hyphen; with
         # neither, no key.

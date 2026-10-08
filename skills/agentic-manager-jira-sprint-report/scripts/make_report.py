@@ -209,8 +209,9 @@ class Report:
         dates = f"{display_date(d['sprint_start'])}–{display_date(d['sprint_end'])}"
         if d["sprint_complete_date"] and d["sprint_complete_date"] != d["sprint_end"]:
             dates += f" (completed {display_date(d['sprint_complete_date'])})"
-        goal = ("<br>".join(self.table_text(line.strip()) for line in d["sprint_goal"].splitlines() if line.strip())
-                if d["sprint_goal"] else "*No goal was set in Jira for this sprint*")
+        goal = ("<br>".join(self.table_text(html.escape(line.strip(), quote=False))
+                            for line in d["sprint_goal"].splitlines() if line.strip())
+                if d["sprint_goal"].strip() else "*No goal was set in Jira for this sprint*")
         rows = [("Dates", dates), ("Goal", goal),
                 (ai("Goal outcome"), self.table_text(
                     self.content["goal_verdict"])),
@@ -254,6 +255,8 @@ class Report:
             text = text.replace(
                 "counting as descoped and then as extra", "descoped, then extra")
             text = text.replace("of them without an estimate", "unestimated")
+            text = text.replace(
+                "of them from the commitment", "from the commitment")
         return " ".join([text] + self.commentary_caveats())
 
     def mentioned(self, spells, one, many, name_up_to=3):
@@ -288,7 +291,7 @@ class Report:
             return f"{self.md_key(keys[0])} ({change}) was re-estimated"
         listed = f" ({', '.join(self.md_key(k) for k in keys)})" if len(
             keys) <= name_up_to else ""
-        return f"{len(spells)} {unit(len(spells))} ({change}) {plural(len(spells), 'was', 'were')} re-estimated{listed}"
+        return f"{len(spells)} {unit(len(spells))} ({change}) {were(len(spells))} re-estimated{listed}"
 
     def commentary_text(self, name_up_to):
         d, spells = self.data, self.data["spells"]
@@ -374,13 +377,13 @@ class Report:
                         if s["counted"] and s["closedAsNonDelivery"]]
         if non_delivery:
             caveats.append(self.mentioned(non_delivery, "was resolved as Duplicate or Won't Do and counts as completed",
-                                          "were resolved as Duplicate or Won't Do and count as completed", 99) + ".")
+                                          "were resolved as Duplicate or Won't Do and count as completed", len(non_delivery)) + ".")
         excluded = d.get("membership_cross_check_excluded_keys", [])
         if excluded:
             found = [next((s for s in reversed(d["spells"]) if s["key"] == k), {"key": k, "points": None})
                      for k in excluded]
             caveats.append("The membership of " + self.mentioned(found, "is reconstructed from changelogs",
-                                                                 "is reconstructed from changelogs", 99)
+                                                                 "is reconstructed from changelogs", len(found))
                            + ", as later sprint moves prevent checking it against Jira.")
         return caveats
 
@@ -480,16 +483,24 @@ def text_problems(content, data):
                            ("blockers_risks", content["blockers_risks"], SUMMARY_WORDS)]
     for epic in data["epics"]:
         given = content["epic_commentary"].get(epic["key"]) or {}
-        texts.append((f"epic_commentary.{epic['key']}", " ".join(given.values()), EPIC_COMMENTARY_WORDS))
+        texts.append((f"epic_commentary.{epic['key']}", " ".join(
+            given.values()), EPIC_COMMENTARY_WORDS))
+        for group, text in given.items():
+            if len(re.split(r"(?<=[.!?]) +(?=[A-Z0-9])", text.strip())) != 1:
+                problems.append(
+                    f"epic_commentary.{epic['key']}.{group}: must be one sentence")
     for field, text, limit in texts:
         if word_count(text) > limit:
-            problems.append(f"{field}: {word_count(text)} words, at most {limit}")
+            problems.append(
+                f"{field}: {word_count(text)} words, at most {limit}")
         if ISSUE_KEY.search(text):
-            problems.append(f"{field}: names tickets {ISSUE_KEY.findall(text)[:3]}; describe the work instead")
+            problems.append(
+                f"{field}: names tickets {ISSUE_KEY.findall(text)[:3]}; describe the work instead")
     for field, text, _ in texts[:2]:
         if "\n" in text.strip():
             problems.append(f"{field}: must be a single paragraph")
-    texts += [(f"retro_notes[{i}]", note, None) for i, note in enumerate(content["retro_notes"])]
+    texts += [(f"retro_notes[{i}]", note, None)
+              for i, note in enumerate(content["retro_notes"])]
     for field, text, _ in texts:
         for rule, words in banned_words(text):
             problems.append(f"{field}: no {rule}, found {words[:3]}")

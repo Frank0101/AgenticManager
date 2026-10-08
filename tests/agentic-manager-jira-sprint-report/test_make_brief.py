@@ -1,5 +1,7 @@
-# Unit tests for make_brief.py, on the hand-written sprint in report_fixture.py.
+# Unit tests for skills/agentic-manager-jira-sprint-report/scripts/make_brief.py, on the
+# hand-written sprint in report_fixture.py.
 # Run with: python3 tests/run.py agentic-manager-jira-sprint-report
+import copy
 import json
 import os
 import sys
@@ -42,17 +44,56 @@ class BriefTest(unittest.TestCase):
                                   "status": "Done", "flagged": False, "summary": "Work item PROJ-1",
                                   "description": "What PROJ-1 changes."})
 
+    def test_goal_tickets_include_all_original_outcomes(self):
+        tickets = self.brief["goal_tickets"]
+        self.assertEqual([(t["key"], t["outcome"]) for t in tickets], [
+            ("PROJ-1", "completed"), ("PROJ-2", "removed"),
+            ("PROJ-4", "completed"), ("PROJ-5", "completed"), ("PROJ-6", "removed")])
+        self.assertEqual(tickets[0], {
+            "key": "PROJ-1", "summary": "Work item PROJ-1", "points": 3,
+            "outcome": "completed", "epic_key": "PROJ-100", "epic_name": "Login <beta>"})
+
+    def test_goal_theme_denominator_keeps_work_excluded_from_commentary(self):
+        briefs = []
+        for hidden_summary, expected_total in (("Search setup", 6), ("Other work", 3)):
+            with self.subTest(hidden_summary=hidden_summary):
+                spells = copy.deepcopy(fixture.TICKETS)
+                spells[0].update(summary="Search lookup",
+                                 outcome="not_completed", status="In Progress")
+                spells[0]["events"] = spells[0]["events"][:-1]
+                for spell in spells:
+                    if spell["key"] in ("PROJ-4", "PROJ-5"):
+                        spell["summary"] = hidden_summary
+                data = fixture.sprint_data(spells=spells, sprint_status="active",
+                                           sprint_goal="Search: ship search", today="2026-03-11")
+                brief = make_brief.build_brief(data, self.tmp.name)
+                theme = [t for t in brief["goal_tickets"]
+                         if "Search" in t["summary"]]
+                total = sum(t["points"] for t in theme)
+                open_points = sum(t["points"]
+                                  for t in theme if t["outcome"] == "not_completed")
+                self.assertEqual((open_points, total), (3, expected_total))
+                self.assertEqual(open_points > total / 2,
+                                 hidden_summary == "Other work")
+                briefs.append(
+                    {k: v for k, v in brief.items() if k != "goal_tickets"})
+        # The old brief could not distinguish these different required verdicts.
+        self.assertEqual(briefs[0], briefs[1])
+
     def test_comments_only_for_blocker_candidates_without_authors(self):
         # AI text names teams, never colleagues, so authors stay out; an empty
         # comment says nothing.
-        with_comments = {t["key"]: t["comments"] for t in self.tickets() if "comments" in t}
-        self.assertEqual(with_comments, {"PROJ-2": [{"date": "05/03/2026", "text": "Waiting on Security."}]})
+        with_comments = {t["key"]: t["comments"]
+                         for t in self.tickets() if "comments" in t}
+        self.assertEqual(with_comments, {
+                         "PROJ-2": [{"date": "05/03/2026", "text": "Waiting on Security."}]})
 
     def test_epics_in_order_of_completed_pts(self):
         # Commitment and extra together: the order Key Achievements takes.
         self.assertEqual([(e["key"], e["completed_pts"]) for e in self.brief["epics"]],
                          [("PROJ-100", 6), ("__no_epic__", 1)])
-        self.assertEqual(self.brief["epics"][0]["description"], "Staff sign in with their work account.")
+        self.assertEqual(
+            self.brief["epics"][0]["description"], "Staff sign in with their work account.")
 
     def test_sprint(self):
         # Dates as the report shows them; only the verdicts the sprint allows.
@@ -66,13 +107,15 @@ class BriefTest(unittest.TestCase):
         brief = make_brief.build_brief(fixture.sprint_data(
             sprint_status="active", sprint_goal="Ship login\n\n  Fix export \n", today="2026-03-05"), self.tmp.name)
         self.assertEqual(brief["sprint"]["goal"], ["Ship login", "Fix export"])
-        self.assertEqual(brief["sprint"]["goal_verdicts"], ["Too early to tell"])
+        self.assertEqual(brief["sprint"]["goal_verdicts"], [
+                         "Too early to tell"])
 
     def test_report_facts_are_the_reports_own_wording(self):
         # The retro notes quote them, so they must match the report word for
         # word, without its links.
         facts = self.brief["report_facts"]
-        self.assertEqual(facts[0], "Sprint target completion: 60%, 3/5 tickets (6/10 pts) completed")
+        self.assertEqual(
+            facts[0], "Sprint target completion: 60%, 3/5 tickets (6/10 pts) completed")
         self.assertTrue(facts[1].startswith("Of the 5 tickets"), facts[1])
         self.assertNotIn("](", facts[1])
         self.assertEqual(facts[2:], ["PROJ-100: Login <beta> completed 3/5 tickets (6/10 pts) of its commitment",
@@ -90,10 +133,20 @@ class HelpersTest(unittest.TestCase):
         os.makedirs(os.path.join(tmp.name, "comments"))
         cases = [
             ("no file", None, []),
-            ("no date", [{"body": "Unblocked."}], [{"date": None, "text": "Unblocked."}]),
-            ("blank text", [{"created": "2026-03-05T10:00:00.000+0000", "body": "  "}], []),
+            ("no date", [{"body": "Unblocked."}], [
+             {"date": None, "text": "Unblocked."}]),
+            ("blank text", [
+             {"created": "2026-03-05T10:00:00.000+0000", "body": "  "}], []),
             ("late in the day", [{"created": "2026-03-05T23:30:00.000+0000", "body": "Blocked."}],
              [{"date": "06/03/2026", "text": "Blocked."}]),
+            ("deadline in ADF", [{"created": "2026-03-05T10:00:00.000+0000", "body": {
+                "type": "paragraph", "content": [
+                    {"type": "text", "text": "Blocked until "},
+                    {"type": "date", "attrs": {"timestamp": "1772755200000"}},
+                    {"type": "text", "text": "."}]}}],
+             [{"date": "05/03/2026", "text": "Blocked until 06/03/2026."}]),
+            ("date-only ADF", [{"body": {"type": "date", "attrs": {"timestamp": "1772755200000"}}}],
+             [{"date": None, "text": "06/03/2026"}]),
         ]
         for number, (name, values, expected) in enumerate(cases, start=1):
             with self.subTest(name):
@@ -101,7 +154,8 @@ class HelpersTest(unittest.TestCase):
                 if values is not None:
                     with open(os.path.join(tmp.name, "comments", f"{key}.json"), "w", encoding="utf-8") as f:
                         json.dump(values, f)
-                self.assertEqual(make_brief.comments(tmp.name, key, ZoneInfo("Europe/Rome")), expected)
+                self.assertEqual(make_brief.comments(
+                    tmp.name, key, ZoneInfo("Europe/Rome")), expected)
 
     def test_plain(self):
         # Report text as a reader sees it: link text without its URL, no HTML,

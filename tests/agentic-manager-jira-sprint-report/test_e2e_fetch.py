@@ -48,7 +48,7 @@ class FakeJira(BaseHTTPRequestHandler):
     removed = []
     parents = []
     parent_queries = []
-    reporting_timezone = "Europe/London"
+    reporting_timezone: Optional[str] = "Europe/London"
     estimation: Optional[dict] = None
     requests = []
 
@@ -107,7 +107,8 @@ class FakeJira(BaseHTTPRequestHandler):
             return fixture.SPRINT_REPORT
         if path == "/rest/api/3/search/jql":
             if query["jql"].startswith("id in"):
-                FakeJira.parent_queries.append((query["jql"], query.get("fields")))
+                FakeJira.parent_queries.append(
+                    (query["jql"], query.get("fields")))
                 return {"issues": FakeJira.parents}
             return {"issues": FakeJira.removed}
         if path.startswith("/rest/api/3/issue/"):
@@ -229,7 +230,8 @@ class FetchTest(unittest.TestCase):
                 out = self.assert_fetches(*args)
                 self.assertEqual((out["sprint_id"], out["label"], out["sprint_state"]),
                                  (sprint_id, f"PROJ_Sprint_{sprint_id}", state))
-                self.assertNotIn("/rest/agile/1.0/board/43/sprint", FakeJira.requests)
+                self.assertNotIn(
+                    "/rest/agile/1.0/board/43/sprint", FakeJira.requests)
 
     def test_failures(self):
         # Each failure exits non-zero with a message saying what to fix, never
@@ -246,15 +248,18 @@ class FetchTest(unittest.TestCase):
             return lambda: self.write_config(**settings)
 
         def no_config():
-            os.remove(os.path.join(self.home, ".config", "agentic-manager", "config.json"))
+            os.remove(os.path.join(self.home, ".config",
+                      "agentic-manager", "config.json"))
         board = str(fixture.BOARD_ID)
         cases = [
             (None, ["--sprint-id", "999"], 1, "404"),
             (None, ["--sprint-id", "8"], 1, "only active or closed sprints"),
             (two_active, ["--project", "PROJ", "--active"], 1,
              "give a sprint id or a board to pick one"),
-            (kanban_only, ["--project", "PROJ"], 1, "no scrum board found for project PROJ"),
-            (None, ["--project", "PROJ", "--active"], 1, "no sprint active found"),
+            (kanban_only, ["--project", "PROJ"], 1,
+             "no scrum board found for project PROJ"),
+            (None, ["--project", "PROJ", "--active"],
+             1, "no sprint active found"),
             (None, ["--sprint-name", "Sprint 9", "--board", board], 1,
              "no sprint named 'Sprint 9' found"),
             (lambda: FakeJira.sprints[0].update(originBoardId=None), ["--sprint-id", "7"], 1,
@@ -264,16 +269,24 @@ class FetchTest(unittest.TestCase):
             (lambda: setattr(FakeJira, "removed", fixture.REMOVED[1:]), ["--sprint-id", "7"], 1,
              "removed issue(s) could not be fetched: ['" + fixture.REMOVED[0]["key"] + "']"),
             # Conflicting selectors fail rather than one silently winning.
-            (None, ["--sprint-id", "7", "--project", "PROJ"], 2, "pass exactly one of"),
-            (None, ["--sprint-id", "7", "--active"], 2, "--active applies only to --project or --board"),
-            (None, ["--sprint-name", "Sprint 7"], 2, "needs exactly one of --project or --board"),
+            (None, ["--sprint-id", "7", "--project", "PROJ"],
+             2, "pass exactly one of"),
+            (None, ["--sprint-id", "7", "--active"], 2,
+             "--active applies only to --project or --board"),
+            (None, ["--sprint-name", "Sprint 7"], 2,
+             "needs exactly one of --project or --board"),
             (None, [], 2, "pass exactly one of"),
             # Config problems name the setting, never its value.
-            (config(**{"api-token": "wrong-token"}), ["--project", "PROJ"], 1, "`api-token`"),
-            (config(enabled=False), ["--project", "PROJ"], 1, "sources.workflow.jira-api is not enabled"),
-            (config(**{"api-token": "<token>"}), ["--project", "PROJ"], 1, "not filled in: api-token"),
-            (config(**{"base-url": "http://127.0.0.1:9"}), ["--project", "PROJ"], 1, "your `base-url` setting"),
-            (no_config, ["--project", "PROJ"], 1, "agentic-manager-utils-check-config"),
+            (config(**{"api-token": "wrong-token"}),
+             ["--project", "PROJ"], 1, "`api-token`"),
+            (config(enabled=False), ["--project", "PROJ"],
+             1, "sources.workflow.jira-api is not enabled"),
+            (config(**{"api-token": "<token>"}),
+             ["--project", "PROJ"], 1, "not filled in: api-token"),
+            (config(**{"base-url": "http://127.0.0.1:9"}),
+             ["--project", "PROJ"], 1, "your `base-url` setting"),
+            (no_config, ["--project", "PROJ"], 1,
+             "agentic-manager-utils-check-config"),
         ]
         for change, args, code, expected in cases:
             with self.subTest(expected, args=args):
@@ -282,7 +295,8 @@ class FetchTest(unittest.TestCase):
                 if change:
                     change()
                 proc = self.fetch(*args)
-                self.assertEqual(proc.returncode, code, proc.stdout + proc.stderr)
+                self.assertEqual(proc.returncode, code,
+                                 proc.stdout + proc.stderr)
                 self.assertIn(expected, proc.stderr)
                 for token in (TOKEN, "wrong-token"):
                     self.assertNotIn(token, proc.stdout + proc.stderr)
@@ -338,11 +352,13 @@ class FetchTest(unittest.TestCase):
             out["report_dir"], "_raw", "comments")), ["PROJ-7.json"])
         self.assertEqual([i["key"] for i in self.raw(out, "punted_issues.json")], [
                          "PROJ-3", "PROJ-4", "PROJ-8", "PROJ-11"])
-        self.assertEqual(self.raw(out, "previous_sprint.json"), fixture.PREVIOUS_SPRINT)
+        self.assertEqual(self.raw(out, "previous_sprint.json"),
+                         fixture.PREVIOUS_SPRINT)
         # Every epic is fetched with its description, the issues' current
         # epics too, as their own fields carry only the epic's summary.
         jql, fields = FakeJira.parent_queries[0]
-        self.assertEqual(sorted(re.findall(r"\d+", jql)), sorted({fixture.IMPORT[2], fixture.EXPORT[2]}))
+        self.assertEqual(sorted(re.findall(r"\d+", jql)),
+                         sorted({fixture.IMPORT[2], fixture.EXPORT[2]}))
         self.assertEqual(fields, "summary,description")
         # The token is in no file written.
         for folder, _, files in os.walk(out["report_dir"]):
@@ -352,7 +368,7 @@ class FetchTest(unittest.TestCase):
 
     def test_raw_data_is_as_at_the_close(self):
         # The sprint closed at 16:00 on 13/03. Since then PROJ-2 was flagged,
-        # PROJ-7 got a comment and PROJ-1 moved to another epic.
+        # PROJ-7 got and edited comments and PROJ-1 moved to another epic.
         after = fixture.ts(20)
         changelogs = {
             "PROJ-2": fixture.CHANGELOGS["PROJ-2"] + [
@@ -363,7 +379,12 @@ class FetchTest(unittest.TestCase):
                  "to": fixture.IMPORT[2], "toString": fixture.IMPORT[0]}],
         }
         comments = {"PROJ-7": [{"id": "1", "created": fixture.ts(11), "body": "Waiting on a dependency."},
-                               {"id": "2", "created": after, "body": "Unblocked."}]}
+                               {"id": "2", "created": after, "body": "Unblocked."},
+                               {"id": "3", "created": fixture.ts(11), "updated": after,
+                                "body": "Blocked by a later incident."},
+                               {"id": "4", "created": fixture.ts(11),
+                                "updated": fixture.SPRINT["completeDate"],
+                                "body": "Waiting on Security."}]}
         current = copy.deepcopy(fixture.CURRENT)
         current[1]["fields"][fixture.FLAGGED_FIELD] = [{"value": "Impediment"}]
         FakeJira.parents = [
@@ -374,7 +395,7 @@ class FetchTest(unittest.TestCase):
         self.assertEqual(self.raw(out, "_meta.json")[
                          "blocker_candidate_keys"], ["PROJ-7"])
         self.assertEqual([c["id"] for c in self.raw(
-            out, "comments/PROJ-7.json")], ["1"])
+            out, "comments/PROJ-7.json")], ["1", "4"])
         self.assertEqual(self.raw(out, "parents.json"), FakeJira.parents)
         self.assertEqual(self.raw(out, "statuses.json"), fixture.STATUSES)
         self.assertEqual(
@@ -428,10 +449,12 @@ class FetchTest(unittest.TestCase):
         folder = os.path.basename(out["report_dir"])
         self.assertEqual(os.path.dirname(out["report_dir"]), self.out_root)
         self.assertEqual((out["sprint_id"], out["temporary"]), (7, False))
-        self.assertEqual(out["brief"], os.path.join(out["report_dir"], "brief.json"))
+        self.assertEqual(out["brief"], os.path.join(
+            out["report_dir"], "brief.json"))
         self.assertEqual(out["content_path"], f"{folder}/content.json")
         self.assertIn("[matches Jira's sprint report]", proc.stderr)
-        self.assertTrue(os.path.exists(os.path.join(out["report_dir"], "data.json")))
+        self.assertTrue(os.path.exists(
+            os.path.join(out["report_dir"], "data.json")))
         with open(out["brief"], encoding="utf-8") as f:
             brief = json.load(f)
         self.assertEqual(brief["sprint"]["name"], fixture.SPRINT["name"])
@@ -442,30 +465,30 @@ class FetchTest(unittest.TestCase):
         # step's message and code, prints no JSON and writes nothing after it.
         disagreeing = copy.deepcopy(fixture.SPRINT_REPORT)
         disagreeing["contents"]["completedIssues"].append({"key": "PROJ-99"})
+        project = ["--project", "PROJ"]
+        # name: (selectors, settings, Jira's sprint report, exit code,
+        # expected on stderr, what the report folder holds)
         cases = [
-            ("the fetch", {"api-token": "wrong"}, fixture.SPRINT_REPORT, "401 Unauthorized", []),
+            # As for fetch_sprint.py, which reports it: a usage error.
+            ("no selector", [], {}, fixture.SPRINT_REPORT, 2,
+             "pass exactly one of --sprint-id, --project or --board", []),
+            ("the fetch", project, {"api-token": "wrong"},
+             fixture.SPRINT_REPORT, 1, "401 Unauthorized", []),
             # Jira's sprint report disagrees with the issues fetched.
-            ("the build", {}, disagreeing, "differs from Jira's sprint report", ["_raw"]),
+            ("the build", project, {}, disagreeing, 1,
+             "differs from Jira's sprint report", ["_raw"]),
         ]
-        for name, settings, sprint_report, expected, written in cases:
+        for name, args, settings, sprint_report, code, expected, written in cases:
             with self.subTest(name), mock.patch.object(fixture, "SPRINT_REPORT", sprint_report):
                 self.write_config(**settings)
-                proc = self.run_script("prepare_report.py", "--project", "PROJ")
-                self.assertEqual(proc.returncode, 1)
+                proc = self.run_script("prepare_report.py", *args)
+                self.assertEqual(proc.returncode, code)
                 self.assertEqual(proc.stdout, "")
                 self.assertIn(expected, proc.stderr)
-                reports = os.listdir(self.out_root) if os.path.exists(self.out_root) else []
+                reports = os.listdir(self.out_root) if os.path.exists(
+                    self.out_root) else []
                 self.assertEqual([sorted(os.listdir(os.path.join(self.out_root, r))) for r in reports],
                                  [written] if written else [])
-
-    def test_prepare_without_a_selector_is_a_usage_error(self):
-        # As for fetch_sprint.py, which reports it: exit 2, no JSON, nothing
-        # written.
-        proc = self.run_script("prepare_report.py")
-        self.assertEqual(proc.returncode, 2)
-        self.assertEqual(proc.stdout, "")
-        self.assertIn("pass exactly one of --sprint-id, --project or --board", proc.stderr)
-        self.assertFalse(os.path.exists(self.out_root))
 
     # --- where reports go
 

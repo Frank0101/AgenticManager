@@ -22,6 +22,9 @@ SKILL_DIR = os.path.join(REPO_ROOT, "skills", os.path.basename(TEST_DIR))
 LIB_DIR = os.path.join(REPO_ROOT, "skills", "agentic-manager-utils-lib")
 SCRIPT = os.path.join(SKILL_DIR, "scripts", "check_config.py")
 TEMPLATE = os.path.join(SKILL_DIR, "config-template.json")
+# Setting values the tests write: the script's output must never show them.
+VALUES = ("s3cret", "acme.atlassian.net",
+          "me@acme.test", "~/logseq", "~/reports")
 
 
 # Helpers shared by the test classes below; it has no tests of its own.
@@ -69,6 +72,15 @@ class ScriptTest(unittest.TestCase):
         with open(self.config_path, "rb") as f:
             return f.read()
 
+    # (whether the config's path is a link, whether it is a folder, the
+    # file's bytes if it is one), and with_time its modification time.
+    def state(self, with_time=False):
+        state = (os.path.islink(self.config_path), os.path.isdir(self.config_path),
+                 self.read_raw() if os.path.isfile(self.config_path) else None)
+        if with_time and os.path.lexists(self.config_path):
+            state += (os.lstat(self.config_path).st_mtime_ns,)
+        return state
+
     # Writes `content`, text or bytes, as the config.
     def write_raw(self, content):
         if isinstance(content, str):
@@ -85,61 +97,104 @@ class ScriptTest(unittest.TestCase):
             change(config["sources"])
         self.write_raw(json.dumps(config))
 
+    # Removes whatever is at the config's path: a file, a link or a folder.
+    def clear_config(self):
+        if os.path.islink(self.config_path) or os.path.isfile(self.config_path):
+            os.remove(self.config_path)
+        elif os.path.isdir(self.config_path):
+            shutil.rmtree(self.config_path)
+
     # Enables jira-api in a "sources" object.
-    def enable_jira(self, sources, token="abc"):
+    def enable_jira(self, sources, token="s3cret"):
         sources["workflow"]["jira-api"].update({
             "enabled": True, "base-url": "https://acme.atlassian.net",
             "email": "me@acme.test", "api-token": token})
 
+    # Asserts the script succeeds, showing no setting value.
     def assert_ok(self, *args):
         code, out = self.run_script(*args)
         self.assertEqual(code, 0, out)
         self.assertTrue(out["ok"])
+        self.assert_no_values(out)
         return out
 
-    # Asserts the script fails and that one of its errors contains `expected`.
+    # Asserts the script fails, that one of its errors contains `expected`,
+    # and that it shows no setting value.
     def assert_error(self, expected, *args):
         code, out = self.run_script(*args)
         self.assertEqual(code, 1, out)
         self.assertFalse(out["ok"])
         self.assertTrue(any(expected in e for e in out["errors"]),
                         f"{expected!r} not in {out['errors']}")
+        self.assert_no_values(out)
         return out
+
+    def assert_no_values(self, out):
+        for value in VALUES:
+            self.assertNotIn(value, json.dumps(out))
 
 
 class CheckConfigTest(ScriptTest):
-    # --- missing config and --init
+    # --- --init, and the config never changed without it
 
-    def test_missing_config(self):
-        self.assert_error("not found")
-
-    def test_init_creates_config_from_template(self):
-        out = self.assert_ok("--init")
-        self.assertTrue(out["created"])
-        with open(self.config_path, encoding="utf-8") as f:
-            self.assertEqual(json.load(f), self.template)
-
-    def test_init_does_not_overwrite(self):
-        for name, text in {"invalid": '{"x": 1}', "valid": None}.items():
+    def test_init(self):
+        # --init creates the config from the template only where there is
+        # nothing: never over a file, through a dangling link or into a folder.
+        def dangling_link():
+            os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
+            os.symlink(os.path.join(self.home.name,
+                       "missing.json"), self.config_path)
+        # name: (what is at the config's path, exit code, expected in an error)
+        cases = [
+            ("nothing", lambda: None, 0, None),
+            ("a valid config", lambda: self.write_config(self.enable_jira), 0, None),
+            ("an invalid config", lambda: self.write_raw(
+                '{"x": 1}'), 1, 'unknown key "x"'),
+            ("a dangling link", dangling_link, 1, "not found"),
+            ("a folder", lambda: os.makedirs(self.config_path), 1, "is not a file"),
+        ]
+        for name, make, code, expected in cases:
             with self.subTest(name):
-                if text is None:
-                    self.write_config(self.enable_jira)
+                self.clear_config()
+                make()
+                before = self.state()
+                if expected:
+                    out = self.assert_error(expected, "--init")
                 else:
-                    self.write_raw(text)
-                before = self.read_raw()
-                code, out = self.run_script("--init")
-                self.assertEqual(code, 0 if text is None else 1, out)
-                self.assertFalse(out["created"])
-                self.assertEqual(self.read_raw(), before)
+                    out = self.assert_ok("--init")
+                created = before == (False, False, None)
+                self.assertEqual(out["created"], created)
+                if created:
+                    with open(self.config_path, encoding="utf-8") as f:
+                        self.assertEqual(json.load(f), self.template)
+                else:
+                    self.assertEqual(self.state(), before)
 
-    def test_init_does_not_follow_a_dangling_config_symlink(self):
-        os.makedirs(os.path.dirname(self.config_path))
-        target = os.path.join(self.home.name, "missing.json")
-        os.symlink(target, self.config_path)
-        out = self.assert_error("not found", "--init")
-        self.assertFalse(out["created"])
-        self.assertTrue(os.path.islink(self.config_path))
-        self.assertFalse(os.path.exists(target))
+    def test_config_is_never_changed(self):
+        # Without --init, the check only reads: nothing is created, changed
+        # or written beside the config, whatever it finds.
+        cases = [
+            ("missing", None, "not found"),
+            ("valid", json.dumps(self.template), None),
+            ("unknown key", '{"chat": {}}', 'unknown key "chat"'),
+            ("placeholder", '{"sources": {"workflow": {"jira-api": {"enabled": true, "api-token": "<token>"}}}}',
+             "api-token is not filled in"),
+            ("invalid JSON", "nope", "invalid JSON"),
+        ]
+        for name, text, expected in cases:
+            with self.subTest(name):
+                self.clear_config()
+                if text is not None:
+                    self.write_raw(text)
+                before = self.state(with_time=True)
+                if expected:
+                    self.assert_error(expected)
+                else:
+                    self.assert_ok()
+                self.assertEqual(self.state(with_time=True), before)
+                if text is not None:
+                    self.assertEqual(os.listdir(os.path.dirname(
+                        self.config_path)), ["config.json"])
 
     def test_unknown_argument(self):
         out = self.assert_error('unknown argument "workflow" (usage: check_config.py [--init])',
@@ -147,63 +202,62 @@ class CheckConfigTest(ScriptTest):
         self.assertEqual(len(out["errors"]), 1, out["errors"])
         self.assertFalse(os.path.exists(self.config_path))
 
-    # --- the config is never changed without --init
+    # --- valid configs and the sources returned
 
-    def test_config_is_never_changed(self):
-        cases = {
-            "valid": json.dumps(self.template),
-            "unknown key": '{"chat": {}}',
-            "placeholder": '{"sources": {"workflow": {"jira-api": {"enabled": true, "api-token": "<token>"}}}}',
-            "invalid JSON": "nope",
-        }
-        for name, text in cases.items():
-            with self.subTest(name):
-                self.write_raw(text)
-                before = (self.read_raw(), os.stat(
-                    self.config_path).st_mtime_ns)
-                self.run_script()
-                self.assertEqual(
-                    (self.read_raw(), os.stat(self.config_path).st_mtime_ns), before)
-                self.assertEqual(os.listdir(os.path.dirname(
-                    self.config_path)), ["config.json"])
+    def test_valid_configs(self):
+        # Every source of the template is returned, by group, enabled or with
+        # its setup (test_setup checks its wording). Groups, sources,
+        # settings and output left out are allowed.
+        def change(edit):
+            return lambda: self.write_config(edit)
 
-    def test_missing_config_is_not_created(self):
-        self.run_script()
-        self.assertFalse(os.path.exists(self.config_path))
+        def output_root(root):
+            config = copy.deepcopy(self.template)
+            config["output"]["root"] = root
+            return lambda: self.write_raw(json.dumps(config))
 
-    # --- the sources returned
-
-    def test_template_as_is_lists_every_source_disabled(self):
-        self.write_config()
-        out = self.assert_ok()
-        self.assertEqual({g: list(s) for g, s in out["sources"].items()},
-                         {g: list(s) for g, s in self.template["sources"].items()})
-        for group, sources in out["sources"].items():
-            for name, source in sources.items():
-                self.assertFalse(source["enabled"], f"{group}.{name}")
-                self.assertIn(
-                    f'"sources.{group}.{name}.enabled" to true', source["setup"])
-
-    def test_enabled_source(self):
-        self.write_config(self.enable_jira)
-        out = self.assert_ok()
-        self.assertEqual(out["sources"]["workflow"]["jira-api"],
-                         {"tool": "jira", "channel": "api", "enabled": True})
-
-    def test_several_enabled_sources_are_all_returned(self):
-        def change(c):
+        def jira_api_and_mcp(c):
             self.enable_jira(c)
             c["workflow"]["jira-mcp"]["enabled"] = True
-        self.write_config(change)
-        self.assertEqual(self.assert_ok()["sources"]["workflow"], {
-            "jira-mcp": {"tool": "jira", "channel": "mcp", "enabled": True},
-            "jira-api": {"tool": "jira", "channel": "api", "enabled": True}})
-
-    def test_setting_values_are_never_returned(self):
-        self.write_config(lambda c: self.enable_jira(c, "s3cret"))
-        out = self.assert_ok()
-        for value in ("s3cret", "acme.atlassian.net", "me@acme.test"):
-            self.assertNotIn(value, json.dumps(out))
+        # name: (the config, the sources enabled)
+        cases = [
+            ("the template as is", self.write_config, set()),
+            ("empty", lambda: self.write_raw("{}"), set()),
+            ("no groups", lambda: self.write_raw('{"sources": {}}'), set()),
+            ("a group left out", change(lambda c: c.pop("messaging")), set()),
+            ("a source left out", change(
+                lambda c: c["workflow"].pop("jira-api")), set()),
+            ("disabled with a blank setting", change(lambda c: c["workflow"]["jira-api"].update({"api-token": ""})),
+             set()),
+            ("disabled with a setting left out", change(
+                lambda c: c["workflow"]["jira-api"].pop("api-token")), set()),
+            ("disabled with its settings filled in", change(lambda c: c["workflow"]["jira-api"].update(
+                {"base-url": "https://acme.atlassian.net", "email": "me@acme.test", "api-token": "s3cret"})), set()),
+            ("an fs source with a path", change(lambda c: c["local_vault"]["logseq-fs"].update(
+                enabled=True, path="~/logseq")), {"local_vault.logseq-fs"}),
+            ("several enabled", change(jira_api_and_mcp),
+             {"workflow.jira-api", "workflow.jira-mcp"}),
+            ("the output root a placeholder", output_root("<path>"), set()),
+            ("the output root blank", output_root(""), set()),
+            ("the output root set", output_root("~/reports"), set()),
+        ]
+        for name, write, enabled in cases:
+            with self.subTest(name):
+                write()
+                out = self.assert_ok()
+                self.assertEqual({g: list(s) for g, s in out["sources"].items()},
+                                 {g: list(s) for g, s in self.template["sources"].items()})
+                found = set()
+                for group, sources in out["sources"].items():
+                    for source_name, source in sources.items():
+                        tool, _, channel = source_name.rpartition("-")
+                        if source["enabled"]:
+                            found.add(f"{group}.{source_name}")
+                            self.assertEqual(
+                                source, {"tool": tool, "channel": channel, "enabled": True})
+                        else:
+                            self.assertTrue(source["setup"], source_name)
+                self.assertEqual(found, enabled)
 
     def test_setup(self):
         jira = ('{"enabled": true, "base-url": "<https://your-site.atlassian.net>", "email": "<email>", '
@@ -229,23 +283,36 @@ class CheckConfigTest(ScriptTest):
                 self.assertEqual(self.assert_ok()[
                                  "sources"]["workflow"]["jira-api"]["setup"], expected)
 
-    # --- settings
+    # --- invalid configs
 
-    def test_valid_settings(self):
-        cases = {
-            "disabled with a blank setting": lambda c: c["workflow"]["jira-api"].update({"api-token": ""}),
-            "disabled with a setting left out": lambda c: c["workflow"]["jira-api"].pop("api-token"),
-            "fs source with a path": lambda c: c["local_vault"]["logseq-fs"].update(
-                enabled=True, path="~/logseq"),
-        }
-        for name, change in cases.items():
-            with self.subTest(name):
-                self.write_config(change)
-                self.assert_ok()
-
-    def test_invalid_settings(self):
+    def test_invalid_configs(self):
+        # Each case is the config's text, or a change to the template's
+        # "sources"; each error names what to fix, never a setting's value.
         jira = "sources.workflow.jira-api"
+        bad_root = copy.deepcopy(self.template)
+        bad_root["output"]["root"] = 5
         cases = [
+            # The file
+            ("", "invalid JSON"), ("nope",
+                                   "invalid JSON"), (b"\xff\xfe", "invalid JSON"),
+            ('{"sources": {}, "sources": {}}', 'duplicate key "sources"'),
+            ("[]", "must be a JSON object"),
+            # Its shape
+            ('{"sources": {}, "chat": {}}',
+             'unknown key "chat" (supported: sources, output)'),
+            ('{"sources": []}', "sources must be an object of groups"),
+            (lambda c: c.update({"chat": {}}), 'unknown group "sources.chat"'),
+            (lambda c: c.update({"workflow": []}),
+             "sources.workflow must be an object of sources"),
+            (lambda c: c["workflow"].update({"linear-mcp": {"enabled": True}}),
+             'unknown source "sources.workflow.linear-mcp"'),
+            (lambda c: c["workflow"].update(
+                {"jira-api": True}), f"{jira} must be an object"),
+            (lambda c: c["documentation"]["notion-mcp"].update({"workspace": "x"}),
+             'unknown setting "sources.documentation.notion-mcp.workspace"'),
+            (lambda c: c["documentation"]["notion-mcp"].pop("enabled"),
+             "sources.documentation.notion-mcp.enabled is missing: set it to true or false"),
+            # Its settings
             (lambda c: self.enable_jira(c, "<token>"),
              f"{jira}.api-token is not filled in"),
             (lambda c: self.enable_jira(c, " <token> "),
@@ -264,74 +331,20 @@ class CheckConfigTest(ScriptTest):
                 {"enabled": 1}), f"{jira}.enabled must be true or false"),
             (lambda c: c["workflow"]["jira-api"].update(
                 {"enabled": None}), f"{jira}.enabled must be true or false"),
+            (lambda c: c["workflow"]["jira-api"].update({"api-token": "s3cret", "enabled": "yes"}),
+             f"{jira}.enabled must be true or false"),
             (lambda c: c["local_vault"]["logseq-fs"].update(enabled=True),
              "sources.local_vault.logseq-fs.path is not filled in"),
             (lambda c: c["local_vault"]["logseq-fs"].update(path=["~/logseq"]),
              "sources.local_vault.logseq-fs.path must be a string"),
+            (json.dumps(bad_root), "output.root must be a string"),
         ]
-        for change, expected in cases:
-            with self.subTest(expected):
-                self.write_config(change)
-                self.assert_error(expected)
-
-    def test_errors_never_contain_setting_values(self):
-        self.write_config(lambda c: c["workflow"]["jira-api"].update(
-            {"api-token": "s3cret", "enabled": "yes"}))
-        out = self.assert_error("enabled must be true or false")
-        self.assertNotIn("s3cret", json.dumps(out))
-
-    def test_output_root_is_optional(self):
-        config = copy.deepcopy(self.template)
-        for root in ("<path>", "", "~/reports"):
-            with self.subTest(root):
-                config["output"]["root"] = root
-                self.write_raw(json.dumps(config))
-                self.assertNotIn("reports", json.dumps(self.assert_ok()))
-        config["output"]["root"] = 5
-        self.write_raw(json.dumps(config))
-        self.assert_error("output.root must be a string")
-
-    # --- shape: keys, groups, sources and settings left out are allowed, extra ones are not
-
-    def test_left_out_is_allowed(self):
-        for text in ("{}", '{"sources": {}}'):
-            with self.subTest(text):
-                self.write_raw(text)
-                out = self.assert_ok()
-                self.assertFalse(any(source["enabled"] for sources in out["sources"].values()
-                                     for source in sources.values()))
-        for name, change in {"group": lambda c: c.pop("messaging"),
-                             "source": lambda c: c["workflow"].pop("jira-api")}.items():
-            with self.subTest(name):
-                self.write_config(change)
-                self.assert_ok()
-
-    def test_wrong_shape(self):
-        raw_cases = [
-            ('{"sources": {}, "chat": {}}',
-             'unknown key "chat" (supported: sources, output)'),
-            ('{"sources": []}', "sources must be an object of groups"),
-        ]
-        for text, expected in raw_cases:
-            with self.subTest(expected):
-                self.write_raw(text)
-                self.assert_error(expected)
-        cases = [
-            (lambda c: c["documentation"]["notion-mcp"].pop("enabled"),
-             "sources.documentation.notion-mcp.enabled is missing: set it to true or false"),
-            (lambda c: c.update({"chat": {}}), 'unknown group "sources.chat"'),
-            (lambda c: c["workflow"].update({"linear-mcp": {"enabled": True}}),
-             'unknown source "sources.workflow.linear-mcp"'),
-            (lambda c: c["documentation"]["notion-mcp"].update({"workspace": "x"}),
-             'unknown setting "sources.documentation.notion-mcp.workspace"'),
-            (lambda c: c.update({"workflow": []}),
-             "sources.workflow must be an object of sources"),
-            (lambda c: c["workflow"].update(
-                {"jira-api": True}), "sources.workflow.jira-api must be an object"),
-        ]
-        for change, expected in cases:
-            with self.subTest(expected):
-                self.write_config(change)
+        for config, expected in cases:
+            with self.subTest(expected, config=config if not callable(config) else None):
+                if callable(config):
+                    self.write_config(config)
+                else:
+                    self.write_raw(config)
                 self.assert_error(expected)
 
     def test_every_problem_is_listed(self):
@@ -342,22 +355,6 @@ class CheckConfigTest(ScriptTest):
         self.write_config(change)
         out = self.assert_error('unknown group "sources.chat"')
         self.assertEqual(len(out["errors"]), 5, out["errors"])
-
-    # --- unreadable or malformed files
-
-    def test_config_is_a_folder(self):
-        os.makedirs(self.config_path)
-        out = self.assert_error("is not a file", "--init")
-        self.assertFalse(out["created"])
-
-    def test_malformed_files(self):
-        for text, expected in [("", "invalid JSON"), ("nope", "invalid JSON"),
-                               ('{"sources": {}, "sources": {}}',
-                                'duplicate key "sources"'),
-                               ("[]", "must be a JSON object"), (b"\xff\xfe", "invalid JSON")]:
-            with self.subTest(text=text):
-                self.write_raw(text)
-                self.assert_error(expected)
 
     @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root can read any file")
     def test_unreadable_config(self):
@@ -384,19 +381,21 @@ class CheckConfigTest(ScriptTest):
         for key, value in self.template["output"].items():
             self.assertRegex(value, r"^<.+>$", f"output.{key}")
 
-    def test_channels_match_the_skill(self):
+    def test_skill_tables_match_the_template(self):
+        # The SKILL.md's groups table lists the template's groups in order,
+        # and its channels table the channels its sources use.
         with open(os.path.join(SKILL_DIR, "SKILL.md"), encoding="utf-8") as f:
-            documented = set(re.findall(
-                r"^\| `([a-z]+)` +\| (?!Where)", f.read(), re.M))
-        used = {name.rpartition("-")[2] for sources in self.template["sources"].values()
-                for name in sources}
-        self.assertEqual(documented, used)
-
-    def test_groups_match_the_skill(self):
-        with open(os.path.join(SKILL_DIR, "SKILL.md"), encoding="utf-8") as f:
-            documented = re.findall(
-                r"^\| `([a-z_]+)` +\| Where", f.read(), re.M)
-        self.assertEqual(documented, list(self.template["sources"]))
+            skill = f.read()
+        cases = [
+            ("groups", re.findall(
+                r"^\| `([a-z_]+)` +\| Where", skill, re.M), list(self.template["sources"])),
+            ("channels", sorted(set(re.findall(r"^\| `([a-z]+)` +\| (?!Where)", skill, re.M))),
+             sorted({name.rpartition("-")[2] for sources in self.template["sources"].values()
+                     for name in sources})),
+        ]
+        for name, documented, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(documented, expected)
 
 
 # An install with a file missing, run against a copy of the script.

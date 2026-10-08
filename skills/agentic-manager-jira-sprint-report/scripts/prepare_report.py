@@ -29,7 +29,8 @@ HERE = os.path.dirname(os.path.realpath(__file__))
 def run(script, *args):
     """Run a sibling script, its progress on stderr; its stdout, or exit with
     its code."""
-    result = subprocess.run([sys.executable, os.path.join(HERE, script), *args], stdout=subprocess.PIPE, text=True)
+    result = subprocess.run([sys.executable, os.path.join(
+        HERE, script), *args], stdout=subprocess.PIPE, text=True)
     if result.returncode:
         sys.stderr.write(result.stdout)
         sys.exit(result.returncode)
@@ -40,7 +41,8 @@ def main():
     if sys.argv[1:2] in (["-h"], ["--help"]):
         print(__doc__)
         return
-    fetched = json.loads(run("fetch_sprint.py", *sys.argv[1:]).strip().splitlines()[-1])
+    fetched = json.loads(
+        run("fetch_sprint.py", *sys.argv[1:]).strip().splitlines()[-1])
     report_dir = fetched["report_dir"]
     sys.stderr.write(run("build_sprint_data.py", "--report-dir", report_dir))
     run("make_brief.py", "--report-dir", report_dir)

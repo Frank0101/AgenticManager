@@ -12,6 +12,7 @@
 import copy
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,7 @@ sys.path.insert(0, TEST_DIR)
 import sprint_fixture as fixture  # noqa: E402
 
 REPORT = "PROJ_Sprint_7_Sprint_Report.md"
+CHARTS = ("outcome-tickets.svg", "outcome-pts.svg", "burndown.svg")
 
 
 class ReportTest(unittest.TestCase):
@@ -137,18 +139,21 @@ class BuildTest(ReportTest):
         self.assertEqual(set(found), set(cases))
         for key, expected in cases.items():
             with self.subTest(key):
-                self.assertEqual([(s["scope"], s["outcome"], self.kinds(s)) for s in found[key]], expected)
+                self.assertEqual([(s["scope"], s["outcome"], self.kinds(s))
+                                 for s in found[key]], expected)
 
     def test_totals(self):
         data = self.build()
         self.assertEqual(data["sprint_start"], "2026-03-04")
         self.assertEqual(data["left_before_start_keys"], ["PROJ-11"])
-        self.assertEqual([i["key"] for i in data["non_delivery_closures"]["issues"]], ["PROJ-6"])
+        self.assertEqual(
+            [i["key"] for i in data["non_delivery_closures"]["issues"]], ["PROJ-6"])
         self.assertEqual(data["blocker_candidate_keys"], ["PROJ-7"])
         outcomes = ("completed", "not_completed", "removed")
         self.assertEqual({row: [data["outcome_breakdown_counts"][f"{row}_{o}"] for o in outcomes]
                           for row in ("original", "extra")}, {"original": [2, 1, 4], "extra": [2, 1, 0]})
-        self.assertEqual([data["outcome_breakdown_points"][f"original_{o}"] for o in outcomes], [4, 5, 8])
+        self.assertEqual([data["outcome_breakdown_points"]
+                         [f"original_{o}"] for o in outcomes], [4, 5, 8])
         # PROJ-100: PROJ-1 and 10 completed, PROJ-2 open, PROJ-6 and 8
         # descoped; PROJ-6 completed again as extra work.
         epics = {e["key"]: e for e in data["epics"]}
@@ -241,7 +246,8 @@ class BuildTest(ReportTest):
              "missing changelogs for PROJ-2"),
             # Raw data fetched before the reporting timezone was stored needs
             # a fresh fetch, rather than days cut at UTC.
-            (lambda raw: raw["_meta.json"].pop("report_timezone"), "no reporting timezone"),
+            (lambda raw: raw["_meta.json"].pop(
+                "report_timezone"), "no reporting timezone"),
         ]
         for change, expected in cases:
             with self.subTest(expected):
@@ -251,8 +257,25 @@ class BuildTest(ReportTest):
                 proc = self.run_script("build_sprint_data.py")
                 self.assertEqual(proc.returncode, 1)
                 self.assertIn(expected, proc.stderr)
-                self.assertFalse(os.path.exists(os.path.join(self.dir, "data.json")))
+                self.assertFalse(os.path.exists(
+                    os.path.join(self.dir, "data.json")))
                 shutil.rmtree(os.path.join(self.dir, "_raw"))
+
+
+class BriefTest(ReportTest):
+    def test_goal_evidence_survives_the_build_and_brief_pipeline(self):
+        data = self.build()
+        self.assert_runs("make_brief.py")
+        with open(os.path.join(self.dir, "brief.json"), encoding="utf-8") as f:
+            brief = json.load(f)
+        original = [s for s in data["spells"]
+                    if s["counted"] and s["scope"] == "original"]
+        self.assertEqual([(t["key"], t["outcome"], t["points"]) for t in brief["goal_tickets"]],
+                         [(s["key"], s["outcome"], s["points"]) for s in original])
+        # Already-Done commitment is evidence for the goal, not an achievement.
+        self.assertIn("PROJ-10", [t["key"] for t in brief["goal_tickets"]])
+        self.assertNotIn("PROJ-10", [t["key"]
+                         for e in brief["epics"] for t in e["tickets"]])
 
 
 class ReopenedAtTheStartTest(ReportTest):
@@ -310,9 +333,12 @@ class ReopenedAtTheStartTest(ReportTest):
         def grew(field, key):
             return data[field][key] - before[field][key]
         with self.subTest("charts"):
-            self.assertEqual([grew("outcome_breakdown_counts", f"original_{o}") for o in outcomes], [3, 1, 2])
-            self.assertEqual([grew("outcome_breakdown_points", f"original_{o}") for o in outcomes], [5, 2, 9])
-            self.assertEqual([grew("outcome_breakdown_counts", f"extra_{o}") for o in outcomes], [0, 0, 0])
+            self.assertEqual(
+                [grew("outcome_breakdown_counts", f"original_{o}") for o in outcomes], [3, 1, 2])
+            self.assertEqual(
+                [grew("outcome_breakdown_points", f"original_{o}") for o in outcomes], [5, 2, 9])
+            self.assertEqual(
+                [grew("outcome_breakdown_counts", f"extra_{o}") for o in outcomes], [0, 0, 0])
         with self.subTest("burndown"):
             now = {r["date"]: r for r in data["burndown"]}
             then = {r["date"]: r for r in before["burndown"]}
@@ -323,14 +349,18 @@ class ReopenedAtTheStartTest(ReportTest):
             self.assertEqual({day: (now[day]["committed"] - then[day]["committed"],
                                     now[day]["total"] - then[day]["total"]) for day in reopened},
                              {day: (points, points) for day, points in reopened.items()})
-            self.assertIn("baseline 33 pts", self.assert_runs("make_charts.py", "--print-series").stdout)
+            self.assertIn("baseline 33 pts", self.assert_runs(
+                "make_charts.py", "--print-series").stdout)
         with self.subTest("report"):
             self.assertIn("Of the 13 tickets (33 pts) in the commitment, 8 tickets (19 pts) were already Done "
                           "at the start", md)
-            self.assertIn("| Sprint target completion | 38%, 5/13 tickets (9/33 pts) completed |", md)
-            self.assertIn('<a href="https://acme.atlassian.net/browse/PROJ-20">PROJ-20</a> (1 pt)', md)
+            self.assertIn(
+                "| Sprint target completion | 38%, 5/13 tickets (9/33 pts) completed |", md)
+            self.assertIn(
+                '<a href="https://acme.atlassian.net/browse/PROJ-20">PROJ-20</a> (1 pt)', md)
             self.assertEqual(md.count(">Already done</span>"), 8)
-            self.assertEqual(md.count(">Reopened</span>"), 4)  # PROJ-22 to 25, on the 6th
+            # PROJ-22 to 25, on the 6th
+            self.assertEqual(md.count(">Reopened</span>"), 4)
         with self.subTest("epic table"):
             def row(found):
                 return next(e for e in found["epics"] if e["key"] == "__no_epic__")
@@ -411,7 +441,8 @@ class ChartsTest(ReportTest):
                 if complete_date:
                     self.raw["sprint.json"]["completeDate"] = complete_date
                 self.build()
-                out = self.assert_runs("make_charts.py", "--print-series").stdout
+                out = self.assert_runs(
+                    "make_charts.py", "--print-series").stdout
                 for line in lines:
                     self.assertRegex(out, line)
 
@@ -419,29 +450,30 @@ class ChartsTest(ReportTest):
 class TimezoneTest(ReportTest):
     def test_active_snapshot_date_follows_fetch_in_reporting_timezone(self):
         cases = [
-            ("Europe/London", "2026-03-30", "2026-04-03", "today"),
-            ("America/New_York", "2026-03-29", "2026-04-03", "today"),
-            ("Europe/London", "2026-03-30", "2026-03-27", "sprint end"),
+            ("Europe/London", "2026-03-29T23:30:00Z", "2026-03-30", "2026-04-03"),
+            ("America/New_York", "2026-03-29T23:30:00Z", "2026-03-29", "2026-04-03"),
+            ("Europe/London", "2026-03-29T23:30:00Z", "2026-03-30", "2026-03-27"),
+            ("Europe/London", "2026-03-29T23:00:00Z", "2026-03-30", "2026-03-27"),
         ]
-        for zone, expected_day, end_day, cutoff_label in cases:
-            with self.subTest(zone=zone, end=end_day):
+        for zone, fetched_at, expected_day, end_day in cases:
+            with self.subTest(zone=zone, end=end_day, fetched_at=fetched_at):
                 self.raw = copy.deepcopy(fixture.raw_files())
                 self.raw["_meta.json"].update(
-                    fetched_at="2026-03-29T23:30:00Z", report_timezone=zone)
+                    fetched_at=fetched_at, report_timezone=zone)
                 self.raw["sprint.json"].update(
                     state="active", completeDate=None, endDate=f"{end_day}T17:00:00Z")
                 self.content["goal_verdict"] = "At risk"
                 data, md = self.make_report()
                 self.assertEqual(data["today"], expected_day)
                 self.assertEqual(data["burndown"][-1]
-                                 ["date"], min(expected_day, end_day))
+                                 ["date"], expected_day)
                 today_row = next(
                     row for row in data["timeline"] if "today" in row["labels"])
                 self.assertEqual(today_row["date"], expected_day)
                 display_day = "/".join(reversed(expected_day.split("-")))
                 self.assertIn(f"snapshot as at {display_day}", md)
                 with open(os.path.join(self.dir, "burndown.svg"), encoding="utf-8") as f:
-                    self.assertIn(f">{cutoff_label}<", f.read())
+                    self.assertIn(">today<", f.read())
 
     def test_timeline_and_burndown_agree_across_clock_changes(self):
         cases = [
@@ -489,7 +521,7 @@ class OutputFolderTest(ReportTest):
         cases = [
             ("build_sprint_data.py", ["data.json"]),
             ("make_brief.py", ["brief.json"]),
-            ("make_charts.py", ["outcome-tickets.svg", "outcome-pts.svg", "burndown.svg"]),
+            ("make_charts.py", list(CHARTS)),
             ("make_report.py", [REPORT]),
         ]
         for script, outputs in cases:
@@ -548,7 +580,8 @@ class MakeReportTest(ReportTest):
                 "| No goal set in Jira for this sprint |"], []),
             # Em dashes are a tell of AI text: the agent's are replaced...
             ("em dash in content.json",
-             lambda: self.content.update(key_achievements="The import flow — finally — shipped."),
+             lambda: self.content.update(
+                 key_achievements="The import flow — finally — shipped."),
              ["The import flow, finally, shipped."], []),
             # ...but text copied from Jira stays as the team wrote it, and the
             # checker accepts it.
@@ -574,8 +607,10 @@ class MakeReportTest(ReportTest):
             # The verdicts allowed depend on the sprint: closed or running,
             # with a goal or without.
             ({}, {"goal_verdict": "On track"}, "goal_verdict must be one of"),
-            ({"goal": None}, {"goal_verdict": "Partially met"}, "goal_verdict must be one of"),
-            ({}, {"key_achievements": ["One.", "Two."]}, "key_achievements must be a non-empty string"),
+            ({"goal": None}, {"goal_verdict": "Partially met"},
+             "goal_verdict must be one of"),
+            ({}, {"key_achievements": ["One.", "Two."]},
+             "key_achievements must be a non-empty string"),
             # Every epic needs a sentence for each group it has tickets in.
             ({}, {"epic_commentary": {}}, "epic_commentary.PROJ-101 needs a sentence for exactly these "
                                           "groups: not_completed, descoped"),
@@ -585,14 +620,16 @@ class MakeReportTest(ReportTest):
                 self.raw = copy.deepcopy(fixture.raw_files())
                 self.raw["sprint.json"].update(sprint_changes)
                 content = copy.deepcopy(fixture.CONTENT)
-                content["epic_commentary"] = fixture.epic_commentary(self.build())
+                content["epic_commentary"] = fixture.epic_commentary(
+                    self.build())
                 content.update(content_changes)
                 with open(os.path.join(self.dir, "content.json"), "w", encoding="utf-8") as f:
                     json.dump(content, f)
                 proc = self.run_script("make_report.py")
                 self.assertEqual(proc.returncode, 1)
                 self.assertIn(expected, proc.stderr)
-                self.assertFalse(os.path.exists(os.path.join(self.dir, REPORT)))
+                self.assertFalse(os.path.exists(
+                    os.path.join(self.dir, REPORT)))
 
 
 class FinishReportTest(ReportTest):
@@ -605,58 +642,70 @@ class FinishReportTest(ReportTest):
         with open(os.path.join(self.dir, "content.json"), "w", encoding="utf-8") as f:
             json.dump(self.content, f)
 
-    def test_a_passing_report_prints_only_the_summary(self):
-        self.write_content(self.build())
-        proc = self.run_script("finish_report.py")
-        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        lines = proc.stdout.splitlines()
-        self.assertEqual(len(lines), 2, proc.stdout)
-        self.assertRegex(lines[0], r"^all \d+ checks passed$")
-        self.assertEqual(lines[1], "report: " + os.path.join(self.dir, REPORT))
-        for name in ("outcome-tickets.svg", "outcome-pts.svg", "burndown.svg"):
-            with open(os.path.join(self.dir, name), encoding="utf-8") as f:
-                self.assertTrue(f.read().startswith("<svg "), name)
-        self.assertTrue(os.path.exists(os.path.join(self.dir, REPORT)))
+    def test_fractional_estimates_finish_the_report(self):
+        self.issue("PROJ-2")["fields"][fixture.POINTS_FIELD] = 5.5
+        for state, verdict in (("closed", "Partially met"), ("active", "On track")):
+            with self.subTest(state=state):
+                self.raw["sprint.json"]["state"] = state
+                if state == "active":
+                    self.raw["sprint.json"]["completeDate"] = None
+                    self.raw["_meta.json"]["fetched_at"] = "2026-03-11T12:00:00Z"
+                data = self.build()
+                self.write_content(data, goal_verdict=verdict)
+                self.assert_runs("finish_report.py")
+                with open(os.path.join(self.dir, REPORT), encoding="utf-8") as f:
+                    md = f.read()
+                self.assertIn("(4/17.5 pts)", md)
+                self.assertIn("(4/12.5 pts)", md)
 
-    def test_bad_content_stops_before_the_report(self):
-        # No report from content the agent must fix first, so a stale or
-        # half-right report is never left to be shared.
-        self.write_content(self.build(), key_achievements="PROJ-1 shipped.")
-        proc = self.run_script("finish_report.py")
-        self.assertEqual(proc.returncode, 1)
-        self.assertEqual(proc.stdout.splitlines(), [
-            "content.json:", "  - key_achievements: names tickets ['PROJ-1']; describe the work instead"])
-        self.assertFalse(os.path.exists(os.path.join(self.dir, REPORT)))
+    def test_outcomes(self):
+        # Charts come first, so each case draws them. A report from content
+        # the agent must fix is never written, so a stale or half-right one
+        # isn't left to be shared; a crash isn't a content.json problem, so
+        # it is shown whole, without that advice.
+        path = re.escape(os.path.join(self.dir, REPORT))
 
-    def test_failed_checks_are_listed_without_the_passing_ones(self):
-        data = self.build()
-        self.write_content(data)
-        # A breakdown that no longer matches the spells it was built from.
-        data["outcome_breakdown_counts"]["carried_in_completed"] += 1
-        with open(os.path.join(self.dir, "data.json"), "w", encoding="utf-8") as f:
-            json.dump(data, f)
-        proc = self.run_script("finish_report.py")
-        self.assertEqual(proc.returncode, 1)
-        lines = proc.stdout.splitlines()
-        self.assertTrue(all(line.startswith("  FAIL  ") for line in lines[:-2]), proc.stdout)
-        self.assertTrue(lines[:-2], proc.stdout)
-        self.assertRegex(lines[-2], r"^\d+ check\(s\) failed$")
-        self.assertEqual(lines[-1], "report (fix content.json and run this again): "
-                         + os.path.join(self.dir, REPORT))
+        def breakdown_drift(data):
+            # A breakdown that no longer matches the spells it was built from.
+            data["outcome_breakdown_counts"]["carried_in_completed"] += 1
 
-    def test_a_crashed_check_is_shown_whole(self):
-        # A crash isn't a content.json problem: the whole traceback is shown,
-        # and the agent isn't told to fix content.json.
-        data = self.build()
-        self.write_content(data)
-        del data["non_delivery_closures"]
-        with open(os.path.join(self.dir, "data.json"), "w", encoding="utf-8") as f:
-            json.dump(data, f)
-        proc = self.run_script("finish_report.py")
-        self.assertNotEqual(proc.returncode, 0)
-        self.assertIn("Traceback", proc.stdout)
-        self.assertIn("non_delivery_closures", proc.stdout)
-        self.assertNotIn("fix content.json", proc.stdout)
+        def crash(data):
+            del data["non_delivery_closures"]
+        # name: (changes to content.json, change to data.json, exit code,
+        # stdout as a regex, whether the report is written)
+        cases = [
+            ("passing", {}, None, 0, rf"all \d+ checks passed\nreport: {path}\n", True),
+            ("bad content", {"key_achievements": "PROJ-1 shipped."}, None, 1,
+             re.escape(
+                 "content.json:\n  - key_achievements: names tickets ['PROJ-1']; describe the work instead\n"),
+             False),
+            ("failed checks", {}, breakdown_drift, 1,
+             rf"(  FAIL  .*\n)+\d+ check\(s\) failed\nreport \(inspect the failed checks before rerunning\): {path}\n",
+             True),
+            ("crashed check", {}, crash, 1,
+             r"(?s)(?!.*fix content\.json)Traceback.*non_delivery_closures.*", True),
+        ]
+        for name, changes, change_data, code, stdout, written in cases:
+            with self.subTest(name):
+                for old in (REPORT, *CHARTS):
+                    if os.path.exists(os.path.join(self.dir, old)):
+                        os.remove(os.path.join(self.dir, old))
+                self.content = copy.deepcopy(fixture.CONTENT)
+                data = self.build()
+                self.write_content(data, **changes)
+                if change_data:
+                    change_data(data)
+                    with open(os.path.join(self.dir, "data.json"), "w", encoding="utf-8") as f:
+                        json.dump(data, f)
+                proc = self.run_script("finish_report.py")
+                self.assertEqual(proc.returncode, code,
+                                 proc.stdout + proc.stderr)
+                self.assertTrue(re.fullmatch(stdout, proc.stdout), proc.stdout)
+                for chart in CHARTS:
+                    with open(os.path.join(self.dir, chart), encoding="utf-8") as f:
+                        self.assertTrue(f.read().startswith("<svg "), chart)
+                self.assertEqual(os.path.exists(
+                    os.path.join(self.dir, REPORT)), written)
 
 
 class CheckReportTest(ReportTest):
@@ -666,7 +715,8 @@ class CheckReportTest(ReportTest):
         # the failure for each kind of input it reads: the report, the charts
         # beside it and data.json.
         self.make_report()
-        files = {name: os.path.join(self.dir, name) for name in (REPORT, "burndown.svg", "data.json")}
+        files = {name: os.path.join(self.dir, name)
+                 for name in (REPORT, "burndown.svg", "data.json")}
         originals = {}
         for name, path in files.items():
             with open(path, encoding="utf-8") as f:
@@ -680,7 +730,8 @@ class CheckReportTest(ReportTest):
             ("the report", lambda: edit(REPORT, "<b>Commitment:</b><br>7 tickets (17 pts)",
                                         "<b>Commitment:</b><br>7 tickets (18 pts)"),
              "FAIL  timeline: 04/03/2026 end of day"),
-            ("a chart", lambda: os.remove(files["burndown.svg"]), "FAIL  images: burndown.svg exists"),
+            ("a chart", lambda: os.remove(
+                files["burndown.svg"]), "FAIL  images: burndown.svg exists"),
             ("data.json", lambda: edit("data.json", '"outcome": "completed"', '"outcome": "removed"'),
              "FAIL  model: PROJ-1 ends completed, as its events give"),
         ]

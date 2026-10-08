@@ -1,11 +1,10 @@
 # End-to-end tests for skills/agentic-manager-tech-investigation/scripts/output_diagram.py:
-# they run the whole script, as the skill does. Its functions have unit tests in
-# test_output_diagram.py.
+# they run the whole script, as the skill does to try a diagram. Its functions have
+# unit tests in test_output_diagram.py.
 # Run with: python3 tests/run.py agentic-manager-tech-investigation
 #
-# HOME points at a temporary folder holding the test's own config, and TMPDIR at the
-# same folder. A fake npx put first on PATH writes a given SVG instead of running the
-# Mermaid CLI, so no Node.js or network is needed.
+# HOME and TMPDIR point at a temporary folder. A fake npx put first on PATH writes a
+# given SVG instead of running the Mermaid CLI, so no Node.js or network is needed.
 import json
 import os
 import subprocess
@@ -22,6 +21,7 @@ sys.path.insert(0, TEST_DIR)
 from diagram_fixture import BAD_SVG, GOOD_SVG  # noqa: E402
 
 DIAGRAM = "flowchart TB\n  A --> B\n"
+SIZED_SVG = GOOD_SVG.replace("<svg>", '<svg viewBox="0 0 640 320">')
 # Stands in for npx: records its arguments, then writes $FAKE_SVG to the -o path,
 # or fails when $FAKE_SVG is empty.
 FAKE_NPX = """#!{python}
@@ -34,7 +34,6 @@ if not svg:
 with open(sys.argv[sys.argv.index("-o") + 1], "w") as f:
     f.write(svg)
 """
-TOKEN = "s3cret-token"
 
 
 class OutputDiagramScriptTest(unittest.TestCase):
@@ -43,24 +42,15 @@ class OutputDiagramScriptTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         # The temp folder as the script sees it, symlinks resolved (macOS's /var).
         self.root = os.path.realpath(self.tmp.name)
-        self.config = os.path.join(
-            self.root, ".config", "agentic-manager", "config.json")
-        self.reports = os.path.join(self.root, "my reports")
-        config = {"sources": {"workflow": {"jira-api": {
-            "enabled": True, "base-url": "https://acme.test", "email": "me@acme.test",
-            "api-token": TOKEN}}}, "output": {"root": self.reports}}
-        os.makedirs(os.path.dirname(self.config))
-        with open(self.config, "w", encoding="utf-8") as f:
-            json.dump(config, f)
+        self.args_file = os.path.join(self.root, "npx-args")
 
     def run_script(self, *args, content=DIAGRAM, **env_changes):
         """(exit code, stdout, stderr) of the script, given `content` on its input."""
-        env = dict(os.environ, HOME=self.root, TMPDIR=self.root, **env_changes)
+        env = dict(os.environ, HOME=self.root, TMPDIR=self.root,
+                   FAKE_ARGS=self.args_file, **env_changes)
         proc = subprocess.run([sys.executable, SCRIPT, *args], env=env, input=content.encode("utf-8"),
                               capture_output=True)
-        out, err = proc.stdout.decode(), proc.stderr.decode()
-        self.assertNotIn(TOKEN, out + err)
-        return proc.returncode, out, err
+        return proc.returncode, proc.stdout.decode(), proc.stderr.decode()
 
     def fake_npx(self):
         """A folder holding the fake npx, for PATH."""
@@ -72,31 +62,29 @@ class OutputDiagramScriptTest(unittest.TestCase):
         os.chmod(npx, 0o755)
         return bin_dir
 
-    def test_renders_and_writes(self):
-        args_file = os.path.join(self.root, "npx-args")
-        code, out, err = self.run_script("--name", "tech-investigations",
-                                         "--path", "2026-03-29--payments-retry/architecture-map.svg", "--theme", "dark",
-                                         PATH=self.fake_npx(), FAKE_SVG=GOOD_SVG,
-                                         FAKE_ARGS=args_file)
+    def test_renders_and_reports_the_size(self):
+        before = sorted(os.listdir(self.root))
+        code, out, err = self.run_script(
+            "--theme", "dark", PATH=self.fake_npx(), FAKE_SVG=SIZED_SVG)
         self.assertEqual(code, 0, err)
-        path = os.path.join(self.reports, "tech-investigations",
-                            "2026-03-29--payments-retry", "architecture-map.svg")
-        self.assertEqual(json.loads(out), {"path": path, "temporary": False})
-        with open(path, encoding="utf-8") as f:
-            self.assertEqual(f.read(), GOOD_SVG)  # no <style> to restyle
-        with open(args_file, encoding="utf-8") as f:
+        self.assertEqual(json.loads(out), {
+                         "width": 640.0, "height": 320.0, "nodes": {}})
+        with open(self.args_file, encoding="utf-8") as f:
             args = f.read()
         self.assertRegex(
             args, r"^-y -p @mermaid-js/mermaid-cli@[\d.]+ mmdc -i ")
         self.assertIn("-b #1e1e1e", args)
         self.assertNotIn("-t ", args)
+        # Nothing is written beside the fake npx and its record.
+        self.assertEqual(sorted(os.listdir(self.root)),
+                         sorted(before + ["bin", "npx-args"]))
 
     def test_failures(self):
         # name: (PATH, the SVG the fake renders, exit code, expected on stderr)
         empty_bin = os.path.join(self.root, "empty-bin")
         os.makedirs(empty_bin)
         cases = [
-            ("without Node.js", empty_bin, GOOD_SVG,
+            ("without Node.js", empty_bin, SIZED_SVG,
              3, "Node.js (npx) is not available"),
             ("a diagram that doesn't render", None, "",
              1, "doesn't render: Parse error on line 2"),
@@ -105,14 +93,10 @@ class OutputDiagramScriptTest(unittest.TestCase):
         for name, path_dir, svg, code, expected in cases:
             with self.subTest(name):
                 returncode, out, err = self.run_script(
-                    "--name", "maps", "--path", "map.svg",
-                    PATH=path_dir or self.fake_npx(), FAKE_SVG=svg,
-                    FAKE_ARGS=os.path.join(self.root, "npx-args"))
+                    PATH=path_dir or self.fake_npx(), FAKE_SVG=svg)
                 self.assertEqual(returncode, code, err)
                 self.assertIn(expected, err)
                 self.assertEqual(out, "")
-                self.assertFalse(os.path.exists(
-                    os.path.join(self.reports, "maps", "map.svg")))
 
 
 if __name__ == "__main__":

@@ -27,6 +27,8 @@ REPORT_SUFFIX = "_Report.md"
 # as the user named it.
 TOPIC = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 INVESTIGATION = re.compile(r"(?P<topic>.+)_(?P<date>\d\d-\d\d-\d\d)")
+# The label of an output's shape, such as long-analysis or exec-summary.
+FORMAT = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 
 # The three architecture stages: (key, report heading, map file).
 STAGES = [
@@ -108,6 +110,14 @@ def read_skip(folder):
     return tuple(d for d in SKIPS if isinstance(skip, list) and d in skip)
 
 
+def check_format(wanted):
+    """`wanted`, the label of an output's shape, or exits if it isn't one."""
+    if not FORMAT.fullmatch(wanted):
+        raise SystemExit(
+            f"{wanted!r}: the format is a short lower-case label, such as exec-summary")
+    return wanted
+
+
 def investigation_dir(relative):
     """(absolute path, output folder, temporary) of the investigation
     `relative` inside the skill's output folder. Exits if it would lead
@@ -120,7 +130,8 @@ def topic_of(folder):
     """The <Topic> of an investigation folder's name, or exits."""
     match = INVESTIGATION.fullmatch(os.path.basename(os.path.normpath(folder)))
     if not match:
-        raise SystemExit(f"{folder!r} is not an investigation folder, <Topic>_<YY-MM-DD>")
+        raise SystemExit(
+            f"{folder!r} is not an investigation folder, <Topic>_<YY-MM-DD>")
     return match["topic"]
 
 
@@ -129,9 +140,11 @@ def load_json(path):
         with open(path, encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
-        raise SystemExit(f"{os.path.basename(path)} is missing in {os.path.dirname(path)}")
+        raise SystemExit(
+            f"{os.path.basename(path)} is missing in {os.path.dirname(path)}")
     except (OSError, UnicodeError, ValueError) as error:
-        raise SystemExit(f"{os.path.basename(path)} is not readable JSON: {error}")
+        raise SystemExit(
+            f"{os.path.basename(path)} is not readable JSON: {error}")
 
 
 def table_row(cells):
@@ -181,5 +194,59 @@ def headings(text):
         base = slug(match[2])
         count = seen.get(base, 0)
         seen[base] = count + 1
-        found.append((len(match[1]), match[2], base if count == 0 else f"{base}-{count}"))
+        found.append((len(match[1]), match[2],
+                     base if count == 0 else f"{base}-{count}"))
     return found
+
+
+INLINE_LINK = re.compile(
+    r'(!?)\[([^\]\n]*)\]\(\s*(<[^>\n]+>|[^\s)]+)(?:\s+"[^"\n]*")?\s*\)')
+REFERENCE_LINK = re.compile(r"(!?)\[([^\]\n]+)\]\[([^\]\n]*)\]")
+# [text] alone, a link when a definition names it: not part of an inline,
+# full reference or definition line.
+SHORTCUT_LINK = re.compile(r"(?<![\]\\])(!?)\[([^\]\n]+)\](?![(\[:])")
+DEFINITION = re.compile(r"^ {0,3}\[([^\]]+)\]:\s*(<[^>]+>|\S+)", re.M)
+
+
+def markdown(text):
+    """Return prose with fenced code blanked (offsets preserved), plus fences."""
+    lines = text.splitlines(keepends=True)
+    prose, fences = [], []
+    opened = None
+    offset = 0
+    for line in lines:
+        match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)\s*$", line.rstrip("\n"))
+        if opened is None and match:
+            opened = (match[1], match[2].strip(), offset, [])
+            prose.append("\n" if line.endswith("\n") else "")
+            prose[-1] = " " * (len(line) - len(prose[-1])) + prose[-1]
+        elif opened is not None:
+            marker, language, start, body = opened
+            prose.append(" " * (len(line.rstrip("\n"))) +
+                         ("\n" if line.endswith("\n") else ""))
+            if match and match[1][0] == marker[0] and len(match[1]) >= len(marker) and not match[2].strip():
+                fences.append((start, offset + len(line),
+                              language, "".join(body)))
+                opened = None
+            else:
+                body.append(line)
+        else:
+            prose.append(line)
+        offset += len(line)
+    if opened is not None:
+        _, language, start, body = opened
+        fences.append((start, len(text), language, "".join(body)))
+    return "".join(prose), fences, opened is not None
+
+
+def links(prose, definitions):
+    """Yield (start, end, image, target); support inline, full and collapsed
+    reference links, and shortcut links whose text a definition names."""
+    for match in INLINE_LINK.finditer(prose):
+        yield match.start(), match.end(), bool(match[1]), match[3].strip("<>")
+    for match in REFERENCE_LINK.finditer(prose):
+        key = (match[3] or match[2]).casefold()
+        yield match.start(), match.end(), bool(match[1]), definitions.get(key)
+    for match in SHORTCUT_LINK.finditer(prose):
+        if match[2].casefold() in definitions:
+            yield match.start(), match.end(), bool(match[1]), definitions[match[2].casefold()]

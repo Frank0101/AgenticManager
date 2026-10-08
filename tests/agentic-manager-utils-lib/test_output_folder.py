@@ -35,83 +35,71 @@ class OutputFolderTest(unittest.TestCase):
         with open(self.path, "w", encoding="utf-8") as f:
             f.write(data if isinstance(data, str) else json.dumps(data))
 
-    # --- output_root
-
     def test_output_root(self):
-        self.write({"output": {"root": " ~/reports "}})
-        self.assertEqual(output_folder.output_root(),
-                         os.path.join(os.path.expanduser("~"), "reports"))
-
-    def test_output_root_not_set(self):
-        for data in ({}, {"output": {}}, {"output": {"root": "<path>"}}, {"output": {"root": " "}},
-                     {"output": {"root": " <path> "}},
-                     {"output": {"root": 5}}, {"output": []}):
+        # None: the config sets no usable root, so skills use the temp folder.
+        cases = [({"output": {"root": " ~/reports "}}, os.path.join(os.path.expanduser("~"), "reports")),
+                 ({}, None), ({"output": {}}, None), ({
+                     "output": {"root": "<path>"}}, None),
+                 ({"output": {"root": " "}}, None), ({
+                     "output": {"root": " <path> "}}, None),
+                 ({"output": {"root": 5}}, None), ({"output": []}, None)]
+        for data, expected in cases:
             with self.subTest(data=data):
                 self.write(data)
-                self.assertIsNone(output_folder.output_root())
+                self.assertEqual(output_folder.output_root(), expected)
 
     def test_unreadable_config(self):
         for call in (output_folder.output_root, lambda: output_folder.output_folder("reports")):
             with self.assertRaisesRegex(SystemExit, "could not read"):
                 call()
 
-    # --- output_folder
-
     def test_output_folder(self):
-        reports = os.path.join(self.tmp.name, "reports")
+        # The folder is absolute, even for a relative root, created if
+        # missing, and keeps what is already in it.
         cases = [
-            ("in the output root", {"output": {"root": reports}},
-             (os.path.join(reports, "jira-sprint-reports"), False)),
+            ("in the output root", {"output": {"root": os.path.join(self.tmp.name, "reports")}},
+             (os.path.join(self.tmp.name, "reports", "jira-sprint-reports"), False)),
+            ("in a relative output root", {"output": {"root": "relative"}},
+             (os.path.join(os.path.realpath(self.tmp.name), "relative", "jira-sprint-reports"), False)),
             ("in the temp folder without an output root", {},
              (os.path.join(self.temp_root, "jira-sprint-reports"), True)),
         ]
+        cwd = os.getcwd()
+        os.chdir(self.tmp.name)
+        self.addCleanup(os.chdir, cwd)
         for name, data, expected in cases:
             with self.subTest(name):
                 self.write(data)
                 self.assertEqual(output_folder.output_folder(
                     "jira-sprint-reports"), expected)
-                self.assertTrue(os.path.isdir(expected[0]))
-
-    def test_imported_api_rejects_paths_as_names(self):
-        self.write({})
-        for name in ("", "..", "../outside", os.path.join(self.tmp.name, "outside")):
-            with self.subTest(name=name), self.assertRaisesRegex(SystemExit, "single folder name"):
-                output_folder.output_folder(name)
-        self.assertFalse(os.path.exists(self.temp_root))
-
-    def test_output_folder_keeps_its_files(self):
-        self.write({})
-        folder, _ = output_folder.output_folder("reports")
-        with open(os.path.join(folder, "kept.md"), "w", encoding="utf-8") as f:
-            f.write("x")
-        self.assertEqual(output_folder.output_folder("reports")[0], folder)
-        self.assertEqual(os.listdir(folder), ["kept.md"])
-
-    def test_output_folder_is_absolute(self):
-        self.write({"output": {"root": "reports"}})
-        cwd = os.getcwd()
-        os.chdir(self.tmp.name)
-        try:
-            folder, _ = output_folder.output_folder("x")
-        finally:
-            os.chdir(cwd)
-        self.assertEqual(folder, os.path.join(
-            os.path.realpath(self.tmp.name), "reports", "x"))
-
-    # --- the command line
+                with open(os.path.join(expected[0], "kept.md"), "w", encoding="utf-8") as f:
+                    f.write("x")
+                self.assertEqual(output_folder.output_folder(
+                    "jira-sprint-reports"), expected)
+                self.assertEqual(os.listdir(expected[0]), ["kept.md"])
 
     def test_name_must_be_one_folder(self):
+        # The same rule on the command line and for a script that imports
+        # output_folder(); a refused name creates nothing.
+        self.write({})
         cases = [("tech-investigations", "tech-investigations"), (" reports ", "reports"),
-                 ("", None), ("  ", None), (".", None), ("..", None),
-                 (os.path.join("a", "b"), None)]
+                 ("", None), ("  ", None), (".",
+                                            None), ("..", None), ("../outside", None),
+                 (os.path.join("a", "b"), None), (os.path.join(self.tmp.name, "outside"), None)]
         for value, expected in cases:
             with self.subTest(value=value):
                 if expected:
                     self.assertEqual(output_folder.parse_args(
                         ["--name", value]).name, expected)
+                    self.assertEqual(os.path.basename(
+                        output_folder.output_folder(value)[0]), expected)
                 else:
                     with self.assertRaises(SystemExit), mock.patch("sys.stderr"):
                         output_folder.parse_args(["--name", value])
+                    with self.assertRaisesRegex(SystemExit, "single folder name"):
+                        output_folder.output_folder(value)
+        self.assertEqual(sorted(os.listdir(self.temp_root)),
+                         ["reports", "tech-investigations"])
 
 
 class TempRootTest(unittest.TestCase):

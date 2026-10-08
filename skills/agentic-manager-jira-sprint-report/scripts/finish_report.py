@@ -26,8 +26,10 @@ def run(script, report_dir):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--report-dir", required=True, help="report folder holding data.json and content.json")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--report-dir", required=True,
+                        help="report folder holding data.json and content.json")
     args = parser.parse_args()
     for script in ("make_charts.py", "make_report.py"):
         result = run(script, args.report_dir)
@@ -40,9 +42,11 @@ def main():
         # The check itself crashed: show all of it, as content.json isn't the cause.
         sys.stdout.write(result.stdout)
         sys.exit(result.returncode)
-    print("\n".join([line for line in lines if line.strip().startswith("FAIL")] + lines[-1:]))
-    report = os.path.join(args.report_dir, report_file(load_json(os.path.join(args.report_dir, DATA_FILE))["label"]))
-    print(("report: " if not result.returncode else "report (fix content.json and run this again): ") + report)
+    print("\n".join(
+        [line for line in lines if line.strip().startswith("FAIL")] + lines[-1:]))
+    report = os.path.join(args.report_dir, report_file(
+        load_json(os.path.join(args.report_dir, DATA_FILE))["label"]))
+    print(("report: " if not result.returncode else "report (inspect the failed checks before rerunning): ") + report)
     sys.exit(result.returncode)
 
 

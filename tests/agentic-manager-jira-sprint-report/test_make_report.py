@@ -14,6 +14,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import make_report  # noqa: E402
+from check_report import Checker, check_commentary  # noqa: E402
 from common import CHART_FILES, NO_EPIC  # noqa: E402
 from make_report import Report  # noqa: E402
 
@@ -24,7 +25,8 @@ from report_fixture import BASE, CONTENT, ev, sprint_data, ticket  # noqa: E402
 # reads as a note on the heading or label, not part of it.
 AI = ' <sup style="font-size:0.6rem;font-weight:normal">[AI Gen.]</sup>'
 
-ACTIVE = {"sprint_status": "active", "today": "2026-03-10", "sprint_complete_date": None}
+ACTIVE = {"sprint_status": "active",
+          "today": "2026-03-10", "sprint_complete_date": None}
 
 
 def report(**changes):
@@ -46,9 +48,11 @@ class HelpersTest(unittest.TestCase):
             ("strip_em_dashes", make_report.strip_em_dashes({"a": ["x — y", 3], "b": "p—q"}),
              {"a": ["x, y", 3], "b": "p, q"}),
             ("md_key", r.md_key("PROJ-1"), f"[PROJ-1]({BASE}/browse/PROJ-1)"),
-            ("html_key", r.html_key("PROJ-1"), f'<a href="{BASE}/browse/PROJ-1">PROJ-1</a>'),
+            ("html_key", r.html_key("PROJ-1"),
+             f'<a href="{BASE}/browse/PROJ-1">PROJ-1</a>'),
             # Only Jira-shaped keys are linked.
-            ("linkify", r.linkify("See PROJ-1 and a-2."), f"See [PROJ-1]({BASE}/browse/PROJ-1) and a-2."),
+            ("linkify", r.linkify("See PROJ-1 and a-2."),
+             f"See [PROJ-1]({BASE}/browse/PROJ-1) and a-2."),
             # A Markdown table cell must stay on one line and not split on |.
             ("table_text", r.table_text("a | b\nc"), "a \\| b c"),
             # A tag sets both colours, so it reads the same in light and dark.
@@ -67,15 +71,18 @@ class HelpersTest(unittest.TestCase):
         cases = [
             ({"type": "committed", "done": False}, ["Added"]),
             ({"type": "joined", "done": True}, ["Added", "Already done"]),
-            ({"type": "reestimated", "fromPoints": None, "points": 3}, ["Re-estimated: – → 3 pts"]),
-            ({"type": "reestimated", "fromPoints": 5, "points": 3}, ["Re-estimated: 5 → 3 pts"]),
+            ({"type": "reestimated", "fromPoints": None,
+             "points": 3}, ["Re-estimated: – → 3 pts"]),
+            ({"type": "reestimated", "fromPoints": 5,
+             "points": 3}, ["Re-estimated: 5 → 3 pts"]),
             ({"type": "removed"}, ["Descoped"]),
             ({"type": "completed"}, ["Completed"]),
             ({"type": "reopened"}, ["Reopened"]),
         ]
         for event, expected in cases:
             with self.subTest(event["type"]):
-                self.assertEqual(re.findall(r">([^<]+)</span>", r.tags(event)), expected)
+                self.assertEqual(re.findall(
+                    r">([^<]+)</span>", r.tags(event)), expected)
 
 
 class HeaderTest(unittest.TestCase):
@@ -95,10 +102,20 @@ class HeaderTest(unittest.TestCase):
             ("closed late, without a goal", {"sprint_complete_date": "2026-03-16", "sprint_goal": ""},
              table("02/03/2026–13/03/2026 (completed 16/03/2026)", "*No goal was set in Jira for this sprint*",
                    "60%, 3/5 tickets (6/10 pts) completed")),
+            ("blank goal", {"sprint_goal": "   "},
+             table("02/03/2026–13/03/2026", "*No goal was set in Jira for this sprint*",
+                   "60%, 3/5 tickets (6/10 pts) completed")),
+            ("blank goal lines", {"sprint_goal": "\n \n"},
+             table("02/03/2026–13/03/2026", "*No goal was set in Jira for this sprint*",
+                   "60%, 3/5 tickets (6/10 pts) completed")),
             # Jira's goal keeps its wording, one line per <br>, its keys linked
             # and its pipes escaped so the cell holds.
             ("a goal over several lines", {"sprint_goal": "Ship login\n\n  Fix PROJ-1 | export  \n"},
              table("02/03/2026–13/03/2026", f"Ship login<br>Fix [PROJ-1]({BASE}/browse/PROJ-1) \\| export",
+                   "60%, 3/5 tickets (6/10 pts) completed")),
+            ("literal HTML and entities", {"sprint_goal": 'Ship <beta> & preserve &amp;\nFix PROJ-1 | "export"'},
+             table("02/03/2026–13/03/2026",
+                   f'Ship &lt;beta&gt; &amp; preserve &amp;amp;<br>Fix [PROJ-1]({BASE}/browse/PROJ-1) \\| "export"',
                    "60%, 3/5 tickets (6/10 pts) completed")),
         ]
         for name, changes, expected in cases:
@@ -147,11 +164,12 @@ class TablesTest(unittest.TestCase):
                       "\n".join(self.rows(table)))
         self.assertIn("PROJ-4 (1 pt) | Reopened Completed", self.rows(table))
 
-    def test_days_past_the_burndown_have_no_figures(self):
-        # An active sprint past its end: the burndown stops at the end date.
+    def test_overdue_sprint_keeps_its_current_figures(self):
+        # An active sprint past its planned end continues through the fetch.
         data = sprint_data(sprint_status="active", today="2026-03-16")
         rows = self.rows(Report(data, CONTENT).timeline_table())
-        self.assertEqual(rows[-1], "16/03/2026 (today) | – | –")
+        self.assertEqual(rows[-1], "16/03/2026 (today) | – | Still open: 0 tickets (0 pts) of the commitment "
+                         "1 ticket (2 pts) with extra")
 
     def test_epic_table(self):
         table = report().epic_table().replace("\n", "")
@@ -161,7 +179,8 @@ class TablesTest(unittest.TestCase):
         self.assertIn(f'<td><a href="{BASE}/browse/PROJ-100">PROJ-100: Login &lt;beta&gt;</a></td>'
                       "<td>3/5 tickets (6/10 pts)</td><td>0/1 ticket (0/2 pts)</td>", table)
         # No epic has no Jira page to link; no commitment reads "–", not 0/0.
-        self.assertIn("<td>(no epic)</td><td>–</td><td>1/1 ticket (1/1 pts)</td>", table)
+        self.assertIn(
+            "<td>(no epic)</td><td>–</td><td>1/1 ticket (1/1 pts)</td>", table)
 
     def test_epic_commentary(self):
         # A labelled sentence per group with tickets to describe, in order and
@@ -173,20 +192,25 @@ class TablesTest(unittest.TestCase):
         review_content = copy.deepcopy(CONTENT)
         review_content["epic_commentary"]["PROJ-100"]["in_review"] = \
             review_content["epic_commentary"]["PROJ-100"].pop("not_completed")
-        left_out = sprint_data(spells=[s for s in sprint_data()["spells"] if s["key"] in ("PROJ-4", "PROJ-5")])
+        left_out = sprint_data(spells=[s for s in sprint_data()[
+                               "spells"] if s["key"] in ("PROJ-4", "PROJ-5")])
         cases = [
             ("closed", sprint_data(), CONTENT,
              "<td><b>Completed:</b> Staff can sign in with a password.<br>"
              "<b>Not completed:</b> Remembering the last sign-in method is still in progress.<br>"
              "<b>Descoped:</b> Sign-in audit logging &amp; the admin screen were dropped.</td>"),
-            ("no epic", sprint_data(), CONTENT, "<td><b>Completed:</b> The export now handles empty files.</td>"),
+            ("no epic", sprint_data(), CONTENT,
+             "<td><b>Completed:</b> The export now handles empty files.</td>"),
             ("active", sprint_data(**ACTIVE), CONTENT, "<b>Open:</b> Remembering"),
-            ("in review", in_review, review_content, "<b>In review:</b> Remembering"),
-            ("nothing to describe", left_out, {**CONTENT, "epic_commentary": {}}, "<td>–</td></tr>"),
+            ("in review", in_review, review_content,
+             "<b>In review:</b> Remembering"),
+            ("nothing to describe", left_out, {
+             **CONTENT, "epic_commentary": {}}, "<td>–</td></tr>"),
         ]
         for name, data, content, expected in cases:
             with self.subTest(name):
-                self.assertIn(expected, Report(data, content).epic_table().replace("\n", ""))
+                self.assertIn(expected, Report(
+                    data, content).epic_table().replace("\n", ""))
 
 
 class ProseTest(unittest.TestCase):
@@ -194,7 +218,8 @@ class ProseTest(unittest.TestCase):
         return plain(Report(sprint_data(spells=spells, **changes), CONTENT).commentary())
 
     def test_commentary(self):
-        ideal = [ticket("PROJ-1", [ev(2, "committed", 3), ev(4, "completed", 3, done=True)], "completed")]
+        ideal = [ticket("PROJ-1", [ev(2, "committed", 3),
+                        ev(4, "completed", 3, done=True)], "completed")]
         cases = [
             ("closed", {},
              "Of the 5 tickets (9 pts) in the commitment, PROJ-4 (1 pt) was already Done at the start, and "
@@ -217,26 +242,33 @@ class ProseTest(unittest.TestCase):
         ]
         for name, changes, expected in cases:
             with self.subTest(name):
-                self.assertEqual(plain(report(**changes).commentary()), expected)
+                self.assertEqual(
+                    plain(report(**changes).commentary()), expected)
         # Tickets in the commentary are links, with their estimate after.
-        self.assertIn(f"[PROJ-4]({BASE}/browse/PROJ-4) (1 pt)", report().commentary())
+        self.assertIn(
+            f"[PROJ-4]({BASE}/browse/PROJ-4) (1 pt)", report().commentary())
 
     def test_commentary_states_what_is_open(self):
         # What is open says how much of it is from the commitment, as that is
         # what the sprint promised.
-        committed = ticket("PROJ-1", [ev(2, "committed", 2)], "not_completed", status="To Do")
-        extra = ticket("PROJ-2", [ev(3, "joined", 1)], "not_completed", status="To Do", scope="extra")
-        done = ticket("PROJ-1", [ev(2, "committed", 3), ev(4, "completed", 3, done=True)], "completed")
+        committed = ticket(
+            "PROJ-1", [ev(2, "committed", 2)], "not_completed", status="To Do")
+        extra = ticket("PROJ-2", [ev(3, "joined", 1)],
+                       "not_completed", status="To Do", scope="extra")
+        done = ticket("PROJ-1", [ev(2, "committed", 3),
+                      ev(4, "completed", 3, done=True)], "completed")
         cases = [
             ("all from the commitment", [committed], {},
              "At the close, 1 ticket (2 pts) was not completed."),
             ("some from the commitment", [committed, extra], {},
              "At the close, 2 tickets (3 pts) were not completed, 1 ticket (2 pts) of them from the commitment."),
-            ("nothing, while running", [done], ACTIVE, "Nothing is open, with 3 days left."),
+            ("nothing, while running", [done], ACTIVE,
+             "Nothing is open, with 3 days left."),
         ]
         for name, spells, changes, expected in cases:
             with self.subTest(name):
-                self.assertTrue(self.commentary(spells, **changes).endswith(expected))
+                self.assertTrue(self.commentary(
+                    spells, **changes).endswith(expected))
 
     def test_commentary_reestimates(self):
         # From the estimate before the first re-estimate to the latest; an
@@ -245,8 +277,10 @@ class ProseTest(unittest.TestCase):
             return ticket(key, [ev(2, "committed", before), ev(3, "reestimated", after, fromPoints=before)],
                           "not_completed", status="To Do")
         cases = [
-            ("one", [reestimated("PROJ-1", 5, 3)], "PROJ-1 (5 → 3 pts) was re-estimated"),
-            ("cleared", [reestimated("PROJ-1", 2, None)], "PROJ-1 (2 → – pts) was re-estimated"),
+            ("one", [reestimated("PROJ-1", 5, 3)],
+             "PROJ-1 (5 → 3 pts) was re-estimated"),
+            ("cleared", [reestimated("PROJ-1", 2, None)],
+             "PROJ-1 (2 → – pts) was re-estimated"),
             ("several", [reestimated("PROJ-1", 5, 3), reestimated("PROJ-2", None, 5)],
              "2 tickets (5 → 8 pts) were re-estimated (PROJ-1, PROJ-2)"),
             # Over 3 tickets, the keys are counted rather than named.
@@ -264,19 +298,26 @@ class ProseTest(unittest.TestCase):
             ticket("PROJ-8", [ev(3, "joined", 1),
                    ev(4, "removed", 1)], "removed", scope="extra"),
             ticket("PROJ-9", [ev(3, "joined", None)], "not_completed", scope="extra")]
-        data = sprint_data(spells=spells, **ACTIVE)
-        # Check the core without the non-delivery caveat.
-        r = Report(data, CONTENT)
-        core = r.commentary()
-        for caveat in r.commentary_caveats():
-            core = core.replace(caveat, "")
-        self.assertLessEqual(
-            make_report.word_count(core), make_report.COMMENTARY_WORDS)
-        # Shortened, every departure is still stated, its long phrases cut.
-        for phrase in ("already Done", "were descoped", "added as extra", "descoped again",
-                       "was reopened", "re-estimated", "left the sprint and came back", "descoped, then extra",
-                       "unestimated"):
-            self.assertIn(phrase, core)
+        for today in ("2026-03-10", "2026-03-12", "2026-03-13", "2026-03-14", "2026-03-16"):
+            with self.subTest(today=today):
+                data = sprint_data(spells=spells, **{**ACTIVE, "today": today})
+                # Check the core without the non-delivery caveat.
+                r = Report(data, CONTENT)
+                commentary = r.commentary()
+                core = commentary
+                for caveat in r.commentary_caveats():
+                    core = core.replace(caveat, "")
+                self.assertLessEqual(
+                    make_report.word_count(core), make_report.COMMENTARY_WORDS)
+                # Shortened, every departure remains, including the open commitment.
+                for phrase in ("already Done", "were descoped", "added as extra", "descoped again",
+                               "was reopened", "re-estimated", "left the sprint and came back",
+                               "descoped, then extra", "unestimated", "1 ticket (1 pt) from the commitment"):
+                    self.assertIn(phrase, core)
+                checked = Checker()
+                check_commentary(checked, r.timeline_table() +
+                                 "\n\n" + commentary, data)
+                self.assertEqual(checked.failures, [])
 
     def test_commentary_counts_instead_of_naming_when_too_long(self):
         spells = [ticket("PROJ-1", [ev(2, "committed", 1)],
@@ -309,15 +350,33 @@ class ProseTest(unittest.TestCase):
                                         "(PROJ-1, PROJ-6), as later sprint moves prevent checking it against Jira.")]
         for keys, expected in cases:
             with self.subTest(keys=keys):
-                text = plain(report(membership_cross_check_excluded_keys=keys).commentary())
+                text = plain(
+                    report(membership_cross_check_excluded_keys=keys).commentary())
                 self.assertTrue(text.endswith(expected), text)
+
+    def test_large_caveats_name_every_ticket(self):
+        for kind in ("membership", "non_delivery"):
+            for count in (99, 100):
+                with self.subTest(kind=kind, count=count):
+                    keys = [f"PROJ-{n}" for n in range(100, 100 + count)]
+                    if kind == "membership":
+                        data = sprint_data(
+                            membership_cross_check_excluded_keys=keys)
+                    else:
+                        data = sprint_data(spells=[ticket(key, [ev(2, "committed", 1),
+                                                                ev(3, "completed", 1, done=True)], "completed", marker="duplicate") for key in keys])
+                    caveat = Report(data, CONTENT).commentary_caveats()[-1]
+                    self.assertEqual(re.findall(
+                        r"\[(PROJ-\d+)\]", caveat), keys)
 
     def test_days_left(self):
         cases = [
             ("closed", {}, " with ", ""),
             ("active", ACTIVE, " with ", " with 3 days left"),
-            ("last day", {"sprint_status": "active", "today": "2026-03-13"}, " with ", " with no days left"),
-            ("overdue", {"sprint_status": "active", "today": "2026-03-15"}, ", ", ", 2 days past the end date"),
+            ("last day", {"sprint_status": "active",
+             "today": "2026-03-13"}, " with ", " with no days left"),
+            ("overdue", {"sprint_status": "active", "today": "2026-03-15"},
+             ", ", ", 2 days past the end date"),
         ]
         for name, changes, prefix, expected in cases:
             with self.subTest(name):
@@ -334,43 +393,42 @@ class BuildTest(unittest.TestCase):
         # The outcome charts sit above the timeline, the burndown under its heading.
         self.assertEqual(re.findall(r"!\[[^\]]*\]\(([^)]+)\)", md),
                          [CHART_FILES["outcome_tickets"], CHART_FILES["outcome_pts"], CHART_FILES["burndown"]])
-        self.assertIn(f"## Scope Timeline\n\n![Sprint burndown]({CHART_FILES['burndown']})", md)
-        self.assertIn("</table>\n\nOf the 5 tickets (9 pts) in the commitment,", md)
-        self.assertIn(f"## Key Achievements{AI}\n\nLogin shipped: staff can sign in", md)
+        self.assertIn(
+            f"## Scope Timeline\n\n![Sprint burndown]({CHART_FILES['burndown']})", md)
+        self.assertIn(
+            "</table>\n\nOf the 5 tickets (9 pts) in the commitment,", md)
+        self.assertIn(
+            f"## Key Achievements{AI}\n\nLogin shipped: staff can sign in", md)
         # The agent's retro notes may name tickets; they are linked here.
-        self.assertIn(f"## Notes for Sprint Retro{AI}\n\n- [PROJ-1]({BASE}/browse/PROJ-1) (3 pts) grew", md)
+        self.assertIn(
+            f"## Notes for Sprint Retro{AI}\n\n- [PROJ-1]({BASE}/browse/PROJ-1) (3 pts) grew", md)
         self.assertTrue(md.endswith(
             "left the sprint and came back: should it have stayed out?\n"))
 
     def test_mid_sprint_snapshot_note(self):
         # A running sprint's figures are provisional; the note says so.
         note = 'This is a mid-sprint snapshot as at 10/03/2026, with 3 days left. "Open" means not completed yet.'
-        self.assertIn(f"# Sprint Summary: Sprint 7\n\n{note}\n\n| Field |", report(**ACTIVE).build())
+        self.assertIn(
+            f"# Sprint Summary: Sprint 7\n\n{note}\n\n| Field |", report(**ACTIVE).build())
         self.assertNotIn("mid-sprint snapshot", report().build())
 
     def test_no_values_in_bold(self):
         md = report().build()
         bold = re.findall(r"\*\*(.+?)\*\*", md) + \
             re.findall(r"<b>(.+?)</b>", md)
-        self.assertEqual(set(bold), {"Commitment:", "Still open:", "Completed:", "Not completed:", "Descoped:"})
+        self.assertEqual(set(bold), {
+                         "Commitment:", "Still open:", "Completed:", "Not completed:", "Descoped:"})
 
 
 class ValidateContentTest(unittest.TestCase):
-    def test_valid(self):
-        cases = [
-            ("the fixture", {}),
-            # Retro notes may name tickets, unlike the summaries.
-            ("a retro note naming a ticket", {"retro_notes": ["PROJ-1 (3 pts) grew: why?"]}),
-        ]
-        for name, changes in cases:
-            with self.subTest(name):
-                make_report.validate_content({**copy.deepcopy(CONTENT), **changes}, sprint_data())
-
-    def test_invalid(self):
-        # Each problem names the content.json field to fix, so it is fixed
-        # where it was written.
+    def test_validate_content(self):
+        # None: the content is valid. Otherwise each problem names the
+        # content.json field to fix, so it is fixed where it was written.
         commentary = CONTENT["epic_commentary"]
         cases = [
+            (None, {}),
+            # Retro notes may name tickets, unlike the summaries.
+            (None, {"retro_notes": ["PROJ-1 (3 pts) grew: why?"]}),
             # The shape. The text rules wait for a valid shape, as they read
             # the fields: a list here would otherwise crash them.
             ("key_achievements must be a non-empty string: one paragraph",
@@ -404,27 +462,39 @@ class ValidateContentTest(unittest.TestCase):
                                   "PROJ-100": {**commentary["PROJ-100"], "descoped": " "}}}),
             # The text: word limits, no ticket keys (describe the work), one
             # paragraph, and the report's vocabulary.
-            ("key_achievements: 81 words, at most 80", {"key_achievements": "word " * 81}),
-            ("blockers_risks: names tickets ['PROJ-2']", {"blockers_risks": "PROJ-2 is open."}),
-            ("blockers_risks: must be a single paragraph", {"blockers_risks": "Open.\n\nStill open."}),
+            ("key_achievements: 81 words, at most 80",
+             {"key_achievements": "word " * 81}),
+            ("blockers_risks: names tickets ['PROJ-2']",
+             {"blockers_risks": "PROJ-2 is open."}),
+            ("blockers_risks: must be a single paragraph",
+             {"blockers_risks": "Open.\n\nStill open."}),
+            ("epic_commentary.PROJ-100.completed: must be one sentence",
+             {"epic_commentary": {**commentary, "PROJ-100": {**commentary["PROJ-100"],
+                                  "completed": "Staff can sign in. Password reset also works."}}}),
             # An epic's limit counts all its groups' sentences together.
             ("epic_commentary.PROJ-100: 68 words, at most 60",
              {"epic_commentary": {**commentary, "PROJ-100": {**commentary["PROJ-100"], "completed": "word " * 50}}}),
             ("epic_commentary.__no_epic__: names tickets ['PROJ-3']",
              {"epic_commentary": {**commentary, NO_EPIC: {"completed": "PROJ-3 shipped."}}}),
-            ("key_achievements: no story or stories, found ['stories']", {"key_achievements": "Two stories shipped."}),
+            ("key_achievements: no story or stories, found ['stories']", {
+             "key_achievements": "Two stories shipped."}),
             ("key_achievements: no spelled-out numbers (write digits), found ['Two']",
              {"key_achievements": "Two tickets shipped."}),
             ("retro_notes[1]: no points (write pts), found ['points']",
              {"retro_notes": ["Fine?", "Were 9 points too many?"]}),
             ("retro_notes[0]: no closed (write completed, or at the close), found ['closed']",
              {"retro_notes": ["PROJ-1 (3 pts) closed late: why?"]}),
-            ("retro_notes[0]: no issue or issues", {"retro_notes": ["Was it an issue?"]}),
+            ("retro_notes[0]: no issue or issues", {
+             "retro_notes": ["Was it an issue?"]}),
         ]
         for expected, changes in cases:
-            with self.subTest(expected):
+            with self.subTest(expected, changes=changes if expected is None else None):
+                content = {**copy.deepcopy(CONTENT), **changes}
+                if expected is None:
+                    make_report.validate_content(content, sprint_data())
+                    continue
                 with self.assertRaises(SystemExit) as raised:
-                    make_report.validate_content({**copy.deepcopy(CONTENT), **changes}, sprint_data())
+                    make_report.validate_content(content, sprint_data())
                 self.assertIn(expected, str(raised.exception))
 
 

@@ -45,7 +45,7 @@ after the end are left out of the comparison
 """
 import argparse
 import os
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone, tzinfo
 
 from common import (DATA_FILE, NO_EPIC, OUTCOME_ROWS, OUTCOMES, RAW_DIR, SCOPE_GROUPS, History,
                     add_and_remove_events, as_of, in_sprint_at, is_blocker_candidate, issue_moves, key_order,
@@ -72,7 +72,7 @@ def load_optional(path, default):
     return load_json(path) if os.path.exists(path) else default
 
 
-def sprint_date(ts, offset, end_of_period=False):
+def sprint_date(ts, zone, end_of_period=False):
     """Calendar date of a timestamp in the reporting timezone, including its
     daylight-saving rules.
 
@@ -81,7 +81,7 @@ def sprint_date(ts, offset, end_of_period=False):
     ran through the 7th."""
     if not ts:
         return None
-    moment = parse_ts(ts).astimezone(offset)
+    moment = parse_ts(ts).astimezone(zone)
     if end_of_period and moment.time() == time.min:
         moment -= timedelta(seconds=1)
     return moment.date().isoformat()
@@ -91,7 +91,7 @@ class Context:
     """What every ticket is built with: the sprint, the site's fields and
     statuses, and the epics' names."""
 
-    def __init__(self, sprint_id, start_ts, start_date, categories, fields, epic_names, reporting_zone=timezone.utc,
+    def __init__(self, sprint_id, start_ts, start_date, categories, fields, epic_names, reporting_zone: tzinfo = timezone.utc,
                  previous=None):
         self.sprint_id, self.start_ts, self.start_date = sprint_id, start_ts, start_date
         self.reporting_zone = reporting_zone
@@ -166,11 +166,11 @@ def in_sprint_when_closed(changes, created, sprint):
     return in_sprint_at(sprint_moves(added, removed, created), parse_ts(sprint["completeDate"]))
 
 
-def event(at, kind, points, done, offset, **extra):
-    return {"at": at, "date": sprint_date(at, offset), "type": kind, "points": points, "done": done, **extra}
+def event(at, kind, points, done, zone, **extra):
+    return {"at": at, "date": sprint_date(at, zone), "type": kind, "points": points, "done": done, **extra}
 
 
-def spell_events(history, moves, start_ts, in_at_start, changes, cutoff, offset):
+def spell_events(history, moves, start_ts, in_at_start, changes, cutoff, zone):
     """A ticket's spells in the sprint, as lists of events (see the module
     docstring), from the start to the cutoff."""
     start = parse_ts(start_ts)
@@ -180,7 +180,7 @@ def spell_events(history, moves, start_ts, in_at_start, changes, cutoff, offset)
         nonlocal inside, points, done
         state = history.state_at(parse_ts(ts))
         inside, points, done = True, state["storyPoints"], state["statusCategory"] == "done"
-        spells.append([event(ts, kind, points, done, offset)])
+        spells.append([event(ts, kind, points, done, zone)])
     if in_at_start:
         enter(start_ts, "committed")
     steps = [(when, CHANGE_ORDER["move"], ts, "move", move)
@@ -191,7 +191,7 @@ def spell_events(history, moves, start_ts, in_at_start, changes, cutoff, offset)
         if kind == "move":
             if move < 0 and inside:
                 inside = False
-                spells[-1].append(event(ts, "removed", points, done, offset))
+                spells[-1].append(event(ts, "removed", points, done, zone))
             elif move > 0 and not inside:
                 enter(ts, "joined")
             continue
@@ -200,12 +200,12 @@ def spell_events(history, moves, start_ts, in_at_start, changes, cutoff, offset)
         state = history.state_at(when)
         if kind == "points" and state["storyPoints"] != points:
             spells[-1].append(event(ts, "reestimated",
-                              state["storyPoints"], done, offset, fromPoints=points))
+                              state["storyPoints"], done, zone, fromPoints=points))
             points = state["storyPoints"]
         elif kind == "status" and (state["statusCategory"] == "done") != done:
             done = not done
             spells[-1].append(event(ts, "completed" if done else "reopened",
-                              points, done, offset))
+                              points, done, zone))
     return spells
 
 
@@ -366,7 +366,7 @@ def build_timeline(spells, status, start, end, complete, today):
     return [rows[day] for day in sorted(rows)]
 
 
-def build_burndown(spells, start_date, last_date, moment, offset):
+def build_burndown(spells, start_date, last_date, moment, zone):
     """Open tickets and pts at the end of each local day, from the
     events of every spell, counted or not: the original commitment's, and with
     the extra work's too.
@@ -377,7 +377,7 @@ def build_burndown(spells, start_date, last_date, moment, offset):
     end = datetime.strptime(last_date, "%Y-%m-%d").date()
     while day <= end:
         cutoff = min(datetime.combine(
-            day, time.max, tzinfo=offset), parse_ts(moment))
+            day, time.max, tzinfo=zone), parse_ts(moment))
         committed = total = committed_stories = total_stories = 0
         for spell in spells:
             state = replay(spell["events"], cutoff)
@@ -478,14 +478,16 @@ def main():
             f"sprint state {status!r}: only active and closed sprints can be reported")
     if not sprint.get("startDate") or not sprint.get("endDate"):
         raise SystemExit("the sprint has no start or end date")
-    offset = report_timezone(meta.get("report_timezone"))
+    zone = report_timezone(meta.get("report_timezone"))
     if not os.path.exists(os.path.join(raw_dir, "previous_sprint.json")):
         raise SystemExit(
             "no previous_sprint.json, so carry-over can't be told apart; fetch the sprint again")
     previous = load_json(os.path.join(raw_dir, "previous_sprint.json"))
-    start = sprint_date(sprint.get("startDate"), offset)
-    end = sprint_date(sprint.get("endDate"), offset, end_of_period=True)
-    complete = sprint_date(sprint.get("completeDate"), offset)
+    start = sprint_date(sprint.get("startDate"), zone)
+    end = sprint_date(sprint.get("endDate"), zone, end_of_period=True)
+    complete = sprint_date(sprint.get("completeDate"), zone)
+    # Required timestamps were checked above.
+    assert start is not None and end is not None
 
     parents = load_optional(os.path.join(raw_dir, "parents.json"), [])
     changes = load_changelogs(os.path.join(
@@ -493,12 +495,12 @@ def main():
     context = Context(sprint_id, sprint["startDate"], start,
                       status_categories(load_json(os.path.join(
                           raw_dir, "statuses.json"))), fields,
-                      epic_names(current_raw + removed_raw, parents), offset, previous)
+                      epic_names(current_raw + removed_raw, parents), zone, previous)
     moment = as_of(sprint, meta.get("fetched_at"))
     if not moment:
         raise SystemExit("can't tell the moment the report describes (no close date or fetch time); "
                          "fetch the sprint again")
-    today = sprint_date(meta.get("fetched_at"), offset)
+    today = sprint_date(meta.get("fetched_at"), zone)
     if not today:
         raise SystemExit(
             "no fetch timestamp for the report date; fetch the sprint again")
@@ -565,12 +567,12 @@ def main():
         "sprint_end_instant": sprint.get("endDate"),
         # The moment the spells' events and fields run to: the close, or the fetch.
         "as_of_instant": moment,
-        "report_timezone": offset.key,
+        "report_timezone": zone.key,
         "today": today,
         "previous_sprint": previous and {
             "id": previous["id"], "name": previous.get("name"),
             "complete_instant": previous["completeDate"],
-            "complete_date": sprint_date(previous["completeDate"], offset)},
+            "complete_date": sprint_date(previous["completeDate"], zone)},
         "spells": spells,
         # Issues that joined and left before the start: in no part of the report.
         "left_before_start_keys": sorted(left_before_start, key=key_order),
@@ -594,8 +596,8 @@ def main():
         # The burndown's first point: the whole commitment at the start, Done or
         # not; the start day's end-of-day reading then shows what was open.
         "burndown_baseline": sum(t["events"][0]["points"] or 0 for t in original),
-        "burndown": build_burndown(spells, start, min(today, end) if status == "active"
-                                   else sprint_date(moment, offset), moment, offset),
+        "burndown": build_burndown(spells, start, today if status == "active"
+                                   else sprint_date(moment, zone), moment, zone),
     }
     out = os.path.join(args.report_dir, DATA_FILE)
     write_json(out, data)

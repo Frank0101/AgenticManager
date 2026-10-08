@@ -16,8 +16,10 @@ import unittest
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
-SCRIPTS = os.path.join(REPO_ROOT, "skills", os.path.basename(TEST_DIR), "scripts")
-LIB = os.path.join(REPO_ROOT, "skills", "agentic-manager-utils-lib", "agentic_manager")
+SCRIPTS = os.path.join(REPO_ROOT, "skills",
+                       os.path.basename(TEST_DIR), "scripts")
+LIB = os.path.join(REPO_ROOT, "skills",
+                   "agentic-manager-utils-lib", "agentic_manager")
 sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, TEST_DIR)
 from investigation_fixture import LEDGER, content, spec  # noqa: E402
@@ -45,10 +47,12 @@ class PipelineTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = os.path.realpath(self.tmp.name)
-        config = os.path.join(self.root, ".config", "agentic-manager", "config.json")
+        config = os.path.join(self.root, ".config",
+                              "agentic-manager", "config.json")
         os.makedirs(os.path.dirname(config))
         with open(config, "w", encoding="utf-8") as f:
-            json.dump({"sources": {}, "output": {"root": os.path.join(self.root, "out")}}, f)
+            json.dump({"sources": {}, "output": {
+                      "root": os.path.join(self.root, "out")}}, f)
         bin_dir = os.path.join(self.root, "bin")
         os.makedirs(bin_dir)
         npx = os.path.join(bin_dir, "npx")
@@ -61,15 +65,36 @@ class PipelineTest(unittest.TestCase):
     def run_script(self, path, *args, stdin=""):
         proc = subprocess.run([sys.executable, path, *args], env=self.env, input=stdin.encode("utf-8"),
                               capture_output=True)
-        self.assertEqual(proc.returncode, 0, proc.stderr.decode() + proc.stdout.decode())
+        self.assertEqual(proc.returncode, 0,
+                         proc.stderr.decode() + proc.stdout.decode())
         return json.loads(proc.stdout)
 
     def write(self, relative, text):
         self.run_script(os.path.join(LIB, "output_file.py"), "--name", "tech-investigations",
                         "--path", relative, stdin=text)
 
+    def test_prose_only_investigation_without_map_artifacts(self):
+        started = self.run_script(os.path.join(
+            SCRIPTS, "init_investigation.py"), "--topic", "Acme-Search")
+        investigation = started["investigation"]
+        data = content()
+        data["skip"] = ["architecture"]
+        for key in ("architecture", "technical_decisions", "discrepancies", "remaining_gaps", "references"):
+            data.pop(key)
+        self.write(f"{investigation}/ledgers.md", LEDGER)
+        self.write(f"{investigation}/content.json", json.dumps(data))
+        result = self.run_script(os.path.join(
+            SCRIPTS, "make_report.py"), "--investigation", investigation)
+        self.assertTrue(result["ok"], result)
+        checked = self.run_script(os.path.join(SCRIPTS, "check_report.py"),
+                                  "--report", result["path"], "--handover")
+        self.assertTrue(checked["ok"], checked)
+        self.assertEqual(sorted(os.listdir(started["investigation_dir"])),
+                         ["Acme-Search_Report.md", "content.json", "ledgers.md"])
+
     def test_pipeline(self):
-        started = self.run_script(os.path.join(SCRIPTS, "init_investigation.py"), "--topic", "Acme-Search")
+        started = self.run_script(os.path.join(
+            SCRIPTS, "init_investigation.py"), "--topic", "Acme-Search")
         investigation = started["investigation"]
         self.assertTrue(investigation.startswith("Acme-Search_"))
         data = content()
@@ -78,11 +103,14 @@ class PipelineTest(unittest.TestCase):
         self.write(f"{investigation}/maps.json", json.dumps(spec()))
         self.write(f"{investigation}/content.json", json.dumps(data))
 
-        maps = self.run_script(os.path.join(SCRIPTS, "build_maps.py"), "--investigation", investigation)
+        maps = self.run_script(os.path.join(
+            SCRIPTS, "build_maps.py"), "--investigation", investigation)
         self.assertEqual(sorted(maps["maps"]), ["current", "next", "target"])
-        report = self.run_script(os.path.join(SCRIPTS, "make_report.py"), "--investigation", investigation)
+        report = self.run_script(os.path.join(
+            SCRIPTS, "make_report.py"), "--investigation", investigation)
         self.assertTrue(report["ok"], report)
-        self.assertEqual(report["path"], os.path.join(started["investigation_dir"], "Acme-Search_Report.md"))
+        self.assertEqual(report["path"], os.path.join(
+            started["investigation_dir"], "Acme-Search_Report.md"))
         checked = self.run_script(os.path.join(SCRIPTS, "check_report.py"), "--report", report["path"],
                                   "--handover")
         self.assertTrue(checked["ok"], checked)

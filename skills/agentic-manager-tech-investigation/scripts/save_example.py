@@ -19,10 +19,8 @@ import re
 import shutil
 from urllib.parse import unquote, urlsplit
 
-from common import EXAMPLES, FOLDER_NAME, investigation_dir, target, write_output_file
-
-LINK = re.compile(r"!?\[[^\]\n]*\]\(\s*<?([^\s)>]+)>?(?:\s+\"[^\"\n]*\")?\s*\)")
-FORMAT = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+from common import (EXAMPLES, FOLDER_NAME, DEFINITION, check_format, investigation_dir,
+                    links, markdown, target, write_output_file)
 
 
 def local_links(folder, relative):
@@ -33,30 +31,37 @@ def local_links(folder, relative):
         current = pending.pop(0)
         if current in found:
             continue
+        source = target(folder, current)
         found.append(current)
         if not current.endswith(".md"):
             continue
-        with open(os.path.join(folder, current), encoding="utf-8") as f:
+        with open(source, encoding="utf-8") as f:
             text = f.read()
-        for link in LINK.findall(text):
+        prose, _, _ = markdown(text)
+        definitions = {m[1].casefold(): m[2].strip("<>")
+                       for m in DEFINITION.finditer(prose)}
+        for _, _, _, link in links(prose, definitions):
+            if link is None:
+                continue
             parts = urlsplit(link)
             if parts.scheme or parts.netloc or not parts.path:
                 continue
-            path = os.path.normpath(os.path.join(os.path.dirname(current), unquote(parts.path)))
+            path = os.path.normpath(os.path.join(
+                os.path.dirname(current), unquote(parts.path)))
             if path.startswith(os.pardir) or os.path.isabs(path):
                 continue
-            if os.path.isfile(os.path.join(folder, path)):
+            if os.path.isfile(target(folder, path)):
                 pending.append(path)
     return found
 
 
 def save(relative, document, wanted, note):
-    if not FORMAT.fullmatch(wanted):
-        raise SystemExit(f"{wanted!r}: the format is a short lower-case label, such as exec-summary")
+    check_format(wanted)
     if not note.strip() or "\n" in note.strip():
         raise SystemExit("--note is one line on what makes it a good example")
     source, folder, temporary = investigation_dir(relative)
-    if not os.path.isfile(os.path.join(source, document)):
+    document_path = target(source, document)
+    if not os.path.isfile(document_path):
         raise SystemExit(f"{document!r} isn't in {relative}")
     base = f"{os.path.basename(os.path.normpath(source))}--{wanted}"
     name, number = base, 1
@@ -75,17 +80,24 @@ def save(relative, document, wanted, note):
     line = f"- [{name}/{document}]({name}/{document}) — {note.strip()}"
     if not re.search(r"^## Index\s*$", index, re.M):
         raise SystemExit("_examples/README.md has no ## Index heading")
-    index = re.sub(r"^(## Index\s*?\n)\n?", lambda m: m[1] + "\n" + line + "\n", index, count=1, flags=re.M)
-    write_output_file(FOLDER_NAME, f"{EXAMPLES}/README.md", index.encode("utf-8"))
+    index = re.sub(r"^(## Index\s*?\n)\n?",
+                   lambda m: m[1] + "\n" + line + "\n", index, count=1, flags=re.M)
+    write_output_file(
+        FOLDER_NAME, f"{EXAMPLES}/README.md", index.encode("utf-8"))
     return {"example": os.path.join(folder, EXAMPLES, name), "files": copied, "temporary": temporary}
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Keep an approved document as an example.")
-    parser.add_argument("--investigation", required=True, help="<Topic>_<YY-MM-DD>")
-    parser.add_argument("--file", required=True, help="the approved document, inside the investigation")
-    parser.add_argument("--format", required=True, help="long-analysis, exec-summary or another short label")
-    parser.add_argument("--note", required=True, help="what makes it a good example, one line")
+    parser = argparse.ArgumentParser(
+        description="Keep an approved document as an example.")
+    parser.add_argument("--investigation", required=True,
+                        help="<Topic>_<YY-MM-DD>")
+    parser.add_argument("--file", required=True,
+                        help="the approved document, inside the investigation")
+    parser.add_argument("--format", required=True,
+                        help="long-analysis, exec-summary or another short label")
+    parser.add_argument("--note", required=True,
+                        help="what makes it a good example, one line")
     args = parser.parse_args(argv)
     print(json.dumps(save(args.investigation, args.file, args.format, args.note)))
 

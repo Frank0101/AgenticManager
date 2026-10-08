@@ -28,41 +28,34 @@ GROUPS = TEMPLATE["sources"]
 
 
 class HelpersTest(unittest.TestCase):
-    def test_type_name(self):
-        self.assertEqual(check_config.type_name(True), "true or false")
-        self.assertEqual(check_config.type_name("<token>"), "a string")
-
-    def test_quoted(self):
-        self.assertEqual(check_config.quoted(["a", "b"]), '"a", "b"')
-
-    def test_check_unknown(self):
+    def test_helpers(self):
         cases = [
-            ("sources", {"workflow": {}, "chat": {}}, GROUPS, "group",
+            ("type_name of a bool", check_config.type_name(True), "true or false"),
+            ("type_name of a string", check_config.type_name("<token>"), "a string"),
+            ("quoted", check_config.quoted(["a", "b"]), '"a", "b"'),
+            ("check_unknown, a group", check_config.check_unknown(
+                "sources", {"workflow": {}, "chat": {}}, GROUPS, "group"),
              ['unknown group "sources.chat" (supported: workflow, messaging)']),
-            ("", {"sources": {}, "x": 1}, TEMPLATE, "key", [
-             'unknown key "x" (supported: sources, output)']),
-            ("", {}, TEMPLATE, "key", []),
+            ("check_unknown, a key", check_config.check_unknown("", {"sources": {}, "x": 1}, TEMPLATE, "key"),
+             ['unknown key "x" (supported: sources, output)']),
+            ("check_unknown, none", check_config.check_unknown(
+                "", {}, TEMPLATE, "key"), []),
         ]
-        for where, actual, expected_keys, kind, expected in cases:
-            with self.subTest(actual=actual):
-                self.assertEqual(check_config.check_unknown(
-                    where, actual, expected_keys, kind), expected)
+        for name, got, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(got, expected)
 
 
 class CheckSourceTest(unittest.TestCase):
-    def check(self, settings):
-        return check_config.check_source("sources.workflow.jira-api", settings, GROUPS["workflow"]["jira-api"])
-
-    def test_valid(self):
-        for settings in ({"enabled": False}, {"enabled": False, "api-token": ""},
-                         {"enabled": True, "api-token": "abc"}):
-            with self.subTest(settings=settings):
-                self.assertEqual(self.check(settings), [])
-
-    def test_invalid(self):
+    def test_check_source(self):
+        # A disabled source may leave its settings blank; an enabled one must
+        # fill them all in.
         where = "sources.workflow.jira-api"
         unfilled = f'{where}.api-token is not filled in: fill it in, or disable "{where}"'
         cases = [
+            ({"enabled": False}, []),
+            ({"enabled": False, "api-token": ""}, []),
+            ({"enabled": True, "api-token": "abc"}, []),
             (True, [f"{where} must be an object"]),
             ({}, [f"{where}.enabled is missing: set it to true or false"]),
             ({"enabled": "true"}, [f"{where}.enabled must be true or false"]),
@@ -78,56 +71,54 @@ class CheckSourceTest(unittest.TestCase):
         ]
         for settings, expected in cases:
             with self.subTest(settings=settings):
-                self.assertEqual(self.check(settings), expected)
+                self.assertEqual(check_config.check_source(where, settings, GROUPS["workflow"]["jira-api"]),
+                                 expected)
 
 
 class CheckConfigTest(unittest.TestCase):
-    def test_valid(self):
-        # Missing groups and sources count as disabled.
+    def test_check_config(self):
+        # Missing groups and sources count as disabled; every problem is
+        # reported, not only the first.
         full = {"sources": {"workflow": {"jira-api": {"enabled": True, "api-token": "abc"},
                                          "azure-devops-cli": {"enabled": True}},
                             "messaging": {"slack-mcp": {"enabled": False}}}}
-        for config in (full, {}, {"sources": {}}):
-            with self.subTest(config=config):
-                self.assertEqual(
-                    check_config.check_config(config, TEMPLATE), [])
-
-    def test_every_problem_is_reported(self):
-        config = {"other": {}, "sources": {"chat": {}, "workflow": {"jira-mcp": {}, "jira-api": {"enabled": True}},
+        broken = {"other": {}, "sources": {"chat": {}, "workflow": {"jira-mcp": {}, "jira-api": {"enabled": True}},
                                            "messaging": []},
                   "output": {"root": 1}}
-        self.assertEqual(check_config.check_config(config, TEMPLATE), [
-            'unknown key "other" (supported: sources, output)',
-            'unknown group "sources.chat" (supported: workflow, messaging)',
-            'unknown source "sources.workflow.jira-mcp" (supported: jira-api, azure-devops-cli)',
-            'sources.workflow.jira-api.api-token is not filled in: fill it in, or disable '
-            '"sources.workflow.jira-api"',
-            "sources.messaging must be an object of sources",
-            "output.root must be a string"])
-
-    def test_sources_not_an_object(self):
-        self.assertEqual(check_config.check_config({"sources": []}, TEMPLATE),
-                         ["sources must be an object of groups"])
+        cases = [
+            ("every source", full, []), ("nothing", {},
+                                         []), ("no groups", {"sources": {}}, []),
+            ("sources not an object", {"sources": []}, [
+             "sources must be an object of groups"]),
+            ("every problem", broken, [
+                'unknown key "other" (supported: sources, output)',
+                'unknown group "sources.chat" (supported: workflow, messaging)',
+                'unknown source "sources.workflow.jira-mcp" (supported: jira-api, azure-devops-cli)',
+                'sources.workflow.jira-api.api-token is not filled in: fill it in, or disable '
+                '"sources.workflow.jira-api"',
+                "sources.messaging must be an object of sources",
+                "output.root must be a string"]),
+        ]
+        for name, config, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(check_config.check_config(
+                    config, TEMPLATE), expected)
 
 
 class CheckOutputTest(unittest.TestCase):
-    def check(self, output):
-        return check_config.check_output(output, TEMPLATE["output"])
-
-    def test_settings_are_optional(self):
-        for output in ({}, {"root": "<path>"}, {"root": ""}, {"root": "~/reports"}):
-            with self.subTest(output=output):
-                self.assertEqual(self.check(output), [])
-
-    def test_invalid(self):
+    def test_check_output(self):
+        # The output settings are optional: blank or a placeholder is fine.
         cases = [
+            ({}, []), ({"root": "<path>"}, []), ({
+                "root": ""}, []), ({"root": "~/reports"}, []),
             ([], ["output must be an object of settings"]),
             ({"root": None, "folder": "x"},
              ['unknown setting "output.folder" (supported: root)', "output.root must be a string"]),
         ]
         for output, expected in cases:
             with self.subTest(output=output):
-                self.assertEqual(self.check(output), expected)
+                self.assertEqual(check_config.check_output(
+                    output, TEMPLATE["output"]), expected)
 
 
 class SetupStepsTest(unittest.TestCase):
@@ -155,9 +146,12 @@ class SetupStepsTest(unittest.TestCase):
 
 class ListSourcesTest(unittest.TestCase):
     def test_every_source_is_listed_by_group(self):
-        config = {"sources": {"workflow": {
-            "jira-api": {"enabled": True, "api-token": "abc"}}}}
-        self.assertEqual(check_config.list_sources(config, TEMPLATE), {
+        # Every source of the template, with how to enable it if it isn't,
+        # and never a setting's value, enabled or not.
+        enabled = {"sources": {"workflow": {
+            "jira-api": {"enabled": True, "api-token": "s3cret"}}}}
+        listed = check_config.list_sources(enabled, TEMPLATE)
+        self.assertEqual(listed, {
             "workflow": {
                 "jira-api": {"tool": "jira", "channel": "api", "enabled": True},
                 "azure-devops-cli": {"tool": "azure-devops", "channel": "cli", "enabled": False,
@@ -165,15 +159,12 @@ class ListSourcesTest(unittest.TestCase):
             "messaging": {
                 "slack-mcp": {"tool": "slack", "channel": "mcp", "enabled": False,
                               "setup": 'add "messaging": {"slack-mcp": {"enabled": true}} inside "sources"'}}})
-
-    def test_setting_values_are_never_returned(self):
-        config = {"sources": {"workflow": {"jira-api": {"enabled": True, "api-token": "s3cret"}},
-                              "messaging": {"slack-mcp": {"enabled": False}}}}
-        self.assertNotIn("s3cret", str(
-            check_config.list_sources(config, TEMPLATE)))
-        config["sources"]["workflow"]["jira-api"]["enabled"] = False
-        self.assertNotIn("s3cret", str(
-            check_config.list_sources(config, TEMPLATE)))
+        disabled = {"sources": {"workflow": {
+            "jira-api": {"enabled": False, "api-token": "s3cret"}}}}
+        for config in (enabled, disabled):
+            with self.subTest(config=config):
+                self.assertNotIn("s3cret", str(
+                    check_config.list_sources(config, TEMPLATE)))
 
 
 class MainTest(unittest.TestCase):

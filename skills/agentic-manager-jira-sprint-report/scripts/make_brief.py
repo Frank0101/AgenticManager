@@ -12,13 +12,16 @@ costs tokens and invites slips.
 
   * Tickets are grouped by epic, each with its commentary group, scope, latest
     estimate, flag and, for blocker candidates, the comments up to the end.
-    Work the sprint didn't do (left_out in data.json) isn't listed at all, so
-    no AI text can describe it as this sprint's work.
+    Work the sprint didn't do (left_out in data.json) isn't listed under epics,
+    so commentary doesn't describe it as this sprint's work.
   * Epics come in order of completed pts, commitment and extra together: the
     order Key Achievements takes after the goal's themes. Matching tickets to
     themes is left to the agent, since it is the same reading as the goal
     verdict, which is an interpretation.
   * Comment authors are left out: AI text names teams, never colleagues.
+  * goal_tickets separately includes every original commitment ticket, including
+    work excluded from commentary, so goal themes have their full denominator.
+    Its outcome distinguishes completed, not_completed and removed work.
   * report_facts are the generated report's own sentences and figures, in its
     exact wording, so the retro notes can quote them in a single pass, without
     first generating the report and reading it back.
@@ -52,7 +55,8 @@ def plain(markdown):
 def report_facts(data):
     """The generated report's figures and sentences, word for word."""
     report = Report(data, {})
-    facts = [f"Sprint target completion: {plain(report.target_completion_value())}"]
+    facts = [
+        f"Sprint target completion: {plain(report.target_completion_value())}"]
     facts.append(plain(report.commentary()))
     for epic in data["epics"]:
         name = epic["name"] if epic["key"] == NO_EPIC else f"{epic['key']}: {epic['name']}"
@@ -90,13 +94,20 @@ def build_brief(data, raw_dir):
             "goal_verdicts": list(allowed_verdicts(data)),
         },
         "epics": epics,
+        "goal_tickets": [{
+            **{k: spell[k] for k in ("key", "summary", "points", "outcome")},
+            "epic_key": spell["parentKey"] or NO_EPIC,
+            "epic_name": spell["parentSummary"] if spell["parentKey"] else "(no epic)",
+        } for spell in data["spells"] if spell["counted"] and spell["scope"] == "original"],
         "report_facts": report_facts(data),
     }
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--report-dir", required=True, help="report folder holding data.json")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--report-dir", required=True,
+                        help="report folder holding data.json")
     args = parser.parse_args()
     data = load_json(os.path.join(args.report_dir, DATA_FILE))
     out = os.path.join(args.report_dir, BRIEF_FILE)

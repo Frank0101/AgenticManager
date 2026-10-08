@@ -1,6 +1,7 @@
 ---
 name: agentic-manager-utils-check-config
 description: Validates the AgenticManager config (~/.config/agentic-manager/config.json) and returns every supported source by group (documentation, local_vault, source_control, workflow, messaging), with its tool, its channel, whether it is enabled and, if not, how to enable it. Never returns setting values such as tokens. Prerequisite for every AgenticManager skill except the agentic-manager-utils-* utilities; run it first. The calling skill decides from the result whether it can go on. Use when another AgenticManager skill says to run agentic-manager-utils-check-config, or when asked directly to check or set up the AgenticManager configuration.
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_config.py)
 ---
 
 # Check Config
@@ -32,10 +33,10 @@ Settings can hold secrets, such as tokens. The script checks that they're filled
 
 ## Instructions
 
-1. Run the script:
+1. Run the script, by exactly this path, so it runs without a permission prompt:
 
    ```bash
-   python3 <path to this skill's folder>/scripts/check_config.py
+   python3 ${CLAUDE_SKILL_DIR}/scripts/check_config.py
    ```
 
    It prints one line of JSON. Do not read or validate the config yourself.
@@ -43,7 +44,7 @@ Settings can hold secrets, such as tokens. The script checks that they're filled
 2. If it exits with `1` (`"ok": false`) or `python3` is unavailable, the check has failed. Don't return any sources, and don't guess settings or create defaults. Handle it with the user as below, then report the failure to the calling skill.
    - If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ available as `python3`.
    - Otherwise, show the user every entry in `errors`, and the config `path`.
-   - If the config is missing, offer to create it from the template. Only if the user agrees, run the script again with `--init`. It copies the template to `path`, never overwriting an existing file, and returns `"created": true`. Then tell the user to edit `path`: enable the sources they use and fill in their settings, and optionally set `output.root`.
+   - If the config is missing, offer to create it from the template. Only if the user agrees, run the script again with `--init`, which isn't pre-approved since it writes the config. It copies the template to `path`, never overwriting an existing file, and returns `"created": true`. Then tell the user to edit `path`: enable the sources they use and fill in their settings, and optionally set `output.root`.
    - For any other error, you may offer to make the fix it describes, but edit the config only after the user explicitly approves.
 
 3. If it exits with `0` (`"ok": true`), return `sources` to the calling skill. When run directly, not by another skill, tell the user the configuration is OK and list the enabled sources by group; for each group with none, name its sources and their `setup`.
@@ -96,7 +97,7 @@ On success the script returns every source of the template by group:
 
 - Each source names the `tool`, the `channel` used to reach it, and whether it is `enabled`.
 - A disabled source also has `setup`: how to enable it in the config, naming any settings to fill in.
-- Setting values are never returned, and neither is `output`: a skill gets its folder itself (see below).
+- Setting values are never returned, and neither is `output`: a skill gets its output folder itself (see below).
 
 On failure it returns `"ok": false` and an `errors` list, each entry explaining one problem and how to fix it:
 
@@ -128,4 +129,4 @@ Reach each tool through its channel:
 | `api`   | Run a script of the calling skill                         |
 | `fs`    | Run a script of the calling skill, which reads the folder |
 
-An `api` or `fs` source always goes through a script, since its settings, such as a token or the folder to read, aren't returned. The script reads them with `agentic_manager.config.read_source()`. A skill that writes files gets its folder from `agentic_manager/output_folder.py`, in the `agentic-manager-utils-lib` skill.
+An `api` or `fs` source always goes through a script, since its settings, such as a token or the folder to read, aren't returned. The script reads them with `agentic_manager.config.read_source()`. A skill that writes files gets its output folder from `agentic_manager/output_folder.py`, in the `agentic-manager-utils-lib` skill.

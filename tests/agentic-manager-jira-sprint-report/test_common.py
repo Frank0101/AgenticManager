@@ -25,15 +25,16 @@ class LibraryTest(unittest.TestCase):
 
 
 class ReportTimezoneTest(unittest.TestCase):
-    def test_named_timezone(self):
+    def test_report_timezone(self):
+        # A named zone keeps its clock changes; anything else is refused
+        # rather than read as UTC.
         zone = common.report_timezone("Europe/London")
         for stamp, expected in [("2026-01-10T12:00:00Z", 0),
                                 ("2026-07-10T12:00:00Z", 3600)]:
             with self.subTest(stamp=stamp):
-                self.assertEqual(common.parse_ts(stamp).astimezone(
-                    zone).utcoffset().total_seconds(), expected)
-
-    def test_missing_or_unknown_timezone(self):
+                offset = common.parse_ts(stamp).astimezone(zone).utcoffset()
+                assert offset is not None
+                self.assertEqual(offset.total_seconds(), expected)
         for name in (None, "", " ", 3, "Missing/Zone", "/absolute"):
             with self.subTest(name=name), self.assertRaisesRegex(SystemExit, "reporting timezone"):
                 common.report_timezone(name)
@@ -200,7 +201,8 @@ class HistoryTest(unittest.TestCase):
             "flagged": False, "priority": "Low", "parentId": "200", "parentKey": "PROJ-200"})
         # With no changelog the current fields held throughout; without the
         # site's points or Flagged field the issue has no estimate and no flag.
-        unset = self.history(self.raw(customfield_points=8.0, priority=None), [])
+        unset = self.history(
+            self.raw(customfield_points=8.0, priority=None), [])
         self.assertEqual(unset.state_at(self.at(5)), {
             "status": "To Do", "statusCategory": "new", "resolution": None, "storyPoints": None,
             "flagged": False, "priority": "", "parentId": None, "parentKey": None})
@@ -239,6 +241,9 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(common.load_json(path), {"x": [1]})
         with open(path, encoding="utf-8") as f:
             self.assertEqual(f.read(), json.dumps({"x": [1]}, indent=2))
+        # A step run out of order names the file it lacks, not a traceback.
+        with self.assertRaisesRegex(SystemExit, "missing /no/such/file.json"):
+            common.load_json("/no/such/file.json")
 
     def test_nothing_is_written_outside_the_output_folder(self):
         os.symlink(self.tmp, os.path.join(self.folder, "link"))
@@ -256,15 +261,10 @@ class FilesTest(unittest.TestCase):
                     common.write_report_file(path, "{}")
                 self.assertFalse(os.path.exists(path))
 
-    def test_load_missing_json(self):
-        # A step run out of order names the file it lacks, not a traceback.
-        with self.assertRaisesRegex(SystemExit, "missing /no/such/file.json"):
-            common.load_json("/no/such/file.json")
-
     def test_report_label(self):
         # The key is prefixed unless the name starts with it, in any case; each
         # run of characters unsafe in a file name becomes one underscore.
-        cases =[("PROJ", "Sprint 3", "PROJ_Sprint_3"), ("PROJ", "proj sprint 3", "proj_sprint_3"),
+        cases = [("PROJ", "Sprint 3", "PROJ_Sprint_3"), ("PROJ", "proj sprint 3", "proj_sprint_3"),
                  ("PROJ", "Q1: Login / Search!", "PROJ_Q1_Login_Search"), (None, None, "Sprint")]
         for project, name, expected in cases:
             with self.subTest(name=name):
@@ -276,13 +276,20 @@ class QuantitiesTest(unittest.TestCase):
         # Each figure has one shape in every part of the report. Exactly 1 is
         # singular, 1.0 too; 0 is plural; no estimate is "–", never 0.
         cases = [
-            (common.number, (3.0,), "3"), (common.number, (2.5,), "2.5"), (common.number, (4,), "4"),
-            (common.plural, (0, "it", "they"), "they"), (common.plural, (1, "it", "they"), "it"),
-            (common.plural, (1.0, "it", "they"), "it"), (common.plural, (2, "it", "they"), "they"),
-            (common.unit, (1,), "ticket"), (common.unit, (0,), "tickets"), (common.unit, (2,), "tickets"),
-            (common.pts, (1,), "1 pt"), (common.pts, (1.0,), "1 pt"), (common.pts, (2.0,), "2 pts"),
-            (common.pts, (0.5,), "0.5 pts"), (common.pts, (0,), "0 pts"), (common.pts, (None,), "– pts"),
-            (common.qty, (1, 3.0), "1 ticket (3 pts)"), (common.qty, (7, 7), "7 tickets (7 pts)"),
+            (common.number, (3.0,), "3"), (common.number,
+                                           (2.5,), "2.5"), (common.number, (4,), "4"),
+            (common.plural, (0, "it", "they"),
+             "they"), (common.plural, (1, "it", "they"), "it"),
+            (common.plural, (1.0, "it", "they"),
+             "it"), (common.plural, (2, "it", "they"), "they"),
+            (common.unit, (1,), "ticket"), (common.unit,
+                                            (0,), "tickets"), (common.unit, (2,), "tickets"),
+            (common.pts, (1,), "1 pt"), (common.pts,
+                                         (1.0,), "1 pt"), (common.pts, (2.0,), "2 pts"),
+            (common.pts, (0.5,), "0.5 pts"), (common.pts,
+                                              (0,), "0 pts"), (common.pts, (None,), "– pts"),
+            (common.qty, (1, 3.0), "1 ticket (3 pts)"), (common.qty,
+                                                         (7, 7), "7 tickets (7 pts)"),
             (common.qty, (4, None), "4 tickets (– pts)"),
             # The unit follows the total: "1/1 ticket", "0/2 tickets".
             (common.ratio, (11, 22, 34, 74), "11/22 tickets (34/74 pts)"),
@@ -290,15 +297,21 @@ class QuantitiesTest(unittest.TestCase):
             (common.ratio, (0, 2, 0, 1), "0/2 tickets (0/1 pts)"),
             (common.ticket_ref, ("PROJ-20", 2), "PROJ-20 (2 pts)"),
             (common.ticket_ref, ("PROJ-13", None), "PROJ-13 (– pts)"),
-            (common.estimate, (5,), "5"), (common.estimate, (2.0,), "2"), (common.estimate, (0,), "0"),
+            (common.estimate, (5,), "5"), (common.estimate,
+                                           (2.0,), "2"), (common.estimate, (0,), "0"),
             (common.estimate, (None,), "–"),
             # A share above zero never reads 0%; nothing to share is n/a.
-            (common.whole_percentage, (1, 3), "33%"), (common.whole_percentage, (2, 3), "67%"),
-            (common.whole_percentage, (2, 4), "50%"), (common.whole_percentage, (5, 5), "100%"),
-            (common.whole_percentage, (0, 5), "0%"), (common.whole_percentage, (1, 300), "<1%"),
-            (common.whole_percentage, (1, 200), "<1%"), (common.whole_percentage, (1, 0), "n/a"),
+            (common.whole_percentage, (1, 3),
+             "33%"), (common.whole_percentage, (2, 3), "67%"),
+            (common.whole_percentage, (2, 4),
+             "50%"), (common.whole_percentage, (5, 5), "100%"),
+            (common.whole_percentage, (0, 5),
+             "0%"), (common.whole_percentage, (1, 300), "<1%"),
+            (common.whole_percentage, (1, 200),
+             "<1%"), (common.whole_percentage, (1, 0), "n/a"),
             # Just short of the whole never reads as all of it.
-            (common.whole_percentage, (199, 200), ">99%"), (common.whole_percentage, (299, 300), ">99%"),
+            (common.whole_percentage, (199, 200),
+             ">99%"), (common.whole_percentage, (299, 300), ">99%"),
             (common.whole_percentage, (99, 100), "99%"),
             (common.display_date, ("2026-03-02",), "02/03/2026"),
         ]
@@ -343,11 +356,13 @@ class ScopeGroupsTest(unittest.TestCase):
     def test_scope_group_label(self):
         # Not completed work reads "Open" only while the sprint runs.
         cases = [("completed", "active", "Completed"), ("in_review", "closed", "In review"),
-                 ("not_completed", "active", "Open"), ("not_completed", "closed", "Not completed"),
+                 ("not_completed", "active", "Open"), ("not_completed",
+                                                       "closed", "Not completed"),
                  ("descoped", "active", "Descoped")]
         for group, status, expected in cases:
             with self.subTest(group=group, status=status):
-                self.assertEqual(common.scope_group_label(group, status), expected)
+                self.assertEqual(common.scope_group_label(
+                    group, status), expected)
 
     def test_epic_groups(self):
         # Only groups with tickets, always in the report's order.
@@ -387,12 +402,17 @@ class AllowedVerdictsTest(unittest.TestCase):
             (data(today="2026-03-20"), ("On track", "At risk")),
             # The halfway day is a whole day: with an odd span its midpoint
             # is at noon, and the morning of that day can be judged too.
-            ({**data(today="2026-03-06"), "sprint_end": "2026-03-11"}, ("On track", "At risk")),
+            ({**data(today="2026-03-06"), "sprint_end": "2026-03-11"},
+             ("On track", "At risk")),
             # A closed sprint is judged whenever it closed.
             (data(status="closed"), ("Fully met", "Partially met", "Not met")),
             # No goal leaves nothing to judge, closed or not.
             (data(goal=""), ("No goal set in Jira for this sprint",)),
-            (data(status="closed", goal=""), ("No goal set in Jira for this sprint",)),
+            (data(goal="   "), ("No goal set in Jira for this sprint",)),
+            (data(status="closed", goal="\n \n"),
+             ("No goal set in Jira for this sprint",)),
+            (data(status="closed", goal=""),
+             ("No goal set in Jira for this sprint",)),
         ]
         for case, expected in cases:
             with self.subTest(case):

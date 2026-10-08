@@ -2,26 +2,27 @@
 that writes a skill's files itself does it through a command the skill
 pre-approves, rather than through its own file tools.
 
-    python3 output_file.py --name <folder name> --path <relative path> < content
+    python3 output_file.py --name <folder name> --path <relative path> [--patch] < content
 
---name is the skill's own folder, as for output_folder.py. --path is where the
-file goes inside it, such as "2026-03-29--payments/ledgers.md": missing folders
-on the way are created, and an existing file is replaced. The content is read
-from standard input as UTF-8.
+--name is the name of the skill's output folder, as for output_folder.py.
+--path is where the file goes inside it, such as
+"Payments-Retry_26-03-29/ledgers.md": missing folders on the way are created,
+and an existing file is replaced. The content is read from standard input as
+UTF-8.
 
 With --patch, stdin is a nonempty JSON array of {"old": "...", "new": "..."}
-replacements for an existing UTF-8 file. Each nonempty old string must match
-exactly once, in sequence. All replacements are validated before writing;
+replacements for an existing UTF-8 file. Each old string must be nonempty and
+match exactly once, in sequence. All replacements are validated before writing;
 a malformed, missing or ambiguous match leaves the file unchanged.
 
-It never writes outside the skill's folder: an absolute path, a ".." step or a
-symbolic link leading out of it is refused. Only output.root is read from the
-config.
+It never writes outside the skill's output folder: an absolute path, a ".."
+step or a symbolic link leading out of it is refused. Only output.root is read
+from the config.
 
 Prints one line of JSON: {"path": ..., "temporary": bool}, the file's absolute
 path and whether the folder is the temporary one. Fails with a message on
 stderr, writing nothing, if the path isn't inside the folder, the content isn't
-UTF-8 or the config can't be read.
+UTF-8, a patch doesn't apply or the config can't be read.
 """
 import argparse
 import json
@@ -64,24 +65,12 @@ def write_output_file(name, relative, content):
     return path, temporary
 
 
-def parse_args(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Write standard input to a file in a skill's output folder.")
-    parser.add_argument("--name", type=folder_name, required=True,
-                        help="the skill's own folder, such as tech-investigations")
-    parser.add_argument("--path", required=True,
-                        help="where the file goes inside that folder")
-    parser.add_argument("--patch", action="store_true",
-                        help="apply exact JSON replacements from standard input")
-    return parser.parse_args(argv)
-
-
 def patch_output_file(name, relative, content):
-    """Apply exact replacements inside the same boundary as full writes.
-
-    Read/validate every edit before writing, so a later failed edit cannot
-    leave an earlier edit applied. Error messages never include file content.
-    """
+    """(path, temporary): applies the replacements `content` (bytes of a JSON
+    array) holds to the existing file `relative` inside the skill's output
+    folder `name`, as write_output_file() would write it. Every replacement is
+    checked before anything is written, so a later failed one can't leave an
+    earlier one applied. Error messages never include the file's content."""
     try:
         edits = json.loads(content.decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
@@ -94,15 +83,18 @@ def patch_output_file(name, relative, content):
         with open(path, "rb") as f:
             text = f.read().decode("utf-8")
     except (OSError, UnicodeDecodeError):
-        raise SystemExit("patch target must be an existing readable UTF-8 file")
+        raise SystemExit(
+            "patch target must be an existing readable UTF-8 file")
     for index, edit in enumerate(edits, 1):
         if (not isinstance(edit, dict) or set(edit) != {"old", "new"}
                 or not isinstance(edit["old"], str) or not edit["old"]
                 or not isinstance(edit["new"], str)):
-            raise SystemExit(f"replacement {index} needs nonempty old and string new fields only")
+            raise SystemExit(
+                f"replacement {index} needs nonempty old and string new fields only")
         start = text.find(edit["old"])
         if start < 0 or text.find(edit["old"], start + 1) >= 0:
-            raise SystemExit(f"replacement {index} must match exactly once; reread the target")
+            raise SystemExit(
+                f"replacement {index} must match exactly once; reread the target")
         text = text.replace(edit["old"], edit["new"], 1)
     try:
         result = text.encode("utf-8")
@@ -111,6 +103,18 @@ def patch_output_file(name, relative, content):
     with open(path, "wb") as f:
         f.write(result)
     return path, temporary
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Write standard input to a file in a skill's output folder.")
+    parser.add_argument("--name", type=folder_name, required=True,
+                        help="the name of the skill's output folder, such as tech-investigations")
+    parser.add_argument("--path", required=True,
+                        help="where the file goes inside that folder")
+    parser.add_argument("--patch", action="store_true",
+                        help="apply exact JSON replacements from standard input")
+    return parser.parse_args(argv)
 
 
 def main():

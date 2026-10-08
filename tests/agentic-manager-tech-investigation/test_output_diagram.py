@@ -4,9 +4,10 @@
 #
 # The Mermaid CLI is never run here: render() is patched, or npx is made missing.
 import os
+import subprocess
 import sys
-import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from unittest import mock
 
 # tests/<skill>/ mirrors skills/<skill>/.
@@ -15,7 +16,6 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(
     REPO_ROOT, "skills", os.path.basename(TEST_DIR), "scripts"))
 import output_diagram  # noqa: E402
-from agentic_manager import output_file  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from diagram_fixture import BAD_SVG, GOOD_SVG  # noqa: E402
 
@@ -70,8 +70,7 @@ class DarkStyleTest(unittest.TestCase):
                       '{fill:#E879F9 !important;fill-opacity:0.14 !important;', styled)
         self.assertIn("#my-svg text{fill:#e4e4e7 !important;}", styled)
         self.assertTrue(styled.endswith("</style><g/></svg>"))
-
-    def test_leaves_an_svg_without_styles_alone(self):
+        # An SVG without styles is left alone.
         self.assertEqual(output_diagram.dark_style(GOOD_SVG), GOOD_SVG)
 
     def test_edge_default_preserves_authored_colour_cascade(self):
@@ -84,14 +83,39 @@ class DarkStyleTest(unittest.TestCase):
                        '#my-svg .flowchart-link{stroke:#000000;fill:none;}'
                        + custom + '</style>' + edge + '</svg>')
                 styled = output_diagram.dark_style(svg)
-                self.assertIn('#my-svg .flowchart-link{stroke:#a1a1aa;fill:none;}' + custom, styled)
+                self.assertIn(
+                    '#my-svg .flowchart-link{stroke:#a1a1aa;fill:none;}' + custom, styled)
                 self.assertIn(edge, styled)
-                self.assertNotIn('.flowchart-link{stroke:#a1a1aa !important;', styled)
+                self.assertNotIn(
+                    '.flowchart-link{stroke:#a1a1aa !important;', styled)
 
 
 class RetirementCrossTest(unittest.TestCase):
+    def test_crosses_cylinders_from_the_pinned_renderer(self):
+        # Geometry from Mermaid 12's rendered [("Retired store")] node.
+        shape = ('<path d="M0,13.382899628252789 a72,13.382899628252789 0,0,0 144,0 '
+                 'a72,13.382899628252789 0,0,0 -144,0 l0,58.38289962825279 '
+                 'a72,13.382899628252789 0,0,0 144,0 l0,-58.38289962825279" '
+                 'class="basic label-container outer-path" style="" '
+                 'transform="translate(-72, -42.57434944237918)"/>')
+        for classes, count in (("node default", 0), ("node decommissioned", 1)):
+            with self.subTest(classes=classes):
+                svg = (f'<svg><g class="{classes}" transform="translate(84,54.57434844970703)">'
+                       + shape + '<g class="label"><text>Store</text></g></g></svg>')
+                result = output_diagram.retirement_crosses(svg)
+                group = ET.fromstring(result).find("g")
+                assert group is not None
+                crosses = group.findall("path[@class='retirement-cross']")
+                self.assertEqual(len(crosses), count)
+                self.assertIn(shape, result)
+                self.assertEqual(list(group)[-1].attrib["class"], "label")
+                if count:
+                    self.assertEqual(crosses[0].attrib["d"],
+                                     "M-67,-37.5743L67,37.5743M-67,37.5743L67,-37.5743")
+                else:
+                    self.assertEqual(result, svg)
+
     def test_crosses_only_marked_rectangles_without_changing_labels(self):
-        import xml.etree.ElementTree as ET
         for classes, width, count in (("node default", "100", 0),
                                       ("node decommissioned", "100", 1),
                                       ("node decommissioned", "5", 0),
@@ -102,83 +126,38 @@ class RetirementCrossTest(unittest.TestCase):
                        '<g class="label"><text>Service</text></g></g></svg>')
                 result = output_diagram.retirement_crosses(svg)
                 group = ET.fromstring(result).find("g")
-                self.assertEqual(group.attrib["transform"], "translate(200,100)")
+                assert group is not None
+                label = group.find("g/text")
+                assert label is not None
+                self.assertEqual(
+                    group.attrib["transform"], "translate(200,100)")
                 self.assertEqual(len(group.findall("path")), count)
-                self.assertEqual(group.find("g/text").text, "Service")
+                self.assertEqual(label.text, "Service")
                 self.assertEqual(output_diagram.line_problems(result), [])
                 if count:
-                    self.assertEqual(group.find("path").attrib["d"],
+                    cross = group.find("path")
+                    assert cross is not None
+                    self.assertEqual(cross.attrib["d"],
                                      "M-45,-15L45,15M-45,15L45,-15")
                     self.assertEqual(list(group)[-1].attrib["class"], "label")
                 else:
                     self.assertEqual(result, svg)
 
 
-class WriteTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.folder = os.path.join(os.path.realpath(self.tmp.name), "maps")
-        os.makedirs(self.folder)
-        patcher = mock.patch.object(
-            output_file, "output_folder", return_value=(self.folder, False))
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        self.render = mock.Mock(return_value=GOOD_SVG)
-        for name, value in (("output_folder", mock.Mock(return_value=(self.folder, False))),
-                            ("render", self.render)):
-            patcher = mock.patch.object(output_diagram, name, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
-
-    def test_writes_the_rendered_svg(self):
-        path, temporary = output_diagram.write_output_diagram(
-            "maps", "topic/map.svg", b"flowchart TB\n  A --> B\n")
-        self.assertEqual((path, temporary),
-                         (os.path.join(self.folder, "topic", "map.svg"), False))
-        with open(path, encoding="utf-8") as f:
-            self.assertEqual(f.read(), GOOD_SVG)
-        self.render.assert_called_once_with(
-            "flowchart TB\n  A --> B\n", "default")
-
-    def test_refusals_write_nothing(self):
-        cases = [
-            ("not an svg path", "map.png", b"flowchart TB", None, "must end in .svg"),
-            ("not UTF-8", "map.svg", b"\xff\xfe", None, "not UTF-8"),
-            ("empty", "map.svg", b"  \n", None, "empty"),
-            ("outside the folder", "../map.svg",
-             b"flowchart TB", None, "without .."),
-            ("lines break the rules", "map.svg", b"flowchart TB", BAD_SVG,
-             "lines break the rules, so nothing was written"),
-        ]
-        for name, relative, source, svg, expected in cases:
-            with self.subTest(name):
-                if svg:
-                    self.render.return_value = svg
-                with self.assertRaisesRegex(SystemExit, expected):
-                    output_diagram.write_output_diagram(
-                        "maps", relative, source)
-                self.assertEqual(os.listdir(self.folder), [])
-
+class CommandLineTest(unittest.TestCase):
     def test_command_line(self):
-        args = output_diagram.parse_args(
-            ["--name", "maps", "--path", "a/map.svg"])
-        self.assertEqual((args.name, args.path, args.theme),
-                         ("maps", "a/map.svg", "default"))
-        self.assertEqual(output_diagram.parse_args(
-            ["--name", "maps", "--path", "a.svg", "--theme", "dark"]).theme, "dark")
-        self.assertTrue(output_diagram.parse_args(["--check", "--png"]).png)
-        for argv in (["--name", "../x", "--path", "a.svg"], ["--name", "maps"],
-                     ["--name", "maps", "--path", "a.svg", "--theme", "neon"],
-                     ["--name", "maps", "--path", "a.svg", "--png"]):
+        args = output_diagram.parse_args([])
+        self.assertEqual((args.theme, args.png), ("default", False))
+        args = output_diagram.parse_args(["--theme", "dark", "--png"])
+        self.assertEqual((args.theme, args.png), ("dark", True))
+        for argv in (["--theme", "neon"], ["--name", "maps"]):
             with self.subTest(argv=argv), self.assertRaises(SystemExit), mock.patch("sys.stderr"):
                 output_diagram.parse_args(argv)
 
 
-
 class CheckTest(unittest.TestCase):
-    """--check renders a diagram and reports its size, writing nothing; the
-    line rules apply to flowcharts only."""
+    """check_diagram() renders a diagram and reports its size, writing
+    nothing; the line rules apply to flowcharts only."""
 
     def check(self, source, svg, png=False):
         with mock.patch.object(output_diagram, "render", return_value=svg) as render:
@@ -186,24 +165,29 @@ class CheckTest(unittest.TestCase):
 
     def test_reports_the_size_and_checks_flowchart_lines(self):
         sized = GOOD_SVG.replace("<svg>", '<svg viewBox="0 0 640.5 300">')
-        result, render = self.check('%%{init: {}}%%\nflowchart LR\n  a --> b\n', sized)
-        self.assertEqual(result, {"width": 640.5, "height": 300.0, "nodes": {}})
+        result, render = self.check(
+            '%%{init: {}}%%\nflowchart LR\n  a --> b\n', sized)
+        self.assertEqual(
+            result, {"width": 640.5, "height": 300.0, "nodes": {}})
         self.assertEqual(render.call_args.args[1:], ("dark", None))
         bad = BAD_SVG.replace("<svg>", '<svg viewBox="0 0 10 10">')
         with self.assertRaises(SystemExit) as raised:
             self.check("graph TD\n  a --> b\n", bad)
         self.assertIn("break the rules", str(raised.exception))
         # A sequence's arrows aren't held to the map's line rules.
-        self.assertEqual(self.check("sequenceDiagram\n  A->>B: 1. Hi\n", bad)[0], {"width": 10.0, "height": 10.0})
+        self.assertEqual(self.check(
+            "sequenceDiagram\n  A->>B: 1. Hi\n", bad)[0], {"width": 10.0, "height": 10.0})
 
     def test_node_positions(self):
         svg = ('<svg><g class="nodes"><g class="node default" id="my-svg-flowchart-api-0" transform="translate(88, 34.5)">'
                '</g><g class="node default" id="flowchart-db_store-12" transform="translate(280.25,-4)"></g>'
                '<g class="cluster" id="edge"></g></g></svg>')
-        self.assertEqual(output_diagram.node_positions(svg), {"api": [88.0, 34.5], "db_store": [280.25, -4.0]})
+        self.assertEqual(output_diagram.node_positions(svg), {
+                         "api": [88.0, 34.5], "db_store": [280.25, -4.0]})
 
     def test_png_preview_goes_to_the_temp_folder(self):
-        result, render = self.check("sequenceDiagram\n  A->>B: 1. Hi\n", '<svg viewBox="0 0 1 1">', png=True)
+        result, render = self.check(
+            "sequenceDiagram\n  A->>B: 1. Hi\n", '<svg viewBox="0 0 1 1">', png=True)
         self.assertTrue(result["png"].endswith("preview.png"))
         self.assertEqual(render.call_args.args[2], result["png"])
 
@@ -212,15 +196,18 @@ class CheckTest(unittest.TestCase):
             with self.subTest(source=source), self.assertRaises(SystemExit):
                 output_diagram.check_diagram(source)
 
+
 class RenderTest(unittest.TestCase):
-    def test_render_without_node(self):
-        with mock.patch.object(output_diagram.shutil, "which", return_value=None):
-            with self.assertRaises(output_diagram.NodeMissing) as raised:
-                output_diagram.render("flowchart TB")
-        self.assertEqual(raised.exception.code, 3)
+    def test_without_node(self):
+        # Exit code 3 tells the caller to fall back to unchecked Mermaid.
+        for name, call in (("render", lambda: output_diagram.render("flowchart TB")),
+                           ("render_many", lambda: output_diagram.render_many(["sequenceDiagram"]))):
+            with self.subTest(name), mock.patch.object(output_diagram.shutil, "which", return_value=None):
+                with self.assertRaises(output_diagram.NodeMissing) as raised:
+                    call()
+                self.assertEqual(raised.exception.code, 3)
 
     def test_render_failures(self):
-        import subprocess
         cases = [
             ("timeout", subprocess.TimeoutExpired("npx", 300), "took more than"),
             ("CLI error", subprocess.CompletedProcess(
@@ -237,7 +224,6 @@ class RenderTest(unittest.TestCase):
                     run.return_value = result
                 with self.assertRaisesRegex(SystemExit, expected):
                     output_diagram.render("flowchart TB")
-
 
 
 class RenderManyTest(unittest.TestCase):
@@ -261,8 +247,10 @@ class RenderManyTest(unittest.TestCase):
             self.addCleanup(patcher.stop)
 
     def test_one_run_for_the_batch(self):
-        svgs = output_diagram.render_many(["sequenceDiagram\n A->>B: x", "sequenceDiagram\n B->>A: y"])
-        self.assertEqual([output_diagram.svg_size(s)[0] for s in svgs], [100.0, 200.0])
+        svgs = output_diagram.render_many(
+            ["sequenceDiagram\n A->>B: x", "sequenceDiagram\n B->>A: y"])
+        self.assertEqual([output_diagram.svg_size(s)[0]
+                         for s in svgs], [100.0, 200.0])
         self.assertEqual(len(self.runs), 1)
         self.assertEqual(output_diagram.render_many([]), [])
 
@@ -272,13 +260,10 @@ class RenderManyTest(unittest.TestCase):
                                    SystemExit("the diagram doesn't render: Parse error"))
                                if "BROKEN" in source else GOOD_SVG):
             with self.assertRaises(SystemExit) as raised:
-                output_diagram.render_many(["sequenceDiagram\n A->>B: x", "BROKEN"])
+                output_diagram.render_many(
+                    ["sequenceDiagram\n A->>B: x", "BROKEN"])
         self.assertTrue(str(raised.exception).startswith("diagram 2: "))
 
-    def test_without_node(self):
-        with mock.patch("output_diagram.shutil.which", return_value=None):
-            with self.assertRaises(output_diagram.NodeMissing):
-                output_diagram.render_many(["sequenceDiagram"])
 
 if __name__ == "__main__":
     unittest.main()

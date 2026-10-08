@@ -2,16 +2,16 @@
 config sets (output.root), or in <system temp>/agentic-manager if it sets none.
 output_folder() creates it if missing, and keeps what is already in it.
 
-Every skill that writes files gets its folder here. A skill's scripts import
-output_folder(); an agent that writes a skill's files itself runs this file,
-since it must never read the config itself:
+Every skill that writes files gets its output folder here. A skill's scripts
+import output_folder(); an agent that writes a skill's files itself runs this
+file, since it must never read the config itself:
 
     python3 output_folder.py --name <folder name>
 
---name is the skill's own folder, such as "tech-investigations": one folder
-name, not a path. It prints one line of JSON, {"folder": ..., "temporary": bool},
-and fails with a message on stderr if the config can't be read or the name
-isn't a single folder name.
+--name is the name of the skill's output folder, such as "tech-investigations":
+one folder name, not a path. It prints one line of JSON, {"folder": ...,
+"temporary": bool}, and fails with a message on stderr if the config can't be
+read or the name isn't a single folder name.
 
 "temporary" is true when the config sets no output root, so the folder is in the
 system temp folder and may be cleared; the skill tells the user. Only
@@ -71,7 +71,7 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Print, and create, the folder a skill writes its files to.")
     parser.add_argument("--name", type=folder_name, required=True,
-                        help="the skill's own folder, such as tech-investigations")
+                        help="the name of the skill's output folder, such as tech-investigations")
     return parser.parse_args(argv)
 
 

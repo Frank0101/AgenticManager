@@ -41,14 +41,15 @@ Writes into <report_dir>/_raw:
                            points, flag, priority, parent)
     parents.json           every epic the issues belong to, or belonged to before a
                            change of parent, with its description
-    comments/<KEY>.json    comments of blocker candidates, up to the moment the
-                           report describes
+    comments/<KEY>.json    comments of blocker candidates, excluding those created
+                           or edited after the moment the report describes
 
 The report describes the sprint as it was when it closed, or, for an active
 sprint, at the fetch: issues' fields are rebuilt from their changelogs, so a
 later edit changes nothing. Descriptions are the exception: Jira keeps no
-usable history of them, so they are as they read at the fetch. Nothing is
-computed here beyond choosing which comments and epics to fetch;
+usable history of them, so they are as they read at the fetch. Comment bodies
+edited after that moment are excluded because their earlier text isn't fetched.
+Nothing is computed here beyond choosing which comments and epics to fetch;
 build_sprint_data.py does the rest from these files.
 """
 import argparse
@@ -131,6 +132,14 @@ def project_key_of(args, issues):
     return issues[0]["key"].rsplit("-", 1)[0] if issues else None
 
 
+def comments_as_of(comments, moment):
+    """Keep comments whose creation and latest edit do not follow the cutoff.
+    Without an updated timestamp, creation alone determines inclusion."""
+    return [c for c in comments
+            if all(not c.get(field) or parse_ts(c[field]) <= moment
+                   for field in ("created", "updated"))]
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -184,7 +193,8 @@ def main():
         raise SystemExit(
             "can't tell the sprint's board, which Jira's sprint report needs; pass --board")
 
-    previous = previous_sprint(sprint, client.sprints_for_board(board_id, state="closed"))
+    previous = previous_sprint(
+        sprint, client.sprints_for_board(board_id, state="closed"))
     log(f"previous sprint: {previous.get('name')} (id {previous['id']})" if previous
         else "no previous sprint on the board")
 
@@ -242,7 +252,7 @@ def main():
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         comments = dict(
             zip(blocker_keys, pool.map(client.comments, blocker_keys)))
-    comments = {key: [c for c in values if not c.get("created") or parse_ts(c["created"]) <= moment]
+    comments = {key: comments_as_of(values, moment)
                 for key, values in comments.items()}
 
     project_key = project_key_of(args, sprint_issues + punted_issues)
