@@ -20,7 +20,12 @@ A change that alters what a skill does for the user, or what its output contains
 Go one skill at a time, starting with `agentic-manager-utils-lib`, since every other skill uses it. For each skill:
 
 1. Read in full its scripts or modules, its tests and its SKILL.md.
-2. Check that the code is correct, clear, simple and minimal, and that it is consistent with itself, with what the SKILL.md says the skill does, with the library and with AGENTS.md.
+2. Check that the code is correct, clear, simple and minimal, and that it is consistent:
+   - across the skill's scripts;
+   - within each script, with its header comment;
+   - with what the SKILL.md says the skill does;
+   - with the library;
+   - with AGENTS.md.
 3. Check the tests the same way, and also that they don't grow wildly: tests that check the same thing in the same way become one test over a table of cases.
 4. Fix the real issues you found, in the code, the tests or the SKILL.md.
 5. Run the skill's tests, and every skill's tests after changing the library (see Testing in AGENTS.md).
