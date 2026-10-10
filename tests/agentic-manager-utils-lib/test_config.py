@@ -1,7 +1,9 @@
-# Unit tests for skills/agentic-manager-utils-lib/agentic_manager/config.py.
-# Run with: python3 tests/run.py agentic-manager-utils-lib
-#
-# CONFIG_PATH is patched to a file in a temporary folder, which each test writes.
+"""Unit tests for skills/agentic-manager-utils-lib/agentic_manager/config.py.
+Run with: python3 tests/run.py agentic-manager-utils-lib
+
+CONFIG_PATH is patched to a file in a temporary folder, which each test writes.
+"""
+
 import json
 import os
 import sys

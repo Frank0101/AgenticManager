@@ -12,14 +12,14 @@ import argparse
 import json
 from pathlib import Path
 import re
-import xml.etree.ElementTree as ET
 from urllib.parse import unquote, urlsplit
 
-from common import (FINDING_FIELDS, FINDING_HEADING, LEDGER, LEDGER_SECTIONS, MERMAIDS, QUEUE_SUBSECTIONS,
-                    ROADMAP_ROWS, STAGES, DEFINITION, headings, links, markdown, read_skip, report_headings)
+import os
 
-ROADMAP_STAGES = [label for _, label in ROADMAP_ROWS]
-MAPS = {title: filename for _, title, filename in STAGES}
+from common import (FINDING_FIELDS, FINDING_HEADING, LEDGER, LEDGER_SECTIONS, QUEUE_SUBSECTIONS,
+                    DEFINITION, expected_files, headings, links, markdown, read_skip,
+                    report_headings, short_formats)
+
 GAP = re.compile(
     r"\b(evidence gap|not established|unavailable|unverified|insufficient evidence|no evidence)\b", re.I)
 
@@ -56,6 +56,119 @@ def has_gap(text, subject):
 def anchors(path):
     """Every heading anchor of a Markdown file, with -1, -2... for repeats."""
     return {anchor for _, _, anchor in headings(path.read_text(encoding="utf-8"))}
+
+
+LINK = re.compile(r"\]\(https?://[^)\s]+\)|\]\[[^\]]*\]|https?://\S+")
+# A reference-style link, `[text][key]`, takes its URL from a definition in the Links section.
+REFERENCE = re.compile(r"\[([^\]]+)\]\[([^\]]*)\]")
+INLINE_LINK = re.compile(r"\[[^\]]*\]\([^)]*\)")
+
+
+def strip_links(text):
+    """`text` without its links, inline or by reference, and without the
+    definition lines the references use."""
+    text = re.sub(r"^ {0,3}\[[^\]]+\]:\s*\S+.*$", " ", text, flags=re.M)
+    return REFERENCE.sub(" ", INLINE_LINK.sub(" ", text))
+
+
+def reference_problems(body):
+    """(keys used but not defined, keys defined but never used) of the reference links in `body`."""
+    defined = {key.casefold() for key, _ in DEFINITION.findall(body)}
+    used = {(key or text).casefold()
+            for text, key in REFERENCE.findall(re.sub(DEFINITION, " ", body))}
+    return sorted(used - defined), sorted(defined - used)
+
+
+RECORD = re.compile(r"\b[SQDGC]\d{2,}\b")
+RECORD_DEFINITION = re.compile(
+    r"^(?:\|\s*|[-*]\s+\*\*|#{3}\s+)([SQDGC]\d{2,})\b", re.M)
+
+
+def unrecorded_ids(body):
+    """The source, action, decision, gap and component IDs the ledger cites but
+    never records in a table row, a bold label or a heading."""
+    return sorted(set(RECORD.findall(body)) - set(RECORD_DEFINITION.findall(body)))
+
+
+def source_finding_problems(body):
+    """Source rows whose `Findings:` differ from the findings whose Evidence line names them."""
+    cited = {}
+    for block in re.split(r"(?m)^(?=### F\d+ )", body):
+        head = re.match(r"### (F\d+) ", block)
+        evidence = re.search(r"- \*\*Evidence:\*\*(.*)", block)
+        if head and evidence:
+            for source in set(re.findall(r"\bS(\d+)\b", evidence[1])):
+                cited.setdefault(int(source), set()).add(head[1])
+    start = body.find("## Revisions and source register")
+    end = body.find("### File reading coverage")
+    problems = []
+    for line in body[start:end].splitlines() if start >= 0 and end > start else []:
+        cells = [c.strip()
+                 for c in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
+        if len(cells) < 5 or not re.fullmatch(r"S\d+", cells[0]):
+            continue
+        listed = re.search(r"Findings: ([^.]*)\.\s*$", cells[4])
+        have = set(re.findall(r"F\d+", listed[1])) if listed else set()
+        want = cited.get(int(cells[0][1:]), set())
+        if have != want:
+            problems.append(f"{cells[0]} lists {', '.join(sorted(have)) or 'none'}, "
+                            f"its findings are {', '.join(sorted(want)) or 'none'}")
+    return problems
+
+
+def claim_words(entry):
+    claim = re.search(r"\*\*Claim:?\*\*:?(.*?)(?=\n- \*\*|\Z)", entry, re.S)
+    return len(re.findall(r"\w+", claim[1])) if claim else 0
+
+
+def unlinked_backticks(prose):
+    """The backticked spans of `prose` that sit outside a link, in order. Backticks
+    mark a reference to code or a source, so each is a link to its pinned
+    revision; anything else is written as plain words."""
+    return re.findall(r"`([^`\n]+)`", strip_links(prose))
+
+
+PLAIN_REFERENCE = re.compile(
+    r"(?<![\w/\[-])[A-Z][A-Z0-9]{1,9}-\d{1,6}(?![\w\]-])|(?<![\w/&#\[])#\d{1,5}\b")
+
+
+def unlinked_references(prose):
+    """The ticket keys and pull request numbers of `prose` written outside a
+    link, in order. Headings are left alone: a link there would change
+    their anchor."""
+    found = []
+    for line in strip_links(prose).splitlines():
+        if not line.lstrip().startswith("#"):
+            found += PLAIN_REFERENCE.findall(line)
+    return found
+
+
+def reference_error(where, found):
+    shown = ", ".join(
+        found[:6]) + (f" and {len(found) - 6} more" if len(found) > 6 else "")
+    return (f"{where}: tickets and pull requests written without a link: {shown}. "
+            "Link each to its source")
+
+
+def backtick_error(where, spans):
+    shown = ", ".join(
+        f"`{s}`" for s in spans[:6]) + (f" and {len(spans) - 6} more" if len(spans) > 6 else "")
+    return (f"{where}: references in backticks without a link: {shown}. Link each to its pinned revision, "
+            "or write it as plain words")
+
+
+def unlinked_rows(body, start, end, cell, exempt=None):
+    """The IDs of the table rows between the headings `start` and `end` whose
+    `cell` (0 is the first column) holds no link, except rows `exempt` accepts."""
+    section = re.search(
+        rf"^{re.escape(start)}\s*$(.*?)(?=^{re.escape(end)}|\Z)", body, re.M | re.S)
+    found = []
+    for line in (section[1] if section else "").splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if re.fullmatch(r"S\d+", cells[0]) and len(cells) > cell:
+            if not LINK.search(cells[cell]) and not (exempt and exempt(cells)):
+                found.append(cells[0])
+    return found
 
 
 def check_ledger(path, handover=False):
@@ -99,21 +212,58 @@ def check_ledger(path, handover=False):
         if missing:
             warnings.append(
                 f"ledgers.md: {match[1]} lacks " + ", ".join(missing))
+        if claim_words(entry) > 150:
+            warnings.append(f"ledgers.md: {match[1]}'s claim is {claim_words(entry)} words; "
+                            "split it into findings of one claim each")
     cited = set(re.findall(r"\bF\d+\b", re.sub(FINDING_HEADING, "", body)))
     undefined = sorted(cited - set(findings), key=lambda f: int(f[1:]))
     if undefined:
         errors.append(
             "ledgers.md: findings cited but never written: " + ", ".join(undefined))
+    missing_keys, unused_keys = reference_problems(body)
+    if missing_keys:
+        errors.append(
+            "ledgers.md: reference links without a definition in ## Links: " + ", ".join(missing_keys))
+    if unused_keys:
+        warnings.append(
+            "ledgers.md: definitions in ## Links never used: " + ", ".join(unused_keys))
     if handover:
+        unrecorded = unrecorded_ids(body)
+        if unrecorded:
+            errors.append(
+                "ledgers.md: IDs cited but never recorded: " + ", ".join(unrecorded))
         ready = re.search(
             r"^### Ready / in progress\s*$(.*?)(?=^#{2,3}\s)", body, re.M | re.S)
         if ready and re.search(r"^\|\s*Q\d+", ready[1], re.M):
             errors.append(
                 "ledgers.md: actions are still ready or in progress; finish, block or reject them before handover")
-        history = body.find("## Correction history")
-        if history < 0 or not re.search(r"^### Reflection\s*$", body[history:], re.M):
+        # The trail from a claim to its source ends in a link: a search record has none to give.
+        def search(cells): return "search record" in cells[1].lower()  # noqa: E731
+        register = unlinked_rows(
+            body, "## Revisions and source register", "### File reading coverage", 2, search)
+        if register:
+            errors.append("ledgers.md: source register rows without a link to their exact reference: "
+                          + ", ".join(register) + ". Link each source at its pinned revision, or mark a search a `search record`")
+        coverage = unlinked_rows(
+            body, "### File reading coverage", "## ", 1)
+        if coverage:
+            errors.append("ledgers.md: File reading coverage rows without a link to the material read: "
+                          + ", ".join(sorted(set(coverage))))
+        mismatched = source_finding_problems(body)
+        if mismatched:
+            errors.append("ledgers.md: a source's Findings differ from the findings whose Evidence names it ("
+                          + "; ".join(mismatched) + "). Run ledger.py sync-sources")
+        spans = unlinked_backticks(body)
+        if spans:
+            errors.append(backtick_error("ledgers.md", spans))
+        found = unlinked_references(body)
+        if found:
+            errors.append(reference_error("ledgers.md", found))
+        reflection = re.search(
+            r"^## Reflection\s*\n(.*?)(?=^## |\Z)", body, re.M | re.S)
+        if not reflection or reflection[1].strip() in ("", "None yet."):
             errors.append(
-                "ledgers.md: add the ### Reflection subsection under ## Correction history before handover")
+                "ledgers.md: write the ## Reflection section before handover")
     return errors, warnings
 
 
@@ -140,8 +290,6 @@ def check_report(report, handover=False):
     if actual != expected:
         errors.append("H2/H3 headings must occur exactly in this order: " +
                       " → ".join("#" * level + " " + title for level, title in expected))
-    sections = {match[2]: (match.end(), found[i + 1].start() if i + 1 < len(found) else len(text))
-                for i, match in enumerate(found)}
     definitions = {m[1].casefold(): m[2].strip("<>")
                    for m in DEFINITION.finditer(prose)}
     all_links = list(links(prose, definitions))
@@ -170,14 +318,6 @@ def check_report(report, handover=False):
         if not path.exists():
             errors.append(
                 f"Line {line}: local link target is missing: {target}")
-        elif path.suffix.lower() == ".svg":
-            try:
-                root = ET.parse(path).getroot()
-                if root.tag not in ("svg", "{http://www.w3.org/2000/svg}svg"):
-                    raise ValueError("not SVG")
-            except (OSError, ET.ParseError, ValueError):
-                errors.append(
-                    f"Line {line}: local SVG is not valid SVG XML: {target}")
     if not (report.parent / LEDGER).is_file():
         errors.append(f"Missing research artifact: {LEDGER}.")
     else:
@@ -194,88 +334,47 @@ def check_report(report, handover=False):
         if not citations and not re.search(r"https?://[^\s<>]+", row) and not unknown_row:
             errors.append(
                 f"Line {line}: table row needs a point-of-use source link (or a ledger gap link); an unknown owner does not exempt other claims.")
-    if "Roadmap" in sections:
-        start, end = sections["Roadmap"]
-        labels = [cells[0].strip(" *_`:")
-                  for _, cells, _ in table_rows(prose[start:end])]
-        if labels != ROADMAP_STAGES:
-            errors.append(
-                "Roadmap table must have exactly these rows in order: " + " → ".join(ROADMAP_STAGES))
-    prep_path = report.parent / MERMAIDS
-    prep, prep_fences = "", []
-    try:
-        prep = prep_path.read_text(
-            encoding="utf-8") if any(title in sections for title in MAPS) else ""
-        _, prep_fences, prep_unclosed = markdown(prep)
-        if prep_unclosed:
-            errors.append("mermaids.md has an unclosed code fence.")
-        if any(diagram_kind(f[3]) == "sequenceDiagram" for f in prep_fences):
-            errors.append(
-                "mermaids.md must contain map sources only; keep sequences in the report.")
-    except (OSError, UnicodeError):
-        prep, prep_fences = "", []
-        if any(title in sections for title in MAPS):
-            errors.append(
-                "Missing or unreadable UTF-8 map preparation artifact: mermaids.md.")
-    for title, filename in MAPS.items():
-        if title not in sections:
-            continue
-        start, end = sections[title]
+    if any(language == "mermaid" and diagram_kind(source) != "sequenceDiagram"
+           for _, _, language, source in fences):
+        errors.append(
+            "The report holds sequence diagrams only: remove any map or other diagram.")
+    architect = next((i for i, (level, title) in enumerate(actual)
+                      if level == 2 and title == "Architect summary"), None)
+    for i in range(architect + 1 if architect is not None else len(found), len(found)):
+        title = found[i][2]
+        if title not in ("Current status", "Next steps and evolution"):
+            break
+        start = found[i].end()
+        end = found[i + 1].start() if i + 1 < len(found) else len(text)
         section = prose[start:end]
-        maps = [(a, b) for a, b, image, target in all_links
-                if start <= a < end and image and target and unquote(urlsplit(target).path).endswith(filename)]
         sequences = [(a, b) for a, b, language, source in fences
                      if start <= a < end and language == "mermaid" and diagram_kind(source) == "sequenceDiagram"]
-        raw_maps = [(a, b) for a, b, language, source in fences
-                    if start <= a < end and language == "mermaid" and diagram_kind(source) in ("flowchart", "graph")]
-        if raw_maps:
+        if len(sequences) > 1:
             errors.append(
-                f"{title}: remove duplicated map source from report; keep it in mermaids.md.")
-        if not maps and not has_gap(section, r"\b(map|architecture|structure)\b"):
-            errors.append(
-                f"{title}: embed {filename} before its sequences, or record an explicit map evidence gap.")
-        if len(maps) > 1:
-            errors.append(f"{title}: expected one system map.")
+                f"Architect summary, {title}: expected one sequence, not {len(sequences)}.")
         if not sequences and not has_gap(section, r"\b(flow|sequence|interaction)s?\b"):
             errors.append(
-                f"{title}: add a native Mermaid sequence or an explicit flow evidence gap.")
-        if maps and sequences:
-            if maps[0][1] > sequences[0][0]:
-                errors.append(f"{title}: the map must precede every sequence.")
-            if not prose[start:maps[0][0]].strip():
+                f"Architect summary, {title}: add a native Mermaid sequence or an explicit flow evidence gap.")
+        if sequences:
+            before = re.sub(r"^\s*#+.*$", "",
+                            prose[start:sequences[0][0]], flags=re.M).strip()
+            if not before:
                 errors.append(
-                    f"{title}: add the opening architecture summary before the map.")
-            tail = re.sub(r"^\s*#+.*$", "",
-                          prose[sequences[-1][1]:end], flags=re.M).strip()
-            if not tail:
-                errors.append(
-                    f"{title}: add shared commentary after the last sequence.")
-            diagrams = sorted(maps + sequences)
-            for (_, previous_end), (next_start, _) in zip(diagrams, diagrams[1:]):
-                between = prose[previous_end:next_start].strip()
-                # Short titles may be headings or bold text. Plain text could
-                # also be a title, so flag ambiguity rather than reject it.
-                # The one wrapper allowed: a sequence's width container.
-                remainder = re.sub(r'^\s*(?:#{4,6}\s+.*|\*\*[^\n]+\*\*|<div style="width:[\d.]+%; margin:0 auto;">|</div>)\s*$',
-                                   "", between, flags=re.M).strip()
-                if remainder:
-                    warnings.append(
-                        f"{title}: text between diagrams needs review; keep only flow titles there and put shared commentary after the last sequence.")
-                    break
-        if maps:
-            # Map headings delimit preparation entries; each must name its SVG.
-            entries = re.split(r"^#{1,6}\s+", prep, flags=re.M)
-            if not any(filename in entry and any(diagram_kind(f[3]) in ("flowchart", "graph")
-                       for f in markdown(entry)[1]) for entry in entries):
-                errors.append(
-                    f"mermaids.md: retain the {filename} map source under its stage heading.")
-    architecture_ranges = [sections[title]
-                           for title in MAPS if title in sections]
-    if any(language == "mermaid" and diagram_kind(source) in ("flowchart", "graph")
-           and not any(start <= a < end for start, end in architecture_ranges)
-           for a, _, language, source in fences):
-        errors.append(
-            "Keep map source in mermaids.md, not elsewhere in the report.")
+                    f"Architect summary, {title}: add the text before the sequence.")
+    if handover:
+        extra = sorted(name for name in os.listdir(report.parent)
+                       if not name.startswith(".") and name not in expected_files(
+                           report.name, read_skip(report.parent), short_formats(report.parent)))
+        if extra:
+            errors.append("Unexpected files in the investigation folder: " + ", ".join(extra)
+                          + ". It holds only the skill's files; keep working files in your own scratch folder.")
+    if handover:
+        spans = unlinked_backticks(prose)
+        if spans:
+            errors.append(backtick_error(report.name, spans))
+        found = unlinked_references(prose)
+        if found:
+            errors.append(reference_error(report.name, found))
     result["ok"] = not errors
     return result
 
@@ -285,7 +384,7 @@ def main(argv=None):
     parser.add_argument("--report", required=True,
                         help="Absolute path of the Markdown report.")
     parser.add_argument("--handover", action="store_true",
-                        help="also require what handover needs: no ready actions, a recorded reflection")
+                        help="also require what handover needs: no ready actions, a recorded reflection, only the skill's files")
     args = parser.parse_args(argv)
     result = check_report(args.report, args.handover)
     print(json.dumps(result))

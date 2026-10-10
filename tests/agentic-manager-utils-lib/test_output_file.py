@@ -1,9 +1,11 @@
-# Unit tests for skills/agentic-manager-utils-lib/agentic_manager/output_file.py.
-# Run as a script, it has end-to-end tests in test_e2e_output.py.
-# Run with: python3 tests/run.py agentic-manager-utils-lib
-#
-# output_folder() is patched to return a folder inside a temporary folder, so no
-# config is read.
+"""Unit tests for skills/agentic-manager-utils-lib/agentic_manager/output_file.py.
+Run as a script, it has end-to-end tests in test_e2e_output.py.
+Run with: python3 tests/run.py agentic-manager-utils-lib
+
+output_folder() is patched to return a folder inside a temporary folder, so no
+config is read.
+"""
+
 import json
 import os
 import sys

@@ -1,14 +1,16 @@
-# End-to-end tests for skills/agentic-manager-jira-sprint-report/scripts/fetch_sprint.py
-# and prepare_report.py, which runs it, build_sprint_data.py and make_brief.py: they
-# run the whole scripts. fetch_sprint.py's functions have unit tests in
-# test_fetch_sprint.py.
-# Run with: python3 tests/run.py agentic-manager-jira-sprint-report
-#
-# The scripts run against a fake Jira server, started on a local port, that serves the
-# made-up sprint in sprint_fixture.py. HOME points at a temporary folder holding the
-# test's own config, whose base-url is that server and whose output root is in that
-# folder too, and TMPDIR at the same folder, so reports that fall back to the system
-# temp folder stay inside it.
+"""End-to-end tests for skills/agentic-manager-jira-sprint-report/scripts/fetch_sprint.py
+and prepare_report.py, which runs it, build_sprint_data.py and make_brief.py: they
+run the whole scripts. fetch_sprint.py's functions have unit tests in
+test_fetch_sprint.py.
+Run with: python3 tests/run.py agentic-manager-jira-sprint-report
+
+The scripts run against a fake Jira server, started on a local port, that serves the
+made-up sprint in sprint_fixture.py. HOME points at a temporary folder holding the
+test's own config, whose base-url is that server and whose output root is in that
+folder too, and TMPDIR at the same folder, so reports that fall back to the system
+temp folder stay inside it.
+"""
+
 import base64
 import copy
 import json

@@ -1,8 +1,10 @@
-# Unit tests for skills/agentic-manager-utils-check-config/scripts/check_config.py.
-# Run with: python3 tests/run.py agentic-manager-utils-check-config
-#
-# They call the script's functions directly with small templates and configs.
-# test_e2e_check_config.py runs the whole script against real files.
+"""Unit tests for skills/agentic-manager-utils-check-config/scripts/check_config.py.
+Run with: python3 tests/run.py agentic-manager-utils-check-config
+
+They call the script's functions directly with small templates and configs.
+test_e2e_check_config.py runs the whole script against real files.
+"""
+
 import json
 import os
 import sys

@@ -1,28 +1,30 @@
-# A made-up closed sprint for the sprint-report tests, as Jira's API returns it.
-#
-# Sprint 7 of project PROJ started on Wednesday 04/03/2026 at 12:00. Most of its
-# backlog was loaded that morning, some the day before. Its issues cover each case
-# the report has to tell apart:
-#
-#   PROJ-1   original, 3 pts, completed 06/03, carried over from Sprint 6  epic PROJ-100
-#   PROJ-2   original (added 03/03), 5 pts, still In Progress, left
-#            Sprint 6 before it closed, so not carried over           epic PROJ-100
-#   PROJ-3   original, 2 pts, Done before it arrived, removed 05/03   epic PROJ-101
-#   PROJ-4   original, 3 pts, open, removed 09/03 (descoped)          epic PROJ-101
-#   PROJ-5   extra (added 04/03 after the start), 2 pts, completed 10/03, no epic;
-#            in Sprint 6 when it closed, but extra, so not carried over
-#   PROJ-6   original, 1 pt, left 05/03, back 06/03, closed as Duplicate 11/03
-#   PROJ-7   extra, created in the running sprint 10/03, 1 pt, Blocked
-#   PROJ-8   original, 2 pts, completed 05/03, removed 06/03
-#   PROJ-9   a sub-task of PROJ-1, which the report leaves out
-#   PROJ-10  original (added 03/03), 1 pt, Done 03/03 before the start   epic PROJ-100
-#   PROJ-11  added and removed 03/03, before the start, so not reported
-#
-# Sprint 6, the previous sprint, closed on 04/03 at 09:00, moving its open work
-# into Sprint 7 as Jira does: Sprint 6 stays in the issue's Sprint field.
-#
-# Each issue's fields are as Jira returns them today, and its changelog holds
-# how it got there: its moves in and out of the sprint and its status changes.
+"""A made-up closed sprint for the sprint-report tests, as Jira's API returns it.
+
+Sprint 7 of project PROJ started on Wednesday 04/03/2026 at 12:00. Most of its
+backlog was loaded that morning, some the day before. Its issues cover each case
+the report has to tell apart:
+
+  PROJ-1   original, 3 pts, completed 06/03, carried over from Sprint 6  epic PROJ-100
+  PROJ-2   original (added 03/03), 5 pts, still In Progress, left
+           Sprint 6 before it closed, so not carried over           epic PROJ-100
+  PROJ-3   original, 2 pts, Done before it arrived, removed 05/03   epic PROJ-101
+  PROJ-4   original, 3 pts, open, removed 09/03 (descoped)          epic PROJ-101
+  PROJ-5   extra (added 04/03 after the start), 2 pts, completed 10/03, no epic;
+           in Sprint 6 when it closed, but extra, so not carried over
+  PROJ-6   original, 1 pt, left 05/03, back 06/03, closed as Duplicate 11/03
+  PROJ-7   extra, created in the running sprint 10/03, 1 pt, Blocked
+  PROJ-8   original, 2 pts, completed 05/03, removed 06/03
+  PROJ-9   a sub-task of PROJ-1, which the report leaves out
+  PROJ-10  original (added 03/03), 1 pt, Done 03/03 before the start   epic PROJ-100
+  PROJ-11  added and removed 03/03, before the start, so not reported
+
+Sprint 6, the previous sprint, closed on 04/03 at 09:00, moving its open work
+into Sprint 7 as Jira does: Sprint 6 stays in the issue's Sprint field.
+
+Each issue's fields are as Jira returns them today, and its changelog holds
+how it got there: its moves in and out of the sprint and its status changes.
+"""
+
 SPRINT_ID = 7
 BOARD_ID = 42
 POINTS_FIELD = "customfield_10016"

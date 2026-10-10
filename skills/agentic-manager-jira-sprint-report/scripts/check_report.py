@@ -5,13 +5,12 @@ the report's formatting rules.
 Usage:
     python3 check_report.py --report-dir <report_dir>
 
-Prints every check and exits non-zero if any fails. make_report.py writes the
-report, and validates the agent's text (content.json) before it does; this
-checks what the generator produces from data.json, not the agent's wording. It shares only the format helpers with make_report.py and recomputes
-every figure from the spells' events, so a generator bug can't pass by
-agreeing with itself. Every rule here exists because a table drifted when it
-was corrected by hand; prose guidance didn't stop the regressions, a failing
-check does.
+Prints every check and exits non-zero if any fails. make_report.py validates
+the agent's text (content.json) before writing; this checks what the generator
+produced from data.json. It shares only the format helpers with make_report.py
+and recomputes every figure from the spells' events, so a generator bug can't
+pass by agreeing with itself. Every rule here exists because a table drifted
+when corrected by hand: prose guidance didn't stop it, a failing check does.
 """
 import argparse
 import html
@@ -20,7 +19,7 @@ import re
 import sys
 from datetime import date, timedelta
 
-from common import (BANNED_WORDS, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, ISSUE_KEY,
+from common import (BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, ISSUE_KEY,
                     NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai, banned_words,
                     display_date, epic_groups, estimate, key_order, load_json, number, parse_ts, plural, pts, qty,
                     ratio, report_file, report_timezone, scope_group_label, whole_percentage, word_count)
@@ -504,6 +503,13 @@ def check_images(c, md, report_dir):
             "images", "burndown sits under the Scope Timeline heading")
 
 
+def check_files(c, report_dir, data):
+    extra = sorted(name for name in os.listdir(report_dir)
+                   if not name.startswith(".") and name not in expected_files(data["label"]))
+    c.check(not extra, "files",
+            f"only the report's files are in the folder (unexpected: {extra or 'none'})")
+
+
 def generated_text(md):
     """Exclude only the fixed source-text slots, never matching prose by value."""
     md = re.sub(r"^# Sprint Summary:.*$", "# Sprint Summary:", md, flags=re.M)
@@ -641,6 +647,7 @@ def run_checks(md, data, report_dir):
     check_commentary(c, md, data)
     check_framing(c, md)
     check_images(c, md, report_dir)
+    check_files(c, report_dir, data)
     check_timeline(c, tables.get("timeline"), data)
     check_epics(c, tables.get("epics"), data)
     check_style(c, md)

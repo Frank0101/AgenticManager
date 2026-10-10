@@ -1,15 +1,17 @@
-# Unit tests for skills/agentic-manager-jira-sprint-report/scripts/make_charts.py.
-# Run with: python3 tests/run.py agentic-manager-jira-sprint-report
-#
-# A two-week sprint, Monday 02/03/2026 to Friday 13/03/2026, small enough to
-# work its burndown out by hand:
-#   PROJ-1  original, 4 pts, done Thursday 05/03, carried over from Sprint 6
-#   PROJ-2  original, 2 pts, never done
-#   PROJ-3  extra,    3 pts, added Wednesday 04/03, done Monday 09/03
-#   PROJ-4  original, 1 pt,  already Done at the start
-# Baseline 7 pts, the whole commitment at the start, including what was already
-# Done, so the start day drops to 6 by its end; the ideal burns the 7 over 9
-# later weekdays.
+"""Unit tests for skills/agentic-manager-jira-sprint-report/scripts/make_charts.py.
+Run with: python3 tests/run.py agentic-manager-jira-sprint-report
+
+A two-week sprint, Monday 02/03/2026 to Friday 13/03/2026, small enough to
+work its burndown out by hand:
+  PROJ-1  original, 4 pts, done Thursday 05/03, carried over from Sprint 6
+  PROJ-2  original, 2 pts, never done
+  PROJ-3  extra,    3 pts, added Wednesday 04/03, done Monday 09/03
+  PROJ-4  original, 1 pt,  already Done at the start
+Baseline 7 pts, the whole commitment at the start, including what was already
+Done, so the start day drops to 6 by its end; the ideal burns the 7 over 9
+later weekdays.
+"""
+
 import contextlib
 import html
 import io

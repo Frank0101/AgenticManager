@@ -1,9 +1,11 @@
-# Unit tests for skills/agentic-manager-utils-lib/agentic_manager/output_folder.py.
-# Run as a script, it has end-to-end tests in test_e2e_output.py.
-# Run with: python3 tests/run.py agentic-manager-utils-lib
-#
-# The config's CONFIG_PATH is patched to a file in a temporary folder, which each
-# test writes, and TEMP_ROOT to a folder inside it.
+"""Unit tests for skills/agentic-manager-utils-lib/agentic_manager/output_folder.py.
+Run as a script, it has end-to-end tests in test_e2e_output.py.
+Run with: python3 tests/run.py agentic-manager-utils-lib
+
+The config's CONFIG_PATH is patched to a file in a temporary folder, which each
+test writes, and TEMP_ROOT to a folder inside it.
+"""
+
 import json
 import os
 import sys

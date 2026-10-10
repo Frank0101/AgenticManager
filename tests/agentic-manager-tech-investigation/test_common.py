@@ -1,7 +1,9 @@
-# Unit tests for skills/agentic-manager-tech-investigation/scripts/common.py.
-# Run with: python3 tests/run.py agentic-manager-tech-investigation
-#
-# The config's path is patched to the test's own config, in a temporary folder.
+"""Unit tests for skills/agentic-manager-tech-investigation/scripts/common.py.
+Run with: python3 tests/run.py agentic-manager-tech-investigation
+
+The config's path is patched to the test's own config, in a temporary folder.
+"""
+
 import os
 import sys
 import tempfile
@@ -17,22 +19,21 @@ from investigation_fixture import INVESTIGATION, temp_output  # noqa: E402
 
 
 class StructureTest(unittest.TestCase):
-    def test_report_headings_and_stages(self):
-        # skip: (headings left out, stages shown)
-        cases = [
-            ((), [], ["current", "next", "target"]),
-            (("evolution",), ["Roadmap", "Next evolution",
-             "Target architecture"], ["current"]),
-            (("architecture",), ["Architect summary", "Current architecture", "Next evolution",
-                                 "Target architecture", "Technical decisions and gaps", "References"], []),
-        ]
-        for skip, removed, stages in cases:
+    def test_report_headings(self):
+        # skip: the section titles left out, in order; both layers repeat two titles
+        executive = ["Executive / product summary", "Problem and intended outcome", "Current status",
+                     "Next steps and evolution", "Key decisions and risks"]
+        architect = ["Architect summary", "Current status", "Next steps and evolution",
+                     "Key decisions and gaps"]
+        references = ["References"]
+        cases = [((), executive + architect + references),
+                 (("evolution",), [t for t in executive if t != "Next steps and evolution"]
+                  + [t for t in architect if t != "Next steps and evolution"] + references),
+                 (("architecture",), executive + references)]
+        for skip, titles in cases:
             with self.subTest(skip=skip):
-                titles = [title for _, title in common.report_headings(skip)]
                 self.assertEqual(
-                    titles, [title for _, title in common.HEADINGS if title not in removed])
-                self.assertEqual(
-                    [key for key, _, _ in common.report_stages(skip)], stages)
+                    [title for _, title in common.report_headings(skip)], titles)
 
     def test_read_skip(self):
         # Only content.json's known dimensions, in their own order; nothing
@@ -45,6 +46,30 @@ class StructureTest(unittest.TestCase):
                     with open(os.path.join(folder, common.CONTENT), "w", encoding="utf-8") as f:
                         f.write(text)
                 self.assertEqual(common.read_skip(folder), expected)
+
+    def test_expected_files(self):
+        base = {"ledgers.md", "content.json", "Acme_Report.md"}
+        cases = [("a full report", (), (), base),
+                 ("evolution skipped", ("evolution",), (), base),
+                 ("architecture skipped", ("architecture",), (), base),
+                 ("with a short output", ("architecture",), ("exec-summary",),
+                  base | {"exec-summary.json", "exec-summary.md"})]
+        for name, skip, formats, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(common.expected_files(
+                    "Acme_Report.md", skip, formats), expected)
+
+    def test_short_formats(self):
+        # Only a <format>.json with its <format>.md; the research artifacts' names are never formats.
+        cases = [(["exec-summary.json", "exec-summary.md"], {"exec-summary"}),
+                 (["notes.md"], set()), (["draft.json"], set()),
+                 (["content.json", "content.md"], set()),
+                 (["Bad Name.json", "Bad Name.md"], set())]
+        for names, expected in cases:
+            with self.subTest(names=names), tempfile.TemporaryDirectory() as folder:
+                for name in names:
+                    open(os.path.join(folder, name), "w").close()
+                self.assertEqual(common.short_formats(folder), expected)
 
     def test_check_format(self):
         for label, ok in (("exec-summary", True), ("long-analysis", True), ("slack-update2", True),
@@ -77,15 +102,15 @@ class FoldersTest(unittest.TestCase):
 
     def test_load_json(self):
         with tempfile.TemporaryDirectory() as folder:
-            path = os.path.join(folder, "maps.json")
-            with self.assertRaisesRegex(SystemExit, "maps.json is missing"):
+            path = os.path.join(folder, "data.json")
+            with self.assertRaisesRegex(SystemExit, "data.json is missing"):
                 common.load_json(path)
             for text, expected in (('{"a": 1}', {"a": 1}), ("{", None)):
                 with self.subTest(text=text):
                     with open(path, "w", encoding="utf-8") as f:
                         f.write(text)
                     if expected is None:
-                        with self.assertRaisesRegex(SystemExit, "maps.json is not readable JSON"):
+                        with self.assertRaisesRegex(SystemExit, "data.json is not readable JSON"):
                             common.load_json(path)
                     else:
                         self.assertEqual(common.load_json(path), expected)
@@ -142,13 +167,6 @@ class MarkdownTest(unittest.TestCase):
         for name, text, expected in cases:
             with self.subTest(name):
                 self.assertEqual(common.headings(text), expected)
-
-    def test_connection_key(self):
-        # A connection is known by its id, else by its ends.
-        self.assertEqual(common.connection_key(
-            {"id": "c1", "from": "a", "to": "b"}), "c1")
-        self.assertEqual(common.connection_key(
-            {"from": "a", "to": "b"}), "a->b")
 
 
 if __name__ == "__main__":

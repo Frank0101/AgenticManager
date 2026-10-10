@@ -1,8 +1,10 @@
-# Unit tests for skills/agentic-manager-tech-investigation/scripts/save_example.py.
-# The whole pipeline has end-to-end tests in test_e2e_pipeline.py.
-# Run with: python3 tests/run.py agentic-manager-tech-investigation
-#
-# The config's path is patched to the test's own config, in a temporary folder.
+"""Unit tests for skills/agentic-manager-tech-investigation/scripts/save_example.py.
+The whole pipeline has end-to-end tests in test_e2e_pipeline.py.
+Run with: python3 tests/run.py agentic-manager-tech-investigation
+
+The config's path is patched to the test's own config, in a temporary folder.
+"""
+
 import os
 import sys
 import unittest
@@ -26,9 +28,9 @@ class SaveExampleTest(unittest.TestCase):
         self.folder = temp_output(self)
         init_investigation.init("Acme-Search", today=TODAY)
         self.source = os.path.join(self.folder, "Acme-Search_26-10-05")
-        files = {"Acme-Search_Report.md": "![Map](architecture-as-is.svg)\n[Ledger](ledgers.md#f01)\n"
+        files = {"Acme-Search_Report.md": "![Picture](picture.svg)\n[Ledger](ledgers.md#f01)\n"
                                           "[Web](https://example.com) [Missing](gone.md)\n",
-                 "architecture-as-is.svg": "<svg/>", "mermaids.md": "unlinked",
+                 "picture.svg": "<svg/>", "notes.md": "unlinked",
                  "exec-summary.md": "Summary. [Full report](Acme-Search_Report.md)\n"}
         for name, text in files.items():
             with open(os.path.join(self.source, name), "w", encoding="utf-8") as f:
@@ -38,11 +40,11 @@ class SaveExampleTest(unittest.TestCase):
         first = save_example.save(
             "Acme-Search_26-10-05", "Acme-Search_Report.md", "long-analysis", "Clear roadmap.")
         self.assertEqual(sorted(first["files"]), [
-                         "Acme-Search_Report.md", "architecture-as-is.svg", "ledgers.md"])
+                         "Acme-Search_Report.md", "ledgers.md", "picture.svg"])
         second = save_example.save(
             "Acme-Search_26-10-05", "exec-summary.md", "exec-summary", "Tight summary.")
-        self.assertEqual(sorted(second["files"]), ["Acme-Search_Report.md", "architecture-as-is.svg",
-                                                   "exec-summary.md", "ledgers.md"])
+        self.assertEqual(sorted(second["files"]), ["Acme-Search_Report.md", "exec-summary.md",
+                                                   "ledgers.md", "picture.svg"])
         third = save_example.save(
             "Acme-Search_26-10-05", "exec-summary.md", "exec-summary", "Revised.")
         self.assertTrue(third["example"].endswith(

@@ -6,15 +6,10 @@
 Short outputs take whatever shape the question needs, so only their frame is
 fixed here: the file <format>.md next to the report, the link to the full
 report at its end, ledger links resolved as in the report, and the word limit
-the user asked for, which is a maximum. The body is the agent's:
+the user asked for, which is a maximum. The body is the agent's; the file's
+fields are in SKILL.md (Hand over).
 
-{
-  "title": "Optional heading",
-  "max_words": 100,
-  "body": ["Markdown blocks: paragraphs, bullet lists, ## headings, tables..."]
-}
-
-The format names content, maps, ledgers and mermaids are reserved for research artifacts.
+The format names content and ledgers are reserved for research artifacts.
 max_words is left out when the user set no limit. Words are counted as in the
 report, without link targets.
 
@@ -27,7 +22,7 @@ import json
 import os
 import re
 
-from common import (CONTENT, FOLDER_NAME, LEDGER, MAPS_SPEC, MERMAIDS, REPORT_SUFFIX, check_format, investigation_dir, load_json,
+from common import (CONTENT, FOLDER_NAME, LEDGER, REPORT_SUFFIX, check_format, investigation_dir, load_json,
                     topic_of, write_output_file)
 from make_report import Content, Ledger, words
 
@@ -64,7 +59,7 @@ def build(content, report):
 
 def make_summary(relative, wanted):
     check_format(wanted)
-    if f"{wanted}.md" in (LEDGER, MERMAIDS) or f"{wanted}.json" in (CONTENT, MAPS_SPEC):
+    if f"{wanted}.md" == LEDGER or f"{wanted}.json" == CONTENT:
         raise SystemExit(
             f"{wanted!r}: reserved for a research artifact; choose another summary format")
     folder, _, temporary = investigation_dir(relative)

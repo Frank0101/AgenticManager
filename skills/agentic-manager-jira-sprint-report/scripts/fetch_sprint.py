@@ -17,13 +17,11 @@ folder for the same sprint is deleted, so there is no stale state to reuse.
 Only active and closed sprints can be reported; a future one fails before
 anything is deleted.
 
-The report describes the sprint as it was when it closed, or, for an active
-sprint, at the fetch: issues' fields are rebuilt from their changelogs, so a
-later edit changes nothing. Descriptions are the exception: Jira keeps no
-usable history of them, so they are as they read at the fetch. Comments
-created or edited after that moment are excluded because their earlier text
-isn't fetched. Nothing is computed here beyond choosing which comments and
-epics to fetch; build_sprint_data.py does the rest.
+The report is as at the close, or the fetch for an active sprint, so changelogs
+are fetched, not current values (see build_sprint_data.py). Comments created or
+edited after that moment are excluded because their earlier text isn't
+fetched. Nothing is computed here beyond choosing which comments and epics to
+fetch; build_sprint_data.py does the rest.
 """
 import argparse
 import json

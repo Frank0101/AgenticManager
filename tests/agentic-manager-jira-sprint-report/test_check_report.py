@@ -1,8 +1,10 @@
-# Unit tests for skills/agentic-manager-jira-sprint-report/scripts/check_report.py.
-# Run with: python3 tests/run.py agentic-manager-jira-sprint-report
-#
-# Each test renders the report of report_fixture.py's sprint with make_report,
-# breaks one thing in it, and checks that the matching check fails.
+"""Unit tests for skills/agentic-manager-jira-sprint-report/scripts/check_report.py.
+Run with: python3 tests/run.py agentic-manager-jira-sprint-report
+
+Each test renders the report of report_fixture.py's sprint with make_report,
+breaks one thing in it, and checks that the matching check fails.
+"""
+
 import contextlib
 import copy
 import io
@@ -17,7 +19,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_report  # noqa: E402
-from common import CHART_FILES  # noqa: E402
+from common import CHART_FILES, expected_files  # noqa: E402
 from make_report import Report, tag  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
@@ -200,6 +202,19 @@ class ChecksTest(unittest.TestCase):
                 with self.subTest(name, old=old, expected=expected):
                     self.assertIn(old, md)
                     self.assert_fails(expected, md.replace(old, new, 1), data)
+
+    def test_only_the_reports_files_are_allowed(self):
+        # Every file a report folder holds passes, and so does a hidden one; any other fails.
+        expected = expected_files(self.data["label"])
+        for name in sorted(expected - set(CHART_FILES.values())):
+            open(os.path.join(self.tmp.name, name), "w").close()
+        open(os.path.join(self.tmp.name, ".DS_Store"), "w").close()
+        self.assertEqual(self.failures(), [])
+        for stray in ("notes.md", "draft.json", "content.json.bak"):
+            with self.subTest(stray):
+                open(os.path.join(self.tmp.name, stray), "w").close()
+                self.assert_fails("files")
+                os.remove(os.path.join(self.tmp.name, stray))
 
     def test_caveats_require_every_affected_ticket(self):
         for kind in ("membership", "non_delivery"):

@@ -222,6 +222,13 @@ def report_file(label):
     return f"{label}_Sprint_Report.md"
 
 
+def expected_files(label):
+    """Every file a report folder holds, and nothing else: the fetched _raw
+    folder, the three data files, the charts and the report."""
+    return {RAW_DIR, DATA_FILE, CONTENT_FILE, BRIEF_FILE,
+            *CHART_FILES.values(), report_file(label)}
+
+
 def load_json(path):
     if not os.path.exists(path):
         raise SystemExit(f"missing {path}")

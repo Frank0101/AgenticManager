@@ -18,8 +18,6 @@ from agentic_manager.output_folder import output_folder  # noqa: E402,F401
 FOLDER_NAME = "tech-investigations"
 EXAMPLES = "_examples"
 LEDGER = "ledgers.md"
-MERMAIDS = "mermaids.md"
-MAPS_SPEC = "maps.json"
 CONTENT = "content.json"
 REPORT_SUFFIX = "_Report.md"
 
@@ -30,39 +28,27 @@ INVESTIGATION = re.compile(r"(?P<topic>.+)_(?P<date>\d\d-\d\d-\d\d)")
 # The label of an output's shape, such as long-analysis or exec-summary.
 FORMAT = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 
-# The three architecture stages: (key, report heading, map file).
-STAGES = [
-    ("current", "Current architecture", "architecture-as-is.svg"),
-    ("next", "Next evolution", "architecture-next.svg"),
-    ("target", "Target architecture", "architecture-to-be.svg"),
-]
-STAGE_TITLES = {key: title for key, title, _ in STAGES}
-STAGE_FILES = {key: filename for key, _, filename in STAGES}
-
+# The report's headings: (level, title, id). The architect summary repeats the
+# executive layer's two section titles, so a skip names headings by id.
 HEADINGS = [
-    (2, "Executive / product summary"),
-    (3, "Problem and intended outcome"),
-    (3, "Roadmap"),
-    (3, "Current milestone - deep dive"),
-    (3, "Key decisions and risks"),
-    (2, "Architect summary"),
-    (3, "Current architecture"),
-    (3, "Next evolution"),
-    (3, "Target architecture"),
-    (3, "Technical decisions and gaps"),
-    (3, "References"),
+    (2, "Executive / product summary", "exec"),
+    (3, "Problem and intended outcome", "exec.problem"),
+    (3, "Current status", "exec.current"),
+    (3, "Next steps and evolution", "exec.next"),
+    (3, "Key decisions and risks", "exec.decisions"),
+    (2, "Architect summary", "arch"),
+    (3, "Current status", "arch.current"),
+    (3, "Next steps and evolution", "arch.next"),
+    (3, "Key decisions and gaps", "arch.decisions"),
+    (2, "References", "references"),
 ]
 # What a report may leave out, when the research shows it doesn't apply:
-# {dimension: the headings it removes}. Skipping shapes the output only; the
+# {dimension: the heading ids it removes}. Skipping shapes the output only; the
 # research covers every group either way.
 SKIPS = {
-    "architecture": ["Architect summary", "Current architecture", "Next evolution", "Target architecture",
-                     "Technical decisions and gaps", "References"],
-    "evolution": ["Roadmap", "Next evolution", "Target architecture"],
+    "architecture": ["arch", "arch.current", "arch.next", "arch.decisions"],
+    "evolution": ["exec.next", "arch.next"],
 }
-ROADMAP_ROWS = [("current", "Current milestone"), ("next", "Next milestones"),
-                ("broader", "Broader product direction")]
-COMMENTARY_HEADING = "Reading the design and flows together"
 
 # The ledger's sections, in order, and the queue's subsections.
 LEDGER_SECTIONS = [
@@ -72,32 +58,44 @@ LEDGER_SECTIONS = [
     "Revisions and source register",
     "Findings and validation chains",
     "Component inventory and evolution",
-    "Decisions and precise evidence gaps",
-    "Correction history",
+    "Open decisions",
+    "Evidence gaps",
+    "Reflection",
+    "Links",
 ]
 QUEUE_SUBSECTIONS = ["Ready / in progress", "Blocked", "Completed"]
 QUEUE_HEADER = ["ID", "Trigger / linked finding", "Question or check",
                 "Sources and validation required", "Depends on",
                 "Priority / severity", "Status", "Outcome / finding IDs"]
+# The evidence areas a source or a gap is tagged with; `ledger.py status` counts
+# them across the three groups, so no table of its own holds that grid.
+AREAS = ["Architecture", "Delivery", "Implementation", "Security and data",
+         "Identity and credentials", "Runtime and operations"]
+GROUPS = ["documentation", "workflow", "source_control"]
 SOURCE_HEADER = ["Source ID", "Group / evidence kind", "Exact reference",
                  "Revision / environment / date checked",
-                 "Material read and findings", "Access limits / superseded by"]
-FINDING_FIELDS = ["Claim", "Kind", "Evidence", "Validation chain",
-                  "Confidence and limitations", "Related actions",
-                  "Supersedes or contradicted by"]
+                 "Material read and findings", "Access limits / superseded by",
+                 "Areas"]
+FILE_HEADER = ["Source", "Material", "Depth", "Findings"]
+DECISION_HEADER = ["ID", "Decision", "Established position or unresolved choice",
+                   "Candidates, constraints", "Source authority and status",
+                   "Owner and next check"]
+GAP_HEADER = ["ID", "Gap", "What is established and what is missing",
+              "What would close it", "Source authority and status",
+              "Owner and next check",
+              "Areas"]
+COMPONENT_HEADER = ["ID", "Name and type", "Responsibility", "Repository, paths, revision",
+                    "Status", "Deployment evidence and how much was read", "Callers → outgoing",
+                    "Evidence", "Current → next steps"]
+FINDING_FIELDS = ["Claim", "Kind", "Evidence", "Validation and limits"]
+FINDING_OPTIONAL = ["Supersedes or contradicted by"]
 FINDING_HEADING = re.compile(r"^### (F\d+) — \S.*$", re.M)
 
 
 def report_headings(skip=()):
     """The report's (level, title) headings, without those `skip` removes."""
-    removed = {title for dimension in skip for title in SKIPS[dimension]}
-    return [(level, title) for level, title in HEADINGS if title not in removed]
-
-
-def report_stages(skip=()):
-    """The architecture stages the report shows: [(key, title, map file)]."""
-    titles = {title for _, title in report_headings(skip)}
-    return [stage for stage in STAGES if stage[1] in titles]
+    removed = {ident for dimension in skip for ident in SKIPS[dimension]}
+    return [(level, title) for level, title, ident in HEADINGS if ident not in removed]
 
 
 def read_skip(folder):
@@ -108,6 +106,26 @@ def read_skip(folder):
     except (OSError, UnicodeError, ValueError, AttributeError):
         return ()
     return tuple(d for d in SKIPS if isinstance(skip, list) and d in skip)
+
+
+def expected_files(report_name, skip=(), formats=()):
+    """Every file an investigation folder holds, and nothing else: the ledger,
+    content.json and the report, and a <format>.json and <format>.md for each
+    short output."""
+    files = {LEDGER, CONTENT, report_name}
+    for wanted in formats:
+        files |= {f"{wanted}.json", f"{wanted}.md"}
+    return files
+
+
+def short_formats(folder):
+    """The short-output formats in `folder`: each <format>.json with its
+    <format>.md. A lone file is not one, so it counts as an unexpected file."""
+    names = set(os.listdir(folder))
+    reserved = {CONTENT[:-5]}
+    return {name[:-5] for name in names
+            if name.endswith(".json") and FORMAT.fullmatch(name[:-5])
+            and name[:-5] not in reserved and f"{name[:-5]}.md" in names}
 
 
 def check_format(wanted):
@@ -156,12 +174,6 @@ def table(header, rows):
     lines = [table_row(header), table_row(["---"] * len(header))]
     lines += [table_row([escape_cell(cell) for cell in row]) for row in rows]
     return "\n".join(lines)
-
-
-def connection_key(connection):
-    """A map connection's identity in maps.json: its id, else from->to. The
-    stages' `connections` and the sequences' checks both look it up by this."""
-    return connection.get("id") or f"{connection.get('from')}->{connection.get('to')}"
 
 
 def escape_cell(text):

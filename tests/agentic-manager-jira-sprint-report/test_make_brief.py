@@ -1,6 +1,8 @@
-# Unit tests for skills/agentic-manager-jira-sprint-report/scripts/make_brief.py, on the
-# hand-written sprint in report_fixture.py.
-# Run with: python3 tests/run.py agentic-manager-jira-sprint-report
+"""Unit tests for skills/agentic-manager-jira-sprint-report/scripts/make_brief.py, on the
+hand-written sprint in report_fixture.py.
+Run with: python3 tests/run.py agentic-manager-jira-sprint-report
+"""
+
 import copy
 import json
 import os

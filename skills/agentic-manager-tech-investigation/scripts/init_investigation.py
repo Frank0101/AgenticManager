@@ -1,21 +1,22 @@
-"""Prepares an investigation's folder, or finds it again for a follow-up.
+"""Prepares an investigation's new folder, replacing any earlier one of the same day.
 
     python3 init_investigation.py --topic <Topic> [--format <format>]
 
 <Topic> is short and filename-safe: capitalised words or acronyms joined by
 hyphens, such as Payments-Retry-Service. The investigation's folder is
-<Topic>_<YY-MM-DD>, today's date, in the skill's output folder; if it already
-exists, this is a follow-up. A new one gets the ledger's skeleton, with its
-fixed sections and tables, so the agent starts by filling it in. The examples'
-index, _examples/README.md, is written if missing.
+<Topic>_<YY-MM-DD>, today's date, in the skill's output folder. Every run starts
+from scratch: a folder of the same topic and day is deleted first, so a report
+is always built from fresh research, never from the leftovers of an earlier one
+(the sprint report works the same way), and nothing an earlier run left, on
+this or another day, is read or reused. The new folder gets the ledger's skeleton, with its fixed
+sections and tables, so the agent starts by filling it in. The examples' index,
+_examples/README.md, is written if missing.
 
 Prints one line of JSON:
   folder, temporary   the skill's output folder, and whether it is temporary
   investigation       the folder's path relative to `folder`, for --path
   investigation_dir   its absolute path
-  follow_up           whether it existed already, with its files in `files`
-  earlier             the topic's folders from other days, newest first
-                      (older date-first names, <YYYY-MM-DD>--<topic>, too)
+  replaced            whether a folder of the same topic and day was deleted
   examples            with --format, the approved examples of that format,
                       newest first: their folder and documents
 """
@@ -24,6 +25,7 @@ from datetime import date
 import json
 import os
 import re
+import shutil
 
 from common import (EXAMPLES, FOLDER_NAME, INVESTIGATION, LEDGER, LEDGER_SECTIONS,
                     QUEUE_HEADER, QUEUE_SUBSECTIONS, SOURCE_HEADER, TOPIC, output_folder,
@@ -38,7 +40,6 @@ Each example has its own `<Topic>_<YY-MM-DD>--<format>` folder, with a numeric s
 
 ## Index
 """
-OLD_NAME = re.compile(r"(?P<date>\d{4}-\d\d-\d\d)--(?P<topic>.+)")
 
 
 def ledger_skeleton(topic):
@@ -59,26 +60,9 @@ def ledger_skeleton(topic):
 
 
 def sort_key(name):
-    """Newest first: a folder's date as YYYY-MM-DD, from either naming."""
+    """Newest first: a folder's date as YYYY-MM-DD."""
     match = INVESTIGATION.fullmatch(name.split("--")[0])
-    if match:
-        return "20" + match["date"]
-    match = OLD_NAME.fullmatch(name)
-    return match["date"] if match else ""
-
-
-def earlier(folder, topic, current):
-    """The topic's other folders, newest first."""
-    found = []
-    for name in os.listdir(folder):
-        if name == current or not os.path.isdir(os.path.join(folder, name)):
-            continue
-        match = INVESTIGATION.fullmatch(name)
-        old = OLD_NAME.fullmatch(name)
-        if (match and match["topic"].casefold() == topic.casefold()) or \
-                (old and old["topic"].casefold() == topic.casefold()):
-            found.append(name)
-    return sorted(found, key=sort_key, reverse=True)
+    return "20" + match["date"] if match else ""
 
 
 def examples(folder, wanted):
@@ -110,17 +94,19 @@ def init(topic, wanted=None, today=None):
     folder, temporary = output_folder(FOLDER_NAME)
     relative = f"{topic}_{(today or date.today()).strftime('%y-%m-%d')}"
     path = os.path.join(folder, relative)
-    follow_up = os.path.isdir(path)
-    files = sorted(os.listdir(path)) if follow_up else []
-    if not os.path.isfile(os.path.join(path, LEDGER)):
-        write_output_file(
-            FOLDER_NAME, f"{relative}/{LEDGER}", ledger_skeleton(topic).encode("utf-8"))
+    replaced = os.path.lexists(path)
+    if replaced:
+        if os.path.islink(path) or not os.path.isdir(path):
+            os.unlink(path)
+        else:
+            shutil.rmtree(path)
+    write_output_file(
+        FOLDER_NAME, f"{relative}/{LEDGER}", ledger_skeleton(topic).encode("utf-8"))
     if not os.path.isfile(os.path.join(folder, EXAMPLES, "README.md")):
         write_output_file(
             FOLDER_NAME, f"{EXAMPLES}/README.md", EXAMPLES_INDEX.encode("utf-8"))
     result = {"folder": folder, "temporary": temporary, "investigation": relative,
-              "investigation_dir": path, "follow_up": follow_up, "files": files,
-              "earlier": earlier(folder, topic, relative)}
+              "investigation_dir": path, "replaced": replaced}
     if wanted:
         result["examples"] = examples(folder, wanted)
     return result
@@ -134,7 +120,7 @@ def main(argv=None):
     parser.add_argument("--format", help="the output asked for, such as long-analysis or exec-summary, "
                                          "to list its approved examples")
     args = parser.parse_args(argv)
-    # The maps and sequences are drawn and checked with Node.js: ask for it
+    # The sequence diagrams are drawn and checked with Node.js: ask for it
     # now, before any research, rather than when the report is built.
     output_diagram.find_npx()
     print(json.dumps(init(args.topic, args.format)))

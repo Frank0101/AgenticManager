@@ -1,10 +1,12 @@
-# End-to-end tests for skills/agentic-manager-utils-check-config/scripts/check_config.py:
-# they run the whole script, as a skill does. Its functions have unit tests in
-# test_check_config.py.
-# Run with: python3 tests/run.py agentic-manager-utils-check-config
-#
-# Each test runs the script with HOME pointed at a temporary folder. The config is
-# part of the test's setup, so each test writes its own and is free to change it.
+"""End-to-end tests for skills/agentic-manager-utils-check-config/scripts/check_config.py:
+they run the whole script, as a skill does. Its functions have unit tests in
+test_check_config.py.
+Run with: python3 tests/run.py agentic-manager-utils-check-config
+
+Each test runs the script with HOME pointed at a temporary folder. The config is
+part of the test's setup, so each test writes its own and is free to change it.
+"""
+
 import copy
 import json
 import os

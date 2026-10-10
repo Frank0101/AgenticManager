@@ -1,9 +1,11 @@
-# Unit tests for skills/agentic-manager-jira-sprint-report/scripts/fetch_sprint.py.
-# Run with: python3 tests/run.py agentic-manager-jira-sprint-report
-#
-# They cover the script's own logic: its arguments and the report folder. The
-# Jira calls belong to the library's client, tested there; test_e2e_fetch.py
-# runs the whole script against a fake Jira.
+"""Unit tests for skills/agentic-manager-jira-sprint-report/scripts/fetch_sprint.py.
+Run with: python3 tests/run.py agentic-manager-jira-sprint-report
+
+They cover the script's own logic: its arguments and the report folder. The
+Jira calls belong to the library's client, tested there; test_e2e_fetch.py
+runs the whole script against a fake Jira.
+"""
+
 import contextlib
 import io
 import json

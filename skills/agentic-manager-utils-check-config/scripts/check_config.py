@@ -1,33 +1,34 @@
 #!/usr/bin/env python3
-#
-# Validates the user's AgenticManager config (~/.config/agentic-manager/config.json)
-# against config-template.json, which lists every supported key. Its "sources" object
-# holds every supported group and source; its "output" object, the settings for where
-# skills write files. The config may only contain keys, groups, sources and settings
-# from the template; nothing can be added. It may leave some out: a missing group or
-# source counts as disabled, and a missing output setting as not set, so configs keep
-# working when the template gains new ones. The user may only switch "enabled" between
-# true and false and fill in settings. Every value must have the same type as in the
-# template, and an enabled source must have every setting filled in. Output settings
-# are optional.
-#
-# Usage: check_config.py [--init]
-#   --init  copies the template to the config path first, if no config exists yet.
-#
-# Prints one line of JSON:
-#   success: {"ok": true, "path": ..., "template": ..., "created": bool, "sources": {...}}
-#   failure: {"ok": false, "path": ..., "template": ..., "created": bool,
-#             "errors": ["...", ...]}
-#            (exit code 1)
-#
-# The config is only ever written by --init, and never overwritten.
-#
-# "sources" lists every source of the template by group, enabled or not, so the
-# calling skill decides what it needs. A source is named "<tool>-<channel>" (e.g.
-# "jira-api"); it is already split into tool and channel, so skills never have to
-# parse the name. A disabled source has "setup": how to enable it. Setting values
-# are never returned: they can hold secrets, which a script reads from the config
-# itself.
+"""Validates the user's AgenticManager config (~/.config/agentic-manager/config.json)
+against config-template.json, which lists every supported key. Its "sources" object
+holds every supported group and source; its "output" object, the settings for where
+skills write files. The config may only contain keys, groups, sources and settings
+from the template; nothing can be added. It may leave some out: a missing group or
+source counts as disabled, and a missing output setting as not set, so configs keep
+working when the template gains new ones. The user may only switch "enabled" between
+true and false and fill in settings. Every value must have the same type as in the
+template, and an enabled source must have every setting filled in. Output settings
+are optional.
+
+Usage: check_config.py [--init]
+  --init  copies the template to the config path first, if no config exists yet.
+
+Prints one line of JSON:
+  success: {"ok": true, "path": ..., "template": ..., "created": bool, "sources": {...}}
+  failure: {"ok": false, "path": ..., "template": ..., "created": bool,
+            "errors": ["...", ...]}
+           (exit code 1)
+
+The config is only ever written by --init, and never overwritten.
+
+"sources" lists every source of the template by group, enabled or not, so the
+calling skill decides what it needs. A source is named "<tool>-<channel>" (e.g.
+"jira-api"); it is already split into tool and channel, so skills never have to
+parse the name. A disabled source has "setup": how to enable it. Setting values
+are never returned: they can hold secrets, which a script reads from the config
+itself.
+"""
+
 import json
 import os
 import shutil

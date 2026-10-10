@@ -1,12 +1,14 @@
-# End-to-end tests of the one model every part of the sprint report is built
-# from: which tickets belong to the sprint and each one's dated events. Each
-# case below is one made-up ticket with its own history, all in one closed
-# sprint, run through build_sprint_data.py, make_charts.py, make_report.py and
-# check_report.py. The tests check each ticket's scope, outcome, latest
-# estimate and events, then that the whole report passes the checker, which
-# replays the same events and requires the charts, header, epic table, prose,
-# timeline table and burndown to agree with them.
-# Run with: python3 tests/run.py agentic-manager-jira-sprint-report
+"""End-to-end tests of the one model every part of the sprint report is built
+from: which tickets belong to the sprint and each one's dated events. Each
+case below is one made-up ticket with its own history, all in one closed
+sprint, run through build_sprint_data.py, make_charts.py, make_report.py and
+check_report.py. The tests check each ticket's scope, outcome, latest
+estimate and events, then that the whole report passes the checker, which
+replays the same events and requires the charts, header, epic table, prose,
+timeline table and burndown to agree with them.
+Run with: python3 tests/run.py agentic-manager-jira-sprint-report
+"""
+
 import os
 import re
 import sys

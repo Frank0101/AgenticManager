@@ -1,8 +1,10 @@
-# Unit tests for skills/agentic-manager-utils-lib/agentic_manager/jira.py.
-# Run with: python3 tests/run.py agentic-manager-utils-lib
-#
-# The client talks to a local fake Jira, whose answers each test sets in
-# FakeJira.routes. read_source is patched, so no config is read.
+"""Unit tests for skills/agentic-manager-utils-lib/agentic_manager/jira.py.
+Run with: python3 tests/run.py agentic-manager-utils-lib
+
+The client talks to a local fake Jira, whose answers each test sets in
+FakeJira.routes. read_source is patched, so no config is read.
+"""
+
 import json
 import os
 import sys

@@ -1,12 +1,14 @@
-# End-to-end test of the skill's scripts in the order the skill runs them:
-# init_investigation.py, then the agent's maps.json, content.json and ledger,
-# build_maps.py, make_report.py, check_report.py --handover, make_summary.py and
-# save_example.py.
-# Run with: python3 tests/run.py agentic-manager-tech-investigation
-#
-# HOME points at a temporary folder holding the test's own config, and TMPDIR at
-# the same folder. A fake npx put first on PATH writes SVGs instead of running the
-# Mermaid CLI, one per diagram of a Markdown batch, so no Node.js is needed.
+"""End-to-end test of the skill's scripts in the order the skill runs them:
+init_investigation.py, then the agent's content.json and ledger,
+make_report.py, check_report.py --handover, make_summary.py and
+save_example.py.
+Run with: python3 tests/run.py agentic-manager-tech-investigation
+
+HOME points at a temporary folder holding the test's own config, and TMPDIR at
+the same folder. A fake npx put first on PATH writes SVGs instead of running the
+Mermaid CLI, one per diagram of a Markdown batch, so no Node.js is needed.
+"""
+
 import json
 import os
 import subprocess
@@ -22,15 +24,13 @@ LIB = os.path.join(REPO_ROOT, "skills",
                    "agentic-manager-utils-lib", "agentic_manager")
 sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, TEST_DIR)
-from investigation_fixture import LEDGER, content, spec  # noqa: E402
+from investigation_fixture import LEDGER, content  # noqa: E402
 
 FAKE_NPX = """#!{python}
 import os, sys
 args = sys.argv[1:]
 source, out = args[args.index("-i") + 1], args[args.index("-o") + 1]
-svg = ('<svg id="my-svg" viewBox="0 0 600 300"><g class="node default" id="my-svg-flowchart-A-0" '
-       'transform="translate(10, 10)"><rect/></g>'
-       '<path id="L_A_B_0" class="flowchart-link" d="M10,10L10,50Q10,60 20,60L80,60"/></svg>')
+svg = '<svg id="my-svg" viewBox="0 0 600 300"></svg>'
 if source.endswith(".md"):
     with open(source) as f:
         count = f.read().count("```mermaid")
@@ -73,13 +73,13 @@ class PipelineTest(unittest.TestCase):
         self.run_script(os.path.join(LIB, "output_file.py"), "--name", "tech-investigations",
                         "--path", relative, stdin=text)
 
-    def test_prose_only_investigation_without_map_artifacts(self):
+    def test_prose_only_investigation_without_an_architect_summary(self):
         started = self.run_script(os.path.join(
             SCRIPTS, "init_investigation.py"), "--topic", "Acme-Search")
         investigation = started["investigation"]
         data = content()
         data["skip"] = ["architecture"]
-        for key in ("architecture", "technical_decisions", "discrepancies", "remaining_gaps", "references"):
+        for key in ("architecture", "decisions_and_gaps"):
             data.pop(key)
         self.write(f"{investigation}/ledgers.md", LEDGER)
         self.write(f"{investigation}/content.json", json.dumps(data))
@@ -100,12 +100,8 @@ class PipelineTest(unittest.TestCase):
         data = content()
         data["evidence_snapshot"] = "20" + investigation.split("_")[1]
         self.write(f"{investigation}/ledgers.md", LEDGER)
-        self.write(f"{investigation}/maps.json", json.dumps(spec()))
         self.write(f"{investigation}/content.json", json.dumps(data))
 
-        maps = self.run_script(os.path.join(
-            SCRIPTS, "build_maps.py"), "--investigation", investigation)
-        self.assertEqual(sorted(maps["maps"]), ["current", "next", "target"])
         report = self.run_script(os.path.join(
             SCRIPTS, "make_report.py"), "--investigation", investigation)
         self.assertTrue(report["ok"], report)
@@ -125,8 +121,7 @@ class PipelineTest(unittest.TestCase):
                                   "--file", "Acme-Search_Report.md", "--format", "long-analysis",
                                   "--note", "Clear current milestone.")
         self.assertEqual(sorted(os.listdir(example["example"])),
-                         ["Acme-Search_Report.md", "architecture-as-is.svg", "architecture-next.svg",
-                          "architecture-to-be.svg", "ledgers.md"])
+                         ["Acme-Search_Report.md", "ledgers.md"])
 
 
 if __name__ == "__main__":

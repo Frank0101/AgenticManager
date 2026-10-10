@@ -10,6 +10,20 @@ Writes a short, exec-ready report of one Jira sprint, closed or still running. S
 
 The report's files go to the `jira-sprint-reports` folder of the user's configured output root (`output.root`), or to a temporary folder if none is set. The scripts choose the folder; don't pass one.
 
+A report folder holds only these files, and `finish_report.py` fails on any other. You write only `content.json`; scripts write the rest, and anything else you need goes in your own scratch folder.
+
+```text
+PROJ_Sprint_3/
+├── _raw/                      prepare_report.py writes (the fetched Jira data)
+├── data.json                  prepare_report.py writes
+├── brief.json                 prepare_report.py writes
+├── content.json               you write (step 2)
+├── outcome-tickets.svg        finish_report.py writes
+├── outcome-pts.svg            finish_report.py writes
+├── burndown.svg               finish_report.py writes
+└── PROJ_Sprint_3_Sprint_Report.md   finish_report.py writes
+```
+
 ## Prerequisite
 
 Run `agentic-manager-utils-check-config`. If it fails, stop here.
@@ -40,7 +54,7 @@ It prints one line of JSON with `report_dir`, `temporary`, `brief` and `content_
 
 ## 2. Write content.json
 
-Write it through the shared writer, with the `content_path` from step 1, and the same way for every revision; never with your own file tools:
+Write it through the shared writer, with the `content_path` from step 1, and the same way for every revision; never with your own file tools. To fix one field, add `--patch` and send a JSON array of exact replacements, `[{"old": "unique text", "new": "fixed text"}]`, instead of the whole file; each `old` must match exactly once, and the JSON's escapes count as part of the text:
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py --name jira-sprint-reports --path '<content_path>' <<'END_OF_FILE'

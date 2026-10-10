@@ -1,9 +1,11 @@
-# Unit tests for skills/agentic-manager-tech-investigation/scripts/make_report.py.
-# The whole pipeline has end-to-end tests in test_e2e_pipeline.py.
-# Run with: python3 tests/run.py agentic-manager-tech-investigation
-#
-# The Mermaid CLI is never run here: render_many() is patched. The config's path
-# is patched to the test's own config, in a temporary folder.
+"""Unit tests for skills/agentic-manager-tech-investigation/scripts/make_report.py.
+The whole pipeline has end-to-end tests in test_e2e_pipeline.py.
+Run with: python3 tests/run.py agentic-manager-tech-investigation
+
+The Mermaid CLI is never run here: render_many() is patched. The config's path
+is patched to the test's own config, in a temporary folder.
+"""
+
 import json
 import os
 import sys
@@ -16,12 +18,9 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import make_report  # noqa: E402
 import output_diagram  # noqa: E402
-from common import STAGE_FILES  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from investigation_fixture import (INVESTIGATION, LEDGER, PUBLISH, QUERY, content, spec,  # noqa: E402
-                                   svg, temp_output)
-
-MAPS = list(STAGE_FILES.values())
+from investigation_fixture import (INVESTIGATION, LEDGER, PUBLISH, QUERY, content,  # noqa: E402
+                                   temp_output)
 
 
 class MakeReportTest(unittest.TestCase):
@@ -29,20 +28,13 @@ class MakeReportTest(unittest.TestCase):
         self.folder = os.path.join(temp_output(self), INVESTIGATION)
         os.makedirs(self.folder)
         self.write("ledgers.md", LEDGER)
-        self.write("maps.json", json.dumps(spec()))
-        self.write("mermaids.md", "# Maps\n\n" + "".join(
-            f"## {title} — System map\n\nOutput: `{name}`\n\n```mermaid\nflowchart LR\n  A --> B\n```\n\n"
-            for title, name in zip(("Current architecture", "Next evolution", "Target architecture"), MAPS)))
-        for name in MAPS:
-            self.write(name, '<svg xmlns="http://www.w3.org/2000/svg"/>')
-        self.widths = {}
 
     def write(self, name, text):
         with open(os.path.join(self.folder, name), "w", encoding="utf-8") as f:
             f.write(text)
 
-    def render(self, sources, theme="default"):
-        return [svg(self.widths.get(source.splitlines()[2].strip(), 600)) for source in sources]
+    def render(self, sources):
+        return ['<svg viewBox="0 0 600 100"/>' for _ in sources]
 
     def make(self, data=None, render=None):
         self.write("content.json", json.dumps(
@@ -65,31 +57,38 @@ class MakeReportTest(unittest.TestCase):
         result = self.make()
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["warnings"], [])
-        self.assertEqual([s["title"] for s in result["sequences"]],
-                         [QUERY["title"], QUERY["title"], PUBLISH["title"], QUERY["title"]])
+        self.assertEqual(result["sequences"], [
+                         QUERY["title"], PUBLISH["title"]])
 
     def test_template(self):
         self.make()
         text = self.report()
         for expected in [
             "# Acme search\n\nEvidence snapshot: 5 October 2026. Code links pin inspected commits;",
-            "| Stage | Intended outcome | Commitment and evidence | Dependencies |\n| --- | --- | --- | --- |\n"
-            "| Current milestone | Outcome current |",
-            "These items describe implications of the linked evidence. Decision ownership is not established "
-            "in the inspected sources.\n\n| Decision or risk | Why it matters | Deciding role |",
-            "![Current architecture](architecture-as-is.svg)\n\n#### Search API — query\n\n"
+            "These items describe implications of the linked evidence.\n\n"
+            "| Decision or risk | Why it matters | Established position | Evidence |\n| --- | --- | --- | --- |\n"
+            "| Index choice | Affects cost | Unresolved | [proposal](https://example.com/p)",
+            "## Architect summary\n\n### Current status\n\n",
+            "\n\n#### Search API — query\n\n"
             "```mermaid\nsequenceDiagram\n    autonumber\n    actor U as Client / operator\n",
-            "```\n\n#### Reading the design and flows together\n\n**Search API:** steps 1–4",
+            "### Next steps and evolution\n\n",
+            "\n\n#### Publish job — publication\n\n```mermaid\nsequenceDiagram",
             "[code](ledgers.md#f01--search-api-is-merged)",
-            "[G01](ledgers.md#decisions-and-precise-evidence-gaps)",
-            "The table records source-backed differences and unresolved decisions. It does not select an "
-            "option or assign an owner.\n\n| Decision | Established position / unresolved choice |",
+            "[gap](ledgers.md#evidence-gaps)",
+            "### Key decisions and gaps\n\nThe table records source-backed decisions and evidence gaps. It does "
+            "not select an option.\n\n| Decision or gap | Why it matters | Established position | Evidence |\n"
+            "| --- | --- | --- | --- |\n| Index | Sets the cost | Unresolved | [gap](ledgers.md#evidence-gaps) |",
+            "\n\n## References\n\n**Implementation and configuration**",
             "**Delivery**\n\n- [PROJ-1](https://example.com/PROJ-1) (historical)",
             "**Vision, rationale and reported operational gaps**\n\nNone in the inspected sources.",
             "The [research ledger](ledgers.md) holds the full validation trail",
         ]:
             with self.subTest(expected=expected[:40]):
                 self.assertIn(expected, text)
+        self.assertEqual(text.count("### Current status\n"), 2)
+        self.assertEqual(text.count("### Next steps and evolution\n"), 2)
+        for absent in ("![", "Reading the design and flows", "Current architecture", "Target architecture"):
+            self.assertNotIn(absent, text)
 
     def test_deterministic(self):
         self.make()
@@ -107,42 +106,52 @@ class MakeReportTest(unittest.TestCase):
         cases = [
             ("heading in prose", lambda d: d["problem"].append(
                 "### Extra"), "no # to ### headings"),
-            ("fence in prose", lambda d: d["deep_dive"].append(
+            ("fence in prose", lambda d: d["current_status"].append(
                 "```mermaid\nflowchart LR\n```"), "no code fences"),
-            ("multi-line cell", lambda d: d["roadmap"]
-             ["next"].update(outcome="a\nb"), "one line"),
+            ("multi-line cell",
+             lambda d: d["key_decisions"][0].update(decision="a\nb"), "one line"),
+            ("claim without a ledger link", lambda d: d["next_steps"].append("A claim with no trace."),
+             "next_steps paragraph 2: needs a ledger link"),
+            ("a source link is not a ledger link", lambda d: d["key_decisions"][0].update(
+                evidence="[p](https://example.com/p)"), "key_decisions 1.evidence: needs a ledger link"),
+            ("renamed item", lambda d: d["key_decisions"][0].update(item="x"),
+             "key_decisions 1.item: renamed decision"),
+            ("removed status", lambda d: d["decisions_and_gaps"][0].update(status="Open"),
+             "decisions_and_gaps 1.status: removed"),
+            ("removed roadmap", lambda d: d.update(
+                roadmap={}), "roadmap: removed"),
+            ("renamed deep dive", lambda d: d.update(
+                deep_dive=["x"]), "deep_dive: renamed current_status"),
+            ("removed role column", lambda d: d["key_decisions"][0].update(role="Platform lead"),
+             "key_decisions 1.role: removed"),
             ("missing field", lambda d: d["key_decisions"][0].pop(
                 "why"), "key_decisions 1.why: needs text"),
             ("unknown ledger ID", lambda d: d["problem"].append(
                 "[x](ledger:F09)"), "ledger:F09 matches no heading"),
             ("bad date", lambda d: d.update(
                 evidence_snapshot="5/10/2026"), "evidence_snapshot"),
-            ("title without flow", lambda d: stage(d)["sequences"][0].update(title="Search"),
-             "<Component> — <flow>"),
-            ("semicolon", lambda d: stage(d)["sequences"][0]["lines"].append("A->>D: read; write"),
+            ("summary without a ledger link", lambda d: stage(d).update(summary=["No trace."]),
+             "architecture.current.summary paragraph 1: needs a ledger link"),
+            ("semicolon", lambda d: stage(d)["sequence"]["lines"].append("A->>D: read; write"),
              "raw semicolon"),
-            ("manual number", lambda d: stage(d)["sequences"][0]["lines"].append("A->>D: 5. Read"),
+            ("manual number", lambda d: stage(d)["sequence"]["lines"].append("A->>D: 5. Read"),
              "numbers its step"),
-            ("participant off the map", lambda d: stage(d)["sequences"][0]["lines"].insert(0, "participant Q as Cache"),
-             "participant 'Cache' is not a node of the current map"),
-            ("call without connection", lambda d: stage(d)["sequences"][0]["lines"].append("U->>D: Read directly"),
-             "no connection between U and D on the current map"),
-            ("hidden connection", lambda d: stage(d)["sequences"].append(PUBLISH),
-             "no connection between J and X on the current map"),
-            ("step beyond the flow", lambda d: stage(d).update(commentary=["**Search API:** steps 1–9."]),
-             "names step 9, but Search API has 4"),
-            ("step zero", lambda d: stage(d).update(commentary=["**Search API:** step 0."]),
-             "step range 0–0 must start at 1 or later and run forwards"),
-            ("reversed range", lambda d: stage(d).update(commentary=["**Search API:** steps 9–1."]),
-             "step range 9–1 must start at 1 or later and run forwards"),
-            ("unknown flow label", lambda d: stage(d).update(commentary=["**Search AP:** step 99."]),
-             "step references need a matching flow"),
-            ("unlabeled steps among multiple flows", lambda d: stage(d, "next").update(commentary=["Step 99."]),
-             "step references need a matching flow"),
-            ("no flow nor gap", lambda d: stage(d).update(
-                sequences=[]), "needs a sequence, or a flow_gap"),
-            ("constrain to self", lambda d: stage(d)["sequences"][0].update(constrain_to=QUERY["title"]),
-             "constrain_to names no other sequence"),
+            ("title missing", lambda d: stage(d)["sequence"].update(
+                title=""), "needs a one-line title"),
+            ("lines not a list", lambda d: stage(d)["sequence"].update(lines="U->>A: Query"),
+             "lines must be a list of Mermaid lines"),
+            ("sequence not an object", lambda d: stage(d).update(sequence="U->>A: Query"),
+             "architecture.current.sequence: must be an object"),
+            ("removed fields", lambda d: stage(d).update(sequences=[QUERY], commentary=["x"], map_gap="y"),
+             "unknown sequences, commentary, map_gap"),
+            ("no sequence nor gap", lambda d: stage(d).pop(
+                "sequence"), "needs a sequence, or a flow_gap"),
+            ("stage missing", lambda d: d["architecture"].pop(
+                "next"), "architecture.next: missing"),
+            ("architecture empty", lambda d: d.update(architecture={}),
+             "architecture: needs current and next"),
+            ("old stage names", lambda d: d["architecture"].update(target=stage(d)),
+             "architecture.target: the report doesn't show this section"),
         ]
         for name, edit, expected in cases:
             with self.subTest(name):
@@ -150,75 +159,19 @@ class MakeReportTest(unittest.TestCase):
 
     def test_multiline_sequence_statements_are_all_checked(self):
         data = content()
-        data["architecture"]["current"]["sequences"] = [
-            {"title": QUERY["title"], "lines": ["\n".join(QUERY["lines"])]}]
+        data["architecture"]["current"]["sequence"] = {
+            "title": QUERY["title"], "lines": ["\n".join(QUERY["lines"])]}
         self.assertTrue(self.make(data)["ok"])
         self.assertIn("U->>A: Query\n    A->>D: Read rows", self.report())
         original = self.report()
-        cases = [
-            ("call", "U->>D: Read directly", "no connection between U and D"),
-            ("participant", "participant Q as Cache\nparticipant R as Unknown",
-             "participant 'Cache' is not a node"),
-            ("manual number", "A-->>U: 5. Results", "numbers its step"),
-        ]
-        for name, extra, expected in cases:
+        for name, extra, expected in (("manual number", "A-->>U: 5. Results", "numbers its step"),
+                                      ("semicolon", "A->>U: One; two", "raw semicolon")):
             with self.subTest(name=name):
-                data["architecture"]["current"]["sequences"][0]["lines"] = [
+                data["architecture"]["current"]["sequence"]["lines"] = [
                     "\n".join(QUERY["lines"]) + "\n" + extra]
                 with self.assertRaisesRegex(SystemExit, expected):
                     self.make(data)
                 self.assertEqual(self.report(), original)
-
-    def test_shown_maps_need_their_stage_specification(self):
-        self.make()
-        original = self.report()
-        for key in ("current", "next", "target"):
-            with self.subTest(key=key):
-                maps = spec()
-                maps["stages"].pop(key)
-                self.write("maps.json", json.dumps(maps))
-                with self.assertRaisesRegex(SystemExit, f"maps.json has no {key} stage for the shown map"):
-                    self.make()
-                self.assertEqual(self.report(), original)
-        # Even without a flow, retained map artifacts cannot stand in for
-        # the omitted stage's specification.
-        data = content()
-        data["architecture"]["target"].update(
-            sequences=[], flow_gap="No target flow is established.")
-        with self.assertRaisesRegex(SystemExit, "maps.json has no target stage for the shown map"):
-            self.make(data)
-        self.assertEqual(self.report(), original)
-
-    def test_missing_stage_correspondence_is_disclosed_for_map_gaps(self):
-        maps = spec()
-        maps["stages"].pop("next")
-        self.write("maps.json", json.dumps(maps))
-        for with_flow in (False, True):
-            with self.subTest(with_flow=with_flow):
-                data = content()
-                stage = data["architecture"]["next"]
-                stage["map_gap"] = "Next architecture placement is unavailable."
-                stage["commentary"] = [
-                    "Future interactions remain unverified."]
-                if with_flow:
-                    stage["sequences"] = [{"title": "Worker — invocation", "lines": [
-                        "participant P as Unknown worker", "participant Z as Unknown endpoint", "P->>Z: Invoke"]}]
-                else:
-                    stage.update(
-                        sequences=[], flow_gap="No next flow is established.")
-                result = self.make(data)
-                self.assertTrue(result["ok"], result)
-                self.assertEqual(any("no next stage: sequences aren't checked" in w
-                                     for w in result["warnings"]), with_flow)
-
-    def test_current_only_maps_match_skipped_evolution(self):
-        maps = spec()
-        maps["stages"] = {"current": maps["stages"]["current"]}
-        self.write("maps.json", json.dumps(maps))
-        result = self.make(self.skipping(["evolution"]))
-        self.assertTrue(result["ok"], result)
-        self.assertFalse(
-            any("aren't checked" in w for w in result["warnings"]))
 
     def test_ledger_definitions_exclude_fences(self):
         for definition in ("| G99 | Evidence |", "- **G99** Evidence."):
@@ -235,25 +188,14 @@ class MakeReportTest(unittest.TestCase):
                         self.assertEqual(ledger.anchor("G99"),
                                          "actual-gap" if genuine else None)
 
-    def test_commentary_without_step_references(self):
-        for paragraph in ("The design preserves the existing entry paths.",
-                          "**Context:** the map shows the hosting boundary."):
-            with self.subTest(paragraph=paragraph):
-                data = content()
-                data["architecture"]["next"]["commentary"] = [paragraph]
-                self.assertTrue(self.make(data)["ok"])
-
     def test_invalid_collections_preserve_existing_report(self):
         self.make()
         original = self.report()
-        for field in ("sequences", "references", "skip"):
+        for field in ("references", "skip"):
             for value in (1, "wrong", {}):
                 with self.subTest(field=field, value=value):
                     data = content()
-                    if field == "sequences":
-                        data["architecture"]["current"][field] = value
-                        expected = "architecture.current.sequences: needs a list"
-                    elif field == "references":
+                    if field == "references":
                         data[field]["implementation"] = value
                         expected = "references.implementation: needs a list"
                     else:
@@ -263,84 +205,35 @@ class MakeReportTest(unittest.TestCase):
                         self.make(data)
                     self.assertEqual(self.report(), original)
 
-    def test_role_qualifier_and_reply_ride_on_the_connection(self):
-        data = content()
-        data["architecture"]["current"]["sequences"][0]["lines"][
-            0] = "actor U as Client / operator (source owner)"
-        self.assertTrue(self.make(data)["ok"])
-
-    def test_implicit_self_messages_need_a_map_participant(self):
-        for name, valid in (("Cache", False), ("Search index", True)):
-            with self.subTest(name=name):
-                checked = make_report.Content({}, make_report.Ledger(
-                    os.path.join(self.folder, "ledgers.md")))
-                # Implicit Mermaid names cannot contain spaces; use a map
-                # node with the same short name as the message endpoint.
-                endpoint = name.replace(" ", "")
-                maps = spec()
-                if valid:
-                    maps["nodes"][2]["name"] = endpoint
-                flow = make_report.Sequence(
-                    f"{endpoint} — refresh", [f"{endpoint}->>{endpoint}: Refresh"], None)
-                make_report.check_against_map(checked, flow, maps, "current")
-                if valid:
-                    self.assertEqual(checked.errors, [])
-                else:
-                    self.assertIn("'Cache' is not a node of the current map",
-                                  " ".join(checked.errors))
-
     def test_key_decisions_sentence(self):
         cases = [
-            (["Not established"],
-             "Decision ownership is not established in the inspected sources."),
-            (["Platform lead"],
-             "The inspected sources establish the deciding role for each item."),
-            (["Platform lead", "Not established"],
-             "establish the deciding role for some items only"),
+            (["Cost"], "These items describe implications of the linked evidence.\n\n| Decision or risk | Why it matters |"),
             ([], "No decision, blocker or risk in the inspected evidence warrants technical-leadership attention."),
         ]
-        for roles, expected in cases:
-            with self.subTest(roles=roles):
+        for items, expected in cases:
+            with self.subTest(items=items):
                 data = content()
-                data["key_decisions"] = [{"item": "Choice", "why": "Cost [p](https://example.com/p)", "role": role}
-                                         for role in roles]
+                data["key_decisions"] = [
+                    {"decision": item, "why": "Cost", "position": "Open",
+                        "evidence": "[F01](ledger:F01)"}
+                    for item in items]
                 self.make(data)
                 self.assertIn(expected, self.report())
 
-    def test_gaps_replace_map_and_flow(self):
+    def test_a_flow_gap_replaces_the_sequence(self):
         data = content()
-        data["architecture"]["target"] = {"summary": ["x " * 300], "map_gap": "Target placement is unavailable.",
-                                          "flow_gap": "No target flow is established.",
-                                          "commentary": ["Nothing to read together. " * 10]}
-        self.assertTrue(self.make(data)["ok"])
-        text = self.report()
-        self.assertIn(
-            "**Map evidence gap:** Target placement is unavailable.", text)
-        self.assertIn(
-            "**Flow evidence gap:** No target flow is established.", text)
-
-    def test_width_container_and_spread_warning(self):
-        self.widths = {"participant J as Publish job": 400}
-        data = content()
-        data["architecture"]["next"]["sequences"][1]["constrain_to"] = QUERY["title"]
+        data["architecture"]["next"] = {"summary": ["x " * 300 + "[F01](ledger:F01)."],
+                                        "flow_gap": "No next flow is established [G01](ledger:G01)."}
         result = self.make(data)
         self.assertTrue(result["ok"], result)
         self.assertIn(
-            '<div style="width:66.67%; margin:0 auto;">\n\n```mermaid\nsequenceDiagram', self.report())
-        self.assertTrue(
-            any("differ by more than 15%" in w for w in result["warnings"]))
-
-    def test_missing_map(self):
-        # The map's SVG is required: without it (build_maps.py not run), the
-        # report can't be written.
-        os.remove(os.path.join(self.folder, MAPS[0]))
-        self.assertIn(
-            "architecture-as-is.svg is missing: run build_maps.py", self.problems(content()))
+            "**Flow evidence gap:** No next flow is established", self.report())
+        self.assertEqual(result["sequences"], [QUERY["title"]])
 
     def test_sequence_that_does_not_render(self):
-        def broken(sources, theme="default"):
+        def broken(sources):
             raise SystemExit(
-                "diagram 3: the diagram doesn't render: Parse error")
+                "diagram 2: the diagram doesn't render: Parse error")
         self.write("content.json", json.dumps(content()))
         with mock.patch.object(output_diagram, "render_many", side_effect=broken):
             with self.assertRaises(SystemExit) as raised:
@@ -353,36 +246,34 @@ class MakeReportTest(unittest.TestCase):
         data = content()
         data["skip"] = skip
         if "evolution" in skip:
-            data.pop("roadmap")
-            for key in ("next", "target"):
-                data["architecture"].pop(key)
+            data.pop("next_steps")
+            if "architecture" in data:
+                data["architecture"].pop("next")
         if "architecture" in skip:
-            for key in ("architecture", "technical_decisions", "discrepancies", "remaining_gaps", "references"):
+            for key in ("architecture", "decisions_and_gaps"):
                 data.pop(key)
         return data
 
     def test_skipped_sections(self):
-        architect = ["Architect summary", "Current architecture", "Next evolution", "Target architecture",
-                     "Technical decisions and gaps", "References"]
-        # skip: headings left out
-        cases = [(["architecture"], architect),
-                 (["evolution"], ["Roadmap", "Next evolution", "Target architecture"]),
-                 (["architecture", "evolution"], architect + ["Roadmap"])]
-        for skip, absent in cases:
+        # skip: (how often each section title appears, titles absent)
+        cases = [(["architecture"], {"### Current status\n": 1, "### Next steps and evolution\n": 1},
+                  ["Architect summary", "Key decisions and gaps"]),
+                 (["evolution"], {"### Current status\n": 2, "### Next steps and evolution\n": 0},
+                  []),
+                 (["architecture", "evolution"], {"### Current status\n": 1, "### Next steps and evolution\n": 0},
+                  ["Architect summary", "Key decisions and gaps"])]
+        for skip, counts, absent in cases:
             with self.subTest(skip=skip):
-                if "architecture" in skip:
-                    os.remove(os.path.join(self.folder, "maps.json"))
-                    for name in MAPS:
-                        os.remove(os.path.join(self.folder, name))
                 result = self.make(self.skipping(skip))
                 self.assertTrue(result["ok"], result)
                 text = self.report()
+                for heading, count in counts.items():
+                    self.assertEqual(text.count(heading), count, heading)
                 for title in absent:
                     self.assertNotIn(f" {title}\n", text)
-                for title in ("Problem and intended outcome", "Current milestone - deep dive",
-                              "Key decisions and risks"):
-                    self.assertIn(f"### {title}\n", text)
-                self.assertNotIn("Scope:", text)
+                self.assertIn("### Problem and intended outcome\n", text)
+                self.assertIn("### Key decisions and risks\n", text)
+                self.assertIn("\n## References\n", text)
                 self.setUp()
 
     def test_skip_problems(self):
@@ -392,12 +283,20 @@ class MakeReportTest(unittest.TestCase):
              "only architecture or evolution can be skipped"),
             ({"skip": {"evolution": "Reason."}},
              "skip: must list the dimensions"),
-            (dict(self.skipping(evolution), roadmap=content()
-             ["roadmap"]), "the report has no roadmap"),
-            (dict(self.skipping(["architecture"]), references=content()["references"]),
-             "references: architecture is skipped"),
+            (dict(self.skipping(evolution), next_steps=content()
+             ["next_steps"]), "the report has no Next steps and evolution"),
+            (dict(self.skipping(["architecture"]), decisions_and_gaps=content()["decisions_and_gaps"]),
+             "decisions_and_gaps: architecture is skipped"),
+            ({"technical_decisions": []},
+             "technical_decisions: renamed decisions_and_gaps"),
+            ({"discrepancies": "x"}, "discrepancies: removed"),
+            ({"remaining_gaps": "x"}, "remaining_gaps: removed"),
+            ({"decisions_and_gaps": [dict(content()["decisions_and_gaps"][0], owner="Platform lead")]},
+             "decisions_and_gaps 1.owner: removed"),
+            (dict(self.skipping(["architecture"]), architecture=content()["architecture"]),
+             "architecture: architecture is skipped"),
             (dict(self.skipping(evolution), architecture=content()["architecture"]),
-             "architecture.next: the report doesn't show this stage"),
+             "architecture.next: the report doesn't show this section, as evolution is skipped"),
         ]
         for data, expected in cases:
             with self.subTest(expected=expected):
@@ -407,9 +306,9 @@ class MakeReportTest(unittest.TestCase):
 
     def test_word_count_warnings(self):
         data = content()
-        data["problem"] = ["Too short [doc](https://example.com/doc)."]
+        data["problem"] = ["Too short [F01](ledger:F01)."]
         result = self.make(data)
-        self.assertIn("problem: 3 words; the target is about 100",
+        self.assertIn("problem: 3 words; the target is about 150",
                       result["warnings"])
 
 

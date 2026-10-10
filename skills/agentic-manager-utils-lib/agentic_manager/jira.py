@@ -8,8 +8,8 @@ errors name a setting, never its value. If you add debug output here, print
 URLs and status codes only, never headers.
 
 The greenhopper endpoints (board estimation field, sprint report) are internal,
-not part of Atlassian's documented API, so they could change without notice. The sprint report is still required: it
-is the only source of `puntedIssues` (issues removed from a sprint). Once an
+not part of Atlassian's documented API, so they could change without notice. The
+sprint report is still required: it is the only source of `puntedIssues` (issues removed from a sprint). Once an
 issue leaves a sprint its own Sprint field no longer mentions it, so the public
 API can't find it. If its shape changes, sprint_report() fails rather than
 return a sprint report with its removals missing.

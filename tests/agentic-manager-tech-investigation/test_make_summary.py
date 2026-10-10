@@ -1,8 +1,10 @@
-# Unit tests for skills/agentic-manager-tech-investigation/scripts/make_summary.py.
-# The whole pipeline has end-to-end tests in test_e2e_pipeline.py.
-# Run with: python3 tests/run.py agentic-manager-tech-investigation
-#
-# The config's path is patched to the test's own config, in a temporary folder.
+"""Unit tests for skills/agentic-manager-tech-investigation/scripts/make_summary.py.
+The whole pipeline has end-to-end tests in test_e2e_pipeline.py.
+Run with: python3 tests/run.py agentic-manager-tech-investigation
+
+The config's path is patched to the test's own config, in a temporary folder.
+"""
+
 import json
 import os
 import sys
@@ -50,8 +52,7 @@ class MakeSummaryTest(unittest.TestCase):
             self.assertTrue(f.read().startswith("word word"))
 
     def test_reserved_formats_preserve_artifacts(self):
-        for wanted, extension in (("ledgers", "md"), ("mermaids", "md"),
-                                  ("content", "json"), ("maps", "json")):
+        for wanted, extension in (("ledgers", "md"), ("content", "json")):
             with self.subTest(wanted=wanted):
                 path = os.path.join(self.folder, f"{wanted}.{extension}")
                 with open(path, "w", encoding="utf-8") as f:

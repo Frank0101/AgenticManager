@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-#
-# Runs every skill's tests. Run from anywhere:
-#   python3 tests/run.py                 every skill
-#   python3 tests/run.py <skill> ...     only those skills
-#   add -v to list each test
-#
-# tests/<skill>/ mirrors skills/<skill>/. Skill names contain hyphens, so these folders
-# can't be Python packages and `unittest discover` skips them. Instead, each
-# tests/<skill>/test_*.py is loaded by file path.
-#
-# Each skill's tests run in their own Python process. Unit tests import a skill's
-# modules by name (common, check_config...), and a process keeps one module per
-# name, so two skills with a module of the same name would otherwise see each
-# other's.
+"""Runs every skill's tests. Run from anywhere:
+  python3 tests/run.py                 every skill
+  python3 tests/run.py <skill> ...     only those skills
+  add -v to list each test
+
+tests/<skill>/ mirrors skills/<skill>/. Skill names contain hyphens, so these folders
+can't be Python packages and `unittest discover` skips them. Instead, each
+tests/<skill>/test_*.py is loaded by file path.
+
+Each skill's tests run in their own Python process. Unit tests import a skill's
+modules by name (common, check_config...), and a process keeps one module per
+name, so two skills with a module of the same name would otherwise see each
+other's.
+"""
+
 import glob
 import importlib.util
 import os

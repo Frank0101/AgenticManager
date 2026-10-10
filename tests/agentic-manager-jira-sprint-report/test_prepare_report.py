@@ -1,8 +1,10 @@
-# Unit tests for skills/agentic-manager-jira-sprint-report/scripts/prepare_report.py.
-# Run with: python3 tests/run.py agentic-manager-jira-sprint-report
-#
-# The scripts it runs are replaced by fakes; test_e2e_fetch.py runs the whole
-# script against a fake Jira.
+"""Unit tests for skills/agentic-manager-jira-sprint-report/scripts/prepare_report.py.
+Run with: python3 tests/run.py agentic-manager-jira-sprint-report
+
+The scripts it runs are replaced by fakes; test_e2e_fetch.py runs the whole
+script against a fake Jira.
+"""
+
 import contextlib
 import io
 import json

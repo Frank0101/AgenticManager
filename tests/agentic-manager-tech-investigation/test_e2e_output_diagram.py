@@ -1,10 +1,12 @@
-# End-to-end tests for skills/agentic-manager-tech-investigation/scripts/output_diagram.py:
-# they run the whole script, as the skill does to try a diagram. Its functions have
-# unit tests in test_output_diagram.py.
-# Run with: python3 tests/run.py agentic-manager-tech-investigation
-#
-# HOME and TMPDIR point at a temporary folder. A fake npx put first on PATH writes a
-# given SVG instead of running the Mermaid CLI, so no Node.js or network is needed.
+"""End-to-end tests for skills/agentic-manager-tech-investigation/scripts/output_diagram.py:
+they run the whole script, as the skill does to try a diagram. Its functions have
+unit tests in test_output_diagram.py.
+Run with: python3 tests/run.py agentic-manager-tech-investigation
+
+HOME and TMPDIR point at a temporary folder. A fake npx put first on PATH writes a
+given SVG instead of running the Mermaid CLI, so no Node.js or network is needed.
+"""
+
 import json
 import os
 import subprocess
@@ -17,11 +19,9 @@ TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 SCRIPT = os.path.join(REPO_ROOT, "skills", os.path.basename(TEST_DIR),
                       "scripts", "output_diagram.py")
-sys.path.insert(0, TEST_DIR)
-from diagram_fixture import BAD_SVG, GOOD_SVG  # noqa: E402
 
-DIAGRAM = "flowchart TB\n  A --> B\n"
-SIZED_SVG = GOOD_SVG.replace("<svg>", '<svg viewBox="0 0 640 320">')
+DIAGRAM = "sequenceDiagram\n  A->>B: Hi\n"
+SIZED_SVG = '<svg viewBox="0 0 640 320"/>'
 # Stands in for npx: records its arguments, then writes $FAKE_SVG to the -o path,
 # or fails when $FAKE_SVG is empty.
 FAKE_NPX = """#!{python}
@@ -65,15 +65,14 @@ class OutputDiagramScriptTest(unittest.TestCase):
     def test_renders_and_reports_the_size(self):
         before = sorted(os.listdir(self.root))
         code, out, err = self.run_script(
-            "--theme", "dark", PATH=self.fake_npx(), FAKE_SVG=SIZED_SVG)
+            PATH=self.fake_npx(), FAKE_SVG=SIZED_SVG)
         self.assertEqual(code, 0, err)
-        self.assertEqual(json.loads(out), {
-                         "width": 640.0, "height": 320.0, "nodes": {}})
+        self.assertEqual(json.loads(out), {"width": 640.0, "height": 320.0})
         with open(self.args_file, encoding="utf-8") as f:
             args = f.read()
         self.assertRegex(
             args, r"^-y -p @mermaid-js/mermaid-cli@[\d.]+ mmdc -i ")
-        self.assertIn("-b #1e1e1e", args)
+        self.assertIn("-b white", args)
         self.assertNotIn("-t ", args)
         # Nothing is written beside the fake npx and its record.
         self.assertEqual(sorted(os.listdir(self.root)),
@@ -89,7 +88,6 @@ class OutputDiagramScriptTest(unittest.TestCase):
              1, "Node.js 22.13 or newer is needed"),
             ("a diagram that doesn't render", None, "",
              1, "doesn't render: Parse error on line 2"),
-            ("slanted lines", None, BAD_SVG, 1, "lines break the rules"),
         ]
         for name, path_dir, svg, code, expected in cases:
             with self.subTest(name):

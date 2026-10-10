@@ -1,14 +1,16 @@
-# End-to-end tests for the sprint-report scripts that run after the fetch:
-# build_sprint_data.py, make_brief.py, make_charts.py, make_report.py and
-# check_report.py, run one after the other, and finish_report.py, which runs the
-# last three. Each script's functions have unit tests in test_<script>.py; these
-# cover the command lines, exit codes and outputs, and that the scripts fit.
-# Run with: python3 tests/run.py agentic-manager-jira-sprint-report
-#
-# Each test writes the made-up sprint in sprint_fixture.py into a report folder,
-# changing it first where the case needs to. HOME points at a temporary folder
-# holding the test's own config, whose output root is in that folder too, so the
-# scripts write their files there.
+"""End-to-end tests for the sprint-report scripts that run after the fetch:
+build_sprint_data.py, make_brief.py, make_charts.py, make_report.py and
+check_report.py, run one after the other, and finish_report.py, which runs the
+last three. Each script's functions have unit tests in test_<script>.py; these
+cover the command lines, exit codes and outputs, and that the scripts fit.
+Run with: python3 tests/run.py agentic-manager-jira-sprint-report
+
+Each test writes the made-up sprint in sprint_fixture.py into a report folder,
+changing it first where the case needs to. HOME points at a temporary folder
+holding the test's own config, whose output root is in that folder too, so the
+scripts write their files there.
+"""
+
 import copy
 import json
 import os

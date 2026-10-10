@@ -1,12 +1,14 @@
-# End-to-end tests for skills/agentic-manager-utils-lib/agentic_manager/output_folder.py
-# and output_file.py: they run each as a script, as an agent that writes a skill's files
-# itself does. Their functions have unit tests in test_output_folder.py and
-# test_output_file.py.
-# Run with: python3 tests/run.py agentic-manager-utils-lib
-#
-# HOME points at a temporary folder holding the test's own config, and TMPDIR at
-# the same folder, so a folder that falls back to the system temp folder stays
-# inside it.
+"""End-to-end tests for skills/agentic-manager-utils-lib/agentic_manager/output_folder.py
+and output_file.py: they run each as a script, as an agent that writes a skill's files
+itself does. Their functions have unit tests in test_output_folder.py and
+test_output_file.py.
+Run with: python3 tests/run.py agentic-manager-utils-lib
+
+HOME points at a temporary folder holding the test's own config, and TMPDIR at
+the same folder, so a folder that falls back to the system temp folder stays
+inside it.
+"""
+
 import json
 import os
 import subprocess

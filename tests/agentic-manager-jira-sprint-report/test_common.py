@@ -1,5 +1,7 @@
-# Unit tests for skills/agentic-manager-jira-sprint-report/scripts/common.py.
-# Run with: python3 tests/run.py agentic-manager-jira-sprint-report
+"""Unit tests for skills/agentic-manager-jira-sprint-report/scripts/common.py.
+Run with: python3 tests/run.py agentic-manager-jira-sprint-report
+"""
+
 import json
 import os
 import sys
@@ -300,6 +302,13 @@ class QuantitiesTest(unittest.TestCase):
         for function, args, expected in cases:
             with self.subTest(function=function.__name__, args=args):
                 self.assertEqual(function(*args), expected)
+
+
+class ExpectedFilesTest(unittest.TestCase):
+    def test_expected_files(self):
+        self.assertEqual(common.expected_files("PROJ_Sprint_3"),
+                         {"_raw", "data.json", "content.json", "brief.json", "outcome-tickets.svg",
+                          "outcome-pts.svg", "burndown.svg", "PROJ_Sprint_3_Sprint_Report.md"})
 
 
 class VocabularyTest(unittest.TestCase):

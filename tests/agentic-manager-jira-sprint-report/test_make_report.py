@@ -1,7 +1,9 @@
-# Unit tests for skills/agentic-manager-jira-sprint-report/scripts/make_report.py.
-# Run with: python3 tests/run.py agentic-manager-jira-sprint-report
-#
-# The sprint is described in report_fixture.py.
+"""Unit tests for skills/agentic-manager-jira-sprint-report/scripts/make_report.py.
+Run with: python3 tests/run.py agentic-manager-jira-sprint-report
+
+The sprint is described in report_fixture.py.
+"""
+
 import copy
 import os
 import re

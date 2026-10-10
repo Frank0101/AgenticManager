@@ -1,8 +1,10 @@
-# Unit tests for skills/agentic-manager-jira-sprint-report/scripts/build_sprint_data.py.
-# Run with: python3 tests/run.py agentic-manager-jira-sprint-report
-#
-# They call the script's functions directly with a few hand-made issues.
-# test_e2e_pipeline.py runs it on a whole made-up sprint.
+"""Unit tests for skills/agentic-manager-jira-sprint-report/scripts/build_sprint_data.py.
+Run with: python3 tests/run.py agentic-manager-jira-sprint-report
+
+They call the script's functions directly with a few hand-made issues.
+test_e2e_pipeline.py runs it on a whole made-up sprint.
+"""
+
 import json
 import os
 import sys

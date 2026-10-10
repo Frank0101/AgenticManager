@@ -1,9 +1,11 @@
-# End-to-end tests for skills/agentic-manager-tech-investigation/scripts/check_report.py:
-# they run the whole script, as the skill does. Its functions have unit tests in
-# test_check_report.py; test_e2e_pipeline.py runs it on a whole investigation.
-# Run with: python3 tests/run.py agentic-manager-tech-investigation
-#
-# HOME and TMPDIR point at a temporary folder holding no config: the check needs none.
+"""End-to-end tests for skills/agentic-manager-tech-investigation/scripts/check_report.py:
+they run the whole script, as the skill does. Its functions have unit tests in
+test_check_report.py; test_e2e_pipeline.py runs it on a whole investigation.
+Run with: python3 tests/run.py agentic-manager-tech-investigation
+
+HOME and TMPDIR point at a temporary folder holding no config: the check needs none.
+"""
+
 import json
 import os
 import subprocess
