@@ -56,7 +56,7 @@ Preparing a sprint again replaces all earlier report folders for that sprint, in
 
 If the user doesn't say which project, board or sprint, ask; don't guess. If the script fails, report its message and follow any fix it gives. When you retry with another board, check that the returned sprint ID matches the original; stop if it differs.
 
-It prints one line of JSON with `report_dir`, `temporary`, `brief` and `content_path`. Read the `brief`: the sprint and its goal, the verdicts you can choose from, each epic's tickets with their commentary `group`, `scope` (`original` is the commitment, `extra` was added later), latest `points`, `status`, `flagged`, description and, for blocker candidates, their comments, and `report_facts`, the report's own figures in its exact wording.
+It prints one line of JSON with `report_dir`, `temporary`, `brief` and `content_path`. Read the `brief`: the sprint and its goal, the verdicts you can choose from, each epic's tickets with their commentary `group`, `carried_in` (already in the previous sprint's commitment), `scope` (`original` is the commitment, `extra` was added later), latest `points`, `status`, `flagged`, description and, for blocker candidates, their comments, and `report_facts`, the report's own figures in its exact wording.
 
 ## 2. Write content.json
 
@@ -93,7 +93,7 @@ Write the goal themes first (they feed three fields), the verdict last.
 
 **`goal_verdict`**: one of the brief's `goal_verdicts`, word for word; if it offers only one, use it. A theme is met when none of its commitment tickets is open at the end (the `not_completed` outcome in `goal_tickets`, including work in review); extra work doesn't decide it, and descoped work doesn't count against it. Closed sprint: "Fully met" if every theme is met, "Not met" if none is, otherwise "Partially met". Running sprint, when the brief offers it: "At risk" if any theme has more than half its commitment pts open, otherwise "On track". If part of a theme maps to no ticket, judge by the tickets that do, and raise it when you tell the user the report is ready.
 
-**`retro_notes`**: 1 to 5 notes for the team's retro, each a fact followed by a question ending with "?". Look across `report_facts` and the brief for what most departed from the plan and what the team can learn from it: patterns between epics, the timeline commentary and the goal, not only the largest figure. Quote figures word for word from `report_facts`, and name tickets as `KEY (N pts)` with the brief's `points`; don't derive new figures. Frame causes as questions, never as findings the data can't show.
+**`retro_notes`**: 1 to 5 notes for the team's retro, each a fact followed by a question ending with "?". Look across `report_facts` and the brief, including `carried_in` tickets that are still open, for what most departed from the plan and what the team can learn from it: patterns between epics, the timeline commentary and the goal, not only the largest figure. Quote figures word for word from `report_facts`, and name tickets as `KEY (N pts)` with the brief's `points`; don't derive new figures. Frame causes as questions, never as findings the data can't show.
 
 Rules for all of it. `finish_report.py` rejects text that breaks the wording and format rules, naming the field; it can't check the content rules, so you are the only guard for them:
 

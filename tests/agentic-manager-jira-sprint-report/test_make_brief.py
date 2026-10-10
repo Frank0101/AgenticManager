@@ -42,9 +42,14 @@ class BriefTest(unittest.TestCase):
 
     def test_tickets_carry_what_the_text_needs(self):
         ticket = next(t for t in self.tickets() if t["key"] == "PROJ-1")
-        self.assertEqual(ticket, {"key": "PROJ-1", "group": "completed", "scope": "original", "points": 3,
+        self.assertEqual(ticket, {"key": "PROJ-1", "group": "completed", "carried_in": False, "scope": "original", "points": 3,
                                   "status": "Done", "flagged": False, "summary": "Work item PROJ-1",
                                   "description": "What PROJ-1 changes."})
+
+    def test_carried_in_marks_the_work_of_the_previous_sprint(self):
+        # PROJ-2 is carried over from Sprint 6, in both its original and extra spells.
+        self.assertEqual({(t["key"], t["carried_in"]) for t in self.tickets()}, {
+            ("PROJ-1", False), ("PROJ-2", True), ("PROJ-3", False), ("PROJ-6", False)})
 
     def test_goal_tickets_include_all_original_outcomes(self):
         tickets = self.brief["goal_tickets"]

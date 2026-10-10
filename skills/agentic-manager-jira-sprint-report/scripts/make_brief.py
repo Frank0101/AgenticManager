@@ -18,6 +18,8 @@ costs tokens and invites slips.
     order Key Achievements takes after the goal's themes. Matching tickets to
     themes is left to the agent, since it is the same reading as the goal
     verdict, which is an interpretation.
+  * carried_in marks the tickets that were already in the previous sprint's
+    commitment, so the agent can see work that spans sprints, as the charts do.
   * Comment authors are left out: AI text names teams, never colleagues.
   * goal_tickets separately includes every original commitment ticket, including
     work excluded from commentary, so goal themes have their full denominator.
@@ -70,6 +72,7 @@ def report_facts(data):
 
 def build_brief(data, raw_dir):
     candidates = set(data["blocker_candidate_keys"])
+    carried = {s["key"] for s in data["spells"] if s["carriedIn"]}
     zone = report_timezone(data["report_timezone"])
     epics = []
     for epic in data["epics"]:
@@ -78,6 +81,7 @@ def build_brief(data, raw_dir):
             for ticket in epic["scope_groups"][group]:
                 tickets.append({
                     "key": ticket["key"], "group": group,
+                    "carried_in": ticket["key"] in carried,
                     **{k: ticket[k] for k in ("scope", "points", "status", "flagged", "summary", "description")},
                     **({"comments": comments(raw_dir, ticket["key"], zone)} if ticket["key"] in candidates else {}),
                 })
