@@ -107,12 +107,12 @@ def write_rows(lines, name, rows, header=None):
         return
     head = lines[span[0]:span[0] + 2]
     lines[span[0]:span[1]] = head + [render(r) for r in rows]
-    span = table_span(lines, heading)
+    table_end = span[0] + 2 + len(rows)
     _, end = section(lines, heading)
     if rows:
-        drop_placeholder(lines, span[1], end)
-    elif not any(line.strip() in PLACEHOLDERS for line in lines[span[1]:end]):
-        lines[span[1]:span[1]] = ["", "None."]
+        drop_placeholder(lines, table_end, end)
+    elif not any(line.strip() in PLACEHOLDERS for line in lines[table_end:end]):
+        lines[table_end:table_end] = ["", "None."]
 
 
 def header_of(lines, name):
@@ -318,7 +318,7 @@ def table_markdown(lines, name):
 def show(lines, ident, name):
     if name == "findings":
         blocks, _, _ = findings_of(lines)
-        return "\n".join(f"{k} — {re.match(r'### F\d+ — (.*)', b)[1]}" for k, b in
+        return "\n".join(b.splitlines()[0].removeprefix("### ") for _, b in
                          sorted(blocks.items(), key=lambda kv: number(kv[0]))) or "No findings."
     if name:
         return "\n".join(table_markdown(lines, name)) or "None."
@@ -480,7 +480,7 @@ def main(argv=None):
             sub.add_argument("--url", required=True)
         if name == "show":
             sub.add_argument(
-                "--id", help="a finding, or a row's ID (or an evidence area)")
+                "--id", help="a finding, or a row's ID")
             sub.add_argument("--table", choices=list(TABLES) + ["findings"])
         if name == "find":
             sub.add_argument("--text", required=True)
@@ -505,7 +505,7 @@ def main(argv=None):
         if bool(letters) != bool(args.id):
             raise SystemExit(
                 f"{args.table} " + ("needs --id" if letters else "has no IDs: leave --id out"))
-        if args.id and letters != "*" and args.id[0] not in letters:
+        if args.id and args.id[0] not in letters:
             raise SystemExit(
                 f"{args.table} IDs start with {' or '.join(letters)}")
         cells = json.load(sys.stdin)

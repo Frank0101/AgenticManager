@@ -282,7 +282,7 @@ class FetchTest(unittest.TestCase):
             (config(**{"base-url": "http://127.0.0.1:9"}),
              ["--project", "PROJ"], 1, "your `base-url` setting"),
             (no_config, ["--project", "PROJ"], 1,
-             "agentic-manager-utils-check-config"),
+             "check_config.py"),
         ]
         for change, args, code, expected in cases:
             with self.subTest(expected, args=args):

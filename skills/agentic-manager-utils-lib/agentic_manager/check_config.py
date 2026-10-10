@@ -14,12 +14,16 @@ Usage: check_config.py [--init]
   --init  copies the template to the config path first, if no config exists yet.
 
 Prints one line of JSON:
-  success: {"ok": true, "path": ..., "template": ..., "created": bool, "sources": {...}}
+  success: {"ok": true, "path": ..., "template": ..., "created": bool,
+            "sources": {...}}, plus "next_steps" if the config was just created
   failure: {"ok": false, "path": ..., "template": ..., "created": bool,
-            "errors": ["...", ...]}
+            "errors": ["...", ...], "next_steps": "..."}
            (exit code 1)
 
-The config is only ever written by --init, and never overwritten.
+"next_steps" tells the agent what to do about the config, so no skill repeats
+it: the agent only changes the config to create it when it is missing, and only
+if the user agrees; for every other problem it explains the fix and the user
+makes it. The config is only ever written by --init, and never overwritten.
 
 "sources" lists every source of the template by group, enabled or not, so the
 calling skill decides what it needs. A source is named "<tool>-<channel>" (e.g.
@@ -34,19 +38,25 @@ import os
 import shutil
 import sys
 
-TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.dirname(
-    os.path.realpath(__file__))), "config-template.json")
-# The agentic-manager-utils-lib skill, installed next to this one.
-LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                       "..", "..", "agentic-manager-utils-lib")
-sys.path.insert(0, LIB_DIR)
-try:
-    from agentic_manager.config import CONFIG_PATH, is_filled, load_json
-except ImportError:
-    print(json.dumps({"ok": False, "path": None, "template": TEMPLATE_PATH, "created": False,
-                      "errors": ["agentic-manager-utils-lib is not installed next to this skill. "
-                                 "Reinstall AgenticManager with --skill '*' to install every skill."]}))
-    sys.exit(1)
+if not __package__:
+    # Run as a script: import the package from the folder that holds it.
+    sys.path.insert(0, os.path.dirname(
+        os.path.dirname(os.path.realpath(__file__))))
+from agentic_manager.config import CONFIG_PATH, is_filled, load_json  # noqa: E402
+
+TEMPLATE_PATH = os.path.join(os.path.dirname(
+    os.path.realpath(__file__)), "config-template.json")
+
+# What the user does to the config once it exists.
+EDIT = ("edit the config at `path`: enable the sources they use, fill in their "
+        "settings, and optionally set output.root")
+CREATE = ("The config doesn't exist. Ask the user whether to create it from the "
+          "template. Only if they explicitly agree, run this script again with "
+          "--init, then tell them to " + EDIT + ".")
+CREATED = ("The config was created from the template, with every source disabled. "
+           "Tell the user to " + EDIT + ".")
+FIX = ("Show the user every error and the config's `path`, and explain how to fix "
+       "each one. Never edit the config yourself.")
 
 
 # The template only holds "enabled" (true or false) and string placeholders.
@@ -190,11 +200,14 @@ def main():
         except (ValueError, OSError) as e:
             errors = [str(e)]
     if errors:
-        print(json.dumps({"ok": False, **result,
-              "created": created, "errors": errors}))
+        missing = not os.path.lexists(CONFIG_PATH)
+        print(json.dumps({"ok": False, **result, "created": created,
+                          "errors": errors, "next_steps": CREATE if missing else FIX}))
         sys.exit(1)
-    print(json.dumps({"ok": True, **result,
-          "created": created, "sources": sources}))
+    result = {"ok": True, **result, "created": created, "sources": sources}
+    if created:
+        result["next_steps"] = CREATED
+    print(json.dumps(result))
 
 
 if __name__ == "__main__":

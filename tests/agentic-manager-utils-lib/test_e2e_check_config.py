@@ -1,7 +1,7 @@
-"""End-to-end tests for skills/agentic-manager-utils-check-config/scripts/check_config.py:
+"""End-to-end tests for skills/agentic-manager-utils-lib/agentic_manager/check_config.py:
 they run the whole script, as a skill does. Its functions have unit tests in
 test_check_config.py.
-Run with: python3 tests/run.py agentic-manager-utils-check-config
+Run with: python3 tests/run.py agentic-manager-utils-lib
 
 Each test runs the script with HOME pointed at a temporary folder. The config is
 part of the test's setup, so each test writes its own and is free to change it.
@@ -21,9 +21,9 @@ import unittest
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 SKILL_DIR = os.path.join(REPO_ROOT, "skills", os.path.basename(TEST_DIR))
-LIB_DIR = os.path.join(REPO_ROOT, "skills", "agentic-manager-utils-lib")
-SCRIPT = os.path.join(SKILL_DIR, "scripts", "check_config.py")
-TEMPLATE = os.path.join(SKILL_DIR, "config-template.json")
+PACKAGE_DIR = os.path.join(SKILL_DIR, "agentic_manager")
+SCRIPT = os.path.join(PACKAGE_DIR, "check_config.py")
+TEMPLATE = os.path.join(PACKAGE_DIR, "config-template.json")
 # Setting values the tests write: the script's output must never show them.
 VALUES = ("s3cret", "acme.atlassian.net",
           "me@acme.test", "~/logseq", "~/reports")
@@ -50,25 +50,14 @@ class ScriptTest(unittest.TestCase):
                               capture_output=True, text=True)
         return proc.returncode, json.loads(proc.stdout)
 
-    # Runs a copy of the script next to a copy of `template` (none if `template` is
-    # None), for an install with a file missing. The shared library is linked next
-    # to the copy, as an install puts it, unless `lib` is False.
-    def run_with_template(self, template, *args, lib=True):
-        skill = os.path.join(self.home.name, "skill")
-        os.makedirs(os.path.join(skill, "scripts"), exist_ok=True)
-        script = shutil.copy(SCRIPT, os.path.join(skill, "scripts"))
-        link = os.path.join(self.home.name, os.path.basename(LIB_DIR))
-        if lib and not os.path.lexists(link):
-            os.symlink(LIB_DIR, link)
-        elif not lib and os.path.lexists(link):
-            os.remove(link)
-        template_path = os.path.join(skill, "config-template.json")
-        if template is not None:
-            with open(template_path, "w", encoding="utf-8") as f:
-                json.dump(template, f)
-        elif os.path.exists(template_path):
-            os.remove(template_path)
-        return self.run_script(*args, script=script)
+    # Runs a copy of the package without its template, as an install with the
+    # template missing.
+    def run_without_template(self, *args):
+        package = os.path.join(self.home.name, "copy", "agentic_manager")
+        shutil.copytree(PACKAGE_DIR, package,
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        os.remove(os.path.join(package, "config-template.json"))
+        return self.run_script(*args, script=os.path.join(package, "check_config.py"))
 
     def read_raw(self):
         with open(self.config_path, "rb") as f:
@@ -198,6 +187,29 @@ class CheckConfigTest(ScriptTest):
                     self.assertEqual(os.listdir(os.path.dirname(
                         self.config_path)), ["config.json"])
 
+    def test_next_steps(self):
+        # The script tells the agent what to do about the config, so no skill
+        # repeats it: ask before creating a missing config, and never edit
+        # one that has problems. A valid config needs no next steps.
+        cases = [
+            ("missing", lambda: self.clear_config(), [],
+             1, "run this script again with --init"),
+            ("created", lambda: self.clear_config(), [
+             "--init"], 0, "was created from the template"),
+            ("problems", lambda: self.write_raw(
+                '{"x": 1}'), [], 1, "Never edit the config yourself"),
+            ("valid", lambda: self.write_config(), [], 0, None),
+        ]
+        for name, make, args, code, expected in cases:
+            with self.subTest(name):
+                make()
+                got, out = self.run_script(*args)
+                self.assertEqual(got, code, out)
+                if expected:
+                    self.assertIn(expected, out["next_steps"])
+                else:
+                    self.assertNotIn("next_steps", out)
+
     def test_unknown_argument(self):
         out = self.assert_error('unknown argument "workflow" (usage: check_config.py [--init])',
                                 "--init", "workflow")
@@ -208,7 +220,7 @@ class CheckConfigTest(ScriptTest):
 
     def test_valid_configs(self):
         # Every source of the template is returned, by group, enabled or with
-        # its setup (test_setup checks its wording). Groups, sources,
+        # its setup (test_check_config.py checks its wording). Groups, sources,
         # settings and output left out are allowed.
         def change(edit):
             return lambda: self.write_config(edit)
@@ -261,84 +273,26 @@ class CheckConfigTest(ScriptTest):
                             self.assertTrue(source["setup"], source_name)
                 self.assertEqual(found, enabled)
 
-    def test_setup(self):
-        jira = ('{"enabled": true, "base-url": "<https://your-site.atlassian.net>", "email": "<email>", '
-                '"api-token": "<token>"}')
-        fill = 'then fill in "base-url", "email", "api-token"'
-        filled = {"base-url": "https://acme.atlassian.net",
-                  "email": "me@acme.test", "api-token": "abc"}
-        cases = [
-            (lambda: self.write_config(),
-             f'set "sources.workflow.jira-api.enabled" to true, {fill}'),
-            (lambda: self.write_config(lambda c: c["workflow"]["jira-api"].update(filled)),
-             'set "sources.workflow.jira-api.enabled" to true'),
-            (lambda: self.write_raw("{}"),
-             f'add "sources": {{"workflow": {{"jira-api": {jira}}}}} at the top level, {fill}'),
-            (lambda: self.write_raw('{"sources": {}}'),
-             f'add "workflow": {{"jira-api": {jira}}} inside "sources", {fill}'),
-            (lambda: self.write_raw('{"sources": {"workflow": {}}}'),
-             f'add "jira-api": {jira} inside "sources.workflow", {fill}'),
-        ]
-        for write, expected in cases:
-            with self.subTest(expected):
-                write()
-                self.assertEqual(self.assert_ok()[
-                                 "sources"]["workflow"]["jira-api"]["setup"], expected)
-
     # --- invalid configs
 
     def test_invalid_configs(self):
+        # What only the whole script shows: a file that can't be read as a
+        # JSON object, and rules applied to the real template's sources. The
+        # validation rules themselves are unit-tested in test_check_config.py.
         # Each case is the config's text, or a change to the template's
         # "sources"; each error names what to fix, never a setting's value.
-        jira = "sources.workflow.jira-api"
         bad_root = copy.deepcopy(self.template)
         bad_root["output"]["root"] = 5
         cases = [
-            # The file
-            ("", "invalid JSON"), ("nope",
-                                   "invalid JSON"), (b"\xff\xfe", "invalid JSON"),
+            ("", "invalid JSON"), (b"\xff\xfe", "invalid JSON"),
             ('{"sources": {}, "sources": {}}', 'duplicate key "sources"'),
             ("[]", "must be a JSON object"),
-            # Its shape
-            ('{"sources": {}, "chat": {}}',
-             'unknown key "chat" (supported: sources, output)'),
-            ('{"sources": []}', "sources must be an object of groups"),
-            (lambda c: c.update({"chat": {}}), 'unknown group "sources.chat"'),
-            (lambda c: c.update({"workflow": []}),
-             "sources.workflow must be an object of sources"),
-            (lambda c: c["workflow"].update({"linear-mcp": {"enabled": True}}),
-             'unknown source "sources.workflow.linear-mcp"'),
-            (lambda c: c["workflow"].update(
-                {"jira-api": True}), f"{jira} must be an object"),
             (lambda c: c["documentation"]["notion-mcp"].update({"workspace": "x"}),
              'unknown setting "sources.documentation.notion-mcp.workspace"'),
-            (lambda c: c["documentation"]["notion-mcp"].pop("enabled"),
-             "sources.documentation.notion-mcp.enabled is missing: set it to true or false"),
-            # Its settings
             (lambda c: self.enable_jira(c, "<token>"),
-             f"{jira}.api-token is not filled in"),
-            (lambda c: self.enable_jira(c, " <token> "),
-             f"{jira}.api-token is not filled in"),
-            (lambda c: self.enable_jira(c, "  "),
-             f"{jira}.api-token is not filled in"),
-            (lambda c: c["workflow"].update(
-                {"jira-api": {"enabled": True}}), f"{jira}.api-token is not filled in"),
-            (lambda c: c["workflow"]["jira-api"].update(
-                {"api-token": 5}), f"{jira}.api-token must be a string"),
-            (lambda c: c["workflow"]["jira-api"].update(
-                {"api-token": None}), f"{jira}.api-token must be a string"),
-            (lambda c: c["workflow"]["jira-api"].update(
-                {"enabled": "true"}), f"{jira}.enabled must be true or false"),
-            (lambda c: c["workflow"]["jira-api"].update(
-                {"enabled": 1}), f"{jira}.enabled must be true or false"),
-            (lambda c: c["workflow"]["jira-api"].update(
-                {"enabled": None}), f"{jira}.enabled must be true or false"),
-            (lambda c: c["workflow"]["jira-api"].update({"api-token": "s3cret", "enabled": "yes"}),
-             f"{jira}.enabled must be true or false"),
+             "sources.workflow.jira-api.api-token is not filled in"),
             (lambda c: c["local_vault"]["logseq-fs"].update(enabled=True),
              "sources.local_vault.logseq-fs.path is not filled in"),
-            (lambda c: c["local_vault"]["logseq-fs"].update(path=["~/logseq"]),
-             "sources.local_vault.logseq-fs.path must be a string"),
             (json.dumps(bad_root), "output.root must be a string"),
         ]
         for config, expected in cases:
@@ -348,15 +302,6 @@ class CheckConfigTest(ScriptTest):
                 else:
                     self.write_raw(config)
                 self.assert_error(expected)
-
-    def test_every_problem_is_listed(self):
-        def change(c):
-            c["chat"] = {}
-            c["workflow"]["linear-mcp"] = {"enabled": False}
-            c["workflow"]["jira-api"]["enabled"] = True
-        self.write_config(change)
-        out = self.assert_error('unknown group "sources.chat"')
-        self.assertEqual(len(out["errors"]), 5, out["errors"])
 
     @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root can read any file")
     def test_unreadable_config(self):
@@ -384,7 +329,7 @@ class CheckConfigTest(ScriptTest):
             self.assertRegex(value, r"^<.+>$", f"output.{key}")
 
     def test_skill_tables_match_the_template(self):
-        # The SKILL.md's groups table lists the template's groups in order,
+        # The library's SKILL.md groups table lists the template's groups in order,
         # and its channels table the channels its sources use.
         with open(os.path.join(SKILL_DIR, "SKILL.md"), encoding="utf-8") as f:
             skill = f.read()
@@ -400,19 +345,12 @@ class CheckConfigTest(ScriptTest):
                 self.assertEqual(documented, expected)
 
 
-# An install with a file missing, run against a copy of the script.
+# An install with the template missing, run against a copy of the package.
 class InstallTest(ScriptTest):
-    def test_missing_files(self):
-        cases = [
-            ("lib", self.template, False,
-             "agentic-manager-utils-lib is not installed"),
-            ("template", None, True, "config-template.json not found"),
-        ]
-        for name, template, lib, expected in cases:
-            with self.subTest(name):
-                code, out = self.run_with_template(template, lib=lib)
-                self.assertEqual(code, 1, out)
-                self.assertIn(expected, out["errors"][0])
+    def test_missing_template(self):
+        code, out = self.run_without_template()
+        self.assertEqual(code, 1, out)
+        self.assertIn("config-template.json not found", out["errors"][0])
 
 
 if __name__ == "__main__":

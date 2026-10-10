@@ -108,7 +108,7 @@ def read_skip(folder):
     return tuple(d for d in SKIPS if isinstance(skip, list) and d in skip)
 
 
-def expected_files(report_name, skip=(), formats=()):
+def expected_files(report_name, formats=()):
     """Every file an investigation folder holds, and nothing else: the ledger,
     content.json and the report, and a <format>.json and <format>.md for each
     short output."""

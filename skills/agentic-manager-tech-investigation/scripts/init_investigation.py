@@ -6,10 +6,10 @@
 hyphens, such as Payments-Retry-Service. The investigation's folder is
 <Topic>_<YY-MM-DD>, today's date, in the skill's output folder. Every run starts
 from scratch: a folder of the same topic and day is deleted first, so a report
-is always built from fresh research, never from the leftovers of an earlier one
-(the sprint report works the same way), and nothing an earlier run left, on
-this or another day, is read or reused. The new folder gets the ledger's skeleton, with its fixed
-sections and tables, so the agent starts by filling it in. The examples' index,
+is always built from fresh research, never from the leftovers of an earlier one,
+and nothing an earlier run left, on this or another day, is read or reused. The
+new folder gets the ledger's skeleton, with its fixed sections and tables, so
+the agent starts by filling it in. The examples' index,
 _examples/README.md, is written if missing.
 
 Prints one line of JSON:

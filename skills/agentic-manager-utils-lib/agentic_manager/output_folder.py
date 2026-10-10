@@ -2,9 +2,8 @@
 config sets (output.root), or in <system temp>/agentic-manager if it sets none.
 output_folder() creates it if missing, and keeps what is already in it.
 
-Every skill that writes files gets its output folder here. A skill's scripts
-import output_folder(); an agent that writes a skill's files itself runs this
-file, since it must never read the config itself:
+As a script, it prints the folder, so the folder can be known without reading
+the config:
 
     python3 output_folder.py --name <folder name>
 

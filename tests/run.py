@@ -9,7 +9,7 @@ can't be Python packages and `unittest discover` skips them. Instead, each
 tests/<skill>/test_*.py is loaded by file path.
 
 Each skill's tests run in their own Python process. Unit tests import a skill's
-modules by name (common, check_config...), and a process keeps one module per
+modules by name (common, make_report...), and a process keeps one module per
 name, so two skills with a module of the same name would otherwise see each
 other's.
 """

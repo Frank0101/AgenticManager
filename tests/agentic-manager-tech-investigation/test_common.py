@@ -49,15 +49,13 @@ class StructureTest(unittest.TestCase):
 
     def test_expected_files(self):
         base = {"ledgers.md", "content.json", "Acme_Report.md"}
-        cases = [("a full report", (), (), base),
-                 ("evolution skipped", ("evolution",), (), base),
-                 ("architecture skipped", ("architecture",), (), base),
-                 ("with a short output", ("architecture",), ("exec-summary",),
+        cases = [("a report", (), base),
+                 ("with a short output", ("exec-summary",),
                   base | {"exec-summary.json", "exec-summary.md"})]
-        for name, skip, formats, expected in cases:
+        for name, formats, expected in cases:
             with self.subTest(name):
                 self.assertEqual(common.expected_files(
-                    "Acme_Report.md", skip, formats), expected)
+                    "Acme_Report.md", formats), expected)
 
     def test_short_formats(self):
         # Only a <format>.json with its <format>.md; the research artifacts' names are never formats.

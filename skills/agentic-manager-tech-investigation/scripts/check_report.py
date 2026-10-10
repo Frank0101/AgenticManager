@@ -334,10 +334,6 @@ def check_report(report, handover=False):
         if not citations and not re.search(r"https?://[^\s<>]+", row) and not unknown_row:
             errors.append(
                 f"Line {line}: table row needs a point-of-use source link (or a ledger gap link); an unknown owner does not exempt other claims.")
-    if any(language == "mermaid" and diagram_kind(source) != "sequenceDiagram"
-           for _, _, language, source in fences):
-        errors.append(
-            "The report holds sequence diagrams only: remove any map or other diagram.")
     architect = next((i for i, (level, title) in enumerate(actual)
                       if level == 2 and title == "Architect summary"), None)
     for i in range(architect + 1 if architect is not None else len(found), len(found)):
@@ -364,11 +360,10 @@ def check_report(report, handover=False):
     if handover:
         extra = sorted(name for name in os.listdir(report.parent)
                        if not name.startswith(".") and name not in expected_files(
-                           report.name, read_skip(report.parent), short_formats(report.parent)))
+                           report.name, short_formats(report.parent)))
         if extra:
             errors.append("Unexpected files in the investigation folder: " + ", ".join(extra)
                           + ". It holds only the skill's files; keep working files in your own scratch folder.")
-    if handover:
         spans = unlinked_backticks(prose)
         if spans:
             errors.append(backtick_error(report.name, spans))

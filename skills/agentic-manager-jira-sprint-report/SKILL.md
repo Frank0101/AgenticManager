@@ -1,7 +1,7 @@
 ---
 name: agentic-manager-jira-sprint-report
 description: Writes a short, exec-ready report of one Jira sprint, closed or still running - goal outcome, carry-over from the previous sprint, key achievements, blockers and risks, a dated scope timeline (added, descoped, completed) with its commentary, a burndown, delivery by epic and notes for the retro - as Markdown with SVG charts, built from the Jira REST API. Use when the user asks for a sprint report, summary or review, or "how did the sprint go" / "how is the sprint going", for a project, board or sprint.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_folder.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *)
 ---
 
 # Sprint Report
@@ -13,7 +13,7 @@ The report's files go to the `jira-sprint-reports` folder of the user's configur
 A report folder holds only these files, and `finish_report.py` fails on any other. You write only `content.json`; scripts write the rest, and anything else you need goes in your own scratch folder.
 
 ```text
-PROJ_Sprint_3/
+PROJ_Sprint_3_26-10-05/
 ├── _raw/                      prepare_report.py writes (the fetched Jira data)
 ├── data.json                  prepare_report.py writes
 ├── brief.json                 prepare_report.py writes
@@ -26,7 +26,13 @@ PROJ_Sprint_3/
 
 ## Prerequisite
 
-Run `agentic-manager-utils-check-config`. If it fails, stop here.
+Run the config check, by exactly this path so it runs without a permission prompt:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py
+```
+
+It prints one line of JSON. If it fails (`"ok": false`), stop here: show the user its `errors` and `path`, and follow its `next_steps`. If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ available as `python3`, and stop; if the script is missing, tell them to reinstall every skill, and stop. On success, `sources` lists every supported source by group, each with its `tool`, `channel`, whether it is `enabled` and, if not, how to enable it in `setup`; follow `next_steps` too if it is there.
 
 This skill needs the `jira-api` source. If `sources.workflow.jira-api.enabled` isn't `true`, stop and tell the user to enable it, showing its `setup` and the config `path`. The scripts read its settings themselves; never read, pass or show them.
 

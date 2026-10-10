@@ -1,6 +1,6 @@
 """Renders a Mermaid diagram, such as a sequence, with the Mermaid CLI, so it is
-known to draw and shows the same way in every viewer. make_report.py uses its
-functions; run as a script, it tries one diagram:
+known to draw and shows the same way in every viewer. Run as a script, it
+tries one diagram:
 
     python3 output_diagram.py [--png] < diagram.mmd
 
@@ -13,6 +13,8 @@ and adds its "png" path, to inspect the layout visually.
 Fails with a message on stderr and exit 1 if Node.js (npx) isn't available or the
 diagram doesn't render. Node.js is required, not optional: there is no unchecked
 fallback, because a diagram nobody has rendered can't be known to draw.
+
+It lives in this skill, not the library, until another skill needs it.
 """
 import argparse
 import json

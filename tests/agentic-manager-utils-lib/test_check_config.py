@@ -1,5 +1,5 @@
-"""Unit tests for skills/agentic-manager-utils-check-config/scripts/check_config.py.
-Run with: python3 tests/run.py agentic-manager-utils-check-config
+"""Unit tests for skills/agentic-manager-utils-lib/agentic_manager/check_config.py.
+Run with: python3 tests/run.py agentic-manager-utils-lib
 
 They call the script's functions directly with small templates and configs.
 test_e2e_check_config.py runs the whole script against real files.
@@ -16,8 +16,8 @@ from unittest import mock
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
-                os.path.basename(TEST_DIR), "scripts"))
-import check_config  # noqa: E402
+                os.path.basename(TEST_DIR)))
+from agentic_manager import check_config  # noqa: E402
 
 TEMPLATE = {"sources": {
     "workflow": {

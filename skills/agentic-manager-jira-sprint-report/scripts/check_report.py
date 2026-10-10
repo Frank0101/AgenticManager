@@ -485,12 +485,6 @@ def check_timeline(c, table, data):
                 f"{label} end of day is {expected_end!r}")
 
 
-def section_of(md, heading):
-    """The text under a "## " heading, up to the next one, or None."""
-    parts = md.split(f"## {heading}\n", 1)
-    return re.split(r"^## ", parts[1], maxsplit=1, flags=re.M)[0].strip() if len(parts) == 2 else None
-
-
 def check_images(c, md, report_dir):
     embedded = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", md)
     for name in CHART_FILES.values():

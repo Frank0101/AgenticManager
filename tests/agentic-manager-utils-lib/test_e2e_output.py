@@ -103,12 +103,12 @@ class OutputScriptsTest(unittest.TestCase):
         # expected on stderr)
         cases = [
             ("folder without a config", FOLDER_SCRIPT, False, ["--name", "x"], 1,
-             "agentic-manager-utils-check-config"),
+             "check_config.py"),
             ("folder named by a path", FOLDER_SCRIPT, True,
              ["--name", "../x"], 2, "must be a single folder name"),
             ("folder without a name", FOLDER_SCRIPT, True, [], 2, "--name"),
             ("file without a config", FILE_SCRIPT, False, ["--name", "x", "--path", "a.md"], 1,
-             "agentic-manager-utils-check-config"),
+             "check_config.py"),
             ("file out of the folder", FILE_SCRIPT, True, ["--name", "x", "--path", "../a.md"], 1,
              "without .."),
             ("file in a folder named by a path", FILE_SCRIPT, True, ["--name", "../x", "--path", "a.md"], 2,

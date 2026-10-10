@@ -254,11 +254,6 @@ def decision_rows(content, key, items):
     rows = []
     for index, item in enumerate(items, 1):
         item = item if isinstance(item, dict) else {}
-        for old, hint in (("item", "renamed decision"), ("role", "removed"), ("owner", "removed"),
-                          ("status", "removed; the position says where it stands")):
-            if old in item:
-                content.errors.append(
-                    f"{key} {index}.{old}: {hint}; a row has decision, why, position and evidence")
         rows.append([content.text(item.get(field), f"{key} {index}.{field}",
                                   inline=True, trace=field == "evidence")
                      for field in DECISION_FIELDS])
@@ -291,15 +286,10 @@ def skipped(content):
     return [d for d in SKIPS if d in skip]
 
 
-def build(content, folder):
+def build(content):
     """(report text, [Sequence])."""
     data = content.data
     skip = skipped(content)
-    if "roadmap" in data:
-        content.errors.append(
-            "roadmap: removed; the next milestones and the broader direction go in next_steps")
-    if "deep_dive" in data:
-        content.errors.append("deep_dive: renamed current_status")
     if "evolution" in skip and "next_steps" in data:
         content.errors.append(
             "next_steps: evolution is skipped, so the report has no Next steps and evolution")
@@ -317,12 +307,6 @@ def build(content, folder):
         if not architect and key in data:
             content.errors.append(
                 f"{key}: architecture is skipped, so the report has no Architect summary")
-    for key, hint in (("technical_decisions", "renamed decisions_and_gaps"),
-                      ("discrepancies",
-                       "removed; the ledger holds how conflicts were resolved"),
-                      ("remaining_gaps", "removed; a gap is a row of decisions_and_gaps, in full in the ledger")):
-        if key in data:
-            content.errors.append(f"{key}: {hint}")
     decisions = data.get("decisions_and_gaps") if architect else []
     if architect and (not isinstance(decisions, list) or not decisions):
         content.errors.append(
@@ -383,7 +367,7 @@ def make_report(relative):
     topic = topic_of(folder)
     content = Content(load_json(os.path.join(folder, CONTENT)),
                       Ledger(os.path.join(folder, LEDGER)))
-    text, flows = build(content, folder)
+    text, flows = build(content)
     if content.errors:
         raise SystemExit("content.json has problems, so nothing was written:\n  - "
                          + "\n  - ".join(content.errors))

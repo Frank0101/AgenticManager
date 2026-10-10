@@ -114,16 +114,6 @@ class MakeReportTest(unittest.TestCase):
              "next_steps paragraph 2: needs a ledger link"),
             ("a source link is not a ledger link", lambda d: d["key_decisions"][0].update(
                 evidence="[p](https://example.com/p)"), "key_decisions 1.evidence: needs a ledger link"),
-            ("renamed item", lambda d: d["key_decisions"][0].update(item="x"),
-             "key_decisions 1.item: renamed decision"),
-            ("removed status", lambda d: d["decisions_and_gaps"][0].update(status="Open"),
-             "decisions_and_gaps 1.status: removed"),
-            ("removed roadmap", lambda d: d.update(
-                roadmap={}), "roadmap: removed"),
-            ("renamed deep dive", lambda d: d.update(
-                deep_dive=["x"]), "deep_dive: renamed current_status"),
-            ("removed role column", lambda d: d["key_decisions"][0].update(role="Platform lead"),
-             "key_decisions 1.role: removed"),
             ("missing field", lambda d: d["key_decisions"][0].pop(
                 "why"), "key_decisions 1.why: needs text"),
             ("unknown ledger ID", lambda d: d["problem"].append(
@@ -142,15 +132,15 @@ class MakeReportTest(unittest.TestCase):
              "lines must be a list of Mermaid lines"),
             ("sequence not an object", lambda d: stage(d).update(sequence="U->>A: Query"),
              "architecture.current.sequence: must be an object"),
-            ("removed fields", lambda d: stage(d).update(sequences=[QUERY], commentary=["x"], map_gap="y"),
-             "unknown sequences, commentary, map_gap"),
+            ("unknown fields", lambda d: stage(d).update(notes=["x"]),
+             "unknown notes"),
             ("no sequence nor gap", lambda d: stage(d).pop(
                 "sequence"), "needs a sequence, or a flow_gap"),
             ("stage missing", lambda d: d["architecture"].pop(
                 "next"), "architecture.next: missing"),
             ("architecture empty", lambda d: d.update(architecture={}),
              "architecture: needs current and next"),
-            ("old stage names", lambda d: d["architecture"].update(target=stage(d)),
+            ("unknown section", lambda d: d["architecture"].update(target=stage(d)),
              "architecture.target: the report doesn't show this section"),
         ]
         for name, edit, expected in cases:
@@ -287,12 +277,6 @@ class MakeReportTest(unittest.TestCase):
              ["next_steps"]), "the report has no Next steps and evolution"),
             (dict(self.skipping(["architecture"]), decisions_and_gaps=content()["decisions_and_gaps"]),
              "decisions_and_gaps: architecture is skipped"),
-            ({"technical_decisions": []},
-             "technical_decisions: renamed decisions_and_gaps"),
-            ({"discrepancies": "x"}, "discrepancies: removed"),
-            ({"remaining_gaps": "x"}, "remaining_gaps: removed"),
-            ({"decisions_and_gaps": [dict(content()["decisions_and_gaps"][0], owner="Platform lead")]},
-             "decisions_and_gaps 1.owner: removed"),
             (dict(self.skipping(["architecture"]), architecture=content()["architecture"]),
              "architecture: architecture is skipped"),
             (dict(self.skipping(evolution), architecture=content()["architecture"]),

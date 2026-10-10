@@ -98,7 +98,6 @@ class CheckReportTest(unittest.TestCase):
         # Each breakage fails, with an error naming it.
         sequence = "```mermaid\nsequenceDiagram\nautonumber\nClient->>Service: Search\n```"
         text_before = "Architect text with [code](https://example.com/code).\n\n"
-        flowchart = "\n```mermaid\nflowchart LR\nA --> B\n```"
         cases = [
             # Structure
             ("missing section", self.text.replace(
@@ -123,7 +122,6 @@ class CheckReportTest(unittest.TestCase):
                 sequence, sequence + "\n\n#### Second flow\n\n" + sequence, 1), "expected one sequence"),
             ("no text before the sequence", self.text.replace(
                 text_before, "", 1), "add the text before the sequence"),
-            ("a map", self.text + flowchart, "sequence diagrams only"),
         ]
         for name, text, expected in cases:
             with self.subTest(name):
@@ -233,11 +231,6 @@ class CheckReportTest(unittest.TestCase):
                 self.assertIn(f"Unexpected files in the investigation folder: {stray}", " ".join(
                     result["errors"]))
                 (self.folder / stray).unlink()
-        # The maps are gone: their files are unexpected now.
-        for name in ("maps.json", "mermaids.md", "architecture-as-is.svg"):
-            (self.folder / name).write_text("x", encoding="utf-8")
-        self.assertIn("maps.json", " ".join(
-            check_report.check_report(self.report, handover=True)["errors"]))
 
     def test_handover_needs_links_to_sources(self):
         # A register row links its exact reference, a coverage row the material read; a search record is exempt.

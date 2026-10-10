@@ -1,7 +1,7 @@
 """The user's AgenticManager config (~/.config/agentic-manager/config.json):
 where it lives, how it's loaded and when a setting counts as filled in.
 
-agentic-manager-utils-check-config validates the whole config with these rules,
+check_config.py validates the whole config with these rules,
 but never returns setting values, which can be secrets such as tokens. A script
 that needs a source's settings reads them with read_source(), so the values
 never reach the agent or the chat. The folder a skill writes its files to is in
@@ -17,7 +17,7 @@ CONFIG_PATH = os.path.join(os.path.expanduser(
 # A setting still holding its template placeholder, e.g. "<token>".
 PLACEHOLDER = re.compile(r"^<.*>$")
 
-FIX = "Run agentic-manager-utils-check-config to see how to fix it."
+FIX = "Run agentic_manager/check_config.py to see how to fix it."
 
 
 def reject_duplicates(pairs):

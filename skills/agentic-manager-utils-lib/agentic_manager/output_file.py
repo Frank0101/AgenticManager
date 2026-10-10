@@ -14,6 +14,8 @@ With --patch, stdin is a nonempty JSON array of {"old": "...", "new": "..."}
 replacements for an existing UTF-8 file. Each old string must be nonempty and
 match exactly once, in sequence. All replacements are validated before writing;
 a malformed, missing or ambiguous match leaves the file unchanged.
+Concurrent edits can invalidate the expected text, so a conflicting patch is
+rejected rather than merged.
 
 It never writes outside the skill's output folder: an absolute path, a ".."
 step or a symbolic link leading out of it is refused. Only output.root is read

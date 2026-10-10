@@ -85,7 +85,7 @@ class ConfigTest(unittest.TestCase):
         # Each failure says what to fix, never showing a setting's value.
         jira = self.jira()["sources"]["workflow"]["jira-api"]
         not_enabled = "sources.workflow.jira-api is not enabled"
-        fix = "Run agentic-manager-utils-check-config to see how to fix it"
+        fix = "Run agentic_manager/check_config.py to see how to fix it"
         cases = [
             (None, "could not read"), (None, fix), ("nope", "could not read"),
             ({}, not_enabled), ({"sources": []},

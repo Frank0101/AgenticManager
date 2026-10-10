@@ -1,7 +1,7 @@
 ---
 name: agentic-manager-tech-investigation
 description: Investigates a technical system, proposal, capability or engineering problem by triangulating the team's documentation (the vision), work tracker (the delivery) and source control (the implementation), and iterates until it converges on an evidence-backed account of the current state, the current milestone and the directional target architecture, with a fixed executive/product layer and architect layer, one Mermaid sequence diagram for each architect section, and a detailed research queue and evidence ledger. Also produces short outputs, such as an exec summary, from the same full investigation. Use when the user asks to investigate, map or explain a system or proposal, asks what exists today versus what is planned, or asks for its architecture, current milestone, first iteration or target state.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_folder.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_investigation.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/ledger.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/save_example.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/output_diagram.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_investigation.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/ledger.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/save_example.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/output_diagram.py *)
 ---
 
 # Tech Investigation
@@ -21,7 +21,13 @@ You do the research and write what needs judgment: the ledger and the report's t
 
 ## Prerequisite
 
-Run `agentic-manager-utils-check-config`. If it fails, stop here.
+Run the config check, by exactly this path so it runs without a permission prompt:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py
+```
+
+It prints one line of JSON. If it fails (`"ok": false`), stop here: show the user its `errors` and `path`, and follow its `next_steps`. If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ available as `python3`, and stop; if the script is missing, tell them to reinstall every skill, and stop. On success, `sources` lists every supported source by group, each with its `tool`, `channel`, whether it is `enabled` and, if not, how to enable it in `setup`; follow `next_steps` too if it is there.
 
 This skill needs sources of three groups, each the evidence for one side of the picture:
 
@@ -44,15 +50,15 @@ Other enabled groups, such as a local vault or messaging, aren't evidence for th
 
 `<lib>` is the shared library's folder, `${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager`, and `<scripts>` this skill's `scripts` folder, `${CLAUDE_SKILL_DIR}/scripts`. Call the scripts by exactly those paths so they run without a permission prompt. Each prints one line of JSON, or what's wrong on standard error with a non-zero exit (`make_report.py` and `check_report.py` report a failed check as `"ok": false` and an `errors` list in that JSON, also with a non-zero exit); handle the cases named below, and otherwise stop and report it. `<investigation>` is the folder name `init_investigation.py` prints.
 
-| Script                                                                        | What it does                                                                                                             |
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `<scripts>/init_investigation.py --topic <Topic> [--format <format>]`         | Creates or finds the investigation's folder and its ledger skeleton, and lists the approved examples (step 1).           |
-| `<scripts>/make_report.py --investigation <investigation>`                    | Writes `<Topic>_Report.md` from `content.json`, then checks it ([The document](#the-document)).                          |
-| `<scripts>/make_summary.py --investigation <investigation> --format <format>` | Writes a short output, `<format>.md`, from `<format>.json` (step 6).                                                     |
-| `<scripts>/check_report.py --report '<absolute report path>' [--handover]`    | Checks the report, its local files and the ledger's structure, read-only (step 5).                                       |
-| `<scripts>/ledger.py <command> --investigation <investigation> ...`           | Edits and reads the ledger by ID ([The ledger](#the-ledger)).                                                            |
-| `<scripts>/save_example.py ...`                                               | Keeps an approved document as an example (step 7).                                                                       |
-| `<scripts>/output_diagram.py [--png] < diagram.mmd`                           | Renders one sequence to try it, writing nothing to the folder: its `width` and `height`, and a PNG preview with `--png`. |
+| Script                                                                        | What it does                                                                                                                                     |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `<scripts>/init_investigation.py --topic <Topic> [--format <format>]`         | Creates the investigation's folder, replacing one of the same topic and day, with its ledger skeleton, and lists the approved examples (step 1). |
+| `<scripts>/make_report.py --investigation <investigation>`                    | Writes `<Topic>_Report.md` from `content.json`, then checks it ([The document](#the-document)).                                                  |
+| `<scripts>/make_summary.py --investigation <investigation> --format <format>` | Writes a short output, `<format>.md`, from `<format>.json` (step 6).                                                                             |
+| `<scripts>/check_report.py --report '<absolute report path>' [--handover]`    | Checks the report, its local files and the ledger's structure, read-only (step 5).                                                               |
+| `<scripts>/ledger.py <command> --investigation <investigation> ...`           | Edits and reads the ledger by ID ([The ledger](#the-ledger)).                                                                                    |
+| `<scripts>/save_example.py ...`                                               | Keeps an approved document as an example (step 7).                                                                                               |
+| `<scripts>/output_diagram.py [--png] < diagram.mmd`                           | Renders one sequence to try it, writing nothing to the folder: its `width` and `height`, and a PNG preview with `--png`.                         |
 
 Write your own files, `ledgers.md`, `content.json` and a short output's `<format>.json`, with the library's `output_file.py`, never with your own file tools. It takes the file's whole content on standard input, replaces the file if it exists, and creates missing folders. `--path` is relative to the skill's output folder, `tech-investigations`:
 
@@ -195,7 +201,7 @@ Then:
 
 1. Choose a short, filename-safe `<Topic>`, capitalised words separated by hyphens, such as `Payments-Retry-Service`; honour a name the user gives.
 2. Run `python3 <scripts>/init_investigation.py --topic <Topic> --format <format>`, where `<format>` is `long-analysis` or the short format asked for (such as `exec-summary`). If it fails, stop. It prints the `folder`, whether it is `temporary`, `<investigation>` (`<Topic>_<YY-MM-DD>`) and `investigation_dir`, and writes the ledger skeleton and the examples' index. Every run starts from scratch: a folder of the same topic and day is deleted first (`replaced` says so), so tell the user before you run it when one exists, and never build on what an earlier run left.
-3. Never read or reuse what an earlier run left, on this or another day: its ledger and report included. Search and read every source again from the topic alone, as the sprint report fetches Jira again.
+3. Never read or reuse what an earlier run left, on this or another day: its ledger and report included. Search and read every source again from the topic alone.
 4. Skim an approved `examples` entry of that format for tone only. Never reuse a fact, status or claim from one.
 
 The folder ends up like this:
@@ -320,6 +326,7 @@ Every investigation writes `<Topic>_Report.md` with two layers, an executive/pro
 }
 ```
 
+- `evidence_snapshot` is the date, `YYYY-MM-DD`, when you last checked the evidence; the report states it under the title.
 - Text is Markdown: paragraphs are list items, table cells and references are one line each. No `#` to `###` headings (`####` is fine), code fences or HTML.
 - Link the ledger as `[F03](ledger:F03)`: the script resolves the ID and fails on one the ledger doesn't have. `[ledger](ledger:)` links the ledger itself.
 - Every claim traces to the ledger, which links the original sources: each paragraph, each `flow_gap`, each `why` and each decision's `evidence` carries a ledger link, and the script fails on one that doesn't. Every table row also needs a source link or a ledger link beside its claim; a row whose every cell is a gap ("Not established", "Unverified") needs no source link.
@@ -362,7 +369,7 @@ Record its practical outcome, first use case, component changes, execution flow 
 
 ## Diagrams
 
-The report has no architecture maps for now. Each Architect summary section ends with one Mermaid sequence diagram, from `content.json`. It derives from ledger evidence and adds no new claims. Before drawing a flow, tie each material interaction to a finding that supports its responsibility and endpoints. Where the actor, runtime or call target is unspecified, mark the boundary unresolved or use a note rather than invent a call. Keep independent author/reviewer or requester/approver roles apart.
+Each Architect summary section ends with one Mermaid sequence diagram, from `content.json`. It derives from ledger evidence and adds no new claims. Before drawing a flow, tie each material interaction to a finding that supports its responsibility and endpoints. Where the actor, runtime or call target is unspecified, mark the boundary unresolved or use a note rather than invent a call. Keep independent author/reviewer or requester/approver roles apart.
 
 - **One flow per section, the one that explains most.** Don't combine independent entry paths into a fictional end-to-end operation, or use `par` unless they run concurrently in one operation; say in the text what the diagram leaves out. Without an evidenced caller, start from a generic `Client / operator` actor.
 - **Names:** use the names the text and the ledger use, don't rename a concrete service to a generic responsibility, and show an internal module as an action of its parent service. Write a human role as a bracketed qualifier ("Client / operator (source owner)"), not a new actor.
