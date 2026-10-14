@@ -179,3 +179,5 @@ Python files are formatted with autopep8 and Markdown and JSON files with Pretti
 ## Committing
 
 Commit and push only when the developer asks, on the branch that is checked out, even if it is the default branch; create a branch or a pull request only when they ask for one.
+
+A developer may keep rules for their own machine, such as how to commit, in an `AGENTS.local.md` at the repo root; it is gitignored. When it exists, follow it as well as this file.
