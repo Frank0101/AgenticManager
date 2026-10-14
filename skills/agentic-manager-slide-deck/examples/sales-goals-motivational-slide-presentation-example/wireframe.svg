@@ -1,0 +1,216 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#bfd6ed" />
+      <stop offset="1" stop-color="#dfeaf6" />
+    </linearGradient>
+    <clipPath id="c1">
+      <rect x="0" y="0" width="1100" height="160" />
+    </clipPath>
+    <clipPath id="c2">
+      <rect x="0" y="0" width="1100" height="153" />
+    </clipPath>
+    <clipPath id="c3">
+      <rect x="0" y="0" width="1100" height="125" />
+    </clipPath>
+    <clipPath id="c4">
+      <rect x="0" y="0" width="1100" height="219" />
+    </clipPath>
+    <clipPath id="c5">
+      <rect x="0" y="0" width="1100" height="268" />
+    </clipPath>
+  </defs>
+  <rect x="0" y="0" width="1100" height="618" fill="url(#sky)" />
+  <!-- clouds, flat at their base -->
+  <g clip-path="url(#c1)" fill="#ffffff" opacity="0.8">
+    <circle cx="350" cy="92" r="65" fill="#ffffff" />
+    <circle cx="290" cy="140" r="32" fill="#ffffff" />
+    <circle cx="450" cy="135" r="28" fill="#ffffff" />
+    <circle cx="400" cy="130" r="40" fill="#ffffff" />
+    <circle cx="262" cy="150" r="18" fill="#ffffff" />
+  </g>
+  <g clip-path="url(#c2)" fill="#ffffff" opacity="0.8">
+    <circle cx="190" cy="128" r="22" fill="#ffffff" />
+    <circle cx="213" cy="132" r="18" fill="#ffffff" />
+    <circle cx="178" cy="143" r="14" fill="#ffffff" />
+  </g>
+  <g clip-path="url(#c3)" fill="#ffffff" opacity="0.8">
+    <circle cx="530" cy="78" r="36" fill="#ffffff" />
+    <circle cx="568" cy="95" r="24" fill="#ffffff" />
+    <circle cx="505" cy="105" r="20" fill="#ffffff" />
+  </g>
+  <g clip-path="url(#c4)" fill="#ffffff" opacity="0.8">
+    <circle cx="585" cy="197" r="25" fill="#ffffff" />
+    <circle cx="617" cy="205" r="18" fill="#ffffff" />
+    <circle cx="560" cy="210" r="14" fill="#ffffff" />
+    <circle cx="645" cy="212" r="12" fill="#ffffff" />
+  </g>
+  <g clip-path="url(#c5)" fill="#ffffff" opacity="0.8">
+    <circle cx="770" cy="250" r="18" fill="#ffffff" />
+    <circle cx="790" cy="256" r="14" fill="#ffffff" />
+    <circle cx="752" cy="260" r="10" fill="#ffffff" />
+  </g>
+  <!-- mountain: white path base, then its faces; the stairs run down-right to the bottom edge -->
+  <polygon
+    points="222,618 305,345 362,238 459,161 490,172 595,298 645,324 700,416 745,474 1000,618"
+    fill="#f6f6f6"
+  />
+  <polygon
+    points="459,161 490,172 595,298 550,295 484,250 403,238"
+    fill="#2f78bd"
+  />
+  <polygon points="361,239 439,256 350,315" fill="#2a6fb4" />
+  <polygon
+    points="222,618 305,345 310,343 310.0,343.0 332.5,343.0 332.5,362.6 355.0,362.6 355.0,382.3 377.5,382.3 377.5,401.9 400.0,401.9 400.0,421.6 422.5,421.6 422.5,441.2 445.0,441.2 445.0,460.9 467.5,460.9 467.5,480.5 490.0,480.5 490.0,500.1 512.5,500.1 512.5,519.8 535.0,519.8 535.0,539.4 557.5,539.4 557.5,559.1 580.0,559.1 580.0,578.7 602.5,578.7 602.5,598.4 625.0,598.4 625,618 625,618"
+    fill="#1d65a8"
+  />
+  <polygon
+    points="484,250 550,295 595,298 645,324 700,416 745,474 1000,618 860,618 860,618 860.0,600.7 830.1,600.7 830.1,583.4 800.2,583.4 800.2,566.1 770.4,566.1 770.4,548.8 740.5,548.8 740.5,531.4 710.6,531.4 710.6,514.1 680.8,514.1 680.8,496.8 650.9,496.8 650.9,479.5 621.0,479.5 621.0,462.2 591.1,462.2 591.1,444.9 561.2,444.9 561.2,427.6 531.4,427.6 531.4,410.2 501.5,410.2 501.5,392.9 471.6,392.9 471.6,375.6 441.8,375.6 441.8,358.3 411.9,358.3 411.9,341.0 382.0,341.0 382,341"
+    fill="#0b5a96"
+  />
+  <polygon points="555,300 590,290 612,318 570,322" fill="#0a4677" />
+  <!-- flag on the summit -->
+  <rect x="458" y="88" width="2.5" height="74" fill="#666" />
+  <polygon points="408,96 458,90 458,112 428,122 418,110" fill="#ff5b4a" />
+  <!-- a figure running up the stairs -->
+  <path
+    d="M785,500 L748,548 L712,580 M812,502 L868,552 L912,560"
+    fill="none"
+    stroke="#333"
+    stroke-width="17"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <rect x="700" y="576" width="26" height="12" rx="4" fill="#222" />
+  <rect x="902" y="552" width="14" height="30" rx="4" fill="#222" />
+  <rect
+    x="758"
+    y="444"
+    width="72"
+    height="62"
+    rx="14"
+    fill="#f0f0f0"
+    transform="rotate(-12 794 475)"
+  />
+  <path d="M768,458 L730,468" fill="none" stroke="#f0f0f0" stroke-width="11" />
+  <circle cx="727" cy="468" r="6" fill="#f1c6a5" />
+  <path d="M818,456 L852,468" fill="none" stroke="#f0f0f0" stroke-width="11" />
+  <polygon points="852,470 893,452 925,490 888,524 858,505" fill="#4a4a4a" />
+  <circle cx="772" cy="428" r="14" fill="#2a2a2a" />
+  <circle cx="766" cy="434" r="8" fill="#f1c6a5" />
+  <!-- goals: heading, text, a dot and a dashed leader to the mountain -->
+  <text
+    x="826"
+    y="95"
+    font-size="20"
+    font-weight="700"
+    fill="#222"
+    text-anchor="start"
+  >
+    Goal heading
+  </text>
+  <text
+    x="826"
+    y="119"
+    font-size="20"
+    font-weight="700"
+    fill="#222"
+    text-anchor="start"
+  >
+    on three
+  </text>
+  <text
+    x="826"
+    y="143"
+    font-size="20"
+    font-weight="700"
+    fill="#222"
+    text-anchor="start"
+  >
+    lines
+  </text>
+  <rect x="826" y="157.8" width="155" height="6.4" fill="#555" />
+  <rect x="826" y="175.3" width="185" height="6.4" fill="#555" />
+  <rect x="826" y="192.8" width="190" height="6.4" fill="#555" />
+  <rect x="826" y="210.3" width="160" height="6.4" fill="#555" />
+  <rect x="826" y="226.0" width="35" height="10" fill="#555" />
+  <circle cx="788" cy="160" r="6" fill="#222" />
+  <path
+    d="M788,160 L480,160"
+    fill="none"
+    stroke="#555"
+    stroke-width="1.3"
+    stroke-dasharray="6 4"
+  />
+  <text
+    x="257"
+    y="222"
+    font-size="20"
+    font-weight="700"
+    fill="#222"
+    text-anchor="end"
+  >
+    Goal heading
+  </text>
+  <text
+    x="257"
+    y="246"
+    font-size="20"
+    font-weight="700"
+    fill="#222"
+    text-anchor="end"
+  >
+    on two lines
+  </text>
+  <rect x="79" y="260.8" width="178" height="6.4" fill="#555" />
+  <rect x="87" y="278.3" width="170" height="6.4" fill="#555" />
+  <rect x="210" y="295.8" width="47" height="6.4" fill="#555" />
+  <circle cx="294" cy="251" r="6" fill="#222" />
+  <path
+    d="M294,251 L458,251"
+    fill="none"
+    stroke="#555"
+    stroke-width="1.3"
+    stroke-dasharray="6 4"
+  />
+  <text
+    x="220"
+    y="389"
+    font-size="20"
+    font-weight="700"
+    fill="#222"
+    text-anchor="end"
+  >
+    Goal heading
+  </text>
+  <text
+    x="220"
+    y="413"
+    font-size="20"
+    font-weight="700"
+    fill="#222"
+    text-anchor="end"
+  >
+    on two lines
+  </text>
+  <rect x="80" y="427.8" width="140" height="6.4" fill="#555" />
+  <rect x="80" y="445.3" width="140" height="6.4" fill="#555" />
+  <rect x="90" y="462.8" width="130" height="6.4" fill="#555" />
+  <rect x="100" y="480.3" width="120" height="6.4" fill="#555" />
+  <rect x="135" y="497.8" width="85" height="6.4" fill="#555" />
+  <circle cx="254" cy="416" r="6" fill="#222" />
+  <path
+    d="M254,416 L458,416"
+    fill="none"
+    stroke="#555"
+    stroke-width="1.3"
+    stroke-dasharray="6 4"
+  />
+  <rect x="228" y="438" width="257" height="1.5" fill="#ffffff" opacity="0.8" />
+</svg>

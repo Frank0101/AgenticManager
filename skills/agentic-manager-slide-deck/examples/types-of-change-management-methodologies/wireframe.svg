@@ -1,0 +1,355 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <rect x="0" y="0" width="1100" height="618" fill="#f7f7f7" />
+  <text
+    x="65"
+    y="72"
+    font-size="36"
+    font-weight="400"
+    fill="#444"
+    text-anchor="start"
+  >
+    Title
+  </text>
+  <rect x="132.5" y="98.34" width="125" height="8.32" fill="#555" />
+  <rect x="145.0" y="119.34" width="100" height="8.32" fill="#555" />
+  <rect x="487.5" y="98.34" width="125" height="8.32" fill="#555" />
+  <rect x="500.0" y="119.34" width="100" height="8.32" fill="#555" />
+  <rect x="834.5" y="98.34" width="125" height="8.32" fill="#555" />
+  <rect x="847.0" y="119.34" width="100" height="8.32" fill="#555" />
+  <polygon
+    points="63,150 343,150 365,187 343,225 63,225 100,187"
+    fill="#1f6fb8"
+  />
+  <circle cx="311" cy="187" r="17" fill="#ffffff" />
+  <text
+    x="272"
+    y="194"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="end"
+  >
+    STEP
+  </text>
+  <rect x="382" y="150" width="335" height="75" fill="#dcdcdc" />
+  <polygon points="540,225 560,225 550,235" fill="#dcdcdc" />
+  <circle cx="418" cy="187" r="17" fill="#1f6fb8" />
+  <rect x="458" y="168.16" width="195" height="7.68" fill="#444" />
+  <rect x="458" y="184.16" width="180" height="7.68" fill="#444" />
+  <rect x="458" y="200.16" width="90" height="7.68" fill="#444" />
+  <polygon
+    points="1033,150 755,150 733,187 755,225 1033,225 996,187"
+    fill="#1f6fb8"
+  />
+  <circle cx="779" cy="187" r="17" fill="#ffffff" />
+  <text
+    x="815"
+    y="194"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    STEP
+  </text>
+  <polygon
+    points="63,237 343,237 365,274 343,312 63,312 100,274"
+    fill="#f26a21"
+  />
+  <circle cx="311" cy="274" r="17" fill="#ffffff" />
+  <text
+    x="272"
+    y="281"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="end"
+  >
+    STEP
+  </text>
+  <rect x="382" y="237" width="335" height="75" fill="#dcdcdc" />
+  <polygon points="540,312 560,312 550,322" fill="#dcdcdc" />
+  <circle cx="418" cy="274" r="17" fill="#f26a21" />
+  <rect x="458" y="255.16" width="195" height="7.68" fill="#444" />
+  <rect x="458" y="271.16" width="180" height="7.68" fill="#444" />
+  <rect x="458" y="287.16" width="90" height="7.68" fill="#444" />
+  <polygon
+    points="1033,237 755,237 733,274 755,312 1033,312 996,274"
+    fill="#f26a21"
+  />
+  <circle cx="779" cy="274" r="17" fill="#ffffff" />
+  <text
+    x="815"
+    y="281"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    STEP
+  </text>
+  <polygon
+    points="63,325 343,325 365,362 343,400 63,400 100,362"
+    fill="#0d9e4f"
+  />
+  <circle cx="311" cy="362" r="17" fill="#ffffff" />
+  <text
+    x="272"
+    y="369"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="end"
+  >
+    STEP
+  </text>
+  <rect x="382" y="325" width="335" height="75" fill="#dcdcdc" />
+  <polygon points="540,400 560,400 550,410" fill="#dcdcdc" />
+  <circle cx="418" cy="362" r="17" fill="#0d9e4f" />
+  <rect x="458" y="343.16" width="195" height="7.68" fill="#444" />
+  <rect x="458" y="359.16" width="180" height="7.68" fill="#444" />
+  <rect x="458" y="375.16" width="90" height="7.68" fill="#444" />
+  <polygon
+    points="1033,325 755,325 733,362 755,400 1033,400 996,362"
+    fill="#0d9e4f"
+  />
+  <circle cx="779" cy="362" r="17" fill="#ffffff" />
+  <text
+    x="815"
+    y="369"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    STEP
+  </text>
+  <polygon
+    points="63,412 343,412 365,449 343,487 63,487 100,449"
+    fill="#c8102e"
+  />
+  <circle cx="311" cy="449" r="17" fill="#ffffff" />
+  <text
+    x="272"
+    y="456"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="end"
+  >
+    STEP
+  </text>
+  <rect x="382" y="412" width="335" height="75" fill="#dcdcdc" />
+  <polygon points="540,487 560,487 550,497" fill="#dcdcdc" />
+  <circle cx="418" cy="449" r="17" fill="#c8102e" />
+  <rect x="458" y="430.16" width="195" height="7.68" fill="#444" />
+  <rect x="458" y="446.16" width="180" height="7.68" fill="#444" />
+  <rect x="458" y="462.16" width="90" height="7.68" fill="#444" />
+  <polygon
+    points="1033,412 755,412 733,449 755,487 1033,487 996,449"
+    fill="#c8102e"
+  />
+  <circle cx="779" cy="449" r="17" fill="#ffffff" />
+  <text
+    x="815"
+    y="456"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    STEP
+  </text>
+  <polygon
+    points="63,500 343,500 365,537 343,575 63,575 100,537"
+    fill="#7f7f7f"
+  />
+  <circle cx="311" cy="537" r="17" fill="#ffffff" />
+  <text
+    x="272"
+    y="544"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="end"
+  >
+    STEP
+  </text>
+  <rect x="382" y="500" width="335" height="75" fill="#dcdcdc" />
+  <polygon points="540,575 560,575 550,585" fill="#dcdcdc" />
+  <circle cx="418" cy="537" r="17" fill="#7f7f7f" />
+  <rect x="458" y="518.16" width="195" height="7.68" fill="#444" />
+  <rect x="458" y="534.16" width="180" height="7.68" fill="#444" />
+  <rect x="458" y="550.16" width="90" height="7.68" fill="#444" />
+  <polygon
+    points="1033,500 755,500 733,537 755,575 1033,575 996,537"
+    fill="#7f7f7f"
+  />
+  <circle cx="779" cy="537" r="17" fill="#ffffff" />
+  <text
+    x="815"
+    y="544"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    STEP
+  </text>
+  <text
+    x="311"
+    y="194"
+    font-size="20"
+    font-weight="700"
+    fill="#555"
+    text-anchor="middle"
+  >
+    D
+  </text>
+  <text
+    x="418"
+    y="194"
+    font-size="20"
+    font-weight="700"
+    fill="#fff"
+    text-anchor="middle"
+  >
+    U
+  </text>
+  <text
+    x="779"
+    y="194"
+    font-size="20"
+    font-weight="700"
+    fill="#555"
+    text-anchor="middle"
+  >
+    A
+  </text>
+  <text
+    x="311"
+    y="281"
+    font-size="20"
+    font-weight="700"
+    fill="#555"
+    text-anchor="middle"
+  >
+    M
+  </text>
+  <text
+    x="418"
+    y="281"
+    font-size="20"
+    font-weight="700"
+    fill="#fff"
+    text-anchor="middle"
+  >
+    S
+  </text>
+  <text
+    x="779"
+    y="281"
+    font-size="20"
+    font-weight="700"
+    fill="#555"
+    text-anchor="middle"
+  >
+    D
+  </text>
+  <text
+    x="311"
+    y="369"
+    font-size="20"
+    font-weight="700"
+    fill="#555"
+    text-anchor="middle"
+  >
+    A
+  </text>
+  <text
+    x="418"
+    y="369"
+    font-size="20"
+    font-weight="700"
+    fill="#fff"
+    text-anchor="middle"
+  >
+    D
+  </text>
+  <text
+    x="779"
+    y="369"
+    font-size="20"
+    font-weight="700"
+    fill="#555"
+    text-anchor="middle"
+  >
+    K
+  </text>
+  <text
+    x="311"
+    y="456"
+    font-size="20"
+    font-weight="700"
+    fill="#555"
+    text-anchor="middle"
+  >
+    I
+  </text>
+  <text
+    x="418"
+    y="456"
+    font-size="20"
+    font-weight="700"
+    fill="#fff"
+    text-anchor="middle"
+  >
+    I
+  </text>
+  <text
+    x="779"
+    y="456"
+    font-size="20"
+    font-weight="700"
+    fill="#555"
+    text-anchor="middle"
+  >
+    A
+  </text>
+  <text
+    x="311"
+    y="544"
+    font-size="20"
+    font-weight="700"
+    fill="#555"
+    text-anchor="middle"
+  >
+    C
+  </text>
+  <text
+    x="418"
+    y="544"
+    font-size="20"
+    font-weight="700"
+    fill="#fff"
+    text-anchor="middle"
+  >
+    S
+  </text>
+  <text
+    x="779"
+    y="544"
+    font-size="20"
+    font-weight="700"
+    fill="#555"
+    text-anchor="middle"
+  >
+    R
+  </text>
+</svg>

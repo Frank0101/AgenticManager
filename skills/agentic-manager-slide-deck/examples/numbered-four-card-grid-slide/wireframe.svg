@@ -1,0 +1,166 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <rect x="0" y="0" width="1100" height="618.8" fill="#ffffff" />
+  <!-- eyebrow with a short teal rule, then the title -->
+  <rect x="57.4" y="39.3" width="18.1" height="3" fill="#1f8a70" />
+  <rect x="83.9" y="37.8" width="173.8" height="9.8" fill="#1f8a70" />
+  <text
+    x="57.4"
+    y="95.2"
+    font-size="30.2"
+    font-weight="700"
+    fill="#14213d"
+    text-anchor="start"
+  >
+    Title
+  </text>
+  <!-- two-by-two grid of outlined cards: number badge, heading, paragraph -->
+  <rect
+    x="57.4"
+    y="144.3"
+    width="481.2"
+    height="202.5"
+    fill="#ffffff"
+    rx="10.6"
+    stroke="#e3e5e8"
+    stroke-width="1"
+  />
+  <rect x="75.5" y="163.2" width="30.2" height="28.7" fill="#14213d" rx="5.3" />
+  <text
+    x="90.7"
+    y="183.6"
+    font-size="13.6"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    1
+  </text>
+  <rect x="115.6" y="167.7" width="287.1" height="12.8" fill="#3a4252" />
+  <rect x="75.5" y="213.8" width="433.7" height="9.8" fill="#c9cdd3" />
+  <rect x="75.5" y="233.4" width="423.1" height="9.8" fill="#c9cdd3" />
+  <rect x="75.5" y="253.1" width="440.5" height="9.8" fill="#c9cdd3" />
+  <rect x="75.5" y="272.7" width="60.4" height="9.8" fill="#c9cdd3" />
+  <rect
+    x="562.1"
+    y="144.3"
+    width="481.2"
+    height="202.5"
+    fill="#ffffff"
+    rx="10.6"
+    stroke="#e3e5e8"
+    stroke-width="1"
+  />
+  <rect
+    x="580.2"
+    y="163.2"
+    width="30.2"
+    height="28.7"
+    fill="#14213d"
+    rx="5.3"
+  />
+  <text
+    x="595.3"
+    y="183.6"
+    font-size="13.6"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    2
+  </text>
+  <rect x="620.3" y="167.7" width="317.3" height="12.8" fill="#3a4252" />
+  <rect x="580.2" y="213.8" width="433.7" height="9.8" fill="#c9cdd3" />
+  <rect x="580.2" y="233.4" width="423.1" height="9.8" fill="#c9cdd3" />
+  <rect x="580.2" y="253.1" width="440.5" height="9.8" fill="#c9cdd3" />
+  <rect x="580.2" y="272.7" width="60.4" height="9.8" fill="#c9cdd3" />
+  <rect
+    x="57.4"
+    y="359.6"
+    width="481.2"
+    height="202.5"
+    fill="#ffffff"
+    rx="10.6"
+    stroke="#e3e5e8"
+    stroke-width="1"
+  />
+  <rect x="75.5" y="378.5" width="30.2" height="28.7" fill="#14213d" rx="5.3" />
+  <text
+    x="90.7"
+    y="398.9"
+    font-size="13.6"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    3
+  </text>
+  <rect x="115.6" y="383" width="287.1" height="12.8" fill="#3a4252" />
+  <rect x="75.5" y="429.1" width="433.7" height="9.8" fill="#c9cdd3" />
+  <rect x="75.5" y="448.8" width="423.1" height="9.8" fill="#c9cdd3" />
+  <rect x="75.5" y="468.4" width="440.5" height="9.8" fill="#c9cdd3" />
+  <rect x="75.5" y="488" width="60.4" height="9.8" fill="#c9cdd3" />
+  <rect
+    x="562.1"
+    y="359.6"
+    width="481.2"
+    height="202.5"
+    fill="#ffffff"
+    rx="10.6"
+    stroke="#e3e5e8"
+    stroke-width="1"
+  />
+  <rect
+    x="580.2"
+    y="378.5"
+    width="30.2"
+    height="28.7"
+    fill="#14213d"
+    rx="5.3"
+  />
+  <text
+    x="595.3"
+    y="398.9"
+    font-size="13.6"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    4
+  </text>
+  <rect x="620.3" y="383" width="317.3" height="12.8" fill="#3a4252" />
+  <rect x="580.2" y="429.1" width="433.7" height="9.8" fill="#c9cdd3" />
+  <rect x="580.2" y="448.8" width="423.1" height="9.8" fill="#c9cdd3" />
+  <rect x="580.2" y="468.4" width="440.5" height="9.8" fill="#c9cdd3" />
+  <rect x="580.2" y="488" width="60.4" height="9.8" fill="#c9cdd3" />
+  <!-- date, page number, footer and logo -->
+  <rect x="953.4" y="30.2" width="83.1" height="6.8" fill="#c9cdd3" />
+  <rect x="34.8" y="579.5" width="6.8" height="8.3" fill="#c9cdd3" />
+  <rect x="64.2" y="574.2" width="211.5" height="7.6" fill="#c9cdd3" />
+  <rect x="64.2" y="587" width="54.4" height="7.6" fill="#c9cdd3" />
+  <!-- logo -->
+  <rect
+    x="974.6"
+    y="572.7"
+    width="86.9"
+    height="15.1"
+    fill="none"
+    stroke="#9aa1ab"
+    stroke-width="1"
+  />
+  <text
+    x="1017.7"
+    y="584"
+    font-size="9.1"
+    font-weight="400"
+    fill="#9aa1ab"
+    text-anchor="middle"
+  >
+    Logo
+  </text>
+</svg>

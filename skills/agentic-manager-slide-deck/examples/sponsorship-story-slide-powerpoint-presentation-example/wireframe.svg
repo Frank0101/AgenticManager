@@ -1,0 +1,173 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5183a7" />
+      <stop offset="1" stop-color="#8f3e8d" />
+    </linearGradient>
+    <pattern id="dots" width="14" height="14" patternUnits="userSpaceOnUse">
+      <circle cx="7" cy="7" r="2" fill="#58476f" opacity=".28" />
+    </pattern>
+    <linearGradient id="dot-fade">
+      <stop stop-color="white" stop-opacity="0" />
+      <stop offset="1" stop-color="white" />
+    </linearGradient>
+    <mask id="dot-mask">
+      <rect x="600" y="0" width="500" height="618" fill="url(#dot-fade)" />
+    </mask>
+  </defs>
+  <rect x="0" y="0" width="1100" height="618" fill="url(#g)" />
+  <rect
+    x="600"
+    y="0"
+    width="500"
+    height="618"
+    fill="url(#dots)"
+    mask="url(#dot-mask)"
+  />
+  <path
+    d="M780 295a105 105 0 1 1 124 123M658 495l-30-32"
+    fill="none"
+    stroke="#914fa2"
+    stroke-width="35"
+    stroke-linecap="round"
+    opacity=".55"
+  />
+  <circle cx="45" cy="50" r="22" fill="#ffffff" opacity="0.35" />
+  <circle cx="68" cy="40" r="30" fill="#ffffff" opacity="0.45" />
+  <text
+    x="55"
+    y="140"
+    font-size="44"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    Title
+  </text>
+  <rect x="57" y="197.7" width="370" height="9.6" fill="#f1eef6" />
+  <rect x="57" y="224.7" width="385" height="9.6" fill="#f1eef6" />
+  <rect x="57" y="251.7" width="385" height="9.6" fill="#f1eef6" />
+  <rect x="57" y="278.7" width="400" height="9.6" fill="#f1eef6" />
+  <rect x="57" y="305.7" width="265" height="9.6" fill="#f1eef6" />
+  <rect x="57" y="362.7" width="435" height="9.6" fill="#f1eef6" />
+  <rect x="57" y="389.7" width="340" height="9.6" fill="#f1eef6" />
+  <rect x="57" y="468" width="123" height="3" fill="#ffffff" />
+  <circle
+    cx="90"
+    cy="532"
+    r="27"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="2"
+  />
+  <rect x="135" y="527.7" width="160" height="9.6" fill="#ffffff" />
+  <!-- three stats between rules: number, up-arrow circle, label, 2-3 lines -->
+  <rect x="640" y="95" width="332" height="1" fill="#ffffff" />
+  <text
+    x="655"
+    y="140"
+    font-size="40"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    000,000+
+  </text>
+  <circle
+    cx="932"
+    cy="126"
+    r="16"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="1.5"
+  />
+  <rect x="640" y="153" width="332" height="1" fill="#ffffff" />
+  <rect x="655" y="167.7" width="120" height="9.6" fill="#ffffff" />
+  <rect x="655" y="190.34" width="265" height="8.32" fill="#eee3f0" />
+  <rect x="655" y="212.34" width="160" height="8.32" fill="#eee3f0" />
+  <rect x="640" y="251" width="332" height="1" fill="#ffffff" />
+  <text
+    x="655"
+    y="296"
+    font-size="40"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    00,000+
+  </text>
+  <circle
+    cx="932"
+    cy="282"
+    r="16"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="1.5"
+  />
+  <rect x="640" y="309" width="332" height="1" fill="#ffffff" />
+  <rect x="655" y="323.7" width="120" height="9.6" fill="#ffffff" />
+  <rect x="655" y="346.34" width="245" height="8.32" fill="#eee3f0" />
+  <rect x="655" y="368.34" width="165" height="8.32" fill="#eee3f0" />
+  <rect x="640" y="407" width="332" height="1" fill="#ffffff" />
+  <text
+    x="655"
+    y="452"
+    font-size="40"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    000+
+  </text>
+  <circle
+    cx="932"
+    cy="438"
+    r="16"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="1.5"
+  />
+  <rect x="640" y="465" width="332" height="1" fill="#ffffff" />
+  <rect x="655" y="479.7" width="120" height="9.6" fill="#ffffff" />
+  <rect x="655" y="502.34" width="235" height="8.32" fill="#eee3f0" />
+  <rect x="655" y="524.34" width="180" height="8.32" fill="#eee3f0" />
+  <rect x="655" y="546.34" width="130" height="8.32" fill="#eee3f0" />
+  <path
+    d="M932 136V117m-6 6 6-6 6 6"
+    fill="none"
+    stroke="#fff"
+    stroke-width="1.2"
+  />
+  <path
+    d="M932 292V273m-6 6 6-6 6 6"
+    fill="none"
+    stroke="#fff"
+    stroke-width="1.2"
+  />
+  <path
+    d="M932 448V429m-6 6 6-6 6 6"
+    fill="none"
+    stroke="#fff"
+    stroke-width="1.2"
+  />
+  <g
+    transform="translate(64 506) scale(2.16667)"
+    fill="none"
+    stroke="#fff"
+    color="#fff"
+    stroke-width="0.7"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <circle cx="12" cy="12" r="10" />
+    <path
+      d="M14.31 8l5.74 9.94M9.69 8h11.48M7.38 12l5.74-9.94M9.69 16L3.95 6.06M14.31 16H2.83M16.62 12l-5.74 9.94"
+    />
+  </g>
+</svg>

@@ -1,0 +1,35 @@
+{
+  "pythonVersion": "3.14",
+  "extraPaths": ["skills/agentic-manager-utils-lib"],
+  "executionEnvironments": [
+    {
+      "root": "tests/agentic-manager-jira-sprint-report",
+      "extraPaths": [
+        "skills/agentic-manager-utils-lib",
+        "skills/agentic-manager-jira-sprint-report/scripts"
+      ]
+    },
+    {
+      "root": "tests/agentic-manager-slide-deck",
+      "extraPaths": [
+        "skills/agentic-manager-utils-lib",
+        "skills/agentic-manager-slide-deck/scripts"
+      ]
+    },
+    {
+      "root": "tests/agentic-manager-tech-investigation",
+      "extraPaths": [
+        "skills/agentic-manager-utils-lib",
+        "skills/agentic-manager-tech-investigation/scripts"
+      ]
+    },
+    {
+      "root": "tests/agentic-manager-utils-lib",
+      "extraPaths": ["skills/agentic-manager-utils-lib"]
+    },
+    {
+      "root": "skills",
+      "extraPaths": ["skills/agentic-manager-utils-lib"]
+    }
+  ]
+}

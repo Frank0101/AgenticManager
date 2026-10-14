@@ -1,0 +1,328 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <rect x="0" y="0" width="1100" height="618" fill="#ffffff" />
+  <text
+    x="55"
+    y="72"
+    font-size="36"
+    font-weight="400"
+    fill="#333"
+    text-anchor="start"
+  >
+    Title of the overview
+  </text>
+  <!-- central hexagon hub, outline and grey band -->
+  <polygon
+    points="550.0,147.0 715.0,239.5 715.0,424.5 550.0,517.0 385.0,424.5 385.0,239.5"
+    fill="#ffffff"
+    stroke="#d9d9d9"
+    stroke-width="1.5"
+  />
+  <polygon
+    points="550.0,177.0 690.0,254.5 690.0,409.5 550.0,487.0 410.0,409.5 410.0,254.5"
+    fill="#dcdcdc"
+  />
+  <polygon
+    points="550.0,207.0 660.0,269.5 660.0,394.5 550.0,457.0 440.0,394.5 440.0,269.5"
+    fill="#ffffff"
+  />
+  <text
+    x="550"
+    y="317"
+    font-size="22"
+    font-weight="800"
+    fill="#111"
+    text-anchor="middle"
+  >
+    THEME
+  </text>
+  <text
+    x="550"
+    y="345"
+    font-size="22"
+    font-weight="800"
+    fill="#111"
+    text-anchor="middle"
+  >
+    OF THE
+  </text>
+  <text
+    x="550"
+    y="373"
+    font-size="22"
+    font-weight="800"
+    fill="#111"
+    text-anchor="middle"
+  >
+    DIAGRAM
+  </text>
+  <!-- six arrow-shaped bands pointing at the hub, three per side -->
+  <polygon points="73,117 418,117 485,245 73,245 90,181" fill="#e45a35" />
+  <polygon points="1027,117 682,117 615,245 1027,245 1010,181" fill="#eab045" />
+  <polygon
+    points="73,273 400,273 455,337 400,400 73,400 90,337"
+    fill="#a3a3a3"
+  />
+  <polygon
+    points="1027,273 700,273 645,337 700,400 1027,400 1010,337"
+    fill="#8ab64b"
+  />
+  <polygon points="73,425 485,425 418,555 73,555 90,490" fill="#2e7fb0" />
+  <polygon points="1027,425 615,425 682,555 1027,555 1010,490" fill="#5bb5a1" />
+  <circle cx="85" cy="181" r="34" fill="#b7341d" />
+  <circle cx="1015" cy="181" r="34" fill="#cf8c18" />
+  <circle cx="85" cy="337" r="34" fill="#7d7d7d" />
+  <circle cx="1015" cy="337" r="34" fill="#5f8a2c" />
+  <circle cx="85" cy="490" r="34" fill="#1e5a85" />
+  <circle cx="1015" cy="490" r="34" fill="#3a8a77" />
+  <text
+    x="383"
+    y="189"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="end"
+  >
+    LABEL
+  </text>
+  <rect x="130" y="157.16" width="170" height="7.68" fill="#fde0d6" />
+  <rect x="130" y="177.16" width="170" height="7.68" fill="#fde0d6" />
+  <rect x="185" y="197.16" width="115" height="7.68" fill="#fde0d6" />
+  <text
+    x="712"
+    y="189"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    LABEL
+  </text>
+  <rect x="793" y="157.16" width="165" height="7.68" fill="#fbecc8" />
+  <rect x="793" y="177.16" width="145" height="7.68" fill="#fbecc8" />
+  <rect x="793" y="197.16" width="145" height="7.68" fill="#fbecc8" />
+  <text
+    x="383"
+    y="345"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="end"
+  >
+    LABEL
+  </text>
+  <rect x="172" y="332.34" width="75" height="8.32" fill="#eee" />
+  <text
+    x="712"
+    y="332"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    LABEL
+  </text>
+  <text
+    x="712"
+    y="357"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    TWO LINES
+  </text>
+  <rect x="838" y="304.16" width="125" height="7.68" fill="#e6f2d6" />
+  <rect x="838" y="323.16" width="125" height="7.68" fill="#e6f2d6" />
+  <rect x="838" y="342.16" width="115" height="7.68" fill="#e6f2d6" />
+  <rect x="838" y="361.16" width="70" height="7.68" fill="#e6f2d6" />
+  <text
+    x="383"
+    y="486"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="end"
+  >
+    LABEL
+  </text>
+  <text
+    x="383"
+    y="511"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="end"
+  >
+    TWO LINES
+  </text>
+  <rect x="142" y="474.16" width="170" height="7.68" fill="#d8e8f3" />
+  <rect x="182" y="495.16" width="130" height="7.68" fill="#d8e8f3" />
+  <text
+    x="712"
+    y="498"
+    font-size="20"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    LABEL
+  </text>
+  <rect x="830" y="467.16" width="125" height="7.68" fill="#dff2ec" />
+  <rect x="830" y="487.16" width="115" height="7.68" fill="#dff2ec" />
+  <rect x="830" y="507.16" width="130" height="7.68" fill="#dff2ec" />
+  <circle cx="491" cy="232" r="24" fill="#b7341d" />
+  <text
+    x="491"
+    y="241"
+    font-size="24"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    1
+  </text>
+  <circle cx="608" cy="232" r="24" fill="#cf8c18" />
+  <text
+    x="608"
+    y="241"
+    font-size="24"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    2
+  </text>
+  <circle cx="430" cy="337" r="24" fill="#808080" />
+  <text
+    x="430"
+    y="346"
+    font-size="24"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    6
+  </text>
+  <circle cx="668" cy="337" r="24" fill="#5f8a2c" />
+  <text
+    x="668"
+    y="346"
+    font-size="24"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    3
+  </text>
+  <circle cx="491" cy="442" r="24" fill="#1e5a85" />
+  <text
+    x="491"
+    y="451"
+    font-size="24"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    5
+  </text>
+  <circle cx="608" cy="442" r="24" fill="#3a8a77" />
+  <text
+    x="608"
+    y="451"
+    font-size="24"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    4
+  </text>
+  <g
+    transform="translate(69.5 165.5) scale(1.29167)"
+    fill="none"
+    stroke="#fff"
+    color="#fff"
+    stroke-width="1.3"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <rect x="5" y="2" width="14" height="20" />
+    <path d="m7 7 1 1 2-2m2 1h5M7 12l1 1 2-2m2 1h5M7 17l1 1 2-2m2 1h5" />
+  </g>
+  <g
+    transform="translate(999.5 165.5) scale(1.29167)"
+    fill="none"
+    stroke="#fff"
+    color="#fff"
+    stroke-width="1.3"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <circle cx="12" cy="6" r="3" />
+    <circle cx="4" cy="9" r="2" />
+    <circle cx="20" cy="9" r="2" />
+    <path
+      d="M6 20v-5c0-5 12-5 12 0v5zM1 19v-5c0-3 3-4 5-2m12 0c2-2 5-1 5 2v5"
+    />
+  </g>
+  <g
+    transform="translate(69.5 321.5) scale(1.29167)"
+    fill="none"
+    stroke="#fff"
+    color="#fff"
+    stroke-width="1.3"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <rect x="7" y="2" width="10" height="20" />
+    <rect x="1" y="11" width="6" height="11" />
+    <rect x="17" y="11" width="6" height="11" />
+    <path
+      d="M10 5h1m2 0h1m-4 4h1m2 0h1m-4 4h1m2 0h1m-4 4h4v5M3 14h2m14 0h2M3 18h2m14 0h2"
+    />
+  </g>
+  <g
+    transform="translate(999.5 321.5) scale(1.29167)"
+    fill="none"
+    stroke="#fff"
+    color="#fff"
+    stroke-width="1.3"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M7 22h14l-3-5 2-6-3-9-7 3-4 7h5l3-3v8zM14 5h1" />
+  </g>
+  <g
+    transform="translate(69.5 474.5) scale(1.29167)"
+    fill="none"
+    stroke="#fff"
+    color="#fff"
+    stroke-width="1.3"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path
+      d="M12 7v15M7 11h10M2 14c0 6 6 8 10 8s10-2 10-8M2 14l-1 5m1-5 4 3m16-3 1 5m-1-5-4 3"
+    />
+    <circle cx="12" cy="4" r="3" />
+  </g>
+  <g
+    transform="translate(999.5 474.5) scale(1.29167)"
+    fill="none"
+    stroke="#fff"
+    color="#fff"
+    stroke-width="1.3"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M2 3h20v15h-9l-6 5v-5H2z" />
+    <circle cx="7" cy="10" r="1" />
+    <circle cx="12" cy="10" r="1" />
+    <circle cx="17" cy="10" r="1" />
+  </g>
+</svg>

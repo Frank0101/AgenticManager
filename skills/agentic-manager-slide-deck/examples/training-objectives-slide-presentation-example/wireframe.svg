@@ -1,0 +1,244 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <defs>
+    <linearGradient id="paper">
+      <stop stop-color="#fff" />
+      <stop offset="1" stop-color="#f1f1f1" />
+    </linearGradient>
+    <linearGradient id="arc" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#ffd8d4" />
+      <stop offset="1" stop-color="#dc4149" />
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1100" height="618" fill="url(#paper)" />
+  <rect x="0" y="0" width="22" height="618" fill="#d4555b" />
+  <rect x="95" y="42" width="70" height="6" fill="#d4555b" />
+  <text
+    x="95"
+    y="103"
+    font-size="40"
+    font-weight="700"
+    fill="#3a3a3a"
+    text-anchor="start"
+  >
+    Title
+  </text>
+  <!-- central ringed circle with the summary -->
+  <circle
+    cx="327"
+    cy="345"
+    r="100"
+    fill="#f0f0f0"
+    stroke="#e05a5f"
+    stroke-width="10"
+  />
+  <circle cx="327" cy="345" r="86" fill="#fbfbfb" />
+  <rect x="272.0" y="325.7" width="110" height="9.6" fill="#333" />
+  <rect x="262.0" y="350.7" width="130" height="9.6" fill="#333" />
+  <!-- arc with five nodes, icon bubbles and stepped cards -->
+  <path
+    d="M302.3,205.2 A142,142 0 1,1 302.3,484.8"
+    fill="none"
+    stroke="url(#arc)"
+    stroke-width="6"
+  />
+  <circle
+    cx="384.9"
+    cy="215.3"
+    r="10"
+    fill="#ffffff"
+    stroke="#fdd1ce"
+    stroke-width="5"
+  />
+  <polygon points="432.1,177.8 420.6,197.3 443.1,199.7" fill="#fdd7d5" />
+  <circle cx="465" cy="175" r="33" fill="#fdd7d5" />
+  <g
+    transform="translate(450.5 160.5) scale(1.20833)"
+    fill="none"
+    stroke="#222"
+    color="#222"
+    stroke-width="1.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M3 3v18h18 M6 16l4-5 4 2 6-7" />
+    <path d="M7 17v2m4-5v5m4-3v3m4-8v8" />
+  </g>
+  <rect x="530" y="126" width="285" height="79" rx="6" fill="#fdd7d5" />
+  <text
+    x="547"
+    y="156"
+    font-size="18"
+    font-weight="700"
+    fill="#111"
+    text-anchor="start"
+  >
+    Objective
+  </text>
+  <rect x="547" y="169.8" width="225" height="6.4" fill="#555" />
+  <rect x="547" y="184.8" width="160" height="6.4" fill="#555" />
+  <circle
+    cx="445.3"
+    cy="266.5"
+    r="10"
+    fill="#ffffff"
+    stroke="#f7b6b5"
+    stroke-width="5"
+  />
+  <polygon points="514.3,247.7 485.1,262.7 516.6,272.1" fill="#f9b9b3" />
+  <circle cx="546" cy="257" r="33" fill="#f9b9b3" />
+  <g
+    transform="translate(531.5 242.5) scale(1.20833)"
+    fill="none"
+    stroke="#222"
+    color="#222"
+    stroke-width="1.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M2 3h20v14h-7l-3 5-2-5H2z" fill="currentColor" />
+    <path
+      d="m12 6 1 3h4l-3 2 1 4-3-2-3 2 1-4-3-2h4z"
+      stroke="none"
+      fill="white"
+    />
+  </g>
+  <rect x="608" y="217" width="285" height="79" rx="6" fill="#f9b9b3" />
+  <text
+    x="625"
+    y="247"
+    font-size="18"
+    font-weight="700"
+    fill="#111"
+    text-anchor="start"
+  >
+    Objective
+  </text>
+  <rect x="625" y="260.8" width="225" height="6.4" fill="#555" />
+  <rect x="625" y="275.8" width="160" height="6.4" fill="#555" />
+  <circle
+    cx="469"
+    cy="345"
+    r="10"
+    fill="#ffffff"
+    stroke="#ee8c8e"
+    stroke-width="5"
+  />
+  <polygon points="543.7,334.9 509,346.1 543,359.4" fill="#f6958d" />
+  <circle cx="574" cy="348" r="33" fill="#f6958d" />
+  <g
+    transform="translate(559.5 333.5) scale(1.20833)"
+    fill="none"
+    stroke="#222"
+    color="#222"
+    stroke-width="1.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="m3 16 13-13 5 5-13 13-6 1zM14 5l5 5M3 16l5 5" />
+  </g>
+  <rect x="630" y="308" width="285" height="79" rx="6" fill="#f6958d" />
+  <text
+    x="647"
+    y="338"
+    font-size="18"
+    font-weight="700"
+    fill="#111"
+    text-anchor="start"
+  >
+    Objective
+  </text>
+  <rect x="647" y="351.8" width="225" height="6.4" fill="#555" />
+  <rect x="647" y="366.8" width="160" height="6.4" fill="#555" />
+  <circle
+    cx="444.8"
+    cy="424.2"
+    r="10"
+    fill="#ffffff"
+    stroke="#e46268"
+    stroke-width="5"
+  />
+  <polygon points="517.4,422.5 484.4,430 513.9,446.7" fill="#e85a5e" />
+  <circle cx="546" cy="439" r="33" fill="#e85a5e" />
+  <g
+    transform="translate(531.5 424.5) scale(1.20833)"
+    fill="none"
+    stroke="#fff"
+    color="#fff"
+    stroke-width="1.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <circle cx="12" cy="6" r="3" />
+    <circle cx="4" cy="9" r="2" />
+    <circle cx="20" cy="9" r="2" />
+    <path
+      d="M6 20v-5c0-5 12-5 12 0v5zM1 19v-5c0-3 3-4 5-2m12 0c2-2 5-1 5 2v5"
+    />
+  </g>
+  <rect x="608" y="399" width="285" height="79" rx="6" fill="#e85a5e" />
+  <text
+    x="625"
+    y="429"
+    font-size="18"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    Objective
+  </text>
+  <rect x="625" y="442.8" width="225" height="6.4" fill="#fde4e4" />
+  <rect x="625" y="457.8" width="160" height="6.4" fill="#fde4e4" />
+  <circle
+    cx="383.8"
+    cy="475.2"
+    r="10"
+    fill="#ffffff"
+    stroke="#dd474f"
+    stroke-width="5"
+  />
+  <polygon points="445.6,493.9 419.2,493.8 434.2,515.6" fill="#d2484d" />
+  <circle cx="467" cy="519" r="33" fill="#d2484d" />
+  <g
+    transform="translate(452.5 504.5) scale(1.20833)"
+    fill="none"
+    stroke="#fff"
+    color="#fff"
+    stroke-width="1.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path
+      d="M12 4c-4-2-7-2-10-1v17c4-1 7 0 10 2 3-2 6-3 10-2V3c-3-1-6-1-10 1zM12 4v18M5 6h4m-4 3h4m6-3h4m-4 3h4"
+    />
+  </g>
+  <rect x="530" y="490" width="285" height="79" rx="6" fill="#d2484d" />
+  <text
+    x="547"
+    y="520"
+    font-size="18"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    Objective
+  </text>
+  <rect x="547" y="533.8" width="225" height="6.4" fill="#fde4e4" />
+  <rect x="547" y="548.8" width="160" height="6.4" fill="#fde4e4" />
+  <rect x="95" y="552" width="70" height="66" fill="#d4555b" />
+  <text
+    x="130"
+    y="591"
+    font-size="20"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    5
+  </text>
+</svg>

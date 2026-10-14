@@ -1,0 +1,91 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <!-- photo under a red overlay, right of the diagonal -->
+  <rect x="0" y="0" width="1100" height="618" fill="#b9505f" />
+  <text
+    x="1085"
+    y="605"
+    font-size="14"
+    font-weight="400"
+    fill="#f3c9cf"
+    text-anchor="end"
+  >
+    [photo, red overlay]
+  </text>
+  <!-- dark panel, diagonal edge from x 475 at the top to x 640 at the bottom -->
+  <polygon points="0,0 475,0 640,618 0,618" fill="#232323" />
+  <text
+    x="70"
+    y="105"
+    font-size="44"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    Title
+  </text>
+  <!-- problem 1: gold check square, heading, 4 lines -->
+  <rect x="70" y="185" width="35" height="35" fill="#e4ae43" />
+  <path
+    d="M76,202 l9,9 l18,-20"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <text
+    x="143"
+    y="212"
+    font-size="26"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    Heading
+  </text>
+  <rect x="143" y="234.52" width="250" height="8.96" fill="#9a9a9a" />
+  <rect x="143" y="258.52" width="225" height="8.96" fill="#9a9a9a" />
+  <rect x="143" y="282.52" width="268" height="8.96" fill="#9a9a9a" />
+  <rect x="143" y="306.52" width="90" height="8.96" fill="#9a9a9a" />
+  <!-- rule -->
+  <rect x="70" y="350" width="360" height="1" fill="#a08544" />
+  <!-- problem 2: gold check square, heading, 3 lines -->
+  <rect x="70" y="398" width="35" height="35" fill="#e4ae43" />
+  <path
+    d="M76,415 l9,9 l18,-20"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <text
+    x="143"
+    y="425"
+    font-size="26"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    Heading
+  </text>
+  <rect x="143" y="447.52" width="210" height="8.96" fill="#9a9a9a" />
+  <rect x="143" y="471.52" width="250" height="8.96" fill="#9a9a9a" />
+  <rect x="143" y="495.52" width="205" height="8.96" fill="#9a9a9a" />
+  <!-- statement: 9 centred lines around x 826 -->
+  <rect x="756.0" y="158.88" width="140" height="10.24" fill="#f6e3e6" />
+  <rect x="691.0" y="191.88" width="270" height="10.24" fill="#f6e3e6" />
+  <rect x="708.0" y="224.88" width="236" height="10.24" fill="#f6e3e6" />
+  <rect x="686.0" y="257.88" width="280" height="10.24" fill="#f6e3e6" />
+  <rect x="684.0" y="290.88" width="284" height="10.24" fill="#f6e3e6" />
+  <rect x="729.0" y="323.88" width="194" height="10.24" fill="#f6e3e6" />
+  <rect x="683.0" y="356.88" width="286" height="10.24" fill="#f6e3e6" />
+  <rect x="681.0" y="389.88" width="290" height="10.24" fill="#f6e3e6" />
+  <rect x="695.0" y="422.88" width="262" height="10.24" fill="#f6e3e6" />
+</svg>

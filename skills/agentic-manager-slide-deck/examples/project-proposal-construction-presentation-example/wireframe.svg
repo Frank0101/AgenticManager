@@ -1,0 +1,105 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <rect x="0" y="0" width="1100" height="618" fill="#ffffff" />
+  <!-- vertical band at the left edge with a rotated name, dripping at its foot -->
+  <path
+    d="M0,0 H73 V568 C73,575 69,579 64,579 C59,579 57,575 57,570 C57,567 55,566 53,566 C51,571 48,572 45,572 C42,572 39,571 37,566 C35,564 32,564 30,566 C28,569 28,576 27,580 C26,583 22,585 19,585 C15,585 11,582 11,577 C11,571 10,566 7,564 C5,563 2,563 0,563 Z"
+    fill="#4f68cc"
+  />
+  <text
+    x="50"
+    y="420"
+    font-size="22"
+    fill="#ffffff"
+    transform="rotate(-90 50 420)"
+  >
+    DOCUMENT NAME
+  </text>
+  <text
+    x="155"
+    y="100"
+    font-size="42"
+    font-weight="900"
+    fill="#2b44a8"
+    text-anchor="start"
+  >
+    Title
+  </text>
+  <rect x="155" y="131.16" width="478" height="7.68" fill="#333" />
+  <rect x="155" y="154.16" width="258" height="7.68" fill="#333" />
+  <!-- blue frame with notches around the table -->
+  <path
+    d="M177,185 H911 A22,22 0 0 1 933,207 V261 A14,14 0 0 0 947,275 H967 A20,20 0 0 1 987,295 V325 A20,20 0 0 1 967,345 H947 A14,14 0 0 0 933,359 V471 A14,14 0 0 0 947,485 H1008 A20,20 0 0 1 1028,505 V535 A20,20 0 0 1 1008,555 H144 A14,14 0 0 1 130,541 V492 A14,14 0 0 1 144,478 H141 A14,14 0 0 0 155,464 V207 A22,22 0 0 1 177,185 Z"
+    fill="#4f68cc"
+  />
+  <!-- table: 5 columns, header, 3 rows, total row -->
+  <rect x="193" y="202" width="707" height="53" fill="#4f68cc" />
+  <rect x="202" y="224.98" width="40" height="7.04" fill="#ffffff" />
+  <rect x="343" y="224.98" width="82" height="7.04" fill="#ffffff" />
+  <rect x="484" y="224.98" width="75" height="7.04" fill="#ffffff" />
+  <rect x="626" y="224.98" width="70" height="7.04" fill="#ffffff" />
+  <rect x="767" y="224.98" width="70" height="7.04" fill="#ffffff" />
+  <rect x="193" y="255" width="707" height="85" fill="#ffffff" />
+  <rect x="202" y="292.8" width="75" height="6.4" fill="#555" />
+  <rect x="343" y="265.8" width="110" height="6.4" fill="#555" />
+  <rect x="343" y="283.8" width="62" height="6.4" fill="#555" />
+  <rect x="343" y="301.8" width="125" height="6.4" fill="#555" />
+  <rect x="343" y="319.8" width="95" height="6.4" fill="#555" />
+  <rect x="484" y="292.8" width="52" height="6.4" fill="#555" />
+  <rect x="626" y="292.8" width="42" height="6.4" fill="#555" />
+  <rect x="851" y="292.8" width="40" height="6.4" fill="#555" />
+  <rect x="193" y="340" width="707" height="85" fill="#ffffff" />
+  <rect x="202" y="377.8" width="65" height="6.4" fill="#555" />
+  <rect x="343" y="350.8" width="105" height="6.4" fill="#555" />
+  <rect x="343" y="368.8" width="120" height="6.4" fill="#555" />
+  <rect x="343" y="386.8" width="120" height="6.4" fill="#555" />
+  <rect x="343" y="404.8" width="70" height="6.4" fill="#555" />
+  <rect x="484" y="376" width="12" height="10" fill="#555" />
+  <rect x="626" y="376" width="12" height="10" fill="#555" />
+  <rect x="851" y="377.8" width="40" height="6.4" fill="#555" />
+  <rect x="193" y="425" width="707" height="85" fill="#ffffff" />
+  <rect x="202" y="453.8" width="40" height="6.4" fill="#555" />
+  <rect x="202" y="471.8" width="50" height="6.4" fill="#555" />
+  <rect x="343" y="444.8" width="100" height="6.4" fill="#555" />
+  <rect x="343" y="462.8" width="120" height="6.4" fill="#555" />
+  <rect x="343" y="480.8" width="125" height="6.4" fill="#555" />
+  <rect x="484" y="461" width="12" height="10" fill="#555" />
+  <rect x="626" y="461" width="12" height="10" fill="#555" />
+  <rect x="851" y="462.8" width="40" height="6.4" fill="#555" />
+  <rect x="193" y="255" width="707" height="1" fill="#8fd3f4" />
+  <rect x="193" y="340" width="707" height="1" fill="#8fd3f4" />
+  <rect x="193" y="425" width="707" height="1" fill="#8fd3f4" />
+  <rect x="193" y="510" width="707" height="1" fill="#8fd3f4" />
+  <rect x="193" y="202" width="1" height="308" fill="#8fd3f4" />
+  <rect x="334" y="202" width="1" height="308" fill="#8fd3f4" />
+  <rect x="475" y="202" width="1" height="308" fill="#8fd3f4" />
+  <rect x="617" y="202" width="1" height="308" fill="#8fd3f4" />
+  <rect x="758" y="202" width="1" height="308" fill="#8fd3f4" />
+  <rect x="900" y="202" width="1" height="308" fill="#8fd3f4" />
+  <rect x="193" y="510" width="707" height="32" fill="#5ecdf5" />
+  <text
+    x="202"
+    y="531"
+    font-size="15"
+    font-weight="700"
+    fill="#111"
+    text-anchor="start"
+  >
+    Total
+  </text>
+  <text
+    x="890"
+    y="532"
+    font-size="17"
+    font-weight="800"
+    fill="#111"
+    text-anchor="end"
+  >
+    $00,000
+  </text>
+</svg>

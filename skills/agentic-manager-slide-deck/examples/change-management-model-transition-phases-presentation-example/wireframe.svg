@@ -1,0 +1,125 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <rect x="0" y="0" width="1100" height="618" fill="#ffffff" />
+  <!-- three overlapping chevrons; the last one is the big arrow -->
+  <polygon
+    points="615,128 853,105 1018,310 853,515 615,490 762,310"
+    fill="#f4ad1d"
+  />
+  <polygon
+    points="355,128 615,128 762,310 615,490 355,490 500,310"
+    fill="#3498db"
+  />
+  <polygon points="63,128 355,128 500,310 355,490 63,490" fill="#56677a" />
+  <text
+    x="252"
+    y="305"
+    font-size="19"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    PHASE
+  </text>
+  <text
+    x="624"
+    y="305"
+    font-size="19"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    PHASE
+  </text>
+  <text
+    x="882"
+    y="305"
+    font-size="19"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    PHASE
+  </text>
+  <text
+    x="252"
+    y="327"
+    font-size="18"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    NAME
+  </text>
+  <text
+    x="624"
+    y="327"
+    font-size="18"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    NAME
+  </text>
+  <text
+    x="882"
+    y="327"
+    font-size="18"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    NAME
+  </text>
+  <!-- outlined arrow bars above and below: themes that span every phase -->
+  <polygon points="63,82 840,82 853,105 840,128 63,128" fill="#ffffff" />
+  <path
+    d="M63,82 L840,82 L853,105 L840,128 L63,128 Z"
+    fill="none"
+    stroke="#333"
+    stroke-width="2"
+  />
+  <text
+    x="457"
+    y="111"
+    font-size="18"
+    font-weight="800"
+    fill="#111"
+    text-anchor="middle"
+  >
+    Theme across all phases
+  </text>
+  <polygon points="63,490 840,490 853,513 840,537 63,537" fill="#ffffff" />
+  <path
+    d="M63,490 L840,490 L853,513 L840,537 L63,537 Z"
+    fill="none"
+    stroke="#333"
+    stroke-width="2"
+  />
+  <text
+    x="457"
+    y="520"
+    font-size="18"
+    font-weight="800"
+    fill="#111"
+    text-anchor="middle"
+  >
+    Theme across all phases
+  </text>
+  <!-- five white pills, staggered across the phases they span -->
+  <rect x="160" y="144" width="288" height="34" rx="17" fill="#ffffff" />
+  <rect x="296" y="186" width="324" height="34" rx="17" fill="#ffffff" />
+  <rect x="452" y="228" width="323" height="34" rx="17" fill="#ffffff" />
+  <rect x="455" y="370" width="323" height="34" rx="17" fill="#ffffff" />
+  <rect x="557" y="419" width="323" height="34" rx="17" fill="#ffffff" />
+  <rect x="221.5" y="157.34" width="165" height="8.32" fill="#333" />
+  <rect x="403.0" y="199.34" width="110" height="8.32" fill="#333" />
+  <rect x="528.5" y="241.34" width="170" height="8.32" fill="#333" />
+  <rect x="544.0" y="383.34" width="145" height="8.32" fill="#333" />
+  <rect x="658.5" y="432.34" width="120" height="8.32" fill="#333" />
+</svg>

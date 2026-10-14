@@ -1,0 +1,135 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <rect x="0" y="0" width="1100" height="618.8" fill="#ffffff" />
+  <!-- eyebrow with a short teal rule, then the title -->
+  <rect x="57.4" y="39.3" width="18.1" height="3" fill="#1f8a70" />
+  <rect x="83.9" y="37.8" width="173.8" height="9.8" fill="#1f8a70" />
+  <text
+    x="57.4"
+    y="95.2"
+    font-size="30.2"
+    font-weight="700"
+    fill="#14213d"
+    text-anchor="start"
+  >
+    Title
+  </text>
+  <!-- bold lead statement, then a short paragraph -->
+  <rect x="57.4" y="170.7" width="570.4" height="13.6" fill="#3a4252" />
+  <rect x="57.4" y="194.2" width="202.5" height="13.6" fill="#3a4252" />
+  <rect x="57.4" y="236.5" width="525.8" height="12.1" fill="#c9cdd3" />
+  <rect x="57.4" y="256.9" width="220.6" height="12.1" fill="#c9cdd3" />
+  <!-- goal panel: small label, paragraph, smaller second paragraph -->
+  <rect
+    x="57.4"
+    y="309"
+    width="586.3"
+    height="194.9"
+    fill="#f3f4f6"
+    rx="12.1"
+  />
+  <rect x="75.5" y="325.6" width="40.8" height="9.1" fill="#9aa1ab" />
+  <rect x="75.5" y="365.7" width="510.7" height="10.6" fill="#c9cdd3" />
+  <rect x="75.5" y="386.8" width="491.1" height="10.6" fill="#c9cdd3" />
+  <rect x="75.5" y="408" width="241.8" height="10.6" fill="#c9cdd3" />
+  <rect x="75.5" y="450.3" width="544" height="9.8" fill="#c9cdd3" />
+  <rect x="75.5" y="465.4" width="423.1" height="9.8" fill="#c9cdd3" />
+  <!-- priorities: small label, three mint cards stacked -->
+  <rect x="670.9" y="136.7" width="80.1" height="9.1" fill="#9aa1ab" />
+  <rect
+    x="670.1"
+    y="163.2"
+    width="370.2"
+    height="143.5"
+    fill="#e6f4ef"
+    rx="10.6"
+  />
+  <text
+    x="687.5"
+    y="188.9"
+    font-size="15.1"
+    font-weight="700"
+    fill="#14213d"
+    text-anchor="start"
+  >
+    Heading
+  </text>
+  <rect x="687.5" y="200.2" width="326.4" height="9.8" fill="#c9cdd3" />
+  <!-- warning callout inside the first card -->
+  <rect x="686" y="231.2" width="338.5" height="65" fill="#fdf0dc" rx="7.6" />
+  <polygon points="698.1,247.8 702.6,238.7 707.1,247.8" fill="#e8a33a" />
+  <rect x="716.2" y="238.7" width="300.7" height="7.6" fill="#e5a77a" />
+  <rect x="696.6" y="253.1" width="226.6" height="7.6" fill="#e5a77a" />
+  <rect x="696.6" y="267.4" width="317.3" height="7.6" fill="#e5a77a" />
+  <rect x="696.6" y="282.6" width="235.7" height="7.6" fill="#e5a77a" />
+  <rect
+    x="670.1"
+    y="321.1"
+    width="370.2"
+    height="83.1"
+    fill="#e6f4ef"
+    rx="10.6"
+  />
+  <text
+    x="687.5"
+    y="348.3"
+    font-size="15.1"
+    font-weight="700"
+    fill="#14213d"
+    text-anchor="start"
+  >
+    Heading
+  </text>
+  <rect x="687.5" y="362.6" width="315.8" height="9.8" fill="#c9cdd3" />
+  <rect x="687.5" y="380" width="46.8" height="9.8" fill="#c9cdd3" />
+  <rect
+    x="670.1"
+    y="420.1"
+    width="370.2"
+    height="82.3"
+    fill="#e6f4ef"
+    rx="10.6"
+  />
+  <text
+    x="687.5"
+    y="444.2"
+    font-size="15.1"
+    font-weight="700"
+    fill="#14213d"
+    text-anchor="start"
+  >
+    Heading
+  </text>
+  <rect x="687.5" y="458.6" width="329.4" height="9.8" fill="#c9cdd3" />
+  <rect x="687.5" y="476" width="77.1" height="9.8" fill="#c9cdd3" />
+  <!-- date, page number, footer and logo -->
+  <rect x="953.4" y="30.2" width="83.1" height="6.8" fill="#c9cdd3" />
+  <rect x="34.8" y="579.5" width="6.8" height="8.3" fill="#c9cdd3" />
+  <rect x="64.2" y="574.2" width="211.5" height="7.6" fill="#c9cdd3" />
+  <rect x="64.2" y="587" width="54.4" height="7.6" fill="#c9cdd3" />
+  <!-- logo -->
+  <rect
+    x="974.6"
+    y="572.7"
+    width="86.9"
+    height="15.1"
+    fill="none"
+    stroke="#9aa1ab"
+    stroke-width="1"
+  />
+  <text
+    x="1017.7"
+    y="584"
+    font-size="9.1"
+    font-weight="400"
+    fill="#9aa1ab"
+    text-anchor="middle"
+  >
+    Logo
+  </text>
+</svg>

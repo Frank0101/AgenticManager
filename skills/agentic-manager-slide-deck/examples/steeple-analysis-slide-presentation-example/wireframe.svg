@@ -1,0 +1,235 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <rect x="0" y="0" width="1100" height="618" fill="#ffffff" />
+  <!-- seven equal columns: letter and word, darker band, icon cell, centred text below -->
+  <rect x="27" y="65" width="148" height="143" fill="#f9424a" />
+  <text
+    x="101"
+    y="145"
+    font-size="44"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    S
+  </text>
+  <rect x="56" y="162.7" width="90" height="9.6" fill="#ffffff" />
+  <rect x="27" y="211.06" width="148" height="10.88" fill="#e00a14" />
+  <rect x="27" y="227" width="148" height="158" fill="#fcd9db" />
+  <g
+    transform="translate(68 274) scale(2.75)"
+    fill="none"
+    stroke="#f9424a"
+    color="#f9424a"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <circle cx="12" cy="12" r="3" />
+    <circle cx="12" cy="2" r="2" />
+    <circle cx="3" cy="8" r="2" />
+    <circle cx="21" cy="8" r="2" />
+    <circle cx="6" cy="21" r="2" />
+    <circle cx="18" cy="21" r="2" />
+    <path d="M12 4v5M5 9l4 2m6 0 4-2M7 19l3-5m4 0 3 5" />
+  </g>
+  <rect x="48.5" y="412.98" width="105" height="7.04" fill="#555" />
+  <rect x="41.0" y="430.98" width="120" height="7.04" fill="#555" />
+  <rect x="46.0" y="448.98" width="110" height="7.04" fill="#555" />
+  <rect x="41.0" y="466.98" width="120" height="7.04" fill="#555" />
+  <rect x="176" y="65" width="148" height="143" fill="#f2722d" />
+  <text
+    x="250"
+    y="145"
+    font-size="44"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    T
+  </text>
+  <rect x="205" y="162.7" width="90" height="9.6" fill="#ffffff" />
+  <rect x="176" y="211.06" width="148" height="10.88" fill="#c95117" />
+  <rect x="176" y="227" width="148" height="158" fill="#fde3d6" />
+  <g
+    transform="translate(217 274) scale(2.75)"
+    fill="none"
+    stroke="#f2722d"
+    color="#f2722d"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path
+      d="M2 22h11M5 20v-8l5-5 4 4-5 5v4M12 9l3-6 5 5-3 4m3-4 3 2v4m0-2-3 3"
+    />
+    <circle cx="7" cy="13" r="2" />
+    <circle cx="15" cy="6" r="2" />
+  </g>
+  <rect x="202.5" y="412.98" width="95" height="7.04" fill="#555" />
+  <rect x="190.0" y="430.98" width="120" height="7.04" fill="#555" />
+  <rect x="205.0" y="448.98" width="90" height="7.04" fill="#555" />
+  <rect x="212.5" y="466.98" width="75" height="7.04" fill="#555" />
+  <rect x="325" y="65" width="148" height="143" fill="#f6921e" />
+  <text
+    x="399"
+    y="145"
+    font-size="44"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    E
+  </text>
+  <rect x="354" y="162.7" width="90" height="9.6" fill="#ffffff" />
+  <rect x="325" y="211.06" width="148" height="10.88" fill="#c97510" />
+  <rect x="325" y="227" width="148" height="158" fill="#fde8d2" />
+  <g
+    transform="translate(366 274) scale(2.75)"
+    fill="none"
+    stroke="#f6921e"
+    color="#f6921e"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M3 3v18h18 M6 16l4-5 4 2 6-7" />
+    <path d="M7 17v2m4-5v5m4-3v3m4-8v8" />
+  </g>
+  <rect x="349.0" y="412.98" width="100" height="7.04" fill="#555" />
+  <rect x="341.5" y="430.98" width="115" height="7.04" fill="#555" />
+  <rect x="336.5" y="448.98" width="125" height="7.04" fill="#555" />
+  <rect x="351.5" y="466.98" width="95" height="7.04" fill="#555" />
+  <rect x="346.5" y="484.98" width="105" height="7.04" fill="#555" />
+  <rect x="344.0" y="502.98" width="110" height="7.04" fill="#555" />
+  <rect x="474" y="65" width="148" height="143" fill="#f7c34a" />
+  <text
+    x="548"
+    y="145"
+    font-size="44"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    E
+  </text>
+  <rect x="503" y="162.7" width="90" height="9.6" fill="#ffffff" />
+  <rect x="474" y="211.06" width="148" height="10.88" fill="#eaa90f" />
+  <rect x="474" y="227" width="148" height="158" fill="#fdf1da" />
+  <g
+    transform="translate(515 274) scale(2.75)"
+    fill="none"
+    stroke="#f7c34a"
+    color="#f7c34a"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M12 2v20M7 22h10M2 6h20M5 6l-4 10h8zm14 0-4 10h8zM2 17h6m8 0h6" />
+  </g>
+  <rect x="500.5" y="412.98" width="95" height="7.04" fill="#555" />
+  <rect x="505.5" y="430.98" width="85" height="7.04" fill="#555" />
+  <rect x="495.5" y="448.98" width="105" height="7.04" fill="#555" />
+  <rect x="493.0" y="466.98" width="110" height="7.04" fill="#555" />
+  <rect x="505.5" y="484.98" width="85" height="7.04" fill="#555" />
+  <rect x="623" y="65" width="148" height="143" fill="#8fbf6a" />
+  <text
+    x="697"
+    y="145"
+    font-size="44"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    P
+  </text>
+  <rect x="652" y="162.7" width="90" height="9.6" fill="#ffffff" />
+  <rect x="623" y="211.06" width="148" height="10.88" fill="#6a993f" />
+  <rect x="623" y="227" width="148" height="158" fill="#e8f1e2" />
+  <g
+    transform="translate(664 274) scale(2.75)"
+    fill="none"
+    stroke="#8fbf6a"
+    color="#8fbf6a"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path
+      d="m1 9 4-6 6 3 3-2 9 5-4 9-5 3-8-5zM6 5l-3 7m17-5-3 9M11 6l-4 5 3 2 4-4 6 7m-10-3 5 5m-8-2 5 4"
+    />
+  </g>
+  <rect x="649.5" y="412.98" width="95" height="7.04" fill="#555" />
+  <rect x="639.5" y="430.98" width="115" height="7.04" fill="#555" />
+  <rect x="639.5" y="448.98" width="115" height="7.04" fill="#555" />
+  <rect x="644.5" y="466.98" width="105" height="7.04" fill="#555" />
+  <rect x="772" y="65" width="148" height="143" fill="#3daa8a" />
+  <text
+    x="846"
+    y="145"
+    font-size="44"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    L
+  </text>
+  <rect x="801" y="162.7" width="90" height="9.6" fill="#ffffff" />
+  <rect x="772" y="211.06" width="148" height="10.88" fill="#2a7a62" />
+  <rect x="772" y="227" width="148" height="158" fill="#d9eee8" />
+  <g
+    transform="translate(813 274) scale(2.75)"
+    fill="none"
+    stroke="#3daa8a"
+    color="#3daa8a"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="m5 6 4-4 10 10-4 4zM3 8l4-4m9 11 4-4M12 12l-9 9M1 22h9" />
+  </g>
+  <rect x="801.0" y="412.98" width="90" height="7.04" fill="#555" />
+  <rect x="786.0" y="430.98" width="120" height="7.04" fill="#555" />
+  <rect x="793.5" y="448.98" width="105" height="7.04" fill="#555" />
+  <rect x="791.0" y="466.98" width="110" height="7.04" fill="#555" />
+  <rect x="806.0" y="484.98" width="80" height="7.04" fill="#555" />
+  <rect x="921" y="65" width="148" height="143" fill="#55708f" />
+  <text
+    x="995"
+    y="145"
+    font-size="44"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    E
+  </text>
+  <rect x="950" y="162.7" width="90" height="9.6" fill="#ffffff" />
+  <rect x="921" y="211.06" width="148" height="10.88" fill="#3d5266" />
+  <rect x="921" y="227" width="148" height="158" fill="#dde3eb" />
+  <g
+    transform="translate(962 274) scale(2.75)"
+    fill="none"
+    stroke="#55708f"
+    color="#55708f"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path
+      d="M12 17C2 17 2 7 2 7c8 0 10 5 10 10zm0 0c0-9 4-14 10-14 0 7-4 12-10 14zm0 0v5M1 22c3-5 8-4 11-2l9-5 2 3-9 5"
+    />
+  </g>
+  <rect x="955.0" y="412.98" width="80" height="7.04" fill="#555" />
+  <rect x="937.5" y="430.98" width="115" height="7.04" fill="#555" />
+  <rect x="940.0" y="448.98" width="110" height="7.04" fill="#555" />
+  <rect x="947.5" y="466.98" width="95" height="7.04" fill="#555" />
+  <rect x="955.0" y="484.98" width="80" height="7.04" fill="#555" />
+  <rect x="952.5" y="502.98" width="85" height="7.04" fill="#555" />
+  <rect x="975.0" y="520.98" width="40" height="7.04" fill="#555" />
+</svg>

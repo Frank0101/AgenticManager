@@ -1,0 +1,127 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <rect x="0" y="0" width="1100" height="618" fill="#ffffff" />
+  <text
+    x="80"
+    y="85"
+    font-size="36"
+    font-weight="900"
+    fill="#111"
+    text-anchor="start"
+  >
+    Title of the slide
+  </text>
+  <!-- table: 2 columns, header + 4 rows with coloured label cells -->
+  <rect x="70" y="147" width="202" height="72" fill="#2f8fca" />
+  <rect x="131.0" y="160.16" width="80" height="7.68" fill="#ffffff" />
+  <rect x="113.5" y="181.16" width="115" height="7.68" fill="#ffffff" />
+  <rect x="138.5" y="202.16" width="65" height="7.68" fill="#ffffff" />
+  <rect x="272" y="147" width="393" height="72" fill="#236a96" />
+  <rect x="420" y="173.7" width="95" height="9.6" fill="#ffffff" />
+  <rect x="70" y="219" width="202" height="69" fill="#2bb07f" />
+  <rect x="78" y="233.16" width="80" height="7.68" fill="#ffffff" />
+  <rect x="78" y="256.16" width="110" height="7.68" fill="#ffffff" />
+  <path
+    d="M8 0h8v19h8L12 32 0 19h8Z"
+    fill="#fff"
+    transform="translate(219 237)"
+  />
+  <rect x="272" y="219" width="393" height="69" fill="#cfdce8" />
+  <rect x="318.0" y="232.98" width="300" height="7.04" fill="#333" />
+  <rect x="328.0" y="250.98" width="280" height="7.04" fill="#333" />
+  <rect x="378.0" y="268.98" width="180" height="7.04" fill="#333" />
+  <rect x="70" y="288" width="202" height="69" fill="#9cc94a" />
+  <rect x="78" y="302.16" width="80" height="7.68" fill="#ffffff" />
+  <rect x="78" y="325.16" width="110" height="7.68" fill="#ffffff" />
+  <path
+    d="M8 32h8V13h8L12 0 0 13h8Z"
+    fill="#fff"
+    transform="translate(219 306)"
+  />
+  <rect x="272" y="288" width="393" height="69" fill="#e3ecf4" />
+  <rect x="318.0" y="301.98" width="300" height="7.04" fill="#333" />
+  <rect x="328.0" y="319.98" width="280" height="7.04" fill="#333" />
+  <rect x="378.0" y="337.98" width="180" height="7.04" fill="#333" />
+  <rect x="70" y="357" width="202" height="69" fill="#f47c20" />
+  <rect x="78" y="371.16" width="80" height="7.68" fill="#ffffff" />
+  <rect x="78" y="394.16" width="110" height="7.68" fill="#ffffff" />
+  <path
+    d="M0 16l8-9v5h16V7l8 9-8 9v-5H8v5Z"
+    fill="#fff"
+    transform="translate(219 375)"
+  />
+  <rect x="272" y="357" width="393" height="69" fill="#cfdce8" />
+  <rect x="318.0" y="370.98" width="300" height="7.04" fill="#333" />
+  <rect x="328.0" y="388.98" width="280" height="7.04" fill="#333" />
+  <rect x="70" y="426" width="202" height="69" fill="#c8332b" />
+  <rect x="78" y="440.16" width="80" height="7.68" fill="#ffffff" />
+  <rect x="78" y="463.16" width="110" height="7.68" fill="#ffffff" />
+  <path
+    d="M0 3l3-3 12 12L27 0l3 3-12 12 12 12-3 3-12-12L3 30l-3-3 12-12Z"
+    fill="#fff"
+    transform="translate(219 444)"
+  />
+  <rect x="272" y="426" width="393" height="69" fill="#e3ecf4" />
+  <rect x="318.0" y="439.98" width="300" height="7.04" fill="#333" />
+  <rect x="328.0" y="457.98" width="280" height="7.04" fill="#333" />
+  <rect x="378.0" y="475.98" width="180" height="7.04" fill="#333" />
+  <!-- outlined label over a chain of six bars -->
+  <rect
+    x="735"
+    y="117"
+    width="200"
+    height="52"
+    rx="26"
+    fill="#ffffff"
+    stroke="#8dc63f"
+    stroke-width="3"
+  />
+  <rect x="792.5" y="130.34" width="85" height="8.32" fill="#222" />
+  <rect x="767.5" y="151.34" width="135" height="8.32" fill="#222" />
+  <rect x="688" y="180" width="290" height="38" rx="4" fill="#2e8ccc" />
+  <polygon points="826,218 844,218 835,226" fill="#2e8ccc" />
+  <rect x="753.0" y="194.7" width="160" height="9.6" fill="#ffffff" />
+  <rect x="688" y="236" width="290" height="38" rx="4" fill="#2bb07f" />
+  <polygon points="826,274 844,274 835,282" fill="#2bb07f" />
+  <rect x="758.0" y="250.7" width="150" height="9.6" fill="#ffffff" />
+  <rect x="688" y="292" width="290" height="38" rx="4" fill="#9cc94a" />
+  <polygon points="826,330 844,330 835,338" fill="#9cc94a" />
+  <rect x="715.5" y="306.7" width="235" height="9.6" fill="#ffffff" />
+  <rect x="688" y="348" width="290" height="38" rx="4" fill="#f47c20" />
+  <polygon points="826,386 844,386 835,394" fill="#f47c20" />
+  <rect x="705.5" y="362.7" width="255" height="9.6" fill="#ffffff" />
+  <rect x="688" y="404" width="290" height="38" rx="4" fill="#c8332b" />
+  <polygon points="826,442 844,442 835,450" fill="#c8332b" />
+  <rect x="785.5" y="418.7" width="95" height="9.6" fill="#ffffff" />
+  <rect x="688" y="459" width="290" height="38" rx="4" fill="#2e3e50" />
+  <polygon points="826,497 844,497 835,505" fill="#2e3e50" />
+  <rect x="745.5" y="473.7" width="175" height="9.6" fill="#ffffff" />
+  <rect x="0" y="555" width="1100" height="63" fill="#e6e6e6" />
+  <circle cx="68" cy="585" r="18" fill="#8dc63f" />
+  <text
+    x="98"
+    y="595"
+    font-size="26"
+    font-weight="900"
+    fill="#8dc63f"
+    text-anchor="start"
+  >
+    PLAN
+  </text>
+  <text
+    x="232"
+    y="595"
+    font-size="20"
+    font-weight="800"
+    fill="#111"
+    text-anchor="start"
+  >
+    Plan name
+  </text>
+  <circle cx="1038" cy="585" r="15" fill="#f47c20" />
+</svg>

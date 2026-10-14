@@ -1,0 +1,151 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <rect x="0" y="0" width="1100" height="618" fill="#ffffff" />
+  <!-- partial rings cut by the top edge -->
+  <circle cx="1060" cy="-20" r="97" fill="#ff2d14" />
+  <circle cx="1060" cy="-20" r="82" fill="#ffab90" />
+  <circle
+    cx="1060"
+    cy="-20"
+    r="62"
+    fill="none"
+    stroke="#6b47ea"
+    stroke-width="8"
+  />
+  <circle cx="1060" cy="-20" r="58" fill="#ffd3c4" />
+  <text
+    x="82"
+    y="137"
+    font-size="40"
+    font-weight="900"
+    fill="#ff6b4a"
+    text-anchor="start"
+  >
+    TITLE ON
+  </text>
+  <text
+    x="82"
+    y="187"
+    font-size="40"
+    font-weight="900"
+    fill="#ff6b4a"
+    text-anchor="start"
+  >
+    TWO LINES
+  </text>
+  <rect x="82" y="219" width="108" height="3" fill="#f5b8a8" />
+  <rect x="75" y="304.34" width="370" height="8.32" fill="#555" />
+  <rect x="75" y="328.84" width="365" height="8.32" fill="#555" />
+  <rect x="75" y="353.34" width="395" height="8.32" fill="#555" />
+  <rect x="75" y="377.84" width="390" height="8.32" fill="#555" />
+  <rect x="75" y="402.34" width="365" height="8.32" fill="#555" />
+  <rect x="75" y="426.84" width="370" height="8.32" fill="#555" />
+  <polygon points="66.0,558 74.0,553 74.0,563" fill="#6b47ea" />
+  <polygon points="85.5,558 93.5,553 93.5,563" fill="#6b47ea" />
+  <polygon points="105.0,558 113.0,553 113.0,563" fill="#6b47ea" />
+  <polygon points="124.5,558 132.5,553 132.5,563" fill="#6b47ea" />
+  <polygon points="144.0,558 152.0,553 152.0,563" fill="#6b47ea" />
+  <polygon points="163.5,558 171.5,553 171.5,563" fill="#6b47ea" />
+  <polygon points="183.0,558 191.0,553 191.0,563" fill="#6b47ea" />
+  <polygon points="202.5,558 210.5,553 210.5,563" fill="#6b47ea" />
+  <!-- illustration: a faint rising arrow, five bars ending in a big arrow, two figures -->
+  <path
+    d="M553,417 L655,313 L705,313 L810,233 L900,185"
+    fill="none"
+    stroke="#e3ecf8"
+    stroke-width="13"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <polygon points="886,172 927,165 912,203" fill="#e3ecf8" />
+  <rect x="538" y="436" width="74" height="182" fill="#ff6b4a" />
+  <rect x="636" y="375" width="75" height="243" fill="#6b47ea" />
+  <rect x="734" y="335" width="74" height="283" fill="#ff6b4a" />
+  <rect x="831" y="291" width="76" height="327" fill="#6b47ea" />
+  <rect x="929" y="275" width="76" height="343" fill="#ff6b4a" />
+  <polygon points="904,275 967,174 1030,275" fill="#ff6b4a" />
+  <!-- the climbing figure: on bar 2, reaching up -->
+  <path
+    d="M700,265 L668,330 L660,372"
+    fill="none"
+    stroke="#1f2742"
+    stroke-width="16"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M722,270 L760,300 L762,333"
+    fill="none"
+    stroke="#1f2742"
+    stroke-width="16"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <rect x="648" y="368" width="26" height="8" rx="3" fill="#111" />
+  <rect x="752" y="329" width="30" height="8" rx="3" fill="#111" />
+  <polygon points="688,268 700,215 740,205 760,222 738,270" fill="#e7a83a" />
+  <path
+    d="M745,214 L790,207"
+    fill="none"
+    stroke="#e7a83a"
+    stroke-width="11"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M735,230 L770,238"
+    fill="none"
+    stroke="#d9922a"
+    stroke-width="9"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <circle cx="722" cy="196" r="14" fill="#2a2a3a" />
+  <circle cx="729" cy="200" r="9" fill="#8b5a3c" />
+  <!-- the standing figure: on bar 4, pulling -->
+  <path
+    d="M840,200 L832,250 L838,285"
+    fill="none"
+    stroke="#1f2742"
+    stroke-width="15"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M858,200 L872,248 L880,285"
+    fill="none"
+    stroke="#1f3d7a"
+    stroke-width="15"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <rect x="824" y="282" width="28" height="9" rx="3" fill="#111" />
+  <rect x="866" y="282" width="28" height="9" rx="3" fill="#111" />
+  <polygon points="818,145 845,135 872,165 870,205 835,205" fill="#2d5fa8" />
+  <path
+    d="M822,155 L800,190 L792,205"
+    fill="none"
+    stroke="#2d5fa8"
+    stroke-width="10"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <circle cx="790" cy="207" r="5" fill="#e9b38c" />
+  <circle cx="827" cy="128" r="13" fill="#3a2a2a" />
+  <circle cx="831" cy="133" r="9" fill="#e9b38c" />
+  <text
+    x="775"
+    y="600"
+    font-size="13"
+    font-weight="400"
+    fill="#999"
+    text-anchor="middle"
+  >
+    [illustration]
+  </text>
+</svg>

@@ -1,0 +1,120 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <defs>
+    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1c2a5e" />
+      <stop offset="1" stop-color="#2a66f2" />
+    </linearGradient>
+    <linearGradient
+      id="fade"
+      gradientUnits="userSpaceOnUse"
+      x1="0"
+      y1="0"
+      x2="540"
+      y2="0"
+    >
+      <stop offset="0" stop-color="#d0d0d0" stop-opacity="0.9" />
+      <stop offset="0.55" stop-color="#9a9a9a" stop-opacity="0.6" />
+      <stop offset="1" stop-color="#6a6a6a" stop-opacity="0.08" />
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1100" height="618" fill="#1d161b" />
+  <text
+    x="110"
+    y="155"
+    font-size="54"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    TITLE
+  </text>
+  <!-- seven flowing lines from the left edge, fading out to the right -->
+  <path
+    d="M0,362 C45,425 65,436 100,436 C222,436 280,235 390,235 C456,235 493,351 537,372"
+    fill="none"
+    stroke="url(#fade)"
+    stroke-width="3.5"
+  />
+  <path
+    d="M0,405 C40,452 55,460 90,460 C210,460 267,262 375,262 C448,262 488,394 537,417"
+    fill="none"
+    stroke="url(#fade)"
+    stroke-width="3.5"
+  />
+  <path
+    d="M0,440 C36,476 45,482 80,482 C198,482 254,290 360,290 C440,290 484,423 537,447"
+    fill="none"
+    stroke="url(#fade)"
+    stroke-width="3.5"
+  />
+  <path
+    d="M0,470 C32,497 37,502 72,502 C188,502 243,318 348,318 C433,318 480,462 537,487"
+    fill="none"
+    stroke="url(#fade)"
+    stroke-width="3.5"
+  />
+  <path
+    d="M0,500 C28,520 27,524 62,524 C175,524 228,346 330,346 C421,346 471,483 532,507"
+    fill="none"
+    stroke="url(#fade)"
+    stroke-width="3.5"
+  />
+  <path
+    d="M0,530 C25,543 20,545 55,545 C164,545 216,372 315,372 C408,372 460,502 522,525"
+    fill="none"
+    stroke="url(#fade)"
+    stroke-width="3.5"
+  />
+  <path
+    d="M0,558 C19,566 7,568 42,568 C150,568 202,400 300,400 C394,400 447,519 510,540"
+    fill="none"
+    stroke="url(#fade)"
+    stroke-width="3.5"
+  />
+  <!-- two blocks: gradient header bar, then three bullets -->
+  <rect x="640" y="69" width="390" height="57" fill="url(#bar)" />
+  <text
+    x="835"
+    y="105"
+    font-size="19"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    METHOD NAME
+  </text>
+  <circle cx="697" cy="165" r="2.5" fill="#ffffff" />
+  <rect x="720" y="160.98" width="215" height="7.04" fill="#e6e6e6" />
+  <rect x="720" y="180.48" width="215" height="7.04" fill="#e6e6e6" />
+  <circle cx="697" cy="204.0" r="2.5" fill="#ffffff" />
+  <rect x="720" y="199.98" width="175" height="7.04" fill="#e6e6e6" />
+  <rect x="720" y="219.48" width="165" height="7.04" fill="#e6e6e6" />
+  <circle cx="697" cy="243.0" r="2.5" fill="#ffffff" />
+  <rect x="720" y="238.98" width="250" height="7.04" fill="#e6e6e6" />
+  <rect x="720" y="258.48" width="165" height="7.04" fill="#e6e6e6" />
+  <rect x="640" y="333" width="390" height="57" fill="url(#bar)" />
+  <text
+    x="835"
+    y="369"
+    font-size="19"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    METHOD NAME
+  </text>
+  <circle cx="697" cy="429" r="2.5" fill="#ffffff" />
+  <rect x="720" y="424.98" width="225" height="7.04" fill="#e6e6e6" />
+  <rect x="720" y="444.48" width="210" height="7.04" fill="#e6e6e6" />
+  <circle cx="697" cy="468.0" r="2.5" fill="#ffffff" />
+  <rect x="720" y="463.98" width="235" height="7.04" fill="#e6e6e6" />
+  <circle cx="697" cy="487.5" r="2.5" fill="#ffffff" />
+  <rect x="720" y="483.48" width="250" height="7.04" fill="#e6e6e6" />
+  <rect x="720" y="502.98" width="140" height="7.04" fill="#e6e6e6" />
+</svg>

@@ -1,0 +1,98 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <rect x="0" y="0" width="1100" height="618" fill="#ffffff" />
+  <rect x="0" y="0" width="375" height="618" fill="#c7a5b4" />
+  <text
+    x="187.5"
+    y="315.0"
+    font-size="16"
+    font-weight="400"
+    fill="#eee"
+    text-anchor="middle"
+  >
+    [photo]
+  </text>
+  <!-- dark strip with three hexagon values -->
+  <rect x="375" y="0" width="253" height="618" fill="#002234" />
+  <polygon
+    points="497.0,48.0 536.0,70.0 536.0,114.0 497.0,136.0 458.0,114.0 458.0,70.0"
+    fill="#6b6fa8"
+  />
+  <g
+    transform="translate(477.5 70.5) scale(1.625)"
+    fill="none"
+    stroke="#fff"
+    color="#fff"
+    stroke-width="0.8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <rect x="3" y="11" width="7" height="10" rx="1" />
+    <rect x="14" y="11" width="7" height="10" rx="1" />
+    <path d="M5 11V4h4v7m6 0V4h4v7m-9 3h4" />
+  </g>
+  <rect x="454.5" y="156.34" width="85" height="8.32" fill="#e4e8ef" />
+  <rect x="457.0" y="175.34" width="80" height="8.32" fill="#e4e8ef" />
+  <polygon
+    points="497.0,236.0 536.0,258.0 536.0,302.0 497.0,324.0 458.0,302.0 458.0,258.0"
+    fill="#c46c85"
+  />
+  <g
+    transform="translate(477.5 258.5) scale(1.625)"
+    fill="none"
+    stroke="#fff"
+    color="#fff"
+    stroke-width="0.8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <rect x="5" y="5" width="14" height="14" />
+    <path
+      d="M8 1v4m4-4v4m4-4v4M8 19v4m4-4v4m4-4v4M1 8h4m-4 4h4m-4 4h4m14-8h4m-4 4h4m-4 4h4"
+    />
+  </g>
+  <rect x="438.0" y="344.34" width="118" height="8.32" fill="#e4e8ef" />
+  <rect x="454.5" y="363.34" width="85" height="8.32" fill="#e4e8ef" />
+  <polygon
+    points="497.0,425.0 536.0,447.0 536.0,491.0 497.0,513.0 458.0,491.0 458.0,447.0"
+    fill="#e8a5a5"
+  />
+  <g
+    transform="translate(477.5 447.5) scale(1.625)"
+    fill="none"
+    stroke="#fff"
+    color="#fff"
+    stroke-width="0.8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="m2 7 4-5h12l4 5-10 15zM2 7h20M6 2l6 20 6-20M6 7l6-5 6 5" />
+  </g>
+  <rect x="462.0" y="533.34" width="70" height="8.32" fill="#e4e8ef" />
+  <rect x="441.0" y="552.34" width="112" height="8.32" fill="#e4e8ef" />
+  <rect x="449.5" y="571.34" width="95" height="8.32" fill="#e4e8ef" />
+  <text
+    x="700"
+    y="125"
+    font-size="40"
+    font-weight="700"
+    fill="#0b2035"
+    text-anchor="start"
+  >
+    Title
+  </text>
+  <rect x="700" y="170.7" width="300" height="9.6" fill="#444" />
+  <rect x="700" y="192.7" width="285" height="9.6" fill="#444" />
+  <rect x="700" y="214.7" width="240" height="9.6" fill="#444" />
+  <rect x="700" y="257.7" width="285" height="9.6" fill="#444" />
+  <rect x="700" y="279.7" width="275" height="9.6" fill="#444" />
+  <rect x="700" y="301.7" width="240" height="9.6" fill="#444" />
+  <rect x="700" y="323.7" width="235" height="9.6" fill="#444" />
+  <rect x="700" y="345.7" width="280" height="9.6" fill="#444" />
+  <rect x="700" y="367.7" width="135" height="9.6" fill="#444" />
+</svg>

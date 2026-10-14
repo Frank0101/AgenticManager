@@ -1,0 +1,110 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <rect x="0" y="0" width="1100" height="618.8" fill="#ffffff" />
+  <!-- eyebrow with a short teal rule, then the title -->
+  <rect x="57.4" y="39.3" width="18.1" height="3" fill="#1f8a70" />
+  <rect x="83.9" y="37.8" width="173.8" height="9.8" fill="#1f8a70" />
+  <text
+    x="57.4"
+    y="95.2"
+    font-size="27.2"
+    font-weight="700"
+    fill="#14213d"
+    text-anchor="start"
+  >
+    Title
+  </text>
+  <!-- tag pills -->
+  <rect
+    x="57.4"
+    y="127.7"
+    width="80.1"
+    height="27.2"
+    fill="#e6effc"
+    rx="13.6"
+  />
+  <rect x="68" y="137.5" width="58.9" height="8.3" fill="#2b55c8" />
+  <!-- objective: label then one large line -->
+  <rect x="57.4" y="171.5" width="79.3" height="9.1" fill="#9aa1ab" />
+  <rect x="57.4" y="199.5" width="540.9" height="14.4" fill="#3a4252" />
+  <!-- work: label then bullets with bold lead-ins -->
+  <rect x="57.4" y="241.8" width="43.8" height="9.1" fill="#9aa1ab" />
+  <circle cx="60.4" cy="275" r="2.3" fill="#1f8a70" />
+  <rect x="74" y="269" width="541.7" height="11.3" fill="#c9cdd3" />
+  <rect x="74" y="289.4" width="181.3" height="11.3" fill="#c9cdd3" />
+  <circle cx="60.4" cy="324.9" r="2.3" fill="#1f8a70" />
+  <rect x="74" y="318.8" width="528.8" height="11.3" fill="#c9cdd3" />
+  <circle cx="60.4" cy="353.6" r="2.3" fill="#1f8a70" />
+  <rect x="74" y="347.5" width="550" height="11.3" fill="#c9cdd3" />
+  <rect x="74" y="367.9" width="193.4" height="11.3" fill="#c9cdd3" />
+  <!-- status panel: label, then rows of item and coloured badge -->
+  <rect
+    x="655.8"
+    y="238.7"
+    width="386.8"
+    height="175.3"
+    fill="#f3f4f6"
+    rx="10.6"
+  />
+  <rect x="672.4" y="255.4" width="128.4" height="9.8" fill="#9aa1ab" />
+  <rect x="672.4" y="291.6" width="120.9" height="11.3" fill="#5b6270" />
+  <rect
+    x="927.7"
+    y="285.6"
+    width="93.7"
+    height="22.7"
+    fill="#e1f2ea"
+    rx="11.3"
+  />
+  <rect x="938.3" y="293.9" width="72.5" height="6.8" fill="#1e7a55" />
+  <rect x="672.4" y="326.4" width="54.4" height="11.3" fill="#5b6270" />
+  <rect
+    x="886.2"
+    y="320.3"
+    width="135.2"
+    height="22.7"
+    fill="#fdecd8"
+    rx="11.3"
+  />
+  <rect x="896.8" y="328.6" width="114.1" height="6.8" fill="#c2570c" />
+  <rect x="672.4" y="361.1" width="134.5" height="11.3" fill="#5b6270" />
+  <rect
+    x="908.1"
+    y="355.1"
+    width="113.3"
+    height="22.7"
+    fill="#e1f2ea"
+    rx="11.3"
+  />
+  <rect x="918.7" y="363.4" width="92.2" height="6.8" fill="#1e7a55" />
+  <!-- date, page number, footer and logo -->
+  <rect x="953.4" y="30.2" width="83.1" height="6.8" fill="#c9cdd3" />
+  <rect x="34.8" y="579.5" width="6.8" height="8.3" fill="#c9cdd3" />
+  <rect x="64.2" y="574.2" width="211.5" height="7.6" fill="#c9cdd3" />
+  <rect x="64.2" y="587" width="54.4" height="7.6" fill="#c9cdd3" />
+  <!-- logo -->
+  <rect
+    x="974.6"
+    y="572.7"
+    width="86.9"
+    height="15.1"
+    fill="none"
+    stroke="#9aa1ab"
+    stroke-width="1"
+  />
+  <text
+    x="1017.7"
+    y="584"
+    font-size="9.1"
+    font-weight="400"
+    fill="#9aa1ab"
+    text-anchor="middle"
+  >
+    Logo
+  </text>
+</svg>

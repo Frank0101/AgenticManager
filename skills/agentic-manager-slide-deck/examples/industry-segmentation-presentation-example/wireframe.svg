@@ -1,0 +1,112 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <rect x="0" y="0" width="1100" height="618" fill="#ffffff" />
+  <text
+    x="55"
+    y="72"
+    font-size="36"
+    font-weight="400"
+    fill="#333"
+    text-anchor="start"
+  >
+    Title of the slide
+  </text>
+  <!-- root, joined to four branches -->
+  <rect x="521" y="110" width="250" height="45" rx="5" fill="#c15d8f" />
+  <text
+    x="646"
+    y="141"
+    font-size="22"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    Root
+  </text>
+  <rect x="646" y="155" width="1" height="17" fill="#cccccc" />
+  <rect x="253" y="172" width="694" height="1" fill="#cccccc" />
+  <rect x="253" y="172" width="1" height="18" fill="#cccccc" />
+  <rect x="545" y="172" width="1" height="18" fill="#cccccc" />
+  <rect x="743" y="172" width="1" height="18" fill="#cccccc" />
+  <rect x="947" y="172" width="1" height="18" fill="#cccccc" />
+  <rect x="172" y="190" width="163" height="42" rx="5" fill="#3c2552" />
+  <rect x="450" y="190" width="190" height="42" rx="5" fill="#3c2552" />
+  <rect x="660" y="190" width="168" height="42" rx="5" fill="#3c2552" />
+  <rect x="858" y="190" width="180" height="42" rx="5" fill="#3c2552" />
+  <rect x="215.5" y="206.52" width="75" height="8.96" fill="#e7e2ec" />
+  <rect x="470.0" y="206.52" width="150" height="8.96" fill="#e7e2ec" />
+  <rect x="705.5" y="206.52" width="75" height="8.96" fill="#e7e2ec" />
+  <rect x="889.5" y="206.52" width="115" height="8.96" fill="#e7e2ec" />
+  <!-- branch 1: two leaves side by side, four sub-leaves under the first -->
+  <rect x="253" y="232" width="1" height="16" fill="#cccccc" />
+  <rect x="140" y="248" width="196" height="1" fill="#cccccc" />
+  <rect x="140" y="248" width="1" height="20" fill="#cccccc" />
+  <rect x="336" y="248" width="1" height="20" fill="#cccccc" />
+  <rect x="58" y="268" width="163" height="42" rx="5" fill="#b2afce" />
+  <rect x="71" y="286.16" width="95" height="7.68" fill="#f6f5fa" />
+  <rect x="254" y="268" width="165" height="42" rx="5" fill="#b2afce" />
+  <rect x="267" y="286.16" width="140" height="7.68" fill="#f6f5fa" />
+  <rect x="65" y="320" width="1" height="226" fill="#cccccc" />
+  <rect x="65" y="370" width="25" height="1" fill="#cccccc" />
+  <rect x="65" y="440" width="25" height="1" fill="#cccccc" />
+  <rect x="65" y="498" width="25" height="1" fill="#cccccc" />
+  <rect x="65" y="546" width="25" height="1" fill="#cccccc" />
+  <rect x="90" y="339" width="163" height="58" rx="5" fill="#f0f0f0" />
+  <rect x="103" y="357.16" width="110" height="7.68" fill="#888" />
+  <rect x="103" y="375.16" width="100" height="7.68" fill="#888" />
+  <rect x="90" y="410" width="163" height="58" rx="5" fill="#f0f0f0" />
+  <rect x="103" y="428.16" width="100" height="7.68" fill="#888" />
+  <rect x="103" y="446.16" width="100" height="7.68" fill="#888" />
+  <rect x="90" y="480" width="163" height="36" rx="5" fill="#f0f0f0" />
+  <rect x="103" y="495.16" width="105" height="7.68" fill="#888" />
+  <rect x="90" y="528" width="163" height="36" rx="5" fill="#f0f0f0" />
+  <rect x="103" y="543.16" width="90" height="7.68" fill="#888" />
+  <!-- branches 2 to 4: leaves stacked on a bracket line -->
+  <rect x="459" y="240" width="1" height="227" fill="#cccccc" />
+  <rect x="459" y="289" width="20" height="1" fill="#cccccc" />
+  <rect x="459" y="343" width="20" height="1" fill="#cccccc" />
+  <rect x="459" y="402" width="20" height="1" fill="#cccccc" />
+  <rect x="459" y="466" width="20" height="1" fill="#cccccc" />
+  <rect x="479" y="268" width="158" height="42" rx="5" fill="#b2afce" />
+  <rect x="492" y="286.16" width="90" height="7.68" fill="#f6f5fa" />
+  <rect x="479" y="322" width="158" height="42" rx="5" fill="#b2afce" />
+  <rect x="492" y="340.16" width="90" height="7.68" fill="#f6f5fa" />
+  <rect x="479" y="376" width="158" height="52" rx="5" fill="#b2afce" />
+  <rect x="492" y="391.16" width="90" height="7.68" fill="#f6f5fa" />
+  <rect x="492" y="409.16" width="70" height="7.68" fill="#f6f5fa" />
+  <rect x="479" y="440" width="158" height="52" rx="5" fill="#b2afce" />
+  <rect x="492" y="455.16" width="100" height="7.68" fill="#f6f5fa" />
+  <rect x="492" y="473.16" width="50" height="7.68" fill="#f6f5fa" />
+  <rect x="665" y="240" width="1" height="227" fill="#cccccc" />
+  <rect x="665" y="289" width="20" height="1" fill="#cccccc" />
+  <rect x="665" y="343" width="20" height="1" fill="#cccccc" />
+  <rect x="665" y="396" width="20" height="1" fill="#cccccc" />
+  <rect x="665" y="467" width="20" height="1" fill="#cccccc" />
+  <rect x="685" y="268" width="157" height="42" rx="5" fill="#b2afce" />
+  <rect x="698" y="286.16" width="140" height="7.68" fill="#f6f5fa" />
+  <rect x="685" y="322" width="157" height="42" rx="5" fill="#b2afce" />
+  <rect x="698" y="340.16" width="75" height="7.68" fill="#f6f5fa" />
+  <rect x="685" y="375" width="157" height="42" rx="5" fill="#b2afce" />
+  <rect x="698" y="393.16" width="105" height="7.68" fill="#f6f5fa" />
+  <rect x="685" y="446" width="157" height="42" rx="5" fill="#b2afce" />
+  <rect x="698" y="464.16" width="120" height="7.68" fill="#f6f5fa" />
+  <rect x="864" y="240" width="1" height="227" fill="#cccccc" />
+  <rect x="864" y="289" width="19" height="1" fill="#cccccc" />
+  <rect x="864" y="343" width="19" height="1" fill="#cccccc" />
+  <rect x="864" y="402" width="19" height="1" fill="#cccccc" />
+  <rect x="864" y="467" width="19" height="1" fill="#cccccc" />
+  <rect x="883" y="268" width="157" height="42" rx="5" fill="#b2afce" />
+  <rect x="896" y="286.16" width="65" height="7.68" fill="#f6f5fa" />
+  <rect x="883" y="322" width="157" height="42" rx="5" fill="#b2afce" />
+  <rect x="896" y="340.16" width="95" height="7.68" fill="#f6f5fa" />
+  <rect x="883" y="377" width="157" height="50" rx="5" fill="#b2afce" />
+  <rect x="896" y="391.16" width="75" height="7.68" fill="#f6f5fa" />
+  <rect x="896" y="409.16" width="80" height="7.68" fill="#f6f5fa" />
+  <rect x="883" y="446" width="157" height="42" rx="5" fill="#b2afce" />
+  <rect x="896" y="464.16" width="100" height="7.68" fill="#f6f5fa" />
+</svg>

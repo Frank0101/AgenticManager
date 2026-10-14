@@ -1,0 +1,218 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <rect x="0" y="0" width="1100" height="618" fill="#ffffff" />
+  <rect x="745" y="0" width="355" height="618" fill="#e6e6e6" />
+  <!-- winding road down the middle, three steps on each side -->
+  <path
+    d="M475,75 V150 C475,235 305,195 305,265 C305,330 470,285 470,350 C470,415 300,365 300,425 C300,490 470,445 470,515"
+    fill="none"
+    stroke="#111"
+    stroke-width="45"
+  />
+  <path
+    d="M475,75 V150 C475,235 305,195 305,265 C305,330 470,285 470,350 C470,415 300,365 300,425 C300,490 470,445 470,515"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="2"
+    stroke-dasharray="10 8"
+  />
+  <polygon points="331,155 340,127 349,155" fill="#7fbfc0" />
+  <polygon points="351,225 360,197 369,225" fill="#7fbfc0" />
+  <polygon points="416,320 425,292 434,320" fill="#7fbfc0" />
+  <polygon points="361,405 370,377 379,405" fill="#7fbfc0" />
+  <polygon points="441,425 450,397 459,425" fill="#7fbfc0" />
+  <polygon points="491,485 500,457 509,485" fill="#7fbfc0" />
+  <polygon points="411,465 420,437 429,465" fill="#7fbfc0" />
+  <rect x="35" y="55" width="38" height="38" fill="#7fcac3" />
+  <text
+    x="54"
+    y="80"
+    font-size="16"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    01
+  </text>
+  <text
+    x="35"
+    y="117"
+    font-size="18"
+    font-weight="700"
+    fill="#111"
+    text-anchor="start"
+  >
+    Heading
+  </text>
+  <rect x="35" y="131.7" width="232" height="9.6" fill="#333" />
+  <rect x="35" y="156.2" width="170" height="9.6" fill="#333" />
+  <rect x="35" y="180.7" width="225" height="9.6" fill="#333" />
+  <rect x="35" y="205.2" width="130" height="9.6" fill="#333" />
+  <rect x="35" y="235" width="38" height="38" fill="#7fcac3" />
+  <text
+    x="54"
+    y="260"
+    font-size="16"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    02
+  </text>
+  <text
+    x="35"
+    y="297"
+    font-size="18"
+    font-weight="700"
+    fill="#111"
+    text-anchor="start"
+  >
+    Heading
+  </text>
+  <rect x="35" y="311.7" width="215" height="9.6" fill="#333" />
+  <rect x="35" y="336.2" width="205" height="9.6" fill="#333" />
+  <rect x="35" y="360.7" width="190" height="9.6" fill="#333" />
+  <rect x="35" y="385.2" width="140" height="9.6" fill="#333" />
+  <rect x="35" y="415" width="38" height="38" fill="#7fcac3" />
+  <text
+    x="54"
+    y="440"
+    font-size="16"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    03
+  </text>
+  <text
+    x="35"
+    y="477"
+    font-size="18"
+    font-weight="700"
+    fill="#111"
+    text-anchor="start"
+  >
+    Heading
+  </text>
+  <rect x="35" y="491.7" width="250" height="9.6" fill="#333" />
+  <rect x="35" y="516.2" width="235" height="9.6" fill="#333" />
+  <rect x="35" y="540.7" width="150" height="9.6" fill="#333" />
+  <rect x="522" y="55" width="38" height="38" fill="#7fcac3" />
+  <text
+    x="541"
+    y="80"
+    font-size="16"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    04
+  </text>
+  <text
+    x="522"
+    y="117"
+    font-size="18"
+    font-weight="700"
+    fill="#111"
+    text-anchor="start"
+  >
+    Heading
+  </text>
+  <rect x="522" y="131.7" width="232" height="9.6" fill="#333" />
+  <rect x="522" y="156.2" width="170" height="9.6" fill="#333" />
+  <rect x="522" y="180.7" width="225" height="9.6" fill="#333" />
+  <rect x="522" y="205.2" width="130" height="9.6" fill="#333" />
+  <rect x="522" y="235" width="38" height="38" fill="#7fcac3" />
+  <text
+    x="541"
+    y="260"
+    font-size="16"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    05
+  </text>
+  <text
+    x="522"
+    y="297"
+    font-size="18"
+    font-weight="700"
+    fill="#111"
+    text-anchor="start"
+  >
+    Heading
+  </text>
+  <rect x="522" y="311.7" width="215" height="9.6" fill="#333" />
+  <rect x="522" y="336.2" width="205" height="9.6" fill="#333" />
+  <rect x="522" y="360.7" width="190" height="9.6" fill="#333" />
+  <rect x="522" y="385.2" width="140" height="9.6" fill="#333" />
+  <rect x="522" y="415" width="38" height="38" fill="#7fcac3" />
+  <text
+    x="541"
+    y="440"
+    font-size="16"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    06
+  </text>
+  <text
+    x="522"
+    y="477"
+    font-size="18"
+    font-weight="700"
+    fill="#111"
+    text-anchor="start"
+  >
+    Heading
+  </text>
+  <rect x="522" y="491.7" width="250" height="9.6" fill="#333" />
+  <rect x="522" y="516.2" width="235" height="9.6" fill="#333" />
+  <rect x="522" y="540.7" width="150" height="9.6" fill="#333" />
+  <!-- grey panel: title, subtitle and a centred paragraph -->
+  <text
+    x="922"
+    y="220"
+    font-size="40"
+    font-weight="900"
+    fill="#111"
+    text-anchor="middle"
+  >
+    Title
+  </text>
+  <text
+    x="922"
+    y="275"
+    font-size="40"
+    font-weight="900"
+    fill="#111"
+    text-anchor="middle"
+  >
+    on two lines
+  </text>
+  <text
+    x="922"
+    y="318"
+    font-size="28"
+    font-weight="800"
+    fill="#111"
+    text-anchor="middle"
+  >
+    Subtitle
+  </text>
+  <rect x="802.0" y="344.52" width="240" height="8.96" fill="#333" />
+  <rect x="794.5" y="366.52" width="255" height="8.96" fill="#333" />
+  <rect x="797.0" y="388.52" width="250" height="8.96" fill="#333" />
+  <rect x="787.0" y="410.52" width="270" height="8.96" fill="#333" />
+  <rect x="789.5" y="432.52" width="265" height="8.96" fill="#333" />
+  <rect x="807.0" y="454.52" width="230" height="8.96" fill="#333" />
+  <rect x="834.5" y="476.52" width="175" height="8.96" fill="#333" />
+  <rect x="874.5" y="498.52" width="95" height="8.96" fill="#333" />
+</svg>

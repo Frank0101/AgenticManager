@@ -1,0 +1,246 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <defs>
+    <linearGradient id="footer">
+      <stop stop-color="#8b7fe8" />
+      <stop offset="1" stop-color="#00d59c" />
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1100" height="618" fill="#ffffff" />
+  <path
+    d="M990,60 L1060,0 M1010,80 L1090,10"
+    fill="none"
+    stroke="#e6e6e6"
+    stroke-width="10"
+  />
+  <rect x="1048" y="15" width="35" height="30" rx="5" fill="#8b7fe8" />
+  <text
+    x="1065"
+    y="37"
+    font-size="16"
+    font-weight="700"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    6
+  </text>
+  <text
+    x="555"
+    y="78"
+    font-size="38"
+    font-weight="900"
+    fill="#333"
+    text-anchor="middle"
+  >
+    TITLE
+  </text>
+  <rect x="59.5" y="88.52" width="985" height="8.96" fill="#888" />
+  <rect x="517.0" y="109.52" width="70" height="8.96" fill="#888" />
+  <circle cx="527" cy="135" r="5" fill="#8b7fe8" />
+  <circle cx="543" cy="135" r="5" fill="#a033e8" />
+  <circle cx="559" cy="135" r="5" fill="#22c99a" />
+  <circle cx="575" cy="135" r="5" fill="#8ddb3c" />
+  <!-- four open rings with an icon, each breaking into an arrow to the next -->
+  <circle
+    cx="186"
+    cy="276"
+    r="73"
+    fill="none"
+    stroke="#8b7fe8"
+    stroke-width="20"
+    stroke-dasharray="365 94"
+  />
+  <rect x="249" y="266" width="47" height="20" fill="#8b7fe8" />
+  <polygon points="294,250 324,276 294,302" fill="#8b7fe8" />
+  <g
+    transform="translate(155.5 245.5) scale(2.54167)"
+    fill="none"
+    stroke="#8b7fe8"
+    color="#8b7fe8"
+    stroke-width="0.9"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <circle cx="12" cy="12" r="3" />
+    <circle cx="12" cy="2" r="2" />
+    <circle cx="3" cy="8" r="2" />
+    <circle cx="21" cy="8" r="2" />
+    <circle cx="6" cy="21" r="2" />
+    <circle cx="18" cy="21" r="2" />
+    <path d="M12 4v5M5 9l4 2m6 0 4-2M7 19l3-5m4 0 3 5" />
+  </g>
+  <circle
+    cx="429"
+    cy="276"
+    r="73"
+    fill="none"
+    stroke="#a033e8"
+    stroke-width="20"
+    stroke-dasharray="365 94"
+  />
+  <rect x="492" y="266" width="47" height="20" fill="#a033e8" />
+  <polygon points="537,250 567,276 537,302" fill="#a033e8" />
+  <g
+    transform="translate(398.5 245.5) scale(2.54167)"
+    fill="none"
+    stroke="#a033e8"
+    color="#a033e8"
+    stroke-width="0.9"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <rect x="2" y="3" width="20" height="14" rx="1" />
+    <path d="M12 17v4m-6 0h12" />
+    <path d="M12 6v5h5a5 5 0 0 0-5-5zm-2 1a5 5 0 1 0 6 6h-6z" />
+  </g>
+  <circle
+    cx="670"
+    cy="276"
+    r="73"
+    fill="none"
+    stroke="#22c99a"
+    stroke-width="20"
+    stroke-dasharray="365 94"
+  />
+  <rect x="733" y="266" width="47" height="20" fill="#22c99a" />
+  <polygon points="778,250 808,276 778,302" fill="#22c99a" />
+  <g
+    transform="translate(639.5 245.5) scale(2.54167)"
+    fill="none"
+    stroke="#22c99a"
+    color="#22c99a"
+    stroke-width="0.9"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path
+      d="M8 16C1 9 6 2 12 2s11 7 4 14v3H8zM9 22h6M9 19h6M12 16v-6m-3-1 3 2 3-2"
+    />
+  </g>
+  <circle
+    cx="911"
+    cy="276"
+    r="73"
+    fill="none"
+    stroke="#8ddb3c"
+    stroke-width="20"
+  />
+  <g
+    transform="translate(880.5 245.5) scale(2.54167)"
+    fill="none"
+    stroke="#8ddb3c"
+    color="#8ddb3c"
+    stroke-width="0.9"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M12 2v10h10A10 10 0 0 0 12 2zM9 4a9 9 0 1 0 11 11H9z" />
+  </g>
+  <!-- four centred columns with thin dividers -->
+  <rect x="310" y="405" width="1" height="105" fill="#e3e3e3" />
+  <rect x="550" y="405" width="1" height="105" fill="#e3e3e3" />
+  <rect x="790" y="405" width="1" height="105" fill="#e3e3e3" />
+  <text
+    x="188"
+    y="413"
+    font-size="20"
+    font-weight="700"
+    fill="#8b7fe8"
+    text-anchor="middle"
+  >
+    Heading
+  </text>
+  <rect x="95.5" y="431.98" width="185" height="7.04" fill="#aaa" />
+  <rect x="90.5" y="453.98" width="195" height="7.04" fill="#aaa" />
+  <rect x="158.0" y="475.98" width="60" height="7.04" fill="#aaa" />
+  <rect x="105.5" y="497.98" width="165" height="7.04" fill="#aaa" />
+  <rect x="113.0" y="519.98" width="150" height="7.04" fill="#aaa" />
+  <text
+    x="430"
+    y="413"
+    font-size="20"
+    font-weight="700"
+    fill="#a033e8"
+    text-anchor="middle"
+  >
+    Heading
+  </text>
+  <rect x="337.5" y="431.98" width="185" height="7.04" fill="#aaa" />
+  <rect x="332.5" y="453.98" width="195" height="7.04" fill="#aaa" />
+  <rect x="400.0" y="475.98" width="60" height="7.04" fill="#aaa" />
+  <rect x="347.5" y="497.98" width="165" height="7.04" fill="#aaa" />
+  <rect x="355.0" y="519.98" width="150" height="7.04" fill="#aaa" />
+  <text
+    x="670"
+    y="413"
+    font-size="20"
+    font-weight="700"
+    fill="#22c99a"
+    text-anchor="middle"
+  >
+    Heading
+  </text>
+  <rect x="577.5" y="431.98" width="185" height="7.04" fill="#aaa" />
+  <rect x="572.5" y="453.98" width="195" height="7.04" fill="#aaa" />
+  <rect x="640.0" y="475.98" width="60" height="7.04" fill="#aaa" />
+  <rect x="587.5" y="497.98" width="165" height="7.04" fill="#aaa" />
+  <rect x="595.0" y="519.98" width="150" height="7.04" fill="#aaa" />
+  <text
+    x="910"
+    y="413"
+    font-size="20"
+    font-weight="700"
+    fill="#8ddb3c"
+    text-anchor="middle"
+  >
+    Heading
+  </text>
+  <rect x="817.5" y="431.98" width="185" height="7.04" fill="#aaa" />
+  <rect x="812.5" y="453.98" width="195" height="7.04" fill="#aaa" />
+  <rect x="880.0" y="475.98" width="60" height="7.04" fill="#aaa" />
+  <rect x="827.5" y="497.98" width="165" height="7.04" fill="#aaa" />
+  <rect x="835.0" y="519.98" width="150" height="7.04" fill="#aaa" />
+  <rect x="50" y="555" width="998" height="4" fill="url(#footer)" />
+  <g
+    transform="translate(50.5 571.5) scale(1.45833)"
+    fill="none"
+    stroke="#22c99a"
+    color="#22c99a"
+    stroke-width="1.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <circle cx="12" cy="12" r="3" />
+    <circle cx="12" cy="2" r="2" />
+    <circle cx="3" cy="8" r="2" />
+    <circle cx="21" cy="8" r="2" />
+    <circle cx="6" cy="21" r="2" />
+    <circle cx="18" cy="21" r="2" />
+    <path d="M12 4v5M5 9l4 2m6 0 4-2M7 19l3-5m4 0 3 5" />
+  </g>
+  <text
+    x="95"
+    y="597"
+    font-size="20"
+    font-weight="800"
+    fill="#777"
+    text-anchor="start"
+  >
+    Deck name
+  </text>
+  <text
+    x="1030"
+    y="597"
+    font-size="22"
+    font-weight="400"
+    fill="#555"
+    text-anchor="middle"
+  >
+    ‹ ›
+  </text>
+</svg>

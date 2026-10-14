@@ -1,0 +1,121 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <defs>
+    <linearGradient id="t" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#824bab" />
+      <stop offset="1" stop-color="#e2d6ed" />
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1100" height="618" fill="#ffffff" />
+  <polygon points="940,0 1100,0 1100,190" fill="url(#t)" />
+  <polygon points="0,310 250,618 0,618" fill="#f0f0f0" />
+  <rect x="55" y="42" width="28" height="35" rx="4" fill="#824bab" />
+  <rect x="95" y="47.34" width="90" height="8.32" fill="#222" />
+  <rect x="95" y="68.34" width="120" height="8.32" fill="#222" />
+  <text
+    x="55"
+    y="140"
+    font-size="44"
+    font-weight="900"
+    fill="#111"
+    text-anchor="start"
+  >
+    Title
+  </text>
+  <rect x="55" y="165.52" width="320" height="8.96" fill="#555" />
+  <rect x="55" y="190.52" width="325" height="8.96" fill="#555" />
+  <rect x="55" y="215.52" width="75" height="8.96" fill="#555" />
+  <!-- legend: three dots with 1-2 line labels -->
+  <circle cx="68" cy="301" r="14" fill="#bdbdbd" />
+  <rect x="100" y="286.52" width="80" height="8.96" fill="#555" />
+  <rect x="100" y="309.52" width="72" height="8.96" fill="#555" />
+  <circle cx="235" cy="301" r="14" fill="#d7c7e7" />
+  <rect x="268" y="286.52" width="80" height="8.96" fill="#555" />
+  <rect x="268" y="309.52" width="40" height="8.96" fill="#555" />
+  <circle cx="408" cy="301" r="14" fill="#824bab" />
+  <rect x="440" y="297.52" width="77" height="8.96" fill="#555" />
+  <!-- two KPI tiles -->
+  <rect x="55" y="353" width="245" height="97" rx="12" fill="#824bab" />
+  <text
+    x="90"
+    y="402"
+    font-size="28"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    $00.0M
+  </text>
+  <rect x="90" y="417.34" width="85" height="8.32" fill="#e8dff2" />
+  <rect x="318" y="353" width="245" height="97" rx="12" fill="#d7c7e7" />
+  <text
+    x="353"
+    y="402"
+    font-size="28"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="start"
+  >
+    $0000.0M
+  </text>
+  <rect x="353" y="417.34" width="70" height="8.32" fill="#f3eef8" />
+  <!-- pie, centre (825, 332), radius 187: 55% violet, 20% lavender, 25% grey -->
+  <path
+    d="M825.0,145.0 A187,187,0,1,1,767.2,509.8 L825.0,332.0 Z"
+    fill="#824bab"
+  />
+  <path
+    d="M767.2,509.8 A187,187,0,0,1,638.0,332.0 L825.0,332.0 Z"
+    fill="#d7c7e7"
+  />
+  <path
+    d="M638.0,332.0 A187,187,0,0,1,825.0,145.0 L825.0,332.0 Z"
+    fill="#bdbdbd"
+  />
+  <text
+    x="885"
+    y="335"
+    font-size="26"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    55%
+  </text>
+  <text
+    x="730"
+    y="403"
+    font-size="26"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    20%
+  </text>
+  <text
+    x="728"
+    y="275"
+    font-size="26"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    25%
+  </text>
+  <text
+    x="1020"
+    y="593"
+    font-size="36"
+    font-weight="900"
+    fill="#111"
+    text-anchor="start"
+  >
+    7
+  </text>
+  <polygon points="1065,563 1100,563 1100,595 1058,595" fill="#824bab" />
+</svg>

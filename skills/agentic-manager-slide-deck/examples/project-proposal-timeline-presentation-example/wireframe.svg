@@ -1,0 +1,191 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <rect x="0" y="0" width="1100" height="618" fill="#ffffff" />
+  <text
+    x="55"
+    y="72"
+    font-size="36"
+    font-weight="400"
+    fill="#111"
+    text-anchor="start"
+  >
+    Title of the timeline
+  </text>
+  <!-- five steps: numbered pin, coloured bar, phase name, 3 lines -->
+  <circle cx="149" cy="147" r="32" fill="#6cc9d6" />
+  <polygon points="139,175 159,175 149,188" fill="#6cc9d6" />
+  <text
+    x="149"
+    y="157"
+    font-size="26"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    01
+  </text>
+  <rect x="57" y="196" width="185" height="8" fill="#6cc9d6" />
+  <text
+    x="149"
+    y="232"
+    font-size="18"
+    font-weight="700"
+    fill="#222"
+    text-anchor="middle"
+  >
+    Phase
+  </text>
+  <text
+    x="149"
+    y="254"
+    font-size="18"
+    font-weight="700"
+    fill="#222"
+    text-anchor="middle"
+  >
+    name
+  </text>
+  <rect x="79.0" y="268.98" width="140" height="7.04" fill="#555" />
+  <rect x="71.5" y="285.98" width="155" height="7.04" fill="#555" />
+  <rect x="61.5" y="302.98" width="175" height="7.04" fill="#555" />
+  <circle cx="349" cy="147" r="32" fill="#2fb0e6" />
+  <polygon points="339,175 359,175 349,188" fill="#2fb0e6" />
+  <text
+    x="349"
+    y="157"
+    font-size="26"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    02
+  </text>
+  <rect x="257" y="196" width="185" height="8" fill="#2fb0e6" />
+  <text
+    x="349"
+    y="240"
+    font-size="17"
+    font-weight="700"
+    fill="#222"
+    text-anchor="middle"
+  >
+    Phase name
+  </text>
+  <rect x="279.0" y="268.98" width="140" height="7.04" fill="#555" />
+  <rect x="271.5" y="285.98" width="155" height="7.04" fill="#555" />
+  <rect x="261.5" y="302.98" width="175" height="7.04" fill="#555" />
+  <circle cx="550" cy="147" r="32" fill="#f29233" />
+  <polygon points="540,175 560,175 550,188" fill="#f29233" />
+  <text
+    x="550"
+    y="157"
+    font-size="26"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    03
+  </text>
+  <rect x="458" y="196" width="185" height="8" fill="#f29233" />
+  <text
+    x="550"
+    y="240"
+    font-size="17"
+    font-weight="700"
+    fill="#222"
+    text-anchor="middle"
+  >
+    Phase name
+  </text>
+  <rect x="480.0" y="268.98" width="140" height="7.04" fill="#555" />
+  <rect x="472.5" y="285.98" width="155" height="7.04" fill="#555" />
+  <rect x="462.5" y="302.98" width="175" height="7.04" fill="#555" />
+  <circle cx="749" cy="147" r="32" fill="#e24a57" />
+  <polygon points="739,175 759,175 749,188" fill="#e24a57" />
+  <text
+    x="749"
+    y="157"
+    font-size="26"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    04
+  </text>
+  <rect x="657" y="196" width="185" height="8" fill="#e24a57" />
+  <text
+    x="749"
+    y="240"
+    font-size="17"
+    font-weight="700"
+    fill="#222"
+    text-anchor="middle"
+  >
+    Phase name
+  </text>
+  <rect x="679.0" y="268.98" width="140" height="7.04" fill="#555" />
+  <rect x="671.5" y="285.98" width="155" height="7.04" fill="#555" />
+  <rect x="661.5" y="302.98" width="175" height="7.04" fill="#555" />
+  <circle cx="950" cy="147" r="32" fill="#8c4a8c" />
+  <polygon points="940,175 960,175 950,188" fill="#8c4a8c" />
+  <text
+    x="950"
+    y="157"
+    font-size="26"
+    font-weight="800"
+    fill="#ffffff"
+    text-anchor="middle"
+  >
+    05
+  </text>
+  <rect x="858" y="196" width="185" height="8" fill="#8c4a8c" />
+  <text
+    x="950"
+    y="232"
+    font-size="18"
+    font-weight="700"
+    fill="#222"
+    text-anchor="middle"
+  >
+    Phase
+  </text>
+  <text
+    x="950"
+    y="254"
+    font-size="18"
+    font-weight="700"
+    fill="#222"
+    text-anchor="middle"
+  >
+    name
+  </text>
+  <rect x="880.0" y="268.98" width="140" height="7.04" fill="#555" />
+  <rect x="872.5" y="285.98" width="155" height="7.04" fill="#555" />
+  <rect x="862.5" y="302.98" width="175" height="7.04" fill="#555" />
+  <!-- two by two project cards: label and value -->
+  <rect x="56" y="346" width="481" height="103" rx="6" fill="#6cc9d6" />
+  <rect x="126" y="383.52" width="70" height="8.96" fill="#ffffff" />
+  <rect x="141" y="405.52" width="55" height="8.96" fill="#ffffff" />
+  <rect x="222" y="382.34" width="260" height="8.32" fill="#eaf6fb" />
+  <rect x="222" y="401.34" width="215" height="8.32" fill="#eaf6fb" />
+  <rect x="563" y="346" width="481" height="103" rx="6" fill="#2fb0e6" />
+  <rect x="633" y="383.52" width="70" height="8.96" fill="#ffffff" />
+  <rect x="648" y="405.52" width="55" height="8.96" fill="#ffffff" />
+  <rect x="729" y="364.34" width="255" height="8.32" fill="#eaf6fb" />
+  <rect x="729" y="383.34" width="260" height="8.32" fill="#eaf6fb" />
+  <rect x="729" y="402.34" width="270" height="8.32" fill="#eaf6fb" />
+  <rect x="729" y="421.34" width="225" height="8.32" fill="#eaf6fb" />
+  <rect x="56" y="465" width="481" height="103" rx="6" fill="#f29233" />
+  <rect x="126" y="502.52" width="70" height="8.96" fill="#ffffff" />
+  <rect x="141" y="524.52" width="55" height="8.96" fill="#ffffff" />
+  <rect x="222" y="510.34" width="75" height="8.32" fill="#eaf6fb" />
+  <rect x="563" y="465" width="481" height="103" rx="6" fill="#e24a57" />
+  <rect x="633" y="502.52" width="70" height="8.96" fill="#ffffff" />
+  <rect x="648" y="524.52" width="55" height="8.96" fill="#ffffff" />
+  <rect x="729" y="510.34" width="135" height="8.32" fill="#eaf6fb" />
+</svg>
