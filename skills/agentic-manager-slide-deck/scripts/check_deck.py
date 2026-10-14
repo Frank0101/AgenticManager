@@ -6,17 +6,20 @@ built from, read-only.
 It shares only common.py with make_deck.py: it reads the page back as a
 browser would and counts what slides.json says must be there (the slides,
 each chart with its data, each ring with its segments), so a generator bug
-can't pass by agreeing with itself. It also
-checks the page's fixed parts (the toolbar, zoom, the print rules), that it
-loads nothing but the pinned Chart.js and Mermaid.js, each only when a slide
-needs it, that every image it links is in _assets, as slides.json places
-them, and that the folder holds only the deck's files.
+can't pass by agreeing with itself. It also checks the page's fixed parts
+(the toolbar, zoom, the print rules), that it loads nothing but the pinned
+Chart.js and Mermaid.js, each only when a slide needs it, that every image it
+links is in _assets, as slides.json places them, that every slide showing a
+downloaded image shows its credit, and that the folder holds only the deck's
+files.
 
 Placeholders, such as [IMAGE: team photo], aren't errors: they are content the
-user hasn't given yet, listed so the agent can say what is missing.
+user hasn't given yet, listed so the agent can say what is missing. Neither
+are stand-ins, drawings marked as waiting for a real image, listed so the
+agent can offer to find them.
 
-Prints one line of JSON: "ok", "errors" and "placeholders". Exits 1 if any
-check fails.
+Prints one line of JSON: "ok", "errors", "placeholders" and "stand_ins". Exits
+1 if any check fails.
 """
 import argparse
 import json
@@ -24,24 +27,25 @@ import os
 import re
 from html.parser import HTMLParser
 
-from common import (ASSETS, CHART_JS, MERMAID_JS, PLACEHOLDER, REMOTE, SLIDE_HEIGHT, SLIDE_WIDTH, SLIDES, TOKEN,
-                    URL_ATTRIBUTES, VOID, asset_link, asset_names, deck_dir, deck_file, expected_files, read_json)
+from common import (ASSETS, CHART_JS, MERMAID_JS, PAGE, PLACEHOLDER, REMOTE, SLIDE_HEIGHT, SLIDE_WIDTH, SLIDES, STAND_IN,
+                    TOKEN, URL_ATTRIBUTES, VOID, asset_link, asset_names, credit_line, credits, deck_dir, deck_file,
+                    expected_files, placed_images, read_json)
 
 TOOLBAR_BUTTONS = ["Zoom in", "Zoom out", "Export PDF"]
 CHARTS_DATA = re.compile(r"const charts = (.*);\n")
 
 
 def check_deck(deck):
-    """{"ok", "errors", "placeholders"} of the deck folder `deck`."""
+    """{"ok", "errors", "placeholders", "stand_ins"} of the deck folder `deck`."""
     folder = deck_dir(deck)
-    errors, placeholders = check(
+    errors, placeholders, stand_ins = check(
         folder, deck, read_json(os.path.join(folder, SLIDES)))
-    return {"ok": not errors, "errors": errors, "placeholders": placeholders}
+    return {"ok": not errors, "errors": errors, "placeholders": placeholders, "stand_ins": stand_ins}
 
 
 def check(folder, deck, content):
-    """(errors, placeholders) of the deck in `folder` against `content`, the
-    slides.json it was built from."""
+    """(errors, placeholders, stand-ins) of the deck in `folder` against
+    `content`, the slides.json it was built from."""
     errors = []
     files = {name for name in os.listdir(folder) if not name.startswith(".")}
     wanted = expected_files(deck)
@@ -52,7 +56,7 @@ def check(folder, deck, content):
                       + (f"; missing {', '.join(missing)}" if missing else ""))
     path = os.path.join(folder, deck_file(deck))
     if not os.path.isfile(path):
-        return errors, []
+        return errors, [], []
     page, raw = read_page(path)
     if page.title.strip() != content["title"].strip():
         errors.append(
@@ -98,10 +102,19 @@ def check(folder, deck, content):
     missing = sorted(set(placed) - asset_names())
     if missing:
         errors.append(f"{ASSETS} has no {', '.join(missing)}")
+    known = credits()
+    for number, slide in enumerate(content["slides"], 1):
+        shown = "".join(page.slide_text[number - 1]
+                        ) if number <= len(page.slide_text) else ""
+        for name in placed_images("\n".join(slide["html"])):
+            if name in known and credit_line(known[name]) not in shown:
+                errors.append(
+                    f"slide {number} shows {name} without its credit: {credit_line(known[name])}")
     token = TOKEN.search(raw)
-    if token:
-        errors.append(f"the page still holds a token: {token[0]}")
-    return errors, PLACEHOLDER.findall("".join(page.text))
+    if token or PAGE in raw:
+        errors.append(
+            f"the page still holds a token: {token[0] if token else PAGE}")
+    return errors, PLACEHOLDER.findall("".join(page.text)), page.stand_ins
 
 
 def read_page(path):
@@ -123,6 +136,8 @@ class PageReader(HTMLParser):
         self.slides, self.buttons, self.sources, self.remote = 0, [], [], []
         self.files = []  # the local files the page links, by their link
         self.canvases, self.rings, self.mermaid, self.links = [], {}, False, 0
+        self.slide_text = []  # each slide's text, in pieces
+        self.stand_ins = []  # "slide <n>: <the image it stands in for>"
 
     def inside(self, tag, cls):
         return any(t == tag and cls in c for t, c, _ in self.open)
@@ -142,6 +157,9 @@ class PageReader(HTMLParser):
         parent = self.open[-1] if self.open else None
         if tag == "div" and "slide" in classes and parent and "slides-wrapper" in parent[1]:
             self.slides += 1
+            self.slide_text.append([])
+        if STAND_IN in attrs:
+            self.stand_ins.append(f"slide {self.slides}: {attrs[STAND_IN]}")
         if tag == "button" and self.inside("div", "toolbar"):
             self.buttons.append(attrs.get("title"))
         if tag == "script" and attrs.get("src"):
@@ -179,6 +197,8 @@ class PageReader(HTMLParser):
             self.scripts.append(data)
         else:
             self.text.append(data)
+            if self.slide_text and self.inside("div", "slide"):
+                self.slide_text[-1].append(data)
 
 
 def main(argv=None):

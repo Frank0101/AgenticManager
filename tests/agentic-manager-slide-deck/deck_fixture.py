@@ -52,11 +52,14 @@ def temp_output(test):
     return os.path.join(root, "out", "slide-decks")
 
 
-def write_asset(folder, name="acme-logo.svg"):
-    """Puts the image `name` in _assets in the output folder `folder`."""
-    os.makedirs(os.path.join(folder, "_assets"), exist_ok=True)
-    with open(os.path.join(folder, "_assets", name), "w", encoding="utf-8") as f:
+def write_asset(folder, name="acme-logo", description="# Acme logo\n\n**Shows:** the Acme logo, wide\n"):
+    """Puts the image `name`, an SVG, with its description in _assets in the
+    output folder `folder`."""
+    os.makedirs(os.path.join(folder, "_assets", name), exist_ok=True)
+    with open(os.path.join(folder, "_assets", name, "image.svg"), "w", encoding="utf-8") as f:
         f.write("<svg/>")
+    with open(os.path.join(folder, "_assets", name, "description.md"), "w", encoding="utf-8") as f:
+        f.write(description)
 
 
 def write_slides(folder, data, deck=DECK):
@@ -64,3 +67,16 @@ def write_slides(folder, data, deck=DECK):
     os.makedirs(os.path.join(folder, deck), exist_ok=True)
     with open(os.path.join(folder, deck, "slides.json"), "w", encoding="utf-8") as f:
         json.dump(data, f)
+
+
+CREDIT = {"credit": "Example Agency", "license": "CC BY 4.0",
+          "source": "https://example.org/wiki/File:Earth.jpg", "image": "https://example.org/files/earth.jpg"}
+CREDITED = ("# The Earth\n\n**Shows:** the Earth from space\n\n**Credit:** Example Agency\n\n"
+            "**License:** CC BY 4.0\n\n**Source:** https://example.org/wiki/File:Earth.jpg\n\n"
+            "**Image:** https://example.org/files/earth.jpg\n")
+
+
+def write_credited_asset(folder, name="earth"):
+    """Puts the image `name` in _assets in the output folder `folder` as if
+    downloaded, its description holding CREDIT."""
+    write_asset(folder, name, CREDITED)

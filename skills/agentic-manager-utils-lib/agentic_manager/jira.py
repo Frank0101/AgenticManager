@@ -26,6 +26,7 @@ from urllib.request import Request, urlopen
 from agentic_manager.config import read_source
 from agentic_manager.json_path import nested
 from agentic_manager.text import DISPLAY_DATE
+from agentic_manager.web import ssl_context
 
 GROUP, NAME = "workflow", "jira-api"
 SOURCE = f"sources.{GROUP}.{NAME}"
@@ -229,7 +230,7 @@ class JiraClient:
         request = Request(
             url, headers={"Accept": "application/json", "Authorization": self._auth})
         try:
-            with urlopen(request, timeout=30) as response:
+            with urlopen(request, timeout=30, context=ssl_context()) as response:
                 return json.load(response)
         except HTTPError as e:
             if e.code == 401:

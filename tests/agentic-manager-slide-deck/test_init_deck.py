@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import common  # noqa: E402
 import init_deck  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from deck_fixture import temp_output  # noqa: E402
+from deck_fixture import temp_output, write_asset, write_credited_asset  # noqa: E402
 
 TODAY = date(2026, 10, 5)
 
@@ -35,7 +35,7 @@ class InitTest(unittest.TestCase):
         self.assertEqual(result, {"folder": self.folder, "temporary": False,
                                   "deck": "Acme-Q3-Review_26-10-05", "deck_dir": path,
                                   "slides_path": "Acme-Q3-Review_26-10-05/slides.json",
-                                  "replaced": False})
+                                  "replaced": False, "assets": []})
         self.assertEqual(os.listdir(path), [])
         # The examples and assets folders are there from the first deck, empty.
         for shared in ("_examples", "_assets"):
@@ -48,6 +48,14 @@ class InitTest(unittest.TestCase):
             "Acme-Q3-Review", today=TODAY)["replaced"])
         self.assertEqual(os.listdir(path), [])
         self.assertTrue(os.path.isdir(earlier))
+
+    def test_lists_the_images_in_assets_with_what_they_show(self):
+        write_asset(self.folder)
+        write_credited_asset(self.folder)
+        self.assertEqual(init_deck.init("Acme-Q3-Review", today=TODAY)["assets"], [
+            {"name": "acme-logo", "title": "Acme logo",
+                "shows": "the Acme logo, wide", "license": None},
+            {"name": "earth", "title": "The Earth", "shows": "the Earth from space", "license": "CC BY 4.0"}])
 
     def test_refuses_a_name_that_isnt_words_joined_by_hyphens(self):
         for name in ("Acme Q3", "Acme_Q3", "../Acme", "", "Acme-"):

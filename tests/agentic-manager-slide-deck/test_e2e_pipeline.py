@@ -83,7 +83,7 @@ class PipelineTest(unittest.TestCase):
         checked = json.loads(self.run_script(
             os.path.join(SCRIPTS, "check_deck.py"), "--deck", deck).stdout)
         self.assertEqual(
-            checked, {"ok": True, "errors": [], "placeholders": []})
+            checked, {"ok": True, "errors": [], "placeholders": [], "stand_ins": []})
 
 
 if __name__ == "__main__":

@@ -20,13 +20,16 @@ Prints one line of JSON:
   examples            every example, the skill's and the user's: its folder,
                       source, title and what it is good for, so the agent
                       picks which to read
+  assets              every image in _assets: its name, title, what it shows
+                      and, if downloaded, its license, so the agent reuses one
+                      before drawing or searching for another
 """
 import argparse
 from datetime import date
 import json
 import os
 
-from common import ASSETS, FOLDER_NAME, NAME, SLIDES, USER_EXAMPLES, clear_folder, day_folder, examples, output_folder
+from common import ASSETS, FOLDER_NAME, NAME, SLIDES, USER_EXAMPLES, assets, clear_folder, day_folder, examples, output_folder
 
 
 def init(name, today=None):
@@ -41,7 +44,10 @@ def init(name, today=None):
     for shared in (USER_EXAMPLES, ASSETS):
         os.makedirs(os.path.join(folder, shared), exist_ok=True)
     return {"folder": folder, "temporary": temporary, "deck": deck, "deck_dir": path,
-            "slides_path": f"{deck}/{SLIDES}", "replaced": replaced, "examples": examples()}
+            "slides_path": f"{deck}/{SLIDES}", "replaced": replaced, "examples": examples(),
+            "assets": [{"name": asset["name"], "title": asset["title"], "shows": asset["shows"],
+                        "license": asset["credit"]["license"] if asset["credit"] else None}
+                       for asset in assets()]}
 
 
 def main(argv=None):

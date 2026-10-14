@@ -27,9 +27,9 @@ class SaveExampleTest(unittest.TestCase):
     def test_keeps_one_slide_with_what_it_places(self):
         # Slide 2 places the chart and the ring: the example keeps them, the
         # deck's CSS, and nothing of the other slides, in a folder of its own.
-        write_asset(self.folder, "logo.svg")
+        write_asset(self.folder, "logo")
         data = content()
-        data["slides"][1]["html"].append("<img src='{{asset:logo.svg}}'>")
+        data["slides"][1]["html"].append("<img src='{{asset:logo}}'>")
         write_slides(self.folder, data)
         result = save_example.save(
             DECK, 2, "Revenue  at a glance", "a chart beside a ring")
@@ -47,7 +47,7 @@ class SaveExampleTest(unittest.TestCase):
             page = f.read()
         # The page links the chart and the shared image, two folders up.
         self.assertIn('<canvas id="chart-revenue">', page)
-        self.assertIn("<img src='../../_assets/logo.svg'>", page)
+        self.assertIn("<img src='../../_assets/logo/image.svg'>", page)
         listed = [e for e in common.examples() if e["source"] == "yours"]
         self.assertEqual(listed, [{"folder": os.path.realpath(folder), "source": "yours",
                                    "title": "Revenue at a glance", "use_for": "a chart beside a ring"}])

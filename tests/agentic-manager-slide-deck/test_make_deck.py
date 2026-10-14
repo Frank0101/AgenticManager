@@ -8,6 +8,8 @@ import os
 import re
 import sys
 import unittest
+from pathlib import Path
+from unittest import mock
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
@@ -17,7 +19,7 @@ import check_deck  # noqa: E402
 import common  # noqa: E402
 import make_deck  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from deck_fixture import DECK, content, temp_output, write_asset, write_slides  # noqa: E402
+from deck_fixture import CREDIT, DECK, content, temp_output, write_asset, write_credited_asset, write_slides  # noqa: E402
 
 
 def slide(*lines):
@@ -147,15 +149,15 @@ class ProblemsTest(unittest.TestCase):
                            "<svg viewBox='0 0 10 10'><path d='M0,0 L10,10' /><circle cx='5' cy='5' r='2'></circle></svg>",
                            "<a href='https://example.com'>Q&amp;A</a>"),
              slide("<p>Thanks</p>")),
-            ("an image twice", slide("<img src='{{asset:acme-logo.svg}}'>"),
-             slide("<p>Thanks</p>", "<img src='{{asset:acme-logo.svg}}'>")),
+            ("an image twice", slide("<img src='{{asset:acme-logo}}'>"),
+             slide("<p>Thanks</p>", "<img src='{{asset:acme-logo}}'>")),
         ]
         for name, first, third in cases:
             with self.subTest(name):
                 data = content()
                 data["slides"][0], data["slides"][2] = first, third
                 self.assertEqual(make_deck.problems(
-                    data, frozenset({"acme-logo.svg"}))[0], [])
+                    data, frozenset({"acme-logo"}))[0], [])
 
 
 class RingTest(unittest.TestCase):
@@ -189,7 +191,7 @@ class BuildTest(unittest.TestCase):
     def build(self, data):
         errors, texts, mermaid = make_deck.problems(data)
         self.assertEqual(errors, [])
-        return make_deck.build(data, texts, mermaid)
+        return make_deck.build(data, texts, mermaid, {})
 
     def test_page(self):
         # The page wraps each slide in its frame with its own classes, puts
@@ -213,6 +215,13 @@ class BuildTest(unittest.TestCase):
         plain = self.build(data)
         self.assertNotIn("<script src", plain)
         self.assertIn("function zoom(", plain)
+
+    def test_page_numbers_count_the_slides(self):
+        data = content()
+        for s in data["slides"]:
+            s["html"].append("<span class='n'>{{page}}</span>")
+        self.assertEqual(re.findall(r"<span class='n'>(.*?)</span>", self.build(data)),
+                         ["1", "2", "3"])
 
     def test_a_charts_format_reaches_the_page_as_data(self):
         # The format stays data in the page; the page's own script turns it
@@ -254,19 +263,48 @@ class MakeDeckTest(unittest.TestCase):
         # rather than holding a copy.
         write_asset(self.folder)
         data = content()
-        data["slides"][0] = slide("<img src='{{asset:acme-logo.svg}}'>")
+        data["slides"][0] = slide("<img src='{{asset:acme-logo}}'>")
         write_slides(self.folder, data)
         result = make_deck.make_deck(DECK)
         self.assertTrue(result["ok"], result)
         with open(result["path"], encoding="utf-8") as f:
-            self.assertIn("<img src='../_assets/acme-logo.svg'>", f.read())
+            self.assertIn(
+                "<img src='../_assets/acme-logo/image.svg'>", f.read())
 
     def test_valid_slides_write_a_deck_that_passes(self):
         write_slides(self.folder, content())
         result = make_deck.make_deck(DECK)
         self.assertEqual(result, {"path": os.path.join(self.folder, DECK, "Acme-Q3-Review_Slides.html"),
                                   "temporary": False, "ok": True, "errors": [],
-                                  "placeholders": ["[IMAGE: team photo]"]})
+                                  "placeholders": ["[IMAGE: team photo]"], "stand_ins": [],
+                                  "credits": [], "opened": False})
+
+    def test_a_downloaded_image_is_credited_on_every_slide_that_shows_it(self):
+        write_credited_asset(self.folder)
+        data = content()
+        for number in (0, 2):
+            data["slides"][number]["html"].append(
+                "<img src='{{asset:earth}}'>")
+        write_slides(self.folder, data)
+        result = make_deck.make_deck(DECK)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["credits"], [{"asset": "earth", "license": CREDIT["license"],
+                                              "source": CREDIT["source"]}])
+        with open(result["path"], encoding="utf-8") as f:
+            slides = f.read().split('<div class="slide')[2:]
+        self.assertEqual([slide.count('<p class="asset-credit">Example Agency · CC BY 4.0</p>')
+                          for slide in slides], [1, 0, 1])
+
+    def test_open_shows_a_passing_deck_in_the_browser(self):
+        write_slides(self.folder, content())
+        for open_page, browser_opened, opened in ((False, True, False), (True, True, True),
+                                                  (True, False, False)):
+            with self.subTest(open_page=open_page, browser_opened=browser_opened), \
+                    mock.patch.object(make_deck.webbrowser, "open", return_value=browser_opened) as browser:
+                result = make_deck.make_deck(DECK, open_page)
+                self.assertEqual(result["opened"], opened)
+                self.assertEqual(browser.call_args_list,
+                                 [mock.call(Path(result["path"]).as_uri())] if open_page else [])
 
 
 if __name__ == "__main__":

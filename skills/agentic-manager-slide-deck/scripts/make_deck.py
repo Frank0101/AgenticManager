@@ -1,7 +1,7 @@
 """Writes the deck's <Name>_Slides.html from <deck>/slides.json, then checks it
 with check_deck.py.
 
-    python3 make_deck.py --deck <Name>_<YY-MM-DD>
+    python3 make_deck.py --deck <Name>_<YY-MM-DD> [--open]
 
 The page around the slides is fixed, and this script owns it: the slide's
 size, the grey page behind the slides, the toolbar with zoom and PDF export,
@@ -20,12 +20,20 @@ donut or pie of equal or weighted segments with gaps between them, drawn here
 as SVG, since its geometry is arithmetic. A <pre class="mermaid"> block is a
 diagram Mermaid.js draws in the browser. An image is {{asset:<name>}}, linked
 to the file in _assets, which must be there: an image from anywhere else, a
-path or a URL, would show only on one machine or online.
+path or a URL, would show only on one machine or online; a downloaded image's
+credit is added to every slide that shows it, so no slide can drop it.
+{{page}} is the slide's number, counted here, so no number is kept by hand.
+
+With --open, a deck that passes the check opens in the user's default
+browser, their own window rather than one a tool drives, so they review it
+where they will present it; it is a flag, not the default, since every
+revision after the first is a refresh of the page already open.
 
 Prints one line of JSON: the deck's path, whether the folder is temporary,
-whether the deck passes the check ("ok"), its errors and the placeholders left
-in it. Exits 1 if slides.json is invalid (writing nothing) or the written deck
-fails the check.
+what check_deck.py reports (ok, errors, placeholders and stand-ins), the
+credits of the downloaded images it shows and whether it was opened. Exits 1
+if slides.json is invalid (writing nothing) or the written deck fails the
+check.
 """
 import argparse
 import html
@@ -33,12 +41,14 @@ import json
 import math
 import os
 import re
+import webbrowser
 from html.parser import HTMLParser
+from pathlib import Path
 from typing import TypeIs
 
-from common import (ASSET_NAME, CHART_JS, ELEMENT_ID, FOLDER_NAME, MERMAID_JS, REMOTE, SLIDE_HEIGHT, SLIDE_WIDTH,
-                    SLIDES, TOKEN, URL_ATTRIBUTES, VOID, asset_link, asset_names, deck_dir, deck_file, read_json,
-                    write_output_file)
+from common import (CHART_JS, ELEMENT_ID, FOLDER_NAME, MERMAID_JS, PAGE, REMOTE, SLIDE_HEIGHT, SLIDE_WIDTH,
+                    SLIDES, SLUG, TOKEN, URL_ATTRIBUTES, VOID, asset_link, asset_names, credit_line, credits,
+                    deck_dir, deck_file, placed_images, read_json, write_output_file)
 import check_deck
 
 FIELDS = {"title", "style", "slides", "charts", "rings"}
@@ -59,30 +69,46 @@ REMOTE_CSS = re.compile(
     r"url\(\s*['\"]?\s*" + REMOTE.pattern + "|@import", re.I)
 
 
-def make_deck(deck):
-    """Writes the deck and checks it; returns the JSON result, or exits with
-    the problems if slides.json is invalid."""
+def make_deck(deck, open_page=False):
+    """Writes the deck and checks it, opening it in the default browser when
+    `open_page` and it passes; returns the JSON result, or exits with the
+    problems if slides.json is invalid."""
     folder = deck_dir(deck)
     content = read_json(os.path.join(folder, SLIDES))
     errors, texts, mermaid = problems(content, asset_names())
     if errors:
         raise SystemExit("slides.json has problems, so nothing was written:\n  - "
                          + "\n  - ".join(errors))
+    known = credits()
     path, temporary = write_output_file(
-        FOLDER_NAME, f"{deck}/{deck_file(deck)}", build(content, texts, mermaid).encode("utf-8"))
-    return {"path": path, "temporary": temporary, **check_deck.check_deck(deck)}
+        FOLDER_NAME, f"{deck}/{deck_file(deck)}", build(content, texts, mermaid, known).encode("utf-8"))
+    result = {"path": path, "temporary": temporary,
+              **check_deck.check_deck(deck)}
+    result["credits"] = [{"asset": name, "license": known[name]["license"], "source": known[name]["source"]}
+                         for name in sorted({name for text in texts for name in placed_images(text)})
+                         if name in known]
+    result["opened"] = bool(open_page and result["ok"]
+                            and webbrowser.open(Path(path).as_uri()))
+    return result
 
 
-def build(content, texts, mermaid, depth=1):
+def build(content, texts, mermaid, image_credits, depth=1):
     """The deck's HTML page from valid content and the slides' HTML and Mermaid
-    flag problems() returned for it, `depth` folders below the skill's output
-    folder."""
+    flag problems() returned for it, crediting each downloaded image in
+    `image_credits` on every slide that shows it, `depth` folders below the
+    skill's output folder."""
     charts, rings = content.get("charts", {}), content.get("rings", {})
     style = "\n".join(content.get("style", []))
     slides = []
-    for slide, text in zip(content["slides"], texts):
+    for number, (slide, text) in enumerate(zip(content["slides"], texts), 1):
         classes = " ".join(["slide"] + slide.get("class", "").split())
-        body = TOKEN.sub(lambda match: place(match, rings, depth), text)
+        body = TOKEN.sub(lambda match: place(match, rings, depth),
+                         text.replace(PAGE, str(number)))
+        shown = [name for name in placed_images(text) if name in image_credits]
+        if shown:
+            line = "; ".join(credit_line(
+                image_credits[name]) for name in shown)
+            body += f'\n<p class="asset-credit">{html.escape(line)}</p>'
         slides.append(f'      <div class="{classes}">\n{body}\n      </div>')
     scripts = [ZOOM_SCRIPT]
     if charts:
@@ -165,7 +191,7 @@ def problems(content, assets=frozenset()):
         for match in TOKEN.finditer(text):
             key = (match[1], match[2])
             if match[1] == "asset":
-                if not ASSET_NAME.fullmatch(match[2]) or match[2] not in assets:
+                if not SLUG.fullmatch(match[2]) or match[2] not in assets:
                     errors.append(f"{where}.html: {match[0]} names no image in _assets: add it with "
                                   "add_asset.py, which prints its name")
             elif key in elements:
@@ -173,11 +199,11 @@ def problems(content, assets=frozenset()):
             else:
                 errors.append(
                     f"{where}.html: {match[0]} names no {match[1]} in `{match[1]}s`")
-        bare = TOKEN.sub("", text)
+        bare = TOKEN.sub("", text).replace(PAGE, "")
         if "{{" in bare:
             errors.append(
-                f"{where}.html: `{{{{` starts no token: write {{{{chart:<id>}}}}, {{{{ring:<id>}}}} "
-                "or {{{{asset:<name>}}}}")
+                f"{where}.html: `{{{{` starts no token: write {{{{chart:<id>}}}}, {{{{ring:<id>}}}}, "
+                "{{{{asset:<name>}}}} or {{{{page}}}}")
         problem, holds_mermaid = read_slide(bare)
         mermaid = mermaid or holds_mermaid
         if problem:
@@ -427,6 +453,17 @@ BASE_CSS = f"""      * {{
         overflow: hidden;
       }}
 
+      .asset-credit {{
+        position: absolute;
+        right: 14px;
+        bottom: 8px;
+        max-width: 60%;
+        font-size: 10px;
+        line-height: 1.3;
+        text-align: right;
+        color: #6b7280;
+      }}
+
       .chart {{
         position: relative;
         width: 100%;
@@ -559,7 +596,10 @@ def main(argv=None):
         description="Write the deck from slides.json, then check it.")
     parser.add_argument("--deck", required=True,
                         help="the deck's folder, <Name>_<YY-MM-DD>, inside slide-decks")
-    result = make_deck(parser.parse_args(argv).deck)
+    parser.add_argument("--open", action="store_true",
+                        help="open the deck in the default browser if it passes the check")
+    args = parser.parse_args(argv)
+    result = make_deck(args.deck, args.open)
     print(json.dumps(result))
     return 0 if result["ok"] else 1
 

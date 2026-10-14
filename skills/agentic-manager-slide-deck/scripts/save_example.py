@@ -21,8 +21,8 @@ import argparse
 import json
 import os
 
-from common import (EXAMPLE_DESCRIPTION, EXAMPLE_PAGE, FOLDER_NAME, SLIDES, TOKEN, USER_EXAMPLES, asset_names, deck_dir,
-                    free_name, read_json, slug, user_examples_dir, write_output_file)
+from common import (EXAMPLE_DESCRIPTION, EXAMPLE_PAGE, FOLDER_NAME, SLIDES, TOKEN, USER_EXAMPLES, asset_names, credits,
+                    deck_dir, free_name, read_json, slug, user_examples_dir, write_output_file)
 from make_deck import build, problems
 
 
@@ -38,7 +38,7 @@ def save(deck, number, title, use_for):
                          "first:\n  - " + "\n  - ".join(errors))
     name = example_name(user_examples_dir(), title)
     files = {SLIDES: json.dumps(content, ensure_ascii=False, indent=2) + "\n",
-             EXAMPLE_PAGE: build(content, texts, mermaid, depth=2),
+             EXAMPLE_PAGE: build(content, texts, mermaid, credits(), depth=2),
              EXAMPLE_DESCRIPTION: f"# {title}\n\n**Use for:** {use_for}\n\nThe slide: [{SLIDES}]({SLIDES}), "
              f"shown in [{EXAMPLE_PAGE}]({EXAMPLE_PAGE}).\n"}
     paths, temporary = {}, False

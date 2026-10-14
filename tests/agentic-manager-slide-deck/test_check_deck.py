@@ -7,6 +7,7 @@ check to say so.
 """
 
 import os
+import shutil
 import sys
 import unittest
 
@@ -18,7 +19,7 @@ import check_deck  # noqa: E402
 import common  # noqa: E402
 import make_deck  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from deck_fixture import DECK, content, temp_output, write_asset, write_slides  # noqa: E402
+from deck_fixture import DECK, content, temp_output, write_asset, write_credited_asset, write_slides  # noqa: E402
 
 PAGE = "Acme-Q3-Review_Slides.html"
 
@@ -40,7 +41,7 @@ class CheckDeckTest(unittest.TestCase):
 
     def test_a_built_deck_passes_and_lists_its_placeholders(self):
         self.assertEqual(check_deck.check_deck(DECK),
-                         {"ok": True, "errors": [], "placeholders": ["[IMAGE: team photo]"]})
+                         {"ok": True, "errors": [], "placeholders": ["[IMAGE: team photo]"], "stand_ins": []})
 
     def test_broken_pages_fail(self):
         # Each case: a change to the page, and the error it raises.
@@ -69,6 +70,8 @@ class CheckDeckTest(unittest.TestCase):
              "the page's rings and their segments are {'ring-phases': 2}"),
             ("a token left", lambda p: p.replace(
                 "<p>Platform team</p>", "<p>{{ring:phases}}</p>"), "the page still holds a token: {{ring:phases}}"),
+            ("a page number left", lambda p: p.replace(
+                "<p>Platform team</p>", "<p>{{page}}</p>"), "the page still holds a token: {{page}}"),
         ]
         for name, change, expected in cases:
             with self.subTest(name):
@@ -81,23 +84,41 @@ class CheckDeckTest(unittest.TestCase):
     def test_linked_images_are_the_placed_ones_and_exist(self):
         write_asset(self.folder)
         data = content()
-        data["slides"][0]["html"].append("<img src='{{asset:acme-logo.svg}}'>")
+        data["slides"][0]["html"].append("<img src='{{asset:acme-logo}}'>")
         write_slides(self.folder, data)
         self.assertTrue(make_deck.make_deck(DECK)["ok"])
         with open(os.path.join(self.deck, PAGE), encoding="utf-8") as f:
             page = f.read()
-        cases = [("another image", lambda p: p.replace("acme-logo.svg", "other.svg"),
-                  "the page links the images ['../_assets/other.svg']; slides.json places ['acme-logo.svg']"),
-                 ("an image by its path", lambda p: p.replace("../_assets/acme-logo.svg", "/tmp/acme-logo.svg"),
+        cases = [("another image", lambda p: p.replace("acme-logo/image.svg", "other/image.svg"),
+                  "the page links the images ['../_assets/other/image.svg']; slides.json places ['acme-logo']"),
+                 ("an image by its path", lambda p: p.replace("../_assets/acme-logo/image.svg", "/tmp/acme-logo.svg"),
                   "the page links the images ['/tmp/acme-logo.svg']")]
         for name, change, expected in cases:
             with self.subTest(name):
                 errors = self.errors_of(change(page))
                 self.assertTrue(any(expected in error for error in errors),
                                 f"{expected!r} not in {errors}")
-        os.remove(os.path.join(self.folder, "_assets", "acme-logo.svg"))
-        self.assertEqual(self.errors_of(page), [
-                         "_assets has no acme-logo.svg"])
+        shutil.rmtree(os.path.join(self.folder, "_assets", "acme-logo"))
+        self.assertIn("_assets has no acme-logo", self.errors_of(page))
+
+    def test_a_downloaded_image_needs_its_credit_on_its_slide(self):
+        write_credited_asset(self.folder)
+        data = content()
+        data["slides"][1]["html"].append("<img src='{{asset:earth}}'>")
+        write_slides(self.folder, data)
+        self.assertTrue(make_deck.make_deck(DECK)["ok"])
+        with open(os.path.join(self.deck, PAGE), encoding="utf-8") as f:
+            page = f.read()
+        self.assertEqual(self.errors_of(page.replace("Example Agency", "Someone")),
+                         ["slide 2 shows earth without its credit: Example Agency · CC BY 4.0"])
+
+    def test_stand_ins_are_listed_by_slide(self):
+        data = content()
+        data["slides"][2]["html"].append(
+            "<figure data-image='the Earth seen from space'><svg viewBox='0 0 4 4'></svg></figure>")
+        write_slides(self.folder, data)
+        self.assertEqual(make_deck.make_deck(DECK)["stand_ins"],
+                         ["slide 3: the Earth seen from space"])
 
     def test_the_folder_holds_only_the_decks_files(self):
         # A stray file fails, a hidden one such as .DS_Store doesn't.

@@ -57,7 +57,7 @@ A description comes as its first chunk, with `description_chunks` when there are
 
 ## 2. Write content.json
 
-Write it through the shared writer, with the `content_path` from step 1, and the same way for every revision; never with your own file tools. To fix one field, add `--patch` and send a JSON array of exact replacements, `[{"old": "unique text", "new": "fixed text"}]`, instead of the whole file; the JSON's escapes count as part of the text:
+Write it through the shared writer, with the `content_path` from step 1, and the same way for every revision; never with your own file tools. To fix one field, send exact replacements with the writer's `--patch` rather than the whole file, matching the file's text with its JSON escapes:
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py --name jira-sprint-reports --path '<content_path>' <<'END_OF_FILE'

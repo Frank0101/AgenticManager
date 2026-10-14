@@ -1,23 +1,25 @@
 ---
 name: agentic-manager-slide-deck
 description: Turns a conversation into an HTML slide deck - infers the kind of presentation (pitch, business review, townhall, report, roadmap, status update), asks a few qualifying questions one at a time, then builds a deck of fixed-size slides with zoom and PDF export, from a reference the user gives, from a library of described slide layouts or from a blank skeleton, and iterates on it with the user. Use when the user asks for slides, a deck or a presentation, or to change the deck built in the same conversation.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_deck.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/add_asset.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/save_example.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_deck.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_deck.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/add_asset.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/save_example.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_deck.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/snap_deck.py *)
 ---
 
 # Slide Deck
 
-Turns a conversation into an HTML slide deck. You drive: work out what kind of presentation it is, choose where to start from, ask what's missing, write the slides, then iterate while the user reviews the deck in a browser.
+Turns a conversation into an HTML slide deck. You drive: work out the kind of presentation, choose where to start from, ask what's missing, write the slides, then iterate while the user reviews the deck in a browser.
 
-The deck's files go to the `slide-decks` folder of the output root the user set in the config (`output.root`), or to a temporary folder if none is set. The scripts give you that folder and write in it; never choose a folder yourself, and never read the config.
+The files go to the `slide-decks` folder of the config's `output.root`, or to a temporary folder if none is set. The scripts choose and write that folder; never choose one yourself, and never read the config.
 
-You write only `slides.json`: the deck's title, its CSS, each slide's HTML and the data of its charts and rings. `make_deck.py` owns everything else: the page around the slides, the slide's fixed size, the toolbar with zoom and PDF export, the print rules, the scripts that draw charts and diagrams, the rings' geometry and the check. When a script refuses something, its message names the field and says what it accepts: fix the input, never work around the check.
+You write only `slides.json`: the title, the CSS, each slide's HTML and the data of charts and rings. `make_deck.py` owns the rest, from the page around the slides to the check. When a script refuses something, its message says what to fix: fix the input, never work around the check.
 
-A deck's folder holds only these files, and the check fails on any other; anything else you need goes in your own scratch folder.
+The skill's folder holds only these files, and the check fails on any other; your own working files go in your scratch folder.
 
 ```text
 slide-decks/
-├── _assets/                         add_asset.py writes, the user's images every deck links to
-│   └── acme-logo.svg
+├── _assets/                         add_asset.py writes, the images every deck links to
+│   └── acme-logo/
+│       ├── image.svg
+│       └── description.md           what it shows and, if downloaded, its credit
 ├── _examples/                       save_example.py writes, the slides the user kept
 │   └── quarter-at-a-glance/
 │       ├── description.md
@@ -38,20 +40,20 @@ This skill needs no source: its material is the conversation and any file the us
 
 Drive the conversation: don't wait for the user to know what to ask for.
 
-**The type.** Infer the kind of presentation from what the user says (pitch, business review, townhall, report, roadmap, status update and so on). Don't present a list.
+**The type.** Infer it from what the user says (pitch, business review, townhall, report, roadmap, status update and so on); don't present a list.
 
-**The starting point.** If the user's message already makes it clear, don't ask. Otherwise ask, in your own words: "Do you have an example to start from, or should I draw from my own? We can also start completely blank."
+**The starting point.** Unless the user's message makes it clear, ask, in your own words: "Do you have an example to start from, or should I draw from my own? We can also start completely blank."
 
 - **A reference from the user** (a PDF, an image or a file): replicate it as the only structural and visual guide, and don't consult the examples.
-- **No reference:** draw from the examples that `init_deck.py` lists (step 2), each with what it is good for. Read the ones whose use fits the deck, each a folder:
-  - A built-in example is a real slide kept as a description (`description.md`: layout, style and density) and a wireframe (`wireframe.svg`) drawn at the deck's own slide size with the original's positions, shapes and colours, a line of text as a grey bar, a heading as a short placeholder word and a photo as a labelled box, so you can take a layout's measurements from it.
-  - One of the user's is a slide of an earlier deck, kept as it was: its `slides.json` holds that slide, whose HTML you can reuse, and its CSS when its look is the deck's, and `slide.html` shows it.
+- **No reference:** draw from the examples `init_deck.py` lists (step 2), reading those whose use fits the deck:
+  - A built-in one is a real slide kept as a `description.md` (layout, style, density) and a `wireframe.svg` at the deck's slide size, with the original's positions, shapes and colours (text as grey bars, headings as placeholder words, photos as labelled boxes), so you can take its measurements.
+  - One of the user's is a slide of an earlier deck: `slides.json` holds its HTML, which you can reuse, and its CSS, reusable when its look is the deck's; `slide.html` shows it.
 
-  Take from them layout, section structure, chart types and content density; the deck's look is set once for all its slides (see [Consistency](#consistency)). Tell the user briefly which you use: "I'm basing the layout on the Market Segmentation example."
+  Take layout, section structure, chart types and density from them, never the look (see [Consistency](#consistency)), and tell the user briefly which you use: "I'm basing the layout on the Market Segmentation example."
 
-- **Blank:** structure only, no colour or decoration: white background, dark text, the default sans-serif. Each slide gets a title and a layout skeleton, with placeholders for the content that is missing.
+- **Blank:** structure only: white background, dark text, the default sans-serif, and on each slide a title and a layout skeleton with placeholders for what is missing.
 
-**Questions.** Ask qualifying questions one at a time, conversationally, and stop when you have enough for a coherent first draft. If the user gave a complete reference, ask nothing unless something specific is missing or ambiguous. What to ask depends on the type:
+**Questions.** Ask one at a time, conversationally, and stop when you have enough for a coherent first draft; after a complete reference, ask only about what is missing or ambiguous. What to ask depends on the type:
 
 | Type            | Key questions                                       |
 | --------------- | --------------------------------------------------- |
@@ -61,21 +63,21 @@ Drive the conversation: don't wait for the user to know what to ask for.
 | Report          | scope, key findings, audience (exec, team, board)   |
 | Roadmap/status  | product or project, time horizon, RAG status needed |
 
-**Content.** Infer how it will arrive, without asking: when the user gives text, you handle structure and layout only; when they give a topic, you write the copy; when they give loose ideas, you write a full draft with real content.
+**Content.** Infer it without asking: given text, you handle structure and layout only; given a topic, you write the copy; given loose ideas, you write a full draft with real content.
 
 ## 2. Start the deck
 
-When you have enough, say "I have enough for a first draft. Generating now — we can iterate from there." Choose a short `<Name>` for the deck, capitalised words joined by hyphens (honour a name the user gives), and run the command below. Call every script by exactly the path this skill shows, so it runs without a permission prompt:
+When you have enough, say "I have enough for a first draft. Generating now — we can iterate from there." Choose a short `<Name>`, capitalised words joined by hyphens (or the user's), and run the command below. Call every script by exactly the path this skill shows, so it runs without a permission prompt:
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/init_deck.py --name <Name>
 ```
 
-It creates the deck's folder, `<Name>_<YY-MM-DD>`, replacing one of the same name and day, and prints the `slides_path` and the `examples`, each with its `source` (`built-in` or `yours`) and what it is good for. Every deck starts from scratch: never read or reuse another deck's folder, on this or another day; only `_assets`, the user's images, and `_examples`, the slides they kept, are shared. Run it once per deck, never to revise one.
+It creates the deck's folder, replacing one of the same name and day, and lists the `examples` and the `assets` (images earlier decks added) with what each is for or shows. Run it once per deck, never to revise one. Every deck starts from scratch: never read or reuse another deck's folder; only `_assets` and `_examples` are shared.
 
 ## 3. Write slides.json
 
-Write it through the shared writer, at the `slides_path` from step 2, the same way for every revision; never with your own file tools:
+Decide the deck's look first (see [Consistency](#consistency)). Write the file, and every revision of it, through the shared writer at the `slides_path` from step 2, never with your own file tools:
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py --name slide-decks --path '<slides_path>' <<'END_OF_FILE'
@@ -106,56 +108,76 @@ python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_
 END_OF_FILE
 ```
 
-The fields:
+### The fields
 
 - **`title`:** the deck's title, shown in the browser tab.
-- **`style`:** the deck's CSS, as a list of lines. Each slide is a `.slide`, 1100×618 px with 48/56 px padding, and a slide's `class` adds class names to it, such as a dark title slide. The grey page and the slide's shadow are the page around the deck, never part of its design: don't restyle `body`, `.slides-wrapper` or `.toolbar`.
-- **`slides`:** one object per slide, in order: `html`, the slide's content as a list of lines, and optionally `class`. Write attributes in single quotes, so nothing needs escaping in JSON. Close every tag you open. A slide can't hold `<script>`, `<style>`, `<link>` or frames, or load a file by its path or URL.
-- **`charts`:** each chart by id (lowercase words joined by hyphens), as a Chart.js configuration: `type`, `data` and optionally `options`, plain JSON, so no functions. How its values read goes in `format`: `prefix`, `suffix` and `decimals`, such as `{"prefix": "£", "suffix": "m", "decimals": 1}` for £3.5m, applied to the value axis and the tooltips. Place it with `{{chart:<id>}}` inside an element with a set height: the chart fills it.
-- **`rings`:** each donut or pie by id, drawn as SVG: `size` (the square's side in px), `outer` and `inner` radius (`inner` 0 makes a pie), `gap` (degrees between segments), `start` (degrees, clockwise from 12 o'clock, default 0) and `segments`, each a `color` and optionally a `value` (default 1, so equal segments). Place it with `{{ring:<id>}}`, and put its labels around it in HTML.
+- **`style`:** the deck's CSS, as a list of lines. Each slide is a `.slide`, 1100×618 px, with a default padding of 48/56 px the deck may change; an absolutely positioned element is placed from the slide's edge, as in a wireframe. Never restyle `body`, `.slides-wrapper` or `.toolbar`: they are the page around the deck.
+- **`slides`:** one object per slide, in order: `html`, its content as a list of lines, and optionally `class`, class names added to its `.slide`, such as `dark`. Write attributes in single quotes, so nothing needs escaping in JSON, and close every tag you open. A slide can't hold `<script>`, `<style>`, `<link>` or frames, or load a file by its path or URL.
+- **`charts`:** each chart by id (lowercase words joined by hyphens), as a Chart.js configuration in plain JSON, so no functions: `type`, `data`, optionally `options`, and `format` for how its values read, such as `{"prefix": "£", "suffix": "m", "decimals": 1}` for £3.5m. Place it once, as `{{chart:<id>}}` inside an element with a set height, which it fills.
+- **`rings`:** each donut or pie by id, drawn as SVG: `size` (the square's side in px), `outer` and `inner` radius (`inner` 0 makes a pie), `gap` (degrees between segments), `start` (degrees clockwise from 12 o'clock, default 0) and `segments`, each a `color` and optionally a `value` (default 1). Place it once, as `{{ring:<id>}}`, with its labels around it in HTML.
 
-An image the user gives (a logo, a screenshot, a photo) goes in `_assets` with `python3 ${CLAUDE_SKILL_DIR}/scripts/add_asset.py --file <path>`, which prints its name, and is placed as `<img src='{{asset:<name>}}'>`; an image added for an earlier deck is already there. An image the user hasn't given is an `[IMAGE: …]` placeholder, and an icon is inline SVG.
+### What goes on a slide
 
-Place every chart and ring exactly once. For a diagram (a flow, a sequence, a hierarchy), write `<pre class='mermaid'>` with Mermaid's syntax inside, writing `<` as `&lt;`. Charts and diagrams are drawn in the viewer's browser by Chart.js 4.4.1 and Mermaid.js 11.4.1, loaded from the internet when the deck opens, so use them only when a slide genuinely needs one; anything else is HTML and CSS.
-
-**Design rules:**
-
-- Design every slide to fit 1100×618: content that overflows is clipped, and the deck never scrolls inside a slide.
-- Prefer structure to decoration in a first draft.
-- Write real content, with a placeholder only where information is genuinely missing. A placeholder names what is missing, in one of these forms: `[CHART: revenue by quarter, bar]`, `[IMAGE: team photo]`, `[DIAGRAM: onboarding flow]`, `[TABLE: KPI summary, 4 rows]` or `[PLACEHOLDER: description]`.
+- **Fit.** Every slide fits 1100×618: overflow is clipped, never scrolled. Prefer structure to decoration in a first draft.
+- **Text.** Write real content, with a placeholder only where information is genuinely missing, naming it in one of these forms: `[CHART: revenue by quarter, bar]`, `[IMAGE: team photo]`, `[DIAGRAM: onboarding flow]`, `[TABLE: KPI summary, 4 rows]` or `[PLACEHOLDER: description]`.
+- **Page numbers.** Write `{{page}}`, never the number, so adding or removing a slide renumbers the rest.
+- **Charts and diagrams.** A diagram (a flow, a sequence, a hierarchy) is `<pre class='mermaid'>` with Mermaid's syntax inside, `<` written as `&lt;`. Chart.js 4.4.1 and Mermaid.js 11.4.1 load from the internet when the deck opens, so use a chart or diagram only when a slide genuinely needs one; anything else is HTML and CSS.
+- **Images.** An image is `<img src='{{asset:<name>}}'>`. Reuse one from `assets` when it shows what the slide needs. An image the user gives (a logo, a screenshot, a photo) goes in `_assets` with `python3 ${CLAUDE_SKILL_DIR}/scripts/add_asset.py`; one only they can give, such as their team's photo, is an `[IMAGE: …]` placeholder until they do. Write what an image `shows` after looking at it, in one line on its subject, background and shape, so a later deck can tell whether it fits without opening it. An image in `assets` with nothing in `shows` was put there by hand: when its name suggests it may fit, look at it and describe it, whether or not you use it.
+- **Drawings.** Icons, arrows, badges and diagrams belong to the design: inline SVG, for good. A picture of something anyone could photograph, such as the Earth, a car or a banana, is an SVG drawing wrapped in `<figure data-image='<what the real image should show>'>`: a stand-in, which step 7 can swap for a real image.
 
 ### Consistency
 
-Many examples make it easy to build a deck that looks like several decks. Keep it one:
+Many examples make it easy to build a deck that looks like several. Keep it one:
 
-- **One look, set before the first slide.** Define the deck's palette, fonts and type sizes, margins, where titles sit and what frames a slide (page number, footer, logo) once, at the top of `style`: colours and fonts as CSS variables in `:root`, the shared parts as classes every slide uses. A slide takes its look from them, never from values of its own, and every content slide has the same frame; only the cover and section dividers may differ.
-- **One source for the look, layout from the rest.** The look comes from the user's reference when they give one; otherwise from their kept example when they want an earlier deck's look; otherwise from the one example you choose as the anchor, because it suits the deck's type and audience; on a blank start, from the blank style. Tell the user which it is. Every other example gives only its layout: keep its positions and proportions, from its wireframe or its HTML, and redraw it in the deck's look, its main colour as the deck's main colour, its other colours as the deck's accents, its fonts as the deck's. If a layout doesn't survive the change, such as one that depends on a contrast the deck's palette lacks, pick another rather than inventing a hybrid.
-- **Graphics and colours keep a meaning.** A pictorial element stands for one idea: a road or a timeline for a journey through steps, a funnel for narrowing stages, a pyramid for levels, a wheel for parts of a whole, an arrow for a direction or a cause. Use it only for content that has that shape, and never stretch, cut or repeat it into something else, such as a road drawn as a bar in a chart: figures go in a chart or a table, with plain bars, lines and segments. When the content doesn't have the element's shape, keep the example's arrangement without the element, or choose another example. Prefer giving an accent colour one meaning across the deck too, such as a team or a status, rather than using it as decoration.
-- **The same layout for slides of the same kind.** Once a kind of slide has a layout, such as a workstream's detail or a section divider, every slide of that kind uses it, at a similar density; a change to it applies to all of them.
-- **Try what fits.** When choosing the layout for a kind of slide, don't fall back on the same few: when an example you haven't used fits it well, use it. When two layouts fit an important slide equally well, such as the one carrying the main message, build both, one after the other, and let the user choose, for a slide or two per draft; then delete the other.
+- **One look, set before the first slide.** Define the palette, fonts and type sizes, margins, where titles sit and the frame (page number, footer, logo) once, at the top of `style`: colours and fonts as CSS variables in `:root`, shared parts as classes. Slides take their look from these, never from values of their own, and every content slide has the same frame; only the cover and section dividers may differ.
+- **One source for the look, layout from the rest.** The look comes from the user's reference; otherwise from their kept example, when they want an earlier deck's look; otherwise from the one example you choose as the anchor for the deck's type and audience; on a blank start, from the blank style. Tell the user which. Every other example gives only its layout: keep its positions and proportions and redraw it in the deck's look, its main colour as the deck's main colour, its other colours as accents. If a layout doesn't survive the change, such as one needing a contrast the palette lacks, pick another rather than inventing a hybrid.
+- **Graphics and colours keep a meaning.** A pictorial element stands for one idea: a road or timeline for a journey through steps, a funnel for narrowing stages, a pyramid for levels, a wheel for parts of a whole, an arrow for a direction or a cause. Use it only for content with that shape, never stretched, cut or repeated into something else, such as a road drawn as a bar in a chart: figures go in a chart or table, with plain marks. When the content lacks the shape, keep the example's arrangement without the element, or choose another example. Prefer giving each accent colour one meaning across the deck, such as a team or a status, over using it as decoration.
+- **The same layout for slides of the same kind.** Once a kind of slide, such as a workstream's detail or a section divider, has a layout, every slide of that kind uses it at a similar density, and a change applies to all of them.
+- **Try what fits.** When choosing a kind of slide's layout, don't fall back on the same few: use an example you haven't used when it fits well. When two layouts fit an important slide equally well, such as the one carrying the main message, build both, one after the other, for the user to choose; do this for a slide or two per draft, and delete the one they don't choose.
 
-## 4. Build
+## 4. Build, look and open
 
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/make_deck.py --deck <deck>
-```
-
-If `slides.json` is invalid, it writes nothing and lists every problem, by field. Once it is valid, it writes the deck, checks it and prints one line of JSON with the deck's `path`, whether its folder is `temporary`, `ok`, `errors` and the `placeholders` left in it. Fix `slides.json` and run it again until `ok` is true; never edit the deck itself.
+1. **Build.** `python3 ${CLAUDE_SKILL_DIR}/scripts/make_deck.py --deck <deck>` writes the deck and checks it. Fix `slides.json` and run it again until `ok` is true; never edit the deck itself.
+2. **Look.** `python3 ${CLAUDE_SKILL_DIR}/scripts/snap_deck.py --deck <deck>` pictures the slides with headless Chrome. Look at its `sheet`, the whole deck in one image, opening a slide's own picture only where something looks wrong. Fix overflowing or clipped text, overlaps and fonts that don't render as intended, then build and look again. Without Chrome, skip this; never ask the user to install it.
+3. **Open.** Build with `--open` to open the deck in the user's browser, on every build until it has `opened` once in the conversation and never after: the user refreshes the page already open.
 
 ## 5. Tell the user
 
-Say the deck is ready, with a Markdown link to its full `path`, and that it opens in any browser, with zoom and PDF export on the toolbar. If it shows images, say they show only while the deck stays in its folder beside `_assets`, so to share it, export it to PDF. Don't recap the slides. For each slide built in two versions, ask which to keep. List the placeholders still open, if any, as what you need from them; mention any doubt about your own judgment the deck doesn't show; and if `temporary` is true, say the folder is temporary and setting `output.root` in the config keeps decks. End by offering to keep a slide as an example for future decks.
+Say the deck is ready (and open, if it `opened`), with a Markdown link to its full `path`, and that it opens in any browser, with zoom and PDF export on the toolbar. Don't recap the slides. Add only what applies:
+
+- **Images:** they show only while the deck stays beside `_assets`, so share it as a PDF.
+- **Downloaded images:** each one in `credits`, with its license and a link to its page, for the user to check before sharing.
+- **Placeholders** still open, as what you need from them.
+- **Doubts** about your own judgment that the deck doesn't show.
+- **A temporary folder**, if `temporary` is true: setting `output.root` in the config keeps decks.
+
+End with one question, the first that applies, so it isn't lost among the rest:
+
+1. When slides were built in two versions, which of each pair to keep, naming the slides.
+2. When the deck has `stand_ins`, whether to swap them for real images (step 7) once the draft is right.
+3. Otherwise, whether to keep a slide as an example for future decks (step 8).
 
 ## 6. Iterate
 
-The user gives feedback and refreshes the browser. Be surgical: change only what they asked. To change a few fields, add `--patch` to the writer and send a JSON array of exact replacements, `[{"old": "unique text", "new": "fixed text"}]`, instead of the whole file; the JSON's escapes count as part of the text. Then run `make_deck.py` again, and confirm what changed in one line.
+The user gives feedback and refreshes the browser. Change only what they asked: for a few fields, send exact replacements with the writer's `--patch` rather than the whole file, matching the file's text with its JSON escapes. Build again, and confirm what changed in one line.
 
-## 7. Keep a slide as an example
+## 7. Swap the stand-ins for real images (optional)
 
-When the user says they're happy with a slide, keep it as an example: write a short title and one line on what the slide is good for, such as "a quarter's results: four headline figures over a trend chart", then run:
+Only when the user asks, or says yes when the handover offers it: a deck with its drawings is finished as it is. Swap each stand-in in `stand_ins`, with tools that search and read web pages; without them, say the deck keeps its drawings until an agent that can browse swaps them.
+
+For each, reuse an image in `assets` that shows what its `data-image` says, or find one wherever suits the topic. Repositories that state each image's license are a good start, such as Openverse, Wikimedia Commons, NASA's image library, Unsplash or Pexels; for a specialised subject look further, such as a manufacturer's press kit, a museum's open-access collection or a government archive.
+
+- **License.** Use an image only if its own page states a license allowing reuse in a presentation, never one from search results whose page you haven't opened. Record the license and credit exactly as the page states them, never from memory: prefer structured data where a site has it, such as Wikimedia Commons' file information, and if your tool summarises pages, ask it to quote those lines word for word.
+- **Fit.** Choose for fit, quality and the audience, keeping [Consistency](#consistency): the image shows what the drawing did, in its place and size. When the subject must be cut out, choose an image that already is, since the skill can't remove a background: a PNG with a transparent background, or a plain background CSS can hide (`mix-blend-mode: multiply` for white on a light slide, `screen` for black on a dark one, a round frame for a round subject).
+
+Add it with `python3 ${CLAUDE_SKILL_DIR}/scripts/add_asset.py --url`, describing what you saw in it, and replace the whole `<figure>` with `<img src='{{asset:<name>}}'>`, cropped (`object-fit: cover`) to the drawing's box. Each slide credits its downloaded images at the bottom right: restyle `.asset-credit` when a slide needs it, such as a dark one, but never hide it. Then build and hand over as in steps 4 and 5.
+
+## 8. Keep a slide as an example (optional)
+
+Only when the user asks, or says yes when the handover offers it. Give the slide a short title and one line on what it is good for, such as "a quarter's results: four headline figures over a trend chart", and run:
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/save_example.py --deck <deck> --slide <n> --title '<title>' --use-for '<what it is good for>'
 ```
 
-`<n>` is the slide's number, 1 for the first. It saves the slide exactly as it is in its own folder in `_examples`, beside the decks, with its page, and every later deck lists it. Give the user the link to its `page`.
+It saves the slide as it is in `_examples`, where every later deck finds it. Give the user the link to its `page`.
