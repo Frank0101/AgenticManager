@@ -45,9 +45,9 @@ Drive the conversation: don't wait for the user to know what to ask for.
 - **A reference from the user** (a PDF, an image or a file): replicate it as the only structural and visual guide, and don't consult the examples.
 - **No reference:** draw from the examples that `init_deck.py` lists (step 2), each with what it is good for. Read the ones whose use fits the deck, each a folder:
   - A built-in example is a real slide kept as a description (`description.md`: layout, style and density) and a wireframe (`wireframe.svg`) drawn at the deck's own slide size with the original's positions, shapes and colours, a line of text as a grey bar, a heading as a short placeholder word and a photo as a labelled box, so you can take a layout's measurements from it.
-  - One of the user's is a slide of an earlier deck, kept as it was: its `slides.json` holds that slide, whose HTML and CSS you can reuse, and `slide.html` shows it.
+  - One of the user's is a slide of an earlier deck, kept as it was: its `slides.json` holds that slide, whose HTML you can reuse, and its CSS when its look is the deck's, and `slide.html` shows it.
 
-  Use them for layout ideas, section structure, chart types and content density, never as strict templates, and tell the user briefly which you use: "I'm basing the layout on the Market Segmentation example."
+  Take from them layout, section structure, chart types and content density; the deck's look is set once for all its slides (see [Consistency](#consistency)). Tell the user briefly which you use: "I'm basing the layout on the Market Segmentation example."
 
 - **Blank:** structure only, no colour or decoration: white background, dark text, the default sans-serif. Each slide gets a title and a layout skeleton, with placeholders for the content that is missing.
 
@@ -124,6 +124,16 @@ Place every chart and ring exactly once. For a diagram (a flow, a sequence, a hi
 - Prefer structure to decoration in a first draft.
 - Write real content, with a placeholder only where information is genuinely missing. A placeholder names what is missing, in one of these forms: `[CHART: revenue by quarter, bar]`, `[IMAGE: team photo]`, `[DIAGRAM: onboarding flow]`, `[TABLE: KPI summary, 4 rows]` or `[PLACEHOLDER: description]`.
 
+### Consistency
+
+Many examples make it easy to build a deck that looks like several decks. Keep it one:
+
+- **One look, set before the first slide.** Define the deck's palette, fonts and type sizes, margins, where titles sit and what frames a slide (page number, footer, logo) once, at the top of `style`: colours and fonts as CSS variables in `:root`, the shared parts as classes every slide uses. A slide takes its look from them, never from values of its own, and every content slide has the same frame; only the cover and section dividers may differ.
+- **One source for the look, layout from the rest.** The look comes from the user's reference when they give one; otherwise from their kept example when they want an earlier deck's look; otherwise from the one example you choose as the anchor, because it suits the deck's type and audience; on a blank start, from the blank style. Tell the user which it is. Every other example gives only its layout: keep its positions and proportions, from its wireframe or its HTML, and redraw it in the deck's look, its main colour as the deck's main colour, its other colours as the deck's accents, its fonts as the deck's. If a layout doesn't survive the change, such as one that depends on a contrast the deck's palette lacks, pick another rather than inventing a hybrid.
+- **Graphics and colours keep a meaning.** A pictorial element stands for one idea: a road or a timeline for a journey through steps, a funnel for narrowing stages, a pyramid for levels, a wheel for parts of a whole, an arrow for a direction or a cause. Use it only for content that has that shape, and never stretch, cut or repeat it into something else, such as a road drawn as a bar in a chart: figures go in a chart or a table, with plain bars, lines and segments. When the content doesn't have the element's shape, keep the example's arrangement without the element, or choose another example. Prefer giving an accent colour one meaning across the deck too, such as a team or a status, rather than using it as decoration.
+- **The same layout for slides of the same kind.** Once a kind of slide has a layout, such as a workstream's detail or a section divider, every slide of that kind uses it, at a similar density; a change to it applies to all of them.
+- **Try what fits.** When choosing the layout for a kind of slide, don't fall back on the same few: when an example you haven't used fits it well, use it. When two layouts fit an important slide equally well, such as the one carrying the main message, build both, one after the other, and let the user choose, for a slide or two per draft; then delete the other.
+
 ## 4. Build
 
 ```bash
@@ -134,7 +144,7 @@ If `slides.json` is invalid, it writes nothing and lists every problem, by field
 
 ## 5. Tell the user
 
-Say the deck is ready, with a Markdown link to its full `path`, and that it opens in any browser, with zoom and PDF export on the toolbar. If it shows images, say they show only while the deck stays in its folder beside `_assets`, so to share it, export it to PDF. Don't recap the slides. List the placeholders still open, if any, as what you need from them; mention any doubt about your own judgment the deck doesn't show; and if `temporary` is true, say the folder is temporary and setting `output.root` in the config keeps decks. End by offering to keep a slide as an example for future decks.
+Say the deck is ready, with a Markdown link to its full `path`, and that it opens in any browser, with zoom and PDF export on the toolbar. If it shows images, say they show only while the deck stays in its folder beside `_assets`, so to share it, export it to PDF. Don't recap the slides. For each slide built in two versions, ask which to keep. List the placeholders still open, if any, as what you need from them; mention any doubt about your own judgment the deck doesn't show; and if `temporary` is true, say the folder is temporary and setting `output.root` in the config keeps decks. End by offering to keep a slide as an example for future decks.
 
 ## 6. Iterate
 
