@@ -11,7 +11,7 @@ import os
 import re
 import subprocess
 import sys
-from datetime import date, datetime
+from datetime import date
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
@@ -406,7 +406,7 @@ def whole_percentage(part, whole):
 
 def display_date(iso_date):
     """An ISO date as the report shows it, DD/MM/YYYY."""
-    return datetime.strptime(iso_date, "%Y-%m-%d").strftime(DISPLAY_DATE)
+    return date.fromisoformat(iso_date).strftime(DISPLAY_DATE)
 
 
 # The words the rules above ban, with what to write instead.

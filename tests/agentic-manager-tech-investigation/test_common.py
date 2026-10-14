@@ -183,11 +183,11 @@ class ReferencesTest(unittest.TestCase):
             "search": "https://git.example/acme/api/tree/abc/services/search"}
         component = ["C01", "n", "r", "[search][search]", "🟩 Implemented"]
         cases = [([], ["C01"]),
-                 ([["S01", "[f](https://git.example/acme/api/blob/abc/services/search/README.md)", "README", ""]],
+                 ([["S01", "[f](https://git.example/acme/api/blob/abc/services/search/README.md)", "README"]],
                   ["C01"]),
-                 ([["S01", "[f](https://git.example/acme/api/blob/abc/services/searcher/main.py)", "full", ""]],
+                 ([["S01", "[f](https://git.example/acme/api/blob/abc/services/searcher/main.py)", "full"]],
                   ["C01"]),
-                 ([["S01", "[f](https://git.example/acme/api/blob/abc/services/search/main.py)", "Full", ""]], [])]
+                 ([["S01", "[f](https://git.example/acme/api/blob/abc/services/search/main.py)", "Full"]], [])]
         for coverage, expected in cases:
             with self.subTest(coverage=coverage):
                 self.assertEqual(common.unread_components(

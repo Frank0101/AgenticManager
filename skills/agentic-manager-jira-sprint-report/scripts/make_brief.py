@@ -82,8 +82,8 @@ def comments(raw_dir, key, zone):
     if not os.path.exists(path):
         return []
     return [{"date": display_date(parse_ts(c["created"]).astimezone(zone).date().isoformat()) if c.get("created") else None,
-             "text": plain_text(c.get("body"))}
-            for c in read_json(path) if plain_text(c.get("body")).strip()]
+             "text": text}
+            for c in read_json(path) if (text := plain_text(c.get("body"))).strip()]
 
 
 def first_chunk(description):

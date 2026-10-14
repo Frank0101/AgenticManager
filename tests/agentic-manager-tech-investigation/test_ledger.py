@@ -125,7 +125,7 @@ class LedgerTest(unittest.TestCase):
 
     BATCH = [
         {"table": "sources", "id": "S01", "cells": ["source_control", "[api](https://example.com/api)", "abc",
-                                                    "Read.", "None", "Implementation"]},
+                                                    "Read.", "Superseded by S02", "Implementation"]},
         {"table": "file-coverage",
             "cells": ["S01", "[server.py](https://example.com/server.py)", "full"]},
         {"finding": {"title": "Search reads the index", "Claim": "Search reads the index.",
@@ -162,6 +162,30 @@ class LedgerTest(unittest.TestCase):
         for items in ([], {"table": "sources"}):
             with self.subTest(items=items), self.assertRaisesRegex(SystemExit, "non-empty JSON list"):
                 self.run_ledger("batch", cells=items)
+
+    def test_the_brief_holds_what_the_report_reads(self):
+        self.run_ledger("batch", cells=self.BATCH + [
+            {"table": "components", "id": "C01", "cells": ["Search API (service)", "Serves search", "[search](https://example.com/search)",
+                                                           "⬜ Unverified", "Manifest only", "Web → Search API", "F01", "Unchanged"]},
+            {"table": "decisions", "id": "D01", "cells": [
+                "Which index", "Unresolved", "Two options", "Design doc", "Owner not named"]},
+            {"table": "queue-ready", "id": "Q01", "cells": QUEUE_ROW}])
+        self.run_ledger("text", "--section",
+                        "Boundary, method and access", text="Search only.")
+        brief = self.read_ledger("brief")
+        kept = ["## Boundary, method and access\n\nSearch only.", "S01: [api](https://example.com/api) (Superseded by S02)",
+                "### F01 — Search reads the index", "- **Claim:** Search reads the index.", "- **Evidence:** S01",
+                "C01 | Search API (service) | Serves search | search | ⬜ Unverified", "D01 | Which index",
+                "## Evidence gaps\n\nNone."]
+        # The queue, the coverage, the sources' notes and the link definitions are for research and review.
+        left_out = ["Read the code", "server.py", "Read.",
+                    "[api]:", "## Research action queue", "<a id"]
+        for text in kept:
+            with self.subTest(kept=text):
+                self.assertIn(text, brief)
+        for text in left_out:
+            with self.subTest(left_out=text):
+                self.assertNotIn(text, brief)
 
     def test_text_read_as_written_writes_back_unchanged(self):
         # Stored text has IDs and links rewritten; show --raw and --section give
@@ -659,7 +683,7 @@ class LedgerTest(unittest.TestCase):
         # raises nothing is what moves the investigation from review to hand over.
         def step():
             return self.read_ledger("status").splitlines()[-1]
-        self.assertIn("next: write: read the whole ledger", step())
+        self.assertIn("next: write: read ledger.py brief in full", step())
         self.run_ledger("row", "--table", "queue-ready",
                         "--id", "Q01", cells=QUEUE_ROW)
         self.assertIn(

@@ -45,7 +45,7 @@ after the end are left out of the comparison
 """
 import argparse
 import os
-from datetime import datetime, time, timedelta, tzinfo
+from datetime import date, datetime, time, timedelta, tzinfo
 
 from common import (CHANGELOGS_DIR, DATA_FILE, META_FILE, OUTCOME_ROWS, OUTCOMES, PARENTS_FILE, PREVIOUS_SPRINT_FILE,
                     PUNTED_ISSUES_FILE, RAW_DIR, SPRINT_FILE, SPRINT_ISSUES_FILE, SPRINT_REPORT_FILE, STATUSES_FILE, SCOPE_GROUPS, History,
@@ -391,8 +391,7 @@ def build_burndown(spells, start_date, last_date, moment, zone):
     The closing day stops at the exact close, an active snapshot's current day
     at the fetch."""
     rows = []
-    day = datetime.strptime(start_date, "%Y-%m-%d").date()
-    end = datetime.strptime(last_date, "%Y-%m-%d").date()
+    day, end = date.fromisoformat(start_date), date.fromisoformat(last_date)
     while day <= end:
         cutoff = min(datetime.combine(
             day, time.max, tzinfo=zone), parse_ts(moment))
@@ -586,8 +585,7 @@ def main():
         # The burndown's first point: the whole commitment at the start, Done or
         # not; the start day's end-of-day reading then shows what was open.
         "burndown_baseline": sum(t["events"][0]["points"] or 0 for t in original),
-        "burndown": build_burndown(spells, start, today if status == "active"
-                                   else sprint_date(moment, zone), moment, zone),
+        "burndown": build_burndown(spells, start, sprint_date(moment, zone), moment, zone),
     }
     out = os.path.join(args.report_dir, DATA_FILE)
     write_json(out, data)

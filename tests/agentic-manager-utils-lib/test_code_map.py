@@ -8,10 +8,11 @@ import sys
 import tempfile
 import unittest
 
+# tests/<skill>/ mirrors skills/<skill>/.
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(
-    REPO_ROOT, "skills", "agentic-manager-utils-lib"))
+    REPO_ROOT, "skills", os.path.basename(TEST_DIR)))
 from agentic_manager import code_map  # noqa: E402
 
 

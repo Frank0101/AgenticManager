@@ -137,23 +137,25 @@ class ProblemsTest(unittest.TestCase):
                 self.assertTrue(any(expected in error for error in errors),
                                 f"{expected!r} not in {errors}")
 
-    def test_accepted_html(self):
-        # Void elements, self-closed SVG and entities need no closing tag,
-        # and a link to a page is fine: only loading a remote file isn't.
-        data = content()
-        data["slides"][0] = slide(
-            "<p>a<br>b</p><img src='data:image/png;base64,AA'>",
-            "<svg viewBox='0 0 10 10'><path d='M0,0 L10,10' /><circle cx='5' cy='5' r='2'></circle></svg>",
-            "<a href='https://example.com'>Q&amp;A</a>")
-        self.assertEqual(make_deck.problems(data)[0], [])
-
-    def test_an_image_in_assets_can_be_placed_on_several_slides(self):
-        data = content()
-        data["slides"][0] = slide("<img src='{{asset:acme-logo.svg}}'>")
-        data["slides"][2] = slide(
-            "<p>Thanks</p>", "<img src='{{asset:acme-logo.svg}}'>")
-        self.assertEqual(make_deck.problems(
-            data, frozenset({"acme-logo.svg"}))[0], [])
+    def test_accepted_slides(self):
+        # Each case: the slides replacing the fixture's first and third.
+        # Void elements, self-closed SVG and entities need no closing tag, a
+        # link to a page is fine (only loading a remote file isn't), and an
+        # image in _assets can be placed on several slides.
+        cases = [
+            ("html", slide("<p>a<br>b</p><img src='data:image/png;base64,AA'>",
+                           "<svg viewBox='0 0 10 10'><path d='M0,0 L10,10' /><circle cx='5' cy='5' r='2'></circle></svg>",
+                           "<a href='https://example.com'>Q&amp;A</a>"),
+             slide("<p>Thanks</p>")),
+            ("an image twice", slide("<img src='{{asset:acme-logo.svg}}'>"),
+             slide("<p>Thanks</p>", "<img src='{{asset:acme-logo.svg}}'>")),
+        ]
+        for name, first, third in cases:
+            with self.subTest(name):
+                data = content()
+                data["slides"][0], data["slides"][2] = first, third
+                self.assertEqual(make_deck.problems(
+                    data, frozenset({"acme-logo.svg"}))[0], [])
 
 
 class RingTest(unittest.TestCase):

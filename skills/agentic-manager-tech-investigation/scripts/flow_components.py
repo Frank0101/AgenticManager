@@ -109,8 +109,8 @@ def unknown_participants(flow, known):
 
 
 def quoted(text):
-    # A leading backtick would open a Mermaid Markdown string.
     """A label quoted for Mermaid."""
+    # A leading backtick would open a Mermaid Markdown string.
     return '"' + text.replace('"', "#quot;").replace("`", "#96;") + '"'
 
 

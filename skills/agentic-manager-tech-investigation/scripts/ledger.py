@@ -5,7 +5,9 @@ every new row, finding, status change or move cost a hand-built edit. IDs and
 ordering are mechanical, so they are the script's; what goes in the cells and the
 findings is the agent's judgment. The reading commands (show, find, status) exist
 so the agent never opens the whole ledger to check what it already holds, and they
-print plain text, which costs fewer tokens than JSON, as does help. Every other
+print plain text, which costs fewer tokens than JSON, as does help. `brief` prints
+what writing the report reads, without the queue, coverage and research notes,
+which are for research and review and make up much of a long ledger. Every other
 command prints one line of JSON.
 
 Rows of a table with no ID (file coverage) append, and are replaced or removed
@@ -43,7 +45,7 @@ from common import (AREAS, BLOCKERS, CODE_STATUSES, claim_length_warning, COMPON
                     REVIEW_QUESTION, REVIEW_STOPPED, ROW_START, SOURCE_FINDINGS, SOURCE_HEADER, SOURCE_LINK_FIX, STATUSES,
                     TABLE_HEADINGS, anchor_tag, anchored, autolink, backtick_error, cited_sources, free_name,
                     coverage_material_missing, depth_problem, finding_blocks, gap_problem, id_order,
-                    investigation_dir, last_review, ledger_rows, link_definitions, linked_ids, outcome_problem,
+                    investigation_dir, last_review, ledger_rows, link_definitions, link_text, linked_ids, outcome_problem,
                     recorded_ids, review_rounds, reviewed, section_span, slug, source_reference_missing, status_problem, strip_anchors,
                     table_cells, table_row, ticket_sites, unlinked_backticks, unread_components, unread_message,
                     unrecorded_citations, unresolved_message, upgraded_tickets, write_output_file)
@@ -63,7 +65,7 @@ TABLES = {
 SHA = "<sha>"
 # A worked row per table, its cells after the ID, printed by `help` and with a
 # wrong column count.
-EXAMPLES = {
+ROW_EXAMPLES = {
     "queue-ready": ["S03 names a deploy job", "Is the deploy job live?", "Workflow runs at a pinned commit",
                     "None", "High", ""],
     "queue-blocked": ["F04", "Is the cluster config deployed?", "Cluster read access", "G01", "High", ""],
@@ -211,10 +213,11 @@ def table_help(name):
            + f"{len(header) - bool(letters)} cells on standard input, as a JSON list of strings"]
     out += [f"  {column}: {rule}" for column,
             rule in ALLOWED.get(name, {}).items()]
-    out.append("  example: " + json.dumps(EXAMPLES[name], ensure_ascii=False))
+    out.append("  example: " +
+               json.dumps(ROW_EXAMPLES[name], ensure_ascii=False))
     ident = f" --id {letters}01" if letters else ""
     out.append(heredoc(f"row --investigation <investigation> --table {name}{ident}",
-                       json.dumps(EXAMPLES[name], ensure_ascii=False)))
+                       json.dumps(ROW_EXAMPLES[name], ensure_ascii=False)))
     if not letters:
         out.append(
             "  to replace a row, add --match <text only it contains>, such as its file's name")
@@ -244,8 +247,9 @@ COMMAND_HELP = {
         "  a row: {\"table\": ..., \"id\": ..., \"match\": ..., \"cells\": [...]}, leaving out an id or match "
         "it doesn't take; a finding: {\"finding\": {...}, \"id\": ...}, leaving out id to add the next one",
         heredoc("batch --investigation <investigation>", json.dumps([
-            {"table": "sources", "id": "S04", "cells": EXAMPLES["sources"]},
-            {"table": "file-coverage", "cells": EXAMPLES["file-coverage"]},
+            {"table": "sources", "id": "S04",
+                "cells": ROW_EXAMPLES["sources"]},
+            {"table": "file-coverage", "cells": ROW_EXAMPLES["file-coverage"]},
             {"finding": {k: v for k, v in FINDING_EXAMPLE.items() if k != "Supersedes or contradicted by"}}],
             ensure_ascii=False, indent=2))]),
     "show": "\n".join([
@@ -254,6 +258,11 @@ COMMAND_HELP = {
         "is always printed so: IDs plain and links inline, so an edit is read, change, write back",
         f"  {CALL} show --investigation <investigation> --raw --id F07",
         f'  {CALL} show --investigation <investigation> --section "Resume here"']),
+    "brief": "\n".join([
+        "brief: prints what writing the report reads, from the ledger as it stands: the boundary, Resume here, "
+        "each source's exact reference with its limits, every finding, and the components, decisions and gaps; not the queue, "
+        "the coverage or the research notes",
+        f"  {CALL} brief --investigation <investigation>"]),
     "text": "\n".join([
         f"text: replaces a section's text, read as Markdown from standard input; --section is "
         f"{', '.join(TEXT_SECTIONS)}; read it as written first with show --section",
@@ -651,6 +660,37 @@ def show(lines, ident, name):
                                                 zip(header_of(lines, table)[1:], found[1:])])
 
 
+def brief(lines):
+    """What writing the report reads, from the ledger as it stands: the boundary
+    and Resume here, each source's exact reference with its limits, every finding, and the
+    components, decisions and gaps. Links show their text, IDs are plain, and a
+    source's reference keeps its URL for the report's references."""
+    def plain(text):
+        return link_text(strip_anchors(text))
+
+    out = []
+    for name in ("Boundary, method and access", "Resume here"):
+        start, end = text_span(lines, name)
+        out += [f"## {name}", "",
+                plain("\n".join(lines[start + 1:end]).strip()), ""]
+    out += ["## Sources: exact references", ""]
+    # A source's limits or what supersedes it decides a historical reference.
+    out += [f"{row[0]}: {as_written(lines, row[2])}" + ("" if row[5].strip() in ("", "None") else
+                                                        f" ({plain(row[5])})")
+            for row in table_rows(lines, "sources")] or ["None."]
+    blocks, _, _ = findings_of(lines)
+    out += ["", FINDINGS_HEADING, ""]
+    out += ["\n".join(line for line in plain(blocks[k]).split("\n") if line.strip()) + "\n"
+            for k in sorted(blocks, key=id_order)] or ["None.", ""]
+    for name in ("components", "decisions", "gaps"):
+        rows = table_rows(lines, name)
+        out += [TABLES[name][0], ""]
+        out += ([" | ".join(header_of(lines, name))] + [plain(" | ".join(row)) for row in rows]
+                if rows else ["None."])
+        out.append("")
+    return "\n".join(out).rstrip() + "\n"
+
+
 def snippet(text, needle, width=110):
     at = text.casefold().find(needle)
     start = max(0, at - 30)
@@ -750,7 +790,7 @@ def next_step(queue, reflection_missing, report):
         return (f"research: work the ready actions, starting with {queue['queue-ready'][0][0]}. "
                 "Ask the user before adding or leaving out a topic outside the one asked")
     if not report:
-        return "write: read the whole ledger, write content.json, run make_report.py"
+        return "write: read ledger.py brief in full, write content.json, run make_report.py"
     if not reviewed(queue["queue-completed"]):
         rounds = review_rounds(queue["queue-completed"])
         if rounds >= REVIEW_BACKSTOP:
@@ -912,7 +952,7 @@ def main(argv=None):
         description="Edit the research ledger's tables, findings, text and links by ID.")
     commands = parser.add_subparsers(dest="command", required=True)
     names = ("next-id", "row", "batch", "move", "remove", "finding",
-             "link", "unlink", "sync-sources", "text", "show", "find", "status", "help", "review")
+             "link", "unlink", "sync-sources", "text", "show", "find", "status", "brief", "help", "review")
     for name in names:
         sub = commands.add_parser(name)
         if name == "help":
@@ -978,6 +1018,9 @@ def main(argv=None):
     lines = text.split("\n")
     result, warnings = {}, []
     written = []
+    if args.command == "brief":
+        print(brief(lines))
+        return
     if args.command in ("show", "find", "status"):
         if args.command == "show" and sum(map(bool, (args.id, args.table, args.section))) != 1:
             raise SystemExit("show takes one of --id, --table or --section")
