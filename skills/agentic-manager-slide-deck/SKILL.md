@@ -12,7 +12,7 @@ The files go to the `slide-decks` folder of the config's `output.root`, or to a 
 
 You write only `slides.json`: the title, the CSS, each slide's HTML and the data of charts and rings. `make_deck.py` owns the rest, from the page around the slides to the check. When a script refuses something, its message says what to fix: fix the input, never work around the check.
 
-The skill's folder holds only these files, and the check fails on any other; your own working files go in your scratch folder.
+A deck's folder holds only these files, and the check fails on any other; your own working files go in your scratch folder.
 
 ```text
 slide-decks/
