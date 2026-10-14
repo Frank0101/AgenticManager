@@ -288,23 +288,23 @@ class CheckReportTest(unittest.TestCase):
     def test_handover_needs_links_to_sources(self):
         # A register row links its exact reference, a coverage row the material read; a search is recorded by its exact query between backticks instead.
         header = "| Source ID | Group / evidence kind | Exact reference | Revision | Read | Limits |\n| --- | --- | --- | --- | --- | --- |\n"
-        coverage = "### File reading coverage\n\n| Source | Material | Depth | Findings |\n| --- | --- | --- | --- |\n"
+        coverage = "### File reading coverage\n\n| Source | Material | Depth |\n| --- | --- | --- |\n"
         cases = [
             ("linked rows", "| S01 | source_control / implementation | [repo](https://github.com/acme/app/tree/abc123) | abc123 | x | y |\n"
              "| S02 | source_control / search | `gh search code --repo acme/app PROJ-1` | today | x | y |\n",
-             "| S01 | [`a.md`](https://github.com/acme/app/blob/abc123/a.md) | Full | G1 |\n", None),
+             "| S01 | [`a.md`](https://github.com/acme/app/blob/abc123/a.md) | Full |\n", None),
             ("a search described in words", "| S01 | source_control / search | a GitHub code search | today | x | y |\n",
-             "| S01 | [`a.md`](https://github.com/acme/app/blob/abc123/a.md) | Full | G1 |\n", "register rows without a link"),
+             "| S01 | [`a.md`](https://github.com/acme/app/blob/abc123/a.md) | Full |\n", "register rows without a link"),
             ("an unlinked source", "| S01 | source_control / implementation | acme/app | abc123 | x | y |\n",
-             "| S01 | [`a.md`](https://github.com/acme/app/blob/abc123/a.md) | Full | G1 |\n", "register rows without a link"),
+             "| S01 | [`a.md`](https://github.com/acme/app/blob/abc123/a.md) | Full |\n", "register rows without a link"),
             ("an unlinked file", "| S01 | source_control / implementation | [repo](https://github.com/acme/app/tree/abc123) | abc123 | x | y |\n",
-             "| S01 | `a.md` | Full | G1 |\n", "File reading coverage rows without a link"),
+             "| S01 | `a.md` | Full |\n", "File reading coverage rows without a link"),
             # Rows as ledger.py writes them: anchored IDs and linked citations.
             ("an anchored search", '| <a id="s02"></a>S02 | source_control / search | `gh search code --repo acme/app PROJ-1` | today | x | y |\n',
-             "| [S02](#s02) | [`a.md`](https://github.com/acme/app/blob/abc123/a.md) | Full | G1 |\n", None),
+             "| [S02](#s02) | [`a.md`](https://github.com/acme/app/blob/abc123/a.md) | Full |\n", None),
             ("a linked citation with no material link",
              '| <a id="s01"></a>S01 | source_control / implementation | [repo](https://github.com/acme/app/tree/abc123) | abc123 | x | y |\n',
-             "| [S01](#s01) | a.md | Full | G1 |\n", "File reading coverage rows without a link to the material read: S01"),
+             "| [S01](#s01) | a.md | Full |\n", "File reading coverage rows without a link to the material read: S01"),
         ]
         for name, register, files, expected in cases:
             with self.subTest(name):
@@ -417,8 +417,8 @@ class CheckReportTest(unittest.TestCase):
         component = ("## Component inventory and evolution\n\n| ID | Name | Responsibility | Repository | Status |"
                      " Deployment | Callers | Evidence | Next |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
                      "| C01 | search | Serves | [search][search] | {} | d | c | G01 | n |\n")
-        coverage = ("### File reading coverage\n\n| Source | Material | Depth | Findings |\n| --- | --- | --- | --- |\n"
-                    "| S01 | [routes](https://github.com/acme/app/blob/abc/services/search/{}) | {} | G01 |\n")
+        coverage = ("### File reading coverage\n\n| Source | Material | Depth |\n| --- | --- | --- |\n"
+                    "| S01 | [routes](https://github.com/acme/app/blob/abc/services/search/{}) | {} |\n")
         cases = [
             ("an answered action", "G01", "⬜ Unverified",
              ("README.md", "README"), None),

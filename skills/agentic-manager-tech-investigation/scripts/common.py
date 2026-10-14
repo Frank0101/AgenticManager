@@ -96,7 +96,7 @@ SOURCE_HEADER = ["Source ID", "Group / evidence kind", "Exact reference",
                  "Revision / environment / date checked",
                  "Material read and findings", "Access limits / superseded by",
                  "Areas"]
-FILE_HEADER = ["Source", "Material", "Depth", "Findings"]
+FILE_HEADER = ["Source", "Material", "Depth"]
 DECISION_HEADER = ["ID", "Decision", "Established position or unresolved choice",
                    "Candidates, constraints", "Source authority and status",
                    "Owner and next check"]
@@ -642,7 +642,7 @@ def unread_components(components, coverage, definitions):
     """The components whose Status claims code (🟩, 🟨) without file coverage
     read at READ_DEPTHS under their repository path. `components` are rows
     (ID, ..., repository cell at 3, status at 4); `coverage` rows (source,
-    material, depth, findings)."""
+    material, depth)."""
     def urls(cell):
         return [url for _, _, _, url in links(cell, definitions) if url]
     read = [_code_path(url) for row in coverage

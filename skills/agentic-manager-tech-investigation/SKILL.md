@@ -127,7 +127,7 @@ Build the **component inventory** as you go: every deployable or runnable unit a
 - Tell services apart from libraries, jobs, stores, external products and logical capabilities.
 - Challenge generic nouns (platform, gateway, pipeline): what runs where, called by whom, with what data and credentials, and what proves it exists.
 - Units of a shared repository unrelated to the topic are excluded with a reason, not read.
-- If you delegate reading to a subagent, ask for exact revisions, coverage and connections, and check that the coverage supports its claims.
+- If you delegate reading to a subagent, ask for exact revisions, coverage and connections, returned as the input of `<scripts>/ledger.py batch` (its `help --table batch` shows the shape): source rows, file coverage rows and draft findings. Check that the coverage supports its claims and correct what doesn't before writing them with `batch`.
 
 Research is finished when nothing is left ready: every material component and connection is supported at the level its status claims, or has a gap blocked by something you can't do yourself (`ledger.py help --table gaps` lists the accepted blockers).
 

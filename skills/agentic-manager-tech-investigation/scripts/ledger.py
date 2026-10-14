@@ -11,6 +11,10 @@ command prints one line of JSON.
 Rows of a table with no ID (file coverage) append, and are replaced or removed
 by text only that row contains.
 
+`batch` writes many rows and findings in one call, with the same checks, since
+reading a part of the code records dozens at once. It is all or nothing: the
+ledger is saved only after every item is written, so a bad item leaves no half.
+
 The ledger stores IDs as links to their anchors and links by reference, so
 `show --raw` and `show --section` print a record or a section as the input its
 writing command reads: an edit is read, change, write back, and what it didn't
@@ -68,7 +72,7 @@ EXAMPLES = {
     "sources": ["source_control", f"[api server.py](https://github.com/acme/api/blob/{SHA}/server.py)",
                 f"{SHA}, 2026-10-05", "Routes read in full.", "None", "Implementation, Architecture"],
     "file-coverage": ["S04", f"[api server.py](https://github.com/acme/api/blob/{SHA}/server.py)",
-                      "entrypoints and routes: lines 1-200 of 900", ""],
+                      "entrypoints and routes: lines 1-200 of 900"],
     "decisions": ["Which queue to use", "Unresolved: the design names two options", "SQS or Kafka; replay needed",
                   "Design doc, proposed", "Owner not named; next check: design review"],
     "gaps": ["Production config", "Code merged; deployed config not read", "Read access to the cluster",
@@ -233,6 +237,17 @@ COMMAND_HELP = {
         heredoc("finding --investigation <investigation>",
                 json.dumps(FINDING_EXAMPLE, ensure_ascii=False, indent=2)),
         f"  to edit one, read it as written: {CALL} show --investigation <investigation> --raw --id F07"]),
+    "batch": "\n".join([
+        "batch: writes many rows and findings in one call, from a JSON list on standard input, in order; "
+        "each row as `row` takes it, each finding as `finding` does, with the same checks. If one item "
+        "can't be written, nothing is",
+        "  a row: {\"table\": ..., \"id\": ..., \"match\": ..., \"cells\": [...]}, leaving out an id or match "
+        "it doesn't take; a finding: {\"finding\": {...}, \"id\": ...}, leaving out id to add the next one",
+        heredoc("batch --investigation <investigation>", json.dumps([
+            {"table": "sources", "id": "S04", "cells": EXAMPLES["sources"]},
+            {"table": "file-coverage", "cells": EXAMPLES["file-coverage"]},
+            {"finding": {k: v for k, v in FINDING_EXAMPLE.items() if k != "Supersedes or contradicted by"}}],
+            ensure_ascii=False, indent=2))]),
     "show": "\n".join([
         "show: prints a finding or a row by --id, a table by --table, or a text section by --section; "
         "with --raw, a finding or row is printed as the input its writing command reads, and a section "
@@ -778,6 +793,87 @@ def record_review(lines, raised="none", stopped=None):
     return row_id
 
 
+def put_row(lines, name, row_id, match, cells):
+    """Write a row of the table `name` and return its cells as written; exits
+    on an ID, a --match or cells the table doesn't take."""
+    _, _, letters = TABLES[name]
+    if bool(letters) != bool(row_id):
+        raise SystemExit(
+            f"{name} " + ("needs --id" if letters else "has no IDs: leave --id out"))
+    if letters and match:
+        raise SystemExit(f"{name} rows are replaced by --id, not --match")
+    if row_id and row_id[0] not in letters:
+        raise SystemExit(f"{name} IDs start with {' or '.join(letters)}")
+    if not isinstance(cells, list) or not all(isinstance(c, str) for c in cells):
+        raise SystemExit(
+            "the input must be a JSON list of strings, the row's cells:\n" + table_help(name))
+    written = linked(lines, [c.replace("\n", " ") for c in cells])
+    set_row(lines, name, row_id, written, match)
+    return written
+
+
+def put_finding(lines, ident, fields, warnings):
+    """Write a finding, the next one when `ident` is None, and return (its ID,
+    its values as written); a claim far past its length adds to `warnings`."""
+    if not isinstance(fields, dict):
+        raise SystemExit(
+            "the input must be a JSON object, the finding's title and fields:\n" + COMMAND_HELP["findings"])
+    ident = ident or next_id("\n".join(lines), "F")
+    if not re.fullmatch(r"F\d+", ident):
+        raise SystemExit("--id is F and its number, such as F07")
+    keys = [k for k, v in fields.items() if isinstance(v, str)
+            and k != "title"]
+    fields.update(zip(keys, linked(lines, [fields[k] for k in keys])))
+    if isinstance(fields.get("title"), str):
+        # A heading: its links by reference, but no ticket linked, which
+        # would change its anchor.
+        fields["title"] = reference_links(lines, fields["title"])
+    written = [v for v in fields.values() if isinstance(v, str)]
+    check_backticks(lines, written, ident)
+    set_finding(lines, ident, fields)
+    too_long = claim_length_warning(ident, str(fields.get("Claim", "")))
+    if too_long:
+        warnings.append(too_long)
+    return ident, written
+
+
+def put_batch(lines, items, warnings):
+    """Write each row and finding of `items` in order and return (every value
+    as written, what each item wrote: an ID, or the table of a row without
+    one). Exits at the first item that can't be written, naming it; the ledger
+    is saved only after every item is, so nothing is written then."""
+    if not isinstance(items, list) or not items:
+        raise SystemExit(
+            "the input must be a non-empty JSON list of rows and findings:\n" + COMMAND_HELP["batch"])
+    written, done = [], []
+    for number, item in enumerate(items, 1):
+        try:
+            if not isinstance(item, dict) or ("finding" in item) == ("table" in item):
+                raise SystemExit("each item is a row {\"table\", \"id\", \"match\", \"cells\"} or a "
+                                 "finding {\"finding\", \"id\"}, its optional keys left out")
+            extra = set(item) - ({"finding", "id"} if "finding" in item
+                                 else {"table", "id", "match", "cells"})
+            if extra:
+                raise SystemExit(f"unknown keys {', '.join(sorted(extra))}")
+            if "finding" in item:
+                ident, values = put_finding(
+                    lines, item.get("id"), item["finding"], warnings)
+            else:
+                if item["table"] not in TABLES:
+                    raise SystemExit(
+                        "table is one of: " + ", ".join(TABLES))
+                ident = item.get("id") or item["table"]
+                values = put_row(lines, item["table"], item.get("id"), item.get("match"),
+                                 item.get("cells"))
+        except SystemExit as error:
+            raise SystemExit(
+                f"item {number}: {error.code}\nnothing was written")
+        written += values
+        done.append(ident)
+    sync_sources(lines)
+    return written, done
+
+
 def read_input(args, as_json=False):
     """Standard input, or the file --input names; parsed as JSON when asked."""
     try:
@@ -815,7 +911,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Edit the research ledger's tables, findings, text and links by ID.")
     commands = parser.add_subparsers(dest="command", required=True)
-    names = ("next-id", "row", "move", "remove", "finding",
+    names = ("next-id", "row", "batch", "move", "remove", "finding",
              "link", "unlink", "sync-sources", "text", "show", "find", "status", "help", "review")
     for name in names:
         sub = commands.add_parser(name)
@@ -825,7 +921,7 @@ def main(argv=None):
             continue
         sub.add_argument("--investigation", required=True,
                          help="<Topic>_<YY-MM-DD>")
-        if name in ("row", "finding", "text"):
+        if name in ("row", "batch", "finding", "text"):
             sub.add_argument("--input", help="a file to read instead of standard input, such as one "
                              "written in your scratch folder, so nothing needs quoting in the shell")
         if name == "review":
@@ -899,24 +995,13 @@ def main(argv=None):
         print(json.dumps({"id": next_id(text, args.kind)}))
         return
     if args.command == "row":
-        _, _, letters = TABLES[args.table]
-        if bool(letters) != bool(args.id):
-            raise SystemExit(
-                f"{args.table} " + ("needs --id" if letters else "has no IDs: leave --id out"))
-        if letters and args.match:
-            raise SystemExit(
-                f"{args.table} rows are replaced by --id, not --match")
-        if args.id and args.id[0] not in letters:
-            raise SystemExit(
-                f"{args.table} IDs start with {' or '.join(letters)}")
-        cells = read_input(args, as_json=True)
-        if not isinstance(cells, list) or not all(isinstance(c, str) for c in cells):
-            raise SystemExit(
-                "the input must be a JSON list of strings, the row's cells:\n" + table_help(args.table))
-        written = linked(lines, [c.replace("\n", " ") for c in cells])
-        set_row(lines, args.table, args.id, written, args.match)
+        written = put_row(lines, args.table, args.id,
+                          args.match, read_input(args, as_json=True))
         if args.table == "sources":
             sync_sources(lines)
+    elif args.command == "batch":
+        written, result["written"] = put_batch(
+            lines, read_input(args, as_json=True), warnings)
     elif args.command == "move":
         columns = [s.partition("=")[0] for s in args.set]
         values = written = linked(
@@ -939,28 +1024,9 @@ def main(argv=None):
                     f"{args.table} " + ("takes --id" if letters else "has no IDs: use --match"))
             remove_row(lines, args.table, args.id, args.match)
     elif args.command == "finding":
-        fields = read_input(args, as_json=True)
-        if not isinstance(fields, dict):
-            raise SystemExit(
-                "the input must be a JSON object, the finding's title and fields:\n" + COMMAND_HELP["findings"])
-        ident = args.id or next_id(text, "F")
-        if not re.fullmatch(r"F\d+", ident):
-            raise SystemExit("--id is F and its number, such as F07")
-        keys = [k for k, v in fields.items() if isinstance(v, str)
-                and k != "title"]
-        fields.update(zip(keys, linked(lines, [fields[k] for k in keys])))
-        if isinstance(fields.get("title"), str):
-            # A heading: its links by reference, but no ticket linked, which
-            # would change its anchor.
-            fields["title"] = reference_links(lines, fields["title"])
-        written = [v for v in fields.values() if isinstance(v, str)]
-        check_backticks(lines, written, ident)
-        set_finding(lines, ident, fields)
+        result["id"], written = put_finding(
+            lines, args.id, read_input(args, as_json=True), warnings)
         sync_sources(lines)
-        result["id"] = ident
-        too_long = claim_length_warning(ident, str(fields.get("Claim", "")))
-        if too_long:
-            warnings.append(too_long)
     elif args.command == "link":
         if not re.fullmatch(r"[A-Za-z0-9._-]+", args.key) or not re.match(r"https?://", args.url):
             raise SystemExit(

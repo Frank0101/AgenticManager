@@ -97,31 +97,71 @@ class LedgerTest(unittest.TestCase):
         self.assertIn("| ID | Decision |", text)
         self.assertNotIn("## Open decisions\n\nNone yet.", text)
         self.run_ledger("row", "--table", "file-coverage",
-                        cells=["S01", "[a](https://example.com/a)", "Full", "F01"])
+                        cells=["S01", "[a](https://example.com/a)", "Full"])
         self.run_ledger("row", "--table", "file-coverage",
-                        cells=["S01", "[b](https://example.com/b)", "Full", "F01"])
+                        cells=["S01", "[b](https://example.com/b)", "Full"])
         self.assertEqual(
             self.rows("### File reading coverage"), ["S01", "S01"])
 
     def test_a_coverage_row_is_replaced_by_text_it_contains(self):
         for name in ("server.py", "routes.py"):
             self.run_ledger("row", "--table", "file-coverage",
-                            cells=["S07", f"[{name}](https://example.com/{name})", "partial: lines 1-10", ""])
+                            cells=["S07", f"[{name}](https://example.com/{name})", "partial: lines 1-10"])
         self.run_ledger("row", "--table", "file-coverage", "--match", "server.py",
-                        cells=["S07", "[server.py](https://example.com/server.py)", "full", "F01"])
+                        cells=["S07", "[server.py](https://example.com/server.py)", "full"])
         rows = self.text().split("### File reading coverage")[
             1].split("\n\n")[1]
         self.assertLess(rows.index("server.py"), rows.index("routes.py"))
-        self.assertIn("| full | F01 |", rows)
-        self.assertNotIn("lines 1-10 | |\n| S07 | [server.py]", rows)
+        self.assertIn("[server.py][server-py] | full |", rows)
+        self.assertNotIn("lines 1-10 |\n| S07 | [server.py]", rows)
         cases = [(["--table", "file-coverage", "--match", "S07"], "matches 2 rows"),
                  (["--table", "file-coverage", "--match", "zzz"],
                   "no file-coverage row"),
                  (["--table", "decisions", "--id", "D01", "--match", "x"], "replaced by --id")]
         for args, expected in cases:
             with self.subTest(expected), self.assertRaisesRegex(SystemExit, expected):
-                self.run_ledger("row", *args, cells=["S07", "[x](https://example.com/x)", "full", ""] if "file-coverage" in args
+                self.run_ledger("row", *args, cells=["S07", "[x](https://example.com/x)", "full"] if "file-coverage" in args
                                 else ["a", "b", "c", "d", "e"])
+
+    BATCH = [
+        {"table": "sources", "id": "S01", "cells": ["source_control", "[api](https://example.com/api)", "abc",
+                                                    "Read.", "None", "Implementation"]},
+        {"table": "file-coverage",
+            "cells": ["S01", "[server.py](https://example.com/server.py)", "full"]},
+        {"finding": {"title": "Search reads the index", "Claim": "Search reads the index.",
+                     "Kind": "observed implementation", "Evidence": "S01", "Validation and limits": "code read"}},
+    ]
+
+    def test_batch_writes_rows_and_findings_in_one_call(self):
+        result = self.run_ledger("batch", cells=self.BATCH)
+        self.assertEqual(result["written"], ["S01", "file-coverage", "F01"])
+        self.assertEqual(
+            self.rows("## Revisions and source register"), ["S01"])
+        self.assertEqual(self.rows("### File reading coverage"), ["S01"])
+        self.assertIn("### F01 — Search reads the index", self.text())
+        # A source's Findings come from the findings written in the same batch.
+        self.assertIn("| Read. Findings: F01. |", self.plain())
+
+    def test_a_batch_with_a_bad_item_writes_nothing(self):
+        before = self.text()
+        good = self.BATCH[0]
+        cases = [("an unknown table", {"table": "notes", "cells": []}, "table is one of"),
+                 ("a row and a finding at once", {
+                  "table": "sources", "finding": {}}, "each item is a row"),
+                 ("an unknown key", {"table": "file-coverage",
+                  "cells": [], "note": "x"}, "unknown keys note"),
+                 ("a depth not allowed", {"table": "file-coverage",
+                                          "cells": ["S01", "[a](https://example.com/a)", "skimmed"]}, "Depth 'skimmed'"),
+                 ("a finding missing fields", {
+                  "finding": {"title": "T"}}, "missing Claim"),
+                 ("a row needing an ID", {"table": "gaps", "cells": ["a"]}, "gaps needs --id")]
+        for name, bad, expected in cases:
+            with self.subTest(name), self.assertRaisesRegex(SystemExit, f"item 2: (.|\\n)*{expected}(.|\\n)*nothing was written"):
+                self.run_ledger("batch", cells=[good, bad])
+            self.assertEqual(self.text(), before)
+        for items in ([], {"table": "sources"}):
+            with self.subTest(items=items), self.assertRaisesRegex(SystemExit, "non-empty JSON list"):
+                self.run_ledger("batch", cells=items)
 
     def test_text_read_as_written_writes_back_unchanged(self):
         # Stored text has IDs and links rewritten; show --raw and --section give
@@ -273,15 +313,15 @@ class LedgerTest(unittest.TestCase):
         self.assertIn("None.", self.text().split(
             "## Revisions and source register")[1].split("###")[0])
         self.run_ledger("row", "--table", "file-coverage",
-                        cells=["S01", "[a][a]", "Full", "F01"])
+                        cells=["S01", "[a][a]", "Full"])
         self.run_ledger("row", "--table", "file-coverage",
-                        cells=["S02", "[b][b]", "Full", "F01"])
+                        cells=["S02", "[b][b]", "Full"])
         self.run_ledger("remove", "--table", "file-coverage", "--match", "[a]")
         self.assertEqual(self.rows("### File reading coverage"), ["S02"])
         # Rows of one source are told apart by the rest of the row, such as the file.
         for name in ("server.py", "routes.py"):
             self.run_ledger("row", "--table", "file-coverage",
-                            cells=["S07", f"[{name}](https://example.com/{name})", "full", ""])
+                            cells=["S07", f"[{name}](https://example.com/{name})", "full"])
         with self.assertRaisesRegex(SystemExit, "matches 2 rows"):
             self.run_ledger("remove", "--table",
                             "file-coverage", "--match", "S07")
@@ -473,7 +513,7 @@ class LedgerTest(unittest.TestCase):
         # The rules check_report.py applies at handover, refused on write.
         cases = [(["row", "--table", "sources", "--id", "S01"], ["a", "acme/api", "c", "d", "e", ""],
                   "S01: link the Exact reference"),
-                 (["row", "--table", "file-coverage"], ["S01", "server.py", "full", ""],
+                 (["row", "--table", "file-coverage"], ["S01", "server.py", "full"],
                   "for S01: link the material read"),
                  (["row", "--table", "gaps", "--id", "G01"], ["a", "b", "c", "Not started", "d", "e", "Delivery"],
                   "G01 is blocked by 'Not started'"),
@@ -529,9 +569,9 @@ class LedgerTest(unittest.TestCase):
         self.assertIn(
             "- **Evidence:** [S01](#s01) and [S02](#s02)\n", self.text())
         self.run_ledger("row", "--table", "file-coverage", cells=[
-            "S01", "[server.py](https://example.com/server.py)", "full", "F01"])
+            "S01", "[server.py](https://example.com/server.py)", "full"])
         self.assertIn(
-            "| [S01](#s01) | [server.py][server-py] | full | [F01](#f01) |", self.text())
+            "| [S01](#s01) | [server.py][server-py] | full |", self.text())
         self.run_ledger("text", "--section", "Resume here",
                         text="F01 rests on S01.")
         self.assertIn("\n[F01](#f01) rests on [S01](#s01).\n", self.text())
@@ -546,7 +586,7 @@ class LedgerTest(unittest.TestCase):
     def test_cells_must_hold_allowed_values(self):
         cases = [("components", "C01", ["n", "r", "p", "Done", "d", "c", "F01", "next"], "Status starts with"),
                  ("file-coverage", None,
-                  ["S01", "[a](https://example.com/a)", "skimmed", ""], "Depth 'skimmed'"),
+                  ["S01", "[a](https://example.com/a)", "skimmed"], "Depth 'skimmed'"),
                  ("queue-completed", "Q01",
                   QUEUE_ROW[:-1] + [""], "names the findings"),
                  ("queue-completed", "Q01", QUEUE_ROW[:-1] + ["Out of scope"], "names the findings")]
@@ -574,7 +614,7 @@ class LedgerTest(unittest.TestCase):
         for depth, path in (("README", "services/search/README.md"),
                             ("full", "services/other/main.py")):
             self.run_ledger("row", "--table", "file-coverage", cells=[
-                "S01", f"[f](https://git.example/acme/api/blob/abc/{path})", depth, ""])
+                "S01", f"[f](https://git.example/acme/api/blob/abc/{path})", depth])
             with self.subTest(depth), self.assertRaisesRegex(SystemExit, "needs its code read"):
                 self.run_ledger("row", "--table", "components",
                                 "--id", "C01", cells=component)
@@ -584,7 +624,7 @@ class LedgerTest(unittest.TestCase):
                          self.read_ledger("status"))
         self.run_ledger("row", "--table", "file-coverage", cells=[
             "S01", "[f](https://git.example/acme/api/blob/abc/services/search/src/routes.py)",
-            "entrypoints and routes: lines 1-80", ""])
+            "entrypoints and routes: lines 1-80"])
         self.run_ledger("row", "--table", "components",
                         "--id", "C01", cells=component)
         self.assertIn("| 🟩 Implemented |", self.text())
