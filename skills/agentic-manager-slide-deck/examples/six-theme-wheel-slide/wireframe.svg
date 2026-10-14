@@ -1,0 +1,161 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1100 618"
+  width="1100"
+  height="618"
+  font-family="Arial, Helvetica, sans-serif"
+>
+  <rect x="0" y="0" width="1100" height="618" fill="#f7f8fc" />
+  <!-- navy header band with the title, then a one-line subtitle -->
+  <rect x="0" y="0" width="1100" height="79.3" fill="#1e2761" />
+  <text
+    x="39.3"
+    y="52.9"
+    font-size="33.2"
+    font-weight="400"
+    fill="#ffffff"
+    text-anchor="start"
+    font-family="Georgia, serif"
+  >
+    Title
+  </text>
+  <rect x="39.3" y="85.4" width="472.2" height="9.8" fill="#a7afbf" />
+  <!-- six cards, three a side, each in its segment's colour: heading and paragraph -->
+  <rect
+    x="742.7"
+    y="118.6"
+    width="340"
+    height="133.7"
+    fill="#ede8fd"
+    rx="9.1"
+    stroke="#7c3aed"
+    stroke-width="2"
+  />
+  <rect x="756.2" y="135.2" width="128.4" height="12.1" fill="#7c3aed" />
+  <rect x="756.2" y="160.2" width="306" height="9.1" fill="#c9cdd3" />
+  <rect x="756.2" y="177.5" width="302.2" height="9.1" fill="#c9cdd3" />
+  <rect x="756.2" y="194.9" width="309.8" height="9.1" fill="#c9cdd3" />
+  <rect x="756.2" y="212.3" width="226.6" height="9.1" fill="#c9cdd3" />
+  <rect
+    x="742.7"
+    y="268.2"
+    width="340"
+    height="133.7"
+    fill="#d6f0de"
+    rx="9.1"
+    stroke="#2e7d4f"
+    stroke-width="2"
+  />
+  <rect x="756.2" y="284.8" width="128.4" height="12.1" fill="#2e7d4f" />
+  <rect x="756.2" y="309.8" width="306" height="9.1" fill="#c9cdd3" />
+  <rect x="756.2" y="327.1" width="302.2" height="9.1" fill="#c9cdd3" />
+  <rect x="756.2" y="344.5" width="309.8" height="9.1" fill="#c9cdd3" />
+  <rect x="756.2" y="361.9" width="226.6" height="9.1" fill="#c9cdd3" />
+  <rect
+    x="742.7"
+    y="417.8"
+    width="340"
+    height="133.7"
+    fill="#fde0e0"
+    rx="9.1"
+    stroke="#c0262d"
+    stroke-width="2"
+  />
+  <rect x="756.2" y="434.4" width="128.4" height="12.1" fill="#c0262d" />
+  <rect x="756.2" y="459.3" width="306" height="9.1" fill="#c9cdd3" />
+  <rect x="756.2" y="476.7" width="302.2" height="9.1" fill="#c9cdd3" />
+  <rect x="756.2" y="494.1" width="309.8" height="9.1" fill="#c9cdd3" />
+  <rect x="756.2" y="511.5" width="226.6" height="9.1" fill="#c9cdd3" />
+  <rect
+    x="16.6"
+    y="417.8"
+    width="340"
+    height="133.7"
+    fill="#fef5c2"
+    rx="9.1"
+    stroke="#d97706"
+    stroke-width="2"
+  />
+  <rect x="30.2" y="434.4" width="128.4" height="12.1" fill="#d97706" />
+  <rect x="30.2" y="459.3" width="306" height="9.1" fill="#c9cdd3" />
+  <rect x="30.2" y="476.7" width="302.2" height="9.1" fill="#c9cdd3" />
+  <rect x="30.2" y="494.1" width="309.8" height="9.1" fill="#c9cdd3" />
+  <rect x="30.2" y="511.5" width="226.6" height="9.1" fill="#c9cdd3" />
+  <rect
+    x="16.6"
+    y="268.2"
+    width="340"
+    height="133.7"
+    fill="#dbe6fb"
+    rx="9.1"
+    stroke="#2563eb"
+    stroke-width="2"
+  />
+  <rect x="30.2" y="284.8" width="128.4" height="12.1" fill="#2563eb" />
+  <rect x="30.2" y="309.8" width="306" height="9.1" fill="#c9cdd3" />
+  <rect x="30.2" y="327.1" width="302.2" height="9.1" fill="#c9cdd3" />
+  <rect x="30.2" y="344.5" width="309.8" height="9.1" fill="#c9cdd3" />
+  <rect x="30.2" y="361.9" width="226.6" height="9.1" fill="#c9cdd3" />
+  <rect
+    x="16.6"
+    y="118.6"
+    width="340"
+    height="133.7"
+    fill="#e0f4f6"
+    rx="9.1"
+    stroke="#148a96"
+    stroke-width="2"
+  />
+  <rect x="30.2" y="135.2" width="128.4" height="12.1" fill="#148a96" />
+  <rect x="30.2" y="160.2" width="306" height="9.1" fill="#c9cdd3" />
+  <rect x="30.2" y="177.5" width="302.2" height="9.1" fill="#c9cdd3" />
+  <rect x="30.2" y="194.9" width="309.8" height="9.1" fill="#c9cdd3" />
+  <rect x="30.2" y="212.3" width="226.6" height="9.1" fill="#c9cdd3" />
+  <!-- wheel of six segments in the cards' colours, with a gap between them, and a label in the middle -->
+  <path
+    d="M 554.5 164 A 172.3 172.3 0 0 1 696.9 246.2 L 609.3 299.9 A 69.5 69.5 0 0 0 551.8 266.7 Z"
+    fill="#7c3aed"
+  />
+  <rect x="584" y="227.7" width="52.9" height="7.6" fill="#ffffff" />
+  <path
+    d="M 701.4 254 A 172.3 172.3 0 0 1 701.4 418.4 L 611.1 369.4 A 69.5 69.5 0 0 0 611.1 303 Z"
+    fill="#2e7d4f"
+  />
+  <rect x="644.4" y="332.4" width="52.9" height="7.6" fill="#ffffff" />
+  <path
+    d="M 696.9 426.2 A 172.3 172.3 0 0 1 554.5 508.4 L 551.8 405.7 A 69.5 69.5 0 0 0 609.3 372.5 Z"
+    fill="#c0262d"
+  />
+  <rect x="584" y="437.1" width="52.9" height="7.6" fill="#ffffff" />
+  <path
+    d="M 545.5 508.4 A 172.3 172.3 0 0 1 403.1 426.2 L 490.7 372.5 A 69.5 69.5 0 0 0 548.2 405.7 Z"
+    fill="#d97706"
+  />
+  <rect x="463.1" y="437.1" width="52.9" height="7.6" fill="#ffffff" />
+  <path
+    d="M 398.6 418.4 A 172.3 172.3 0 0 1 398.6 254 L 488.9 303 A 69.5 69.5 0 0 0 488.9 369.4 Z"
+    fill="#2563eb"
+  />
+  <rect x="402.7" y="332.4" width="52.9" height="7.6" fill="#ffffff" />
+  <path
+    d="M 403.1 246.2 A 172.3 172.3 0 0 1 545.5 164 L 548.2 266.7 A 69.5 69.5 0 0 0 490.7 299.9 Z"
+    fill="#148a96"
+  />
+  <rect x="463.1" y="227.7" width="52.9" height="7.6" fill="#ffffff" />
+  <circle cx="550" cy="336.2" r="68" fill="#ffffff" />
+  <rect x="512.2" y="325.6" width="75.5" height="9.1" fill="#1e2761" />
+  <rect x="531.1" y="340.7" width="37.8" height="9.1" fill="#1e2761" />
+  <!-- full-width foundation card: a label on the left and one line -->
+  <rect
+    x="16.6"
+    y="562.8"
+    width="1066"
+    height="45.3"
+    fill="#eef2fb"
+    rx="9.1"
+    stroke="#1e2761"
+    stroke-width="3"
+  />
+  <rect x="30.2" y="580.2" width="132.2" height="11.3" fill="#1e2761" />
+  <rect x="275" y="581" width="657.3" height="9.1" fill="#3a4252" />
+</svg>
