@@ -29,7 +29,7 @@ if not __package__:
     # Run as a script: import the package from the folder that holds it.
     sys.path.insert(0, os.path.dirname(
         os.path.dirname(os.path.realpath(__file__))))
-from agentic_manager.jira import nested  # noqa: E402
+from agentic_manager.json_path import nested  # noqa: E402
 from agentic_manager.output_file import read_json  # noqa: E402
 
 

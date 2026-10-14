@@ -20,8 +20,9 @@ sys.path.insert(0, LIB_DIR)
 from agentic_manager.output_file import read_json, write_output_file  # noqa: E402,F401
 from agentic_manager.text import DISPLAY_DATE, INLINE_LINK, link_text, word_count  # noqa: E402,F401
 from agentic_manager.output_folder import clear_folder, day_folder, output_folder  # noqa: E402,F401
+from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order,  # noqa: E402,F401
-                                  nested, parse_ts, plain_text, value_at)
+                                  parse_ts, plain_text, value_at)
 
 # The skill's output folder, which holds the report folders (see output_folder.py).
 REPORTS_FOLDER = "jira-sprint-reports"

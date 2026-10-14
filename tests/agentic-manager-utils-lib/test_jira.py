@@ -88,19 +88,6 @@ class HelpersTest(unittest.TestCase):
         self.assertEqual(sorted(keys, key=jira.key_order),
                          ["ABC-3", "PROJ-2", "PROJ-10", "PROJ-x"])
 
-    def test_nested(self):
-        node = {"status": {"statusCategory": {"key": "done"}}, "parent": None,
-                "fixVersions": [{"name": "1.0"}]}
-        cases = [(node, ["status", "statusCategory", "key"], None, "done"), (node, ["parent", "key"], "x", "x"),
-                 (node, ["missing"], "", ""), (None,
-                                               ["parent", "id"], None, None),
-                 (node, ["fixVersions", 0, "name"], None, "1.0"), (node, [
-                     "fixVersions", "0", "name"], None, "1.0"),
-                 (node, ["fixVersions", 1, "name"], "x", "x"), (node, ["status", "statusCategory", "key", "x"], None, None)]
-        for node, path, default, expected in cases:
-            with self.subTest(path=path):
-                self.assertEqual(jira.nested(node, path, default), expected)
-
     def test_issue_key(self):
         self.assertEqual(jira.ISSUE_KEY.findall("PROJ-1, A2B-30 and proj-4 or X-1a"),
                          ["PROJ-1", "A2B-30"])

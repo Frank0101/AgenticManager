@@ -24,6 +24,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from agentic_manager.config import read_source
+from agentic_manager.json_path import nested
 from agentic_manager.text import DISPLAY_DATE
 
 GROUP, NAME = "workflow", "jira-api"
@@ -321,20 +322,6 @@ def value_at(changes, field, instant, current):
     if after:
         return after[0]["from"], after[0]["fromString"]
     return current
-
-
-def nested(node, path, default=None):
-    """The value at `path` in nested JSON objects and lists, such as Jira's, or
-    `default` if any step is missing or null. A step into a list is its
-    position, as a number or digits; `node` itself may be None."""
-    for step in path:
-        if isinstance(node, dict):
-            node = node.get(step)
-        elif isinstance(node, list) and str(step).isdigit() and int(step) < len(node):
-            node = node[int(step)]
-        else:
-            return default
-    return node if node is not None else default
 
 
 # Atlassian Document Format nodes that end a line of text.
