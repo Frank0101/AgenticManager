@@ -10,10 +10,10 @@
       ]
     },
     {
-      "root": "tests/agentic-manager-slide-deck",
+      "root": "tests/agentic-manager-slides-deck",
       "extraPaths": [
         "skills/agentic-manager-utils-lib",
-        "skills/agentic-manager-slide-deck/scripts"
+        "skills/agentic-manager-slides-deck/scripts"
       ]
     },
     {

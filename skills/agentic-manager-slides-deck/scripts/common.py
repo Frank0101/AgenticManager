@@ -8,10 +8,10 @@ from their descriptions.
 Scripts import the shared library's names from here, so they don't depend on
 the order of their imports.
 
-Chart.js and Mermaid.js are the only code a deck loads from outside: they run
-in the viewer's browser, never while the deck is built, so nothing the skill
-runs depends on them. They are pinned, so a deck draws the same way every time
-it is opened.
+Chart.js is the only code a deck loads from outside: it runs in the viewer's
+browser, never while the deck is built, so nothing the skill runs depends on
+it. It is pinned, so a deck draws the same way every time it is opened.
+Diagrams are inline SVG, drawn in the deck's own look.
 
 Images (logos, screenshots, photos) live once in _assets, next to the decks, and every deck links to them there rather than holding a copy, so
 the HTML stays small; a deck shared on its own is exported to PDF, which
@@ -35,7 +35,7 @@ from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, clear
 from agentic_manager.text import NAME, SLUG, free_name, slug  # noqa: E402,F401
 from agentic_manager.web import ssl_context  # noqa: E402,F401
 
-FOLDER_NAME = "slide-decks"
+FOLDER_NAME = "slides-decks"
 ASSETS = "_assets"
 # An image in _assets is a folder named in lowercase words joined by hyphens,
 # holding the image as image.<a type a browser shows> and its description.
@@ -62,7 +62,6 @@ DECK_SUFFIX = "_Slides.html"
 SLIDE_WIDTH, SLIDE_HEIGHT = 1100, 618
 
 CHART_JS = "https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"
-MERMAID_JS = "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"
 
 # {{chart:<id>}} or {{ring:<id>}} in a slide's HTML, replaced by the chart or
 # ring of that id; {{asset:<name>}}, by the link to that image in _assets.

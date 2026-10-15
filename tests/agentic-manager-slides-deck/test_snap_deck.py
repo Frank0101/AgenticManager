@@ -1,6 +1,6 @@
-"""Unit tests for skills/agentic-manager-slide-deck/scripts/snap_deck.py, and,
+"""Unit tests for skills/agentic-manager-slides-deck/scripts/snap_deck.py, and,
 where Chrome is installed, a run that pictures a real deck.
-Run with: python3 tests/run.py agentic-manager-slide-deck
+Run with: python3 tests/run.py agentic-manager-slides-deck
 """
 
 import os

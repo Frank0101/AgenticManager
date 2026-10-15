@@ -1,6 +1,6 @@
-"""Unit tests for skills/agentic-manager-slide-deck/scripts/make_deck.py.
+"""Unit tests for skills/agentic-manager-slides-deck/scripts/make_deck.py.
 The whole pipeline has end-to-end tests in test_e2e_pipeline.py.
-Run with: python3 tests/run.py agentic-manager-slide-deck
+Run with: python3 tests/run.py agentic-manager-slides-deck
 """
 
 import json
@@ -35,10 +35,9 @@ def chart_data(page):
 
 class ProblemsTest(unittest.TestCase):
     def test_the_fixture_is_valid(self):
-        errors, texts, mermaid = make_deck.problems(content())
+        errors, texts = make_deck.problems(content())
         self.assertEqual(errors, [])
         self.assertEqual(len(texts), 3)
-        self.assertTrue(mermaid)
 
     def test_problems_name_the_field(self):
         # Each case: a change to the fixture, and the problem it raises.
@@ -78,6 +77,8 @@ class ProblemsTest(unittest.TestCase):
              "slides[0].html: line 1: <script> isn't allowed"),
             ("style element", set_slide("<style>p{}</style>"),
              "<style> isn't allowed"),
+            ("mermaid diagram", set_slide("<pre class='mermaid'>graph LR; A-->B</pre>"),
+             "<pre class='mermaid'>: draw a diagram as inline SVG"),
             ("remote image", set_slide("<img src='https://example.com/a.png'>"),
              "<img src> loads a remote file"),
             ("protocol-relative image", set_slide("<img src='//example.com/a.png'>"),
@@ -189,9 +190,9 @@ class RingTest(unittest.TestCase):
 
 class BuildTest(unittest.TestCase):
     def build(self, data):
-        errors, texts, mermaid = make_deck.problems(data)
+        errors, texts = make_deck.problems(data)
         self.assertEqual(errors, [])
-        return make_deck.build(data, texts, mermaid, {})
+        return make_deck.build(data, texts, {})
 
     def test_page(self):
         # The page wraps each slide in its frame with its own classes, puts
@@ -208,7 +209,6 @@ class BuildTest(unittest.TestCase):
         self.assertIn('<svg class="ring" id="ring-phases"', page)
         self.assertNotIn("{{", page)
         self.assertIn(f'<script src="{common.CHART_JS}"></script>', page)
-        self.assertIn(f'<script src="{common.MERMAID_JS}"></script>', page)
         data = content()
         data["slides"] = [slide("<p>Only text</p>")]
         data["charts"], data["rings"] = {}, {}

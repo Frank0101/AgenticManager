@@ -40,7 +40,7 @@ from common import (ASSETS, EXAMPLE_DESCRIPTION, FOLDER_NAME, SLUG, asset_image,
                     read_asset, slug, ssl_context, write_output_file)
 
 # Image hosts often refuse requests without one.
-USER_AGENT = "AgenticManager-slide-deck/1.0 (an image for a slide deck)"
+USER_AGENT = "AgenticManager-slides-deck/1.0 (an image for a slide deck)"
 MAX_BYTES = 20 * 1024 * 1024
 # An image's type by its first bytes; SVG is text, found by its root element.
 SIGNATURES = [(b"\x89PNG\r\n\x1a\n", "png"), (b"\xff\xd8\xff", "jpg"), (b"GIF87a", "gif"),

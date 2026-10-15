@@ -145,7 +145,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Picture each slide of the deck with headless Chrome.")
     parser.add_argument("--deck", required=True,
-                        help="the deck's folder, <Name>_<YY-MM-DD>, inside slide-decks")
+                        help="the deck's folder, <Name>_<YY-MM-DD>, inside slides-decks")
     sheet, pictures = snap(parser.parse_args(argv).deck)
     print(json.dumps({"sheet": sheet, "slides": pictures}))
     return 0

@@ -1,5 +1,5 @@
 ---
-name: agentic-manager-slide-deck
+name: agentic-manager-slides-deck
 description: Turns a conversation into an HTML slide deck - infers the kind of presentation (pitch, business review, townhall, report, roadmap, status update), asks a few qualifying questions one at a time, then builds a deck of fixed-size slides with zoom and PDF export, from a reference the user gives, from a library of described slide layouts or from a blank skeleton, and iterates on it with the user. Use when the user asks for slides, a deck or a presentation, or to change the deck built in the same conversation.
 allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_deck.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/add_asset.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/save_example.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_deck.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/snap_deck.py *)
 ---
@@ -8,14 +8,14 @@ allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/age
 
 Turns a conversation into an HTML slide deck. You drive: work out the kind of presentation, choose where to start from, ask what's missing, write the slides, then iterate while the user reviews the deck in a browser.
 
-The files go to the `slide-decks` folder of the config's `output.root`, or to a temporary folder if none is set. The scripts choose and write that folder; never choose one yourself, and never read the config.
+The files go to the `slides-decks` folder of the config's `output.root`, or to a temporary folder if none is set. The scripts choose and write that folder; never choose one yourself, and never read the config.
 
 You write only `slides.json`: the title, the CSS, each slide's HTML and the data of charts and rings. `make_deck.py` owns the rest, from the page around the slides to the check. When a script refuses something, its message says what to fix: fix the input, never work around the check.
 
 A deck's folder holds only these files, and the check fails on any other; your own working files go in your scratch folder.
 
 ```text
-slide-decks/
+slides-decks/
 ├── _assets/                         add_asset.py writes, the images every deck links to
 │   └── acme-logo/
 │       ├── image.svg
@@ -80,7 +80,7 @@ It creates the deck's folder, replacing one of the same name and day, and lists 
 Decide the deck's look first (see [Consistency](#consistency)). Write the file, and every revision of it, through the shared writer at the `slides_path` from step 2, never with your own file tools:
 
 ```bash
-python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py --name slide-decks --path '<slides_path>' <<'END_OF_FILE'
+python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py --name slides-decks --path '<slides_path>' <<'END_OF_FILE'
 {
   "title": "Acme Q3 Review",
   "style": [
@@ -121,7 +121,7 @@ END_OF_FILE
 - **Fit.** Every slide fits 1100×618: overflow is clipped, never scrolled. Prefer structure to decoration in a first draft.
 - **Text.** Write real content, with a placeholder only where information is genuinely missing, naming it in one of these forms: `[CHART: revenue by quarter, bar]`, `[IMAGE: team photo]`, `[DIAGRAM: onboarding flow]`, `[TABLE: KPI summary, 4 rows]` or `[PLACEHOLDER: description]`.
 - **Page numbers.** Write `{{page}}`, never the number, so adding or removing a slide renumbers the rest.
-- **Charts and diagrams.** A diagram (a flow, a sequence, a hierarchy) is `<pre class='mermaid'>` with Mermaid's syntax inside, `<` written as `&lt;`. Chart.js 4.4.1 and Mermaid.js 11.4.1 load from the internet when the deck opens, so use a chart or diagram only when a slide genuinely needs one; anything else is HTML and CSS.
+- **Charts and diagrams.** A chart is for real data: Chart.js 4.4.1 draws it, loaded from the internet when the deck opens. A diagram (a flow, a sequence, a hierarchy) is inline SVG in the deck's look. Anything else is HTML and CSS.
 - **Images.** An image is `<img src='{{asset:<name>}}'>`. Reuse one from `assets` when it shows what the slide needs. An image the user gives (a logo, a screenshot, a photo) goes in `_assets` with `python3 ${CLAUDE_SKILL_DIR}/scripts/add_asset.py`; one only they can give, such as their team's photo, is an `[IMAGE: …]` placeholder until they do. Write what an image `shows` after looking at it, in one line on its subject, background and shape, so a later deck can tell whether it fits without opening it. An image in `assets` with nothing in `shows` was put there by hand: when its name suggests it may fit, look at it and describe it, whether or not you use it.
 - **Drawings.** Icons, arrows, badges and diagrams belong to the design: inline SVG, for good. A picture of something anyone could photograph, such as the Earth, a car or a banana, is an SVG drawing wrapped in `<figure data-image='<what the real image should show>'>`: a stand-in, which step 7 can swap for a real image.
 

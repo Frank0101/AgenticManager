@@ -1,5 +1,5 @@
 """An invented deck shared by the tests: its slides.json, with a chart, a ring,
-a Mermaid diagram and a placeholder, and an output folder of the test's own."""
+an SVG diagram and a placeholder, and an output folder of the test's own."""
 import copy
 import json
 import os
@@ -20,7 +20,7 @@ CONTENT = {
                   "<div style='height: 380px'>{{chart:revenue}}</div>",
                   "<div>{{ring:phases}}<p>[IMAGE: team photo]</p></div>"]},
         {"html": ["<h2>Flow</h2>",
-                  "<pre class='mermaid'>graph LR; A[Plan]-->B[Ship]</pre>"]},
+                  "<svg viewBox='0 0 200 40'><rect x='0' y='0' width='80' height='40'/><path d='M80 20 H120'/></svg>"]},
     ],
     "charts": {"revenue": {"type": "bar", "data": {
         "labels": ["Q1", "Q2"], "datasets": [{"label": "Revenue", "data": [3, 5]}]}}},
@@ -49,7 +49,7 @@ def temp_output(test):
         patcher = mock.patch.object(target, attribute, value)
         patcher.start()
         test.addCleanup(patcher.stop)
-    return os.path.join(root, "out", "slide-decks")
+    return os.path.join(root, "out", "slides-decks")
 
 
 def write_asset(folder, name="acme-logo", description="# Acme logo\n\n**Shows:** the Acme logo, wide\n"):

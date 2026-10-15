@@ -32,13 +32,13 @@ def save(deck, number, title, use_for):
         raise SystemExit("--title and --use-for must not be empty")
     content = one_slide(read_json(os.path.join(
         deck_dir(deck), SLIDES)), number, title)
-    errors, texts, mermaid = problems(content, asset_names())
+    errors, texts = problems(content, asset_names())
     if errors:
         raise SystemExit("the slide has problems, so nothing was written; run make_deck.py on the deck "
                          "first:\n  - " + "\n  - ".join(errors))
     name = example_name(user_examples_dir(), title)
     files = {SLIDES: json.dumps(content, ensure_ascii=False, indent=2) + "\n",
-             EXAMPLE_PAGE: build(content, texts, mermaid, credits(), depth=2),
+             EXAMPLE_PAGE: build(content, texts, credits(), depth=2),
              EXAMPLE_DESCRIPTION: f"# {title}\n\n**Use for:** {use_for}\n\nThe slide: [{SLIDES}]({SLIDES}), "
              f"shown in [{EXAMPLE_PAGE}]({EXAMPLE_PAGE}).\n"}
     paths, temporary = {}, False

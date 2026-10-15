@@ -1,5 +1,5 @@
-"""Unit tests for skills/agentic-manager-slide-deck/scripts/add_asset.py.
-Run with: python3 tests/run.py agentic-manager-slide-deck
+"""Unit tests for skills/agentic-manager-slides-deck/scripts/add_asset.py.
+Run with: python3 tests/run.py agentic-manager-slides-deck
 
 The config's path is patched to the test's own config, in a temporary folder.
 """

@@ -1,6 +1,6 @@
-"""Unit tests for skills/agentic-manager-slide-deck/scripts/init_deck.py.
+"""Unit tests for skills/agentic-manager-slides-deck/scripts/init_deck.py.
 The whole pipeline has end-to-end tests in test_e2e_pipeline.py.
-Run with: python3 tests/run.py agentic-manager-slide-deck
+Run with: python3 tests/run.py agentic-manager-slides-deck
 
 The config's path is patched to the test's own config, in a temporary folder.
 """

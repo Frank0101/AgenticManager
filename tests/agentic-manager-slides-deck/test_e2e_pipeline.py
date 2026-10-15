@@ -2,7 +2,7 @@
 init_deck.py, the agent's slides.json written and patched through the
 library's output_file.py, and make_deck.py, whose check check_deck.py agrees
 with when run on its own.
-Run with: python3 tests/run.py agentic-manager-slide-deck
+Run with: python3 tests/run.py agentic-manager-slides-deck
 
 HOME points at a temporary folder holding the test's own config, and TMPDIR at
 the same folder.
@@ -47,7 +47,7 @@ class PipelineTest(unittest.TestCase):
         return proc
 
     def write(self, relative, text, *flags):
-        self.run_script(os.path.join(LIB, "output_file.py"), "--name", "slide-decks",
+        self.run_script(os.path.join(LIB, "output_file.py"), "--name", "slides-decks",
                         "--path", relative, *flags, stdin=text)
 
     def test_build_fix_and_revise_a_deck(self):
@@ -55,7 +55,7 @@ class PipelineTest(unittest.TestCase):
             os.path.join(SCRIPTS, "init_deck.py"), "--name", "Acme-Q3-Review").stdout)
         deck = started["deck"]
         self.assertEqual(started["deck_dir"], os.path.join(
-            self.root, "out", "slide-decks", deck))
+            self.root, "out", "slides-decks", deck))
         # A first draft with a problem: the script names the field and writes nothing.
         data = content()
         data["slides"][0]["html"].append("<div>")

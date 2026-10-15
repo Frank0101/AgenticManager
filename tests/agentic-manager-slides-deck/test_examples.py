@@ -1,7 +1,7 @@
-"""Tests for skills/agentic-manager-slide-deck/examples/: every example is
+"""Tests for skills/agentic-manager-slides-deck/examples/: every example is
 a description with the parts SKILL.md says it has and a wireframe drawn at the
 slide's size, and the list init_deck.py prints holds every example once.
-Run with: python3 tests/run.py agentic-manager-slide-deck
+Run with: python3 tests/run.py agentic-manager-slides-deck
 
 How a wireframe looks next to its original slide can't be tested: that was
 checked by eye when it was drawn.

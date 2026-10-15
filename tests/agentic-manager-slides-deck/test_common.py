@@ -1,5 +1,5 @@
-"""Unit tests for skills/agentic-manager-slide-deck/scripts/common.py.
-Run with: python3 tests/run.py agentic-manager-slide-deck
+"""Unit tests for skills/agentic-manager-slides-deck/scripts/common.py.
+Run with: python3 tests/run.py agentic-manager-slides-deck
 """
 
 import os

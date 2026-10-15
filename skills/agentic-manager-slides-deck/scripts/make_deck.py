@@ -17,8 +17,9 @@ its data, without animation so a PDF never catches it half drawn. Its
 settings are data, never code: how its values read ("£3.5m") is a `format`,
 which the page's script turns into the label functions Chart.js needs. A ring is a
 donut or pie of equal or weighted segments with gaps between them, drawn here
-as SVG, since its geometry is arithmetic. A <pre class="mermaid"> block is a
-diagram Mermaid.js draws in the browser. An image is {{asset:<name>}}, linked
+as SVG, since its geometry is arithmetic. A diagram is inline SVG in the
+deck's own look, never Mermaid, whose look a deck can't match and which would
+load another library. An image is {{asset:<name>}}, linked
 to the file in _assets, which must be there: an image from anywhere else, a
 path or a URL, would show only on one machine or online; a downloaded image's
 credit is added to every slide that shows it, so no slide can drop it.
@@ -46,7 +47,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import TypeIs
 
-from common import (CHART_JS, ELEMENT_ID, FOLDER_NAME, MERMAID_JS, PAGE, REMOTE, SLIDE_HEIGHT, SLIDE_WIDTH,
+from common import (CHART_JS, ELEMENT_ID, FOLDER_NAME, PAGE, REMOTE, SLIDE_HEIGHT, SLIDE_WIDTH,
                     SLIDES, SLUG, TOKEN, URL_ATTRIBUTES, VOID, asset_link, asset_names, credit_line, credits,
                     deck_dir, deck_file, placed_images, read_json, write_output_file)
 import check_deck
@@ -75,13 +76,13 @@ def make_deck(deck, open_page=False):
     problems if slides.json is invalid."""
     folder = deck_dir(deck)
     content = read_json(os.path.join(folder, SLIDES))
-    errors, texts, mermaid = problems(content, asset_names())
+    errors, texts = problems(content, asset_names())
     if errors:
         raise SystemExit("slides.json has problems, so nothing was written:\n  - "
                          + "\n  - ".join(errors))
     known = credits()
     path, temporary = write_output_file(
-        FOLDER_NAME, f"{deck}/{deck_file(deck)}", build(content, texts, mermaid, known).encode("utf-8"))
+        FOLDER_NAME, f"{deck}/{deck_file(deck)}", build(content, texts, known).encode("utf-8"))
     result = {"path": path, "temporary": temporary,
               **check_deck.check_deck(deck)}
     result["credits"] = [{"asset": name, "license": known[name]["license"], "source": known[name]["source"]}
@@ -92,9 +93,9 @@ def make_deck(deck, open_page=False):
     return result
 
 
-def build(content, texts, mermaid, image_credits, depth=1):
-    """The deck's HTML page from valid content and the slides' HTML and Mermaid
-    flag problems() returned for it, crediting each downloaded image in
+def build(content, texts, image_credits, depth=1):
+    """The deck's HTML page from valid content and the slides' HTML problems()
+    returned for it, crediting each downloaded image in
     `image_credits` on every slide that shows it, `depth` folders below the
     skill's output folder."""
     charts, rings = content.get("charts", {}), content.get("rings", {})
@@ -114,8 +115,6 @@ def build(content, texts, mermaid, image_credits, depth=1):
     if charts:
         data = json.dumps(charts, ensure_ascii=False).replace("<", "\\u003c")
         scripts.append(CHART_SCRIPT.format(src=CHART_JS, charts=data))
-    if mermaid:
-        scripts.append(MERMAID_SCRIPT)
     return f"""<!doctype html>
 <html>
   <head>
@@ -143,12 +142,11 @@ def build(content, texts, mermaid, image_credits, depth=1):
 
 
 def problems(content, assets=frozenset()):
-    """(errors, slides' HTML, whether any holds a Mermaid diagram) of
-    slides.json's content, `assets` being the images in _assets; errors name
+    """(errors, slides' HTML) of slides.json's content, `assets` being the images in _assets; errors name
     the field to fix."""
-    errors, texts, mermaid = [], [], False
+    errors, texts = [], []
     if not isinstance(content, dict):
-        return ["slides.json: must be a JSON object"], texts, mermaid
+        return ["slides.json: must be a JSON object"], texts
     unknown(content, FIELDS, "slides.json", errors)
     title = content.get("title")
     if not isinstance(title, str) or not title.strip() or "\n" in title:
@@ -204,24 +202,22 @@ def problems(content, assets=frozenset()):
             errors.append(
                 f"{where}.html: `{{{{` starts no token: write {{{{chart:<id>}}}}, {{{{ring:<id>}}}}, "
                 "{{{{asset:<name>}}}} or {{{{page}}}}")
-        problem, holds_mermaid = read_slide(bare)
-        mermaid = mermaid or holds_mermaid
+        problem = read_slide(bare)
         if problem:
             errors.append(f"{where}.html: {problem}")
     for (kind, ident), count in elements.items():
         if count != 1:
             errors.append(f"{kind}s.{ident}: must be placed exactly once, as {{{{{kind}:{ident}}}}} "
                           f"in a slide's html, not {count} times")
-    return errors, texts, mermaid
+    return errors, texts
 
 
 class SlideParser(HTMLParser):
-    """Reads one slide's HTML: the first problem with it, and whether it holds
-    a Mermaid diagram."""
+    """Reads one slide's HTML: the first problem with it."""
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
-        self.open, self.problem, self.mermaid = [], None, False
+        self.open, self.problem = [], None
 
     def fail(self, message):
         if not self.problem:
@@ -252,7 +248,8 @@ class SlideParser(HTMLParser):
             elif name == "style" and REMOTE_CSS.search(value):
                 self.fail(f"<{tag} style> loads a remote file")
             elif name == "class" and "mermaid" in value.split():
-                self.mermaid = True
+                self.fail(
+                    f"<{tag} class='mermaid'>: draw a diagram as inline SVG, in the deck's look")
 
     def handle_endtag(self, tag):
         if tag in VOID:
@@ -272,11 +269,11 @@ class SlideParser(HTMLParser):
 
 
 def read_slide(text):
-    """(problem or None, holds a Mermaid diagram) of one slide's HTML."""
+    """The first problem with one slide's HTML, or None."""
     parser = SlideParser()
     parser.feed(text)
     parser.finish()
-    return parser.problem, parser.mermaid
+    return parser.problem
 
 
 def is_number(value) -> TypeIs[int | float]:
@@ -585,17 +582,12 @@ CHART_SCRIPT = """    <script src="{src}"></script>
       }}
     </script>"""
 
-MERMAID_SCRIPT = f"""    <script src="{MERMAID_JS}"></script>
-    <script>
-      mermaid.initialize({{ startOnLoad: true }});
-    </script>"""
-
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Write the deck from slides.json, then check it.")
     parser.add_argument("--deck", required=True,
-                        help="the deck's folder, <Name>_<YY-MM-DD>, inside slide-decks")
+                        help="the deck's folder, <Name>_<YY-MM-DD>, inside slides-decks")
     parser.add_argument("--open", action="store_true",
                         help="open the deck in the default browser if it passes the check")
     args = parser.parse_args(argv)

@@ -8,7 +8,7 @@ browser would and counts what slides.json says must be there (the slides,
 each chart with its data, each ring with its segments), so a generator bug
 can't pass by agreeing with itself. It also checks the page's fixed parts
 (the toolbar, zoom, the print rules), that it loads nothing but the pinned
-Chart.js and Mermaid.js, each only when a slide needs it, that every image it
+Chart.js, only when a slide holds a chart, that every image it
 links is in _assets, as slides.json places them, that every slide showing a
 downloaded image shows its credit, and that the folder holds only the deck's
 files.
@@ -27,7 +27,7 @@ import os
 import re
 from html.parser import HTMLParser
 
-from common import (ASSETS, CHART_JS, MERMAID_JS, PAGE, PLACEHOLDER, REMOTE, SLIDE_HEIGHT, SLIDE_WIDTH, SLIDES, STAND_IN,
+from common import (ASSETS, CHART_JS, PAGE, PLACEHOLDER, REMOTE, SLIDE_HEIGHT, SLIDE_WIDTH, SLIDES, STAND_IN,
                     TOKEN, URL_ATTRIBUTES, VOID, asset_link, asset_names, credit_line, credits, deck_dir, deck_file,
                     expected_files, placed_images, read_json)
 
@@ -73,11 +73,10 @@ def check(folder, deck, content):
         errors.append(
             f"the page has no print rules for {SLIDE_WIDTH}x{SLIDE_HEIGHT} pages")
     charts, rings = content.get("charts", {}), content.get("rings", {})
-    wanted_sources = ([CHART_JS] if charts else []) + \
-        ([MERMAID_JS] if page.mermaid else [])
+    wanted_sources = [CHART_JS] if charts else []
     if page.sources != wanted_sources:
         errors.append(
-            f"the page loads {page.sources}, but its charts and diagrams need {wanted_sources}")
+            f"the page loads {page.sources}, but its charts need {wanted_sources}")
     if page.remote or page.links:
         errors.append("the page loads remote files: " +
                       ", ".join(page.remote + ["<link>"] * page.links))
@@ -135,7 +134,7 @@ class PageReader(HTMLParser):
         self.title, self.style, self.scripts, self.text = "", "", [], []
         self.slides, self.buttons, self.sources, self.remote = 0, [], [], []
         self.files = []  # the local files the page links, by their link
-        self.canvases, self.rings, self.mermaid, self.links = [], {}, False, 0
+        self.canvases, self.rings, self.links = [], {}, 0
         self.slide_text = []  # each slide's text, in pieces
         self.stand_ins = []  # "slide <n>: <the image it stands in for>"
 
@@ -179,8 +178,6 @@ class PageReader(HTMLParser):
             self.rings[parent[2]] = self.rings.get(parent[2], 0) + 1
         if tag == "svg" and "ring" in classes:
             self.rings.setdefault(attrs.get("id"), 0)
-        if "mermaid" in classes:
-            self.mermaid = True
 
     def handle_endtag(self, tag):
         if tag not in VOID:
@@ -205,7 +202,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Check a finished deck against its slides.json.")
     parser.add_argument("--deck", required=True,
-                        help="the deck's folder, <Name>_<YY-MM-DD>, inside slide-decks")
+                        help="the deck's folder, <Name>_<YY-MM-DD>, inside slides-decks")
     result = check_deck(parser.parse_args(argv).deck)
     print(json.dumps(result))
     return 0 if result["ok"] else 1

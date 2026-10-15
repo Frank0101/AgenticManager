@@ -1,5 +1,5 @@
-"""Unit tests for skills/agentic-manager-slide-deck/scripts/check_deck.py.
-Run with: python3 tests/run.py agentic-manager-slide-deck
+"""Unit tests for skills/agentic-manager-slides-deck/scripts/check_deck.py.
+Run with: python3 tests/run.py agentic-manager-slides-deck
 
 Each test builds the fixture's deck with make_deck.py, then breaks the page or
 the folder the way a generator bug or a stray file would, and expects the
