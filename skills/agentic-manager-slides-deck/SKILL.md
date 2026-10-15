@@ -51,7 +51,7 @@ Drive the conversation: don't wait for the user to know what to ask for.
 
   Take layout, section structure, chart types and density from them, never the look (see [Consistency](#consistency)), and tell the user briefly which you use: "I'm basing the layout on the Market Segmentation example."
 
-- **Blank:** structure only: white background, dark text, the default sans-serif, and on each slide a title and a layout skeleton with placeholders for what is missing.
+- **Blank:** a plain look and your own structure, without the examples: white background, dark text, the default sans-serif, and on each slide a title and a layout skeleton. The content is written as usual, with placeholders only for what is missing.
 
 **Questions.** Ask one at a time, conversationally, and stop when you have enough for a coherent first draft; after a complete reference, ask only about what is missing or ambiguous. What to ask depends on the type:
 
@@ -73,7 +73,7 @@ When you have enough, say "I have enough for a first draft. Generating now — w
 python3 ${CLAUDE_SKILL_DIR}/scripts/init_deck.py --name <Name>
 ```
 
-It creates the deck's folder, replacing one of the same name and day, and lists the `examples` and the `assets` (images earlier decks added) with what each is for or shows. Run it once per deck, never to revise one. Every deck starts from scratch: never read or reuse another deck's folder; only `_assets` and `_examples` are shared.
+It creates the deck's folder, replacing one of the same name and day, and prints its name (`deck`, the `<deck>` later steps pass) and the `slides_path` step 3 writes to, then lists the `examples` and the `assets` (images earlier decks added) with what each is for or shows. Run it once per deck, never to revise one. Every deck starts from scratch: never read or reuse another deck's folder; only `_assets` and `_examples` are shared.
 
 ## 3. Write slides.json
 
@@ -123,7 +123,7 @@ END_OF_FILE
 - **Page numbers.** Write `{{page}}`, never the number, so adding or removing a slide renumbers the rest.
 - **Charts and diagrams.** A chart is for real data: Chart.js 4.4.1 draws it, loaded from the internet when the deck opens. A diagram (a flow, a sequence, a hierarchy) is inline SVG in the deck's look. Anything else is HTML and CSS.
 - **Images.** An image is `<img src='{{asset:<name>}}'>`. Reuse one from `assets` when it shows what the slide needs. An image the user gives (a logo, a screenshot, a photo) goes in `_assets` with `python3 ${CLAUDE_SKILL_DIR}/scripts/add_asset.py`; one only they can give, such as their team's photo, is an `[IMAGE: …]` placeholder until they do. Write what an image `shows` after looking at it, in one line on its subject, background and shape, so a later deck can tell whether it fits without opening it. An image in `assets` with nothing in `shows` was put there by hand: when its name suggests it may fit, look at it and describe it, whether or not you use it.
-- **Drawings.** Icons, arrows, badges and diagrams belong to the design: inline SVG, for good. A picture of something anyone could photograph, such as the Earth, a car or a banana, is an SVG drawing wrapped in `<figure data-image='<what the real image should show>'>`: a stand-in, which step 7 can swap for a real image.
+- **Drawings.** Icons, arrows, badges and diagrams belong to the design: inline SVG, for good. A picture of something anyone could photograph, such as the Earth, a car or a banana, is an SVG drawing wrapped in `<figure data-image='<what the real image should show>'>`, unless an image in `assets` already shows it: a stand-in, which step 7 can swap for a real image.
 
 ### Consistency
 
