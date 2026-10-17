@@ -119,11 +119,12 @@ END_OF_FILE
 ### What goes on a slide
 
 - **Fit.** Every slide fits 1100×618: overflow is clipped, never scrolled. Prefer structure to decoration in a first draft.
-- **Text.** Write real content, with a placeholder only where information is genuinely missing, naming it in one of these forms: `[CHART: revenue by quarter, bar]`, `[IMAGE: team photo]`, `[DIAGRAM: onboarding flow]`, `[TABLE: KPI summary, 4 rows]` or `[PLACEHOLDER: description]`.
 - **Page numbers.** Write `{{page}}`, never the number, so adding or removing a slide renumbers the rest.
+- **Text.** Write real content, with a placeholder only where information is genuinely missing, naming it in one of these forms: `[CHART: revenue by quarter, bar]`, `[IMAGE: team photo]`, `[DIAGRAM: onboarding flow]`, `[TABLE: KPI summary, 4 rows]` or `[PLACEHOLDER: description]`.
 - **Charts and diagrams.** A chart is for real data: Chart.js 4.4.1 draws it, loaded from the internet when the deck opens. A diagram (a flow, a sequence, a hierarchy) is inline SVG in the deck's look. Anything else is HTML and CSS.
 - **Images.** An image is `<img src='{{asset:<name>}}'>`. Reuse one from `assets` when it shows what the slide needs. An image the user gives (a logo, a screenshot, a photo) goes in `_assets` with `python3 ${CLAUDE_SKILL_DIR}/scripts/add_asset.py`; one only they can give, such as their team's photo, is an `[IMAGE: …]` placeholder until they do. Write what an image `shows` after looking at it, in one line on its subject, background and shape, so a later deck can tell whether it fits without opening it. An image in `assets` with nothing in `shows` was put there by hand: when its name suggests it may fit, look at it and describe it, whether or not you use it.
 - **Drawings.** Icons, arrows, badges and diagrams belong to the design: inline SVG, for good. A picture of something anyone could photograph, such as the Earth, a car or a banana, is an SVG drawing wrapped in `<figure data-image='<what the real image should show>'>`, unless an image in `assets` already shows it: a stand-in, which step 7 can swap for a real image.
+- **Depth.** Never use a blurred shadow, such as `box-shadow`: the PDF export draws it as a dark rectangle around the element, though the browser shows it fine. To lift a panel or an image off the slide, use solid shapes instead: a fill lighter or brighter than what's behind it, a 1px border in a lighter tone of the background or a coloured top edge, or a backing shape in a darker tone, offset a few pixels behind it with no blur.
 
 ### Consistency
 
