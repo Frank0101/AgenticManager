@@ -108,6 +108,16 @@ python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_
 END_OF_FILE
 ```
 
+### Consistency
+
+Many examples make it easy to build a deck that looks like several. Keep it one:
+
+- **One look, set before the first slide.** Define the palette, fonts and type sizes, margins, where titles sit and the frame (page number, footer, logo) once, at the top of `style`: colours and fonts as CSS variables in `:root`, shared parts as classes. Slides take their look from these, never from values of their own, and every content slide has the same frame; only the cover and section dividers may differ.
+- **One source for the look, layout from the rest.** The look comes from the user's reference; otherwise from their kept example, when they want an earlier deck's look; otherwise from the one example you choose as the anchor for the deck's type and audience; on a blank start, from the blank style. Tell the user which. Every other example gives only its layout: keep its positions and proportions and redraw it in the deck's look, its main colour as the deck's main colour, its other colours as accents. If a layout doesn't survive the change, such as one needing a contrast the palette lacks, pick another rather than inventing a hybrid.
+- **Graphics and colours keep a meaning.** A pictorial element stands for one idea: a road or timeline for a journey through steps, a funnel for narrowing stages, a pyramid for levels, a wheel for parts of a whole, an arrow for a direction or a cause. Use it only for content with that shape, never stretched, cut or repeated into something else, such as a road drawn as a bar in a chart: figures go in a chart or table, with plain marks. When the content lacks the shape, keep the example's arrangement without the element, or choose another example. Prefer giving each accent colour one meaning across the deck, such as a team or a status, over using it as decoration.
+- **The same layout for slides of the same kind.** Once a kind of slide, such as a workstream's detail or a section divider, has a layout, every slide of that kind uses it at a similar density, and a change applies to all of them.
+- **Try what fits.** When choosing a kind of slide's layout, don't fall back on the same few: use an example you haven't used when it fits well. When two layouts fit an important slide equally well, such as the one carrying the main message, build both, one after the other, for the user to choose; do this for a slide or two per draft, and delete the one they don't choose.
+
 ### The fields
 
 - **`title`:** the deck's title, shown in the browser tab.
@@ -125,16 +135,6 @@ END_OF_FILE
 - **Images.** An image is `<img src='{{asset:<name>}}'>`. Reuse one from `assets` when it shows what the slide needs. An image the user gives (a logo, a screenshot, a photo) goes in `_assets` with `python3 ${CLAUDE_SKILL_DIR}/scripts/add_asset.py`; one only they can give, such as their team's photo, is an `[IMAGE: …]` placeholder until they do. Write what an image `shows` after looking at it, in one line on its subject, background and shape, so a later deck can tell whether it fits without opening it. An image in `assets` with nothing in `shows` was put there by hand: when its name suggests it may fit, look at it and describe it, whether or not you use it.
 - **Drawings.** Icons, arrows, badges and diagrams belong to the design: inline SVG, for good. A picture of something anyone could photograph, such as the Earth, a car or a banana, is an SVG drawing wrapped in `<figure data-image='<what the real image should show>'>`, unless an image in `assets` already shows it: a stand-in, which step 7 can swap for a real image.
 - **Depth.** Never use a blurred shadow, such as `box-shadow`: the PDF export draws it as a dark rectangle around the element, though the browser shows it fine. To lift a panel or an image off the slide, use solid shapes instead: a fill lighter or brighter than what's behind it, a 1px border in a lighter tone of the background or a coloured top edge, or a backing shape in a darker tone, offset a few pixels behind it with no blur.
-
-### Consistency
-
-Many examples make it easy to build a deck that looks like several. Keep it one:
-
-- **One look, set before the first slide.** Define the palette, fonts and type sizes, margins, where titles sit and the frame (page number, footer, logo) once, at the top of `style`: colours and fonts as CSS variables in `:root`, shared parts as classes. Slides take their look from these, never from values of their own, and every content slide has the same frame; only the cover and section dividers may differ.
-- **One source for the look, layout from the rest.** The look comes from the user's reference; otherwise from their kept example, when they want an earlier deck's look; otherwise from the one example you choose as the anchor for the deck's type and audience; on a blank start, from the blank style. Tell the user which. Every other example gives only its layout: keep its positions and proportions and redraw it in the deck's look, its main colour as the deck's main colour, its other colours as accents. If a layout doesn't survive the change, such as one needing a contrast the palette lacks, pick another rather than inventing a hybrid.
-- **Graphics and colours keep a meaning.** A pictorial element stands for one idea: a road or timeline for a journey through steps, a funnel for narrowing stages, a pyramid for levels, a wheel for parts of a whole, an arrow for a direction or a cause. Use it only for content with that shape, never stretched, cut or repeated into something else, such as a road drawn as a bar in a chart: figures go in a chart or table, with plain marks. When the content lacks the shape, keep the example's arrangement without the element, or choose another example. Prefer giving each accent colour one meaning across the deck, such as a team or a status, over using it as decoration.
-- **The same layout for slides of the same kind.** Once a kind of slide, such as a workstream's detail or a section divider, has a layout, every slide of that kind uses it at a similar density, and a change applies to all of them.
-- **Try what fits.** When choosing a kind of slide's layout, don't fall back on the same few: use an example you haven't used when it fits well. When two layouts fit an important slide equally well, such as the one carrying the main message, build both, one after the other, for the user to choose; do this for a slide or two per draft, and delete the one they don't choose.
 
 ## 4. Build, look and open
 

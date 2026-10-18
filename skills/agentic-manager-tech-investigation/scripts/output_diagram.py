@@ -32,6 +32,38 @@ RENDER_TIMEOUT = 300
 PNG_SCALE = 2
 
 
+def render_many(sources):
+    """[SVG] of each source in `sources`, rendered in one Mermaid CLI run (a
+    Markdown file of their blocks), which saves starting a browser per
+    diagram. If the batch fails, each is rendered alone, so the error names
+    the diagram that doesn't render: SystemExit's message starts with its
+    index, "diagram <n>: ..."."""
+    if not sources:
+        return []
+    npx = find_npx()
+    with tempfile.TemporaryDirectory() as folder:
+        source_path = os.path.join(folder, "diagrams.md")
+        out_path = os.path.join(folder, "out.md")
+        blocks = "\n".join(
+            f"```mermaid\n{source.rstrip()}\n```\n" for source in sources)
+        try:
+            mmdc(npx, source_path, out_path, blocks)
+            svgs = []
+            for number in range(1, len(sources) + 1):
+                with open(os.path.join(folder, f"out-{number}.svg"), encoding="utf-8") as f:
+                    svgs.append(f.read())
+        except (SystemExit, OSError):
+            svgs = None
+    if svgs is None:
+        svgs = []
+        for number, source in enumerate(sources, 1):
+            try:
+                svgs.append(render(source))
+            except SystemExit as error:
+                raise SystemExit(f"diagram {number}: {error}")
+    return svgs
+
+
 def find_npx():
     """The npx that runs the Mermaid CLI, or an exit asking for Node.js: the
     diagrams are drawn and checked only through it, so without it there is
@@ -78,44 +110,6 @@ def render(source, png=None):
             return f.read()
 
 
-def render_many(sources):
-    """[SVG] of each source in `sources`, rendered in one Mermaid CLI run (a
-    Markdown file of their blocks), which saves starting a browser per
-    diagram. If the batch fails, each is rendered alone, so the error names
-    the diagram that doesn't render: SystemExit's message starts with its
-    index, "diagram <n>: ..."."""
-    if not sources:
-        return []
-    npx = find_npx()
-    with tempfile.TemporaryDirectory() as folder:
-        source_path = os.path.join(folder, "diagrams.md")
-        out_path = os.path.join(folder, "out.md")
-        blocks = "\n".join(
-            f"```mermaid\n{source.rstrip()}\n```\n" for source in sources)
-        try:
-            mmdc(npx, source_path, out_path, blocks)
-            svgs = []
-            for number in range(1, len(sources) + 1):
-                with open(os.path.join(folder, f"out-{number}.svg"), encoding="utf-8") as f:
-                    svgs.append(f.read())
-        except (SystemExit, OSError):
-            svgs = None
-    if svgs is None:
-        svgs = []
-        for number, source in enumerate(sources, 1):
-            try:
-                svgs.append(render(source))
-            except SystemExit as error:
-                raise SystemExit(f"diagram {number}: {error}")
-    return svgs
-
-
-def svg_size(svg):
-    """(width, height) from the SVG's viewBox, or (None, None)."""
-    found = re.search(r'viewBox="[-\d.]+ [-\d.]+ ([\d.]+) ([\d.]+)"', svg)
-    return (float(found.group(1)), float(found.group(2))) if found else (None, None)
-
-
 def check_diagram(source, png=False):
     """{width, height[, png]} of `source` rendered, without writing to any
     output folder; exits if it doesn't render."""
@@ -129,6 +123,12 @@ def check_diagram(source, png=False):
         prefix="diagram-"), "preview.png") if png else None
     width, height = svg_size(render(text, preview))
     return {"width": width, "height": height, **({"png": preview} if preview else {})}
+
+
+def svg_size(svg):
+    """(width, height) from the SVG's viewBox, or (None, None)."""
+    found = re.search(r'viewBox="[-\d.]+ [-\d.]+ ([\d.]+) ([\d.]+)"', svg)
+    return (float(found.group(1)), float(found.group(2))) if found else (None, None)
 
 
 def parse_args(argv=None):

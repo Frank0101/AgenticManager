@@ -39,16 +39,16 @@ SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 DISPLAY_DATE = "%d/%m/%Y"
 
 
-def link_text(text):
-    """`text` with every Markdown link, inline or by reference, as its text,
-    and without the definition lines the references use."""
-    return REFERENCE_LINK.sub(r"\2", INLINE_LINK.sub(r"\2", DEFINITION.sub(" ", text)))
-
-
 def word_count(text):
     """The words of `text` as a reader counts them: links as their text, and
     only tokens that hold a letter or a digit."""
     return sum(1 for token in link_text(text).split() if re.search(r"[^\W_]", token))
+
+
+def link_text(text):
+    """`text` with every Markdown link, inline or by reference, as its text,
+    and without the definition lines the references use."""
+    return REFERENCE_LINK.sub(r"\2", INLINE_LINK.sub(r"\2", DEFINITION.sub(" ", text)))
 
 
 def slug(text):
@@ -99,16 +99,6 @@ def local_link(document, target):
     return path, unquote(parsed.fragment).lower()
 
 
-def heading_anchor(heading):
-    """The anchor a Markdown viewer gives a heading, GitHub style: lower case,
-    punctuation dropped, each space a hyphen."""
-    return re.sub(r"[^\w\- ]", "", heading.strip().lower()).replace(" ", "-")
-
-
-# A Markdown heading: its # marks and its title.
-HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$", re.M)
-
-
 def headings(text):
     """[(level, title, anchor)] of a Markdown text's headings, with -1, -2...
     on repeated anchors, as viewers number them."""
@@ -120,6 +110,16 @@ def headings(text):
         found.append((len(match[1]), match[2],
                      base if count == 0 else f"{base}-{count}"))
     return found
+
+
+# A Markdown heading: its # marks and its title.
+HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$", re.M)
+
+
+def heading_anchor(heading):
+    """The anchor a Markdown viewer gives a heading, GitHub style: lower case,
+    punctuation dropped, each space a hyphen."""
+    return re.sub(r"[^\w\- ]", "", heading.strip().lower()).replace(" ", "-")
 
 
 def markdown(text):

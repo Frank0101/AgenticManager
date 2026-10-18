@@ -17,6 +17,23 @@ The result must make sense to a new reader, be useful to the engineers who build
 
 You do the research and write what needs judgment: the ledger's content and the report's text (`content.json`). Scripts own everything mechanical: the folder, the ledger's tables and allowed values, links, the report's template and the checks. The folder is `tech-investigations` in the output root the user set in the config (`output.root`), or a temporary folder if none is set: scripts choose it and write in it, and you never read the config. When a script refuses something, its message says what it accepts: fix the input, never work around the check.
 
+The investigation's folder holds only these files, and the handover check fails on any other.
+
+```text
+tech-investigations/
+├── _examples/                             save_example.py writes, the documents the user approved
+│   └── Payments-Retry-Service_26-10-05--long-analysis/
+│       ├── description.md                 what makes it good
+│       ├── Payments-Retry-Service_Report.md
+│       └── ledgers.md
+└── Payments-Retry-Service_26-10-05/
+    ├── ledgers.md                         init_investigation.py and ledger.py write
+    ├── content.json                       you write
+    ├── Payments-Retry-Service_Report.md   make_report.py writes
+    ├── exec-summary.json                  you write, only for a short output
+    └── exec-summary.md                    make_summary.py writes, only for a short output
+```
+
 The work has five phases: [Define](#1-define), [Research](#2-research), [Write](#3-write), [Review](#4-review) and [Hand over](#5-hand-over). `ledger.py status` ends with a `next:` line naming the phase you are in and what to do; check it whenever you're unsure, and follow it.
 
 ## Prerequisite
@@ -40,23 +57,6 @@ It also needs Node.js 22.13 or newer, to draw and check the diagrams: `init_inve
 `<scripts>` is `${CLAUDE_SKILL_DIR}/scripts` and `<lib>` is `${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager`: call them by exactly these paths, so they run without a permission prompt. Each prints one line of JSON (`ledger.py`'s `status`, `find`, `show`, `brief` and `help` commands, `tickets.py` and `extract_saved.py` print plain text), or what's wrong on standard error with a non-zero exit. `<investigation>` is the folder name `init_investigation.py` prints. A script's `--help` gives its commands and arguments. When a tool's result is too large and saved to a file, list what you need from it with `<lib>/extract_saved.py`, rather than reading it whole or writing code to read it.
 
 Write the ledger only through `ledger.py`, and `content.json` and a short output's `<format>.json` only with `<lib>/output_file.py --name tech-investigations --path '<investigation>/<file>'`, the file's whole content on standard input; never with your own file tools. Never edit the report: change `content.json` and run `make_report.py` again. Working files, such as a diagram being tried or a row written to a file, go in your own scratch folder.
-
-The investigation's folder holds only these files, and the handover check fails on any other.
-
-```text
-tech-investigations/
-├── _examples/                             save_example.py writes, the documents the user approved
-│   └── Payments-Retry-Service_26-10-05--long-analysis/
-│       ├── description.md                 what makes it good
-│       ├── Payments-Retry-Service_Report.md
-│       └── ledgers.md
-└── Payments-Retry-Service_26-10-05/
-    ├── ledgers.md                         init_investigation.py and ledger.py write
-    ├── content.json                       you write
-    ├── Payments-Retry-Service_Report.md   make_report.py writes
-    ├── exec-summary.json                  you write, only for a short output
-    └── exec-summary.md                    make_summary.py writes, only for a short output
-```
 
 ## Rules that hold throughout
 

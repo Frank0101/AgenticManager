@@ -78,6 +78,14 @@ def check_config(config, template):
             + _check_output(config.get("output", {}), template["output"]))
 
 
+# Reports keys of a config object that the template doesn't have. Keys the template
+# has but the config leaves out are allowed.
+def _check_unknown(where, actual, expected, kind):
+    prefix = f"{where}." if where else ""
+    return [f'unknown {kind} "{prefix}{k}" (supported: {", ".join(expected)})'
+            for k in actual if k not in expected]
+
+
 # Returns the problems with the "sources" object. Groups and sources missing from
 # it count as disabled.
 def _check_sources(groups, template_groups):
@@ -95,18 +103,6 @@ def _check_sources(groups, template_groups):
             if name in template_sources:  # unknown ones are already reported
                 errors += _check_source(f"{where}.{name}",
                                         settings, template_sources[name])
-    return errors
-
-
-# Returns the problems with the "output" object. Its settings are optional: one left
-# out, blank or still a placeholder counts as not set.
-def _check_output(output, template_output):
-    if not isinstance(output, dict):
-        return ["output must be an object of settings"]
-    errors = _check_unknown("output", output, template_output, "setting")
-    for key, default in template_output.items():
-        if key in output and type(output[key]) is not type(default):
-            errors.append(f"output.{key} must be {_type_name(default)}")
     return errors
 
 
@@ -129,22 +125,22 @@ def _check_source(where, settings, template_settings):
     return errors
 
 
-# Reports keys of a config object that the template doesn't have. Keys the template
-# has but the config leaves out are allowed.
-def _check_unknown(where, actual, expected, kind):
-    prefix = f"{where}." if where else ""
-    return [f'unknown {kind} "{prefix}{k}" (supported: {", ".join(expected)})'
-            for k in actual if k not in expected]
-
-
 # The template only holds "enabled" (true or false), string placeholders and
 # empty lists.
 def _type_name(value):
     return {bool: "true or false", str: "a string", list: "a list of strings"}[type(value)]
 
 
-def _quoted(keys):
-    return ", ".join(f'"{k}"' for k in keys)
+# Returns the problems with the "output" object. Its settings are optional: one left
+# out, blank or still a placeholder counts as not set.
+def _check_output(output, template_output):
+    if not isinstance(output, dict):
+        return ["output must be an object of settings"]
+    errors = _check_unknown("output", output, template_output, "setting")
+    for key, default in template_output.items():
+        if key in output and type(output[key]) is not type(default):
+            errors.append(f"output.{key} must be {_type_name(default)}")
+    return errors
 
 
 # Every source of the template by group, from a valid config: its tool, channel,
@@ -187,6 +183,10 @@ def _setup_steps(group, name, template_settings, config):
     if settings:
         step += f", then fill in {_quoted(settings)}"
     return step
+
+
+def _quoted(keys):
+    return ", ".join(f'"{k}"' for k in keys)
 
 
 def main():

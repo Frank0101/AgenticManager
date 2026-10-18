@@ -56,56 +56,6 @@ GAP, LABEL = 16, 22
 PAGE_TIME_MS = 5000
 
 
-def find_chrome():
-    """The path of Chrome's executable, or None if it isn't installed."""
-    for path in CHROME_PATHS:
-        if os.path.isfile(path):
-            return path
-    for name in CHROME_NAMES:
-        found = shutil.which(name)
-        if found:
-            return found
-    return None
-
-
-def one_slide_page(page, folder, number):
-    """The deck's page `page` showing only slide `number` (1 for the first),
-    at its real size from the window's corner, its links resolved from the
-    deck's folder `folder`."""
-    base = Path(folder).as_uri() + "/"
-    style = ("<style>body { padding: 0 !important; background: none !important; }"
-             " .toolbar { display: none !important; }"
-             " .slides-wrapper { transform: none !important; }"
-             " .slide { margin: 0 !important; box-shadow: none !important; }"
-             f" .slides-wrapper > .slide:not(:nth-child({number})) {{ display: none !important; }}</style>")
-    return page.replace("<head>", f'<head>\n    <base href="{base}">\n    {style}', 1)
-
-
-def sheet_page(pictures):
-    """A page laying out the slide pictures `pictures` (file names beside it),
-    numbered, at a third of their size, and its (width, height)."""
-    rows = math.ceil(len(pictures) / SHEET_COLUMNS)
-    width = SHEET_COLUMNS * THUMB_WIDTH + (SHEET_COLUMNS + 1) * GAP
-    height = rows * (LABEL + THUMB_HEIGHT + GAP) + GAP
-    cells = "".join(f'<figure><figcaption>{number}</figcaption><img src="{html.escape(name)}"></figure>'
-                    for number, name in enumerate(pictures, 1))
-    page = ("<!doctype html><html><head><meta charset='utf-8'><style>"
-            f"body {{ margin: 0; padding: {GAP}px; background: #8b929c; font: 700 15px sans-serif; color: #fff; }}"
-            f" main {{ display: grid; grid-template-columns: repeat({SHEET_COLUMNS}, {THUMB_WIDTH}px); gap: {GAP}px; }}"
-            f" figure {{ margin: 0; }} figcaption {{ height: {LABEL}px; }}"
-            f" img {{ display: block; width: {THUMB_WIDTH}px; height: {THUMB_HEIGHT}px; }}"
-            f"</style></head><body><main>{cells}</main></body></html>")
-    return page, (width, height)
-
-
-def chrome_command(chrome, profile, picture, page, size=(SLIDE_WIDTH, SLIDE_HEIGHT)):
-    """The command that shoots the page file `page` into the PNG `picture`, at
-    the window size `size`, with the throwaway profile folder `profile`."""
-    return [chrome, "--headless", f"--user-data-dir={profile}", "--no-first-run", "--hide-scrollbars",
-            "--force-device-scale-factor=1", f"--window-size={size[0]},{size[1]}",
-            f"--virtual-time-budget={PAGE_TIME_MS}", f"--screenshot={picture}", Path(page).as_uri()]
-
-
 def snap(deck):
     """(sheet, pictures): the sheet of the deck `deck` and the picture of every
     slide, in order, in a new temporary folder; exits if Chrome isn't
@@ -144,6 +94,56 @@ def snap(deck):
     text, size = sheet_page([os.path.basename(picture)
                             for picture in pictures])
     return shoot("sheet", text, size), pictures
+
+
+def find_chrome():
+    """The path of Chrome's executable, or None if it isn't installed."""
+    for path in CHROME_PATHS:
+        if os.path.isfile(path):
+            return path
+    for name in CHROME_NAMES:
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
+def sheet_page(pictures):
+    """A page laying out the slide pictures `pictures` (file names beside it),
+    numbered, at a third of their size, and its (width, height)."""
+    rows = math.ceil(len(pictures) / SHEET_COLUMNS)
+    width = SHEET_COLUMNS * THUMB_WIDTH + (SHEET_COLUMNS + 1) * GAP
+    height = rows * (LABEL + THUMB_HEIGHT + GAP) + GAP
+    cells = "".join(f'<figure><figcaption>{number}</figcaption><img src="{html.escape(name)}"></figure>'
+                    for number, name in enumerate(pictures, 1))
+    page = ("<!doctype html><html><head><meta charset='utf-8'><style>"
+            f"body {{ margin: 0; padding: {GAP}px; background: #8b929c; font: 700 15px sans-serif; color: #fff; }}"
+            f" main {{ display: grid; grid-template-columns: repeat({SHEET_COLUMNS}, {THUMB_WIDTH}px); gap: {GAP}px; }}"
+            f" figure {{ margin: 0; }} figcaption {{ height: {LABEL}px; }}"
+            f" img {{ display: block; width: {THUMB_WIDTH}px; height: {THUMB_HEIGHT}px; }}"
+            f"</style></head><body><main>{cells}</main></body></html>")
+    return page, (width, height)
+
+
+def chrome_command(chrome, profile, picture, page, size=(SLIDE_WIDTH, SLIDE_HEIGHT)):
+    """The command that shoots the page file `page` into the PNG `picture`, at
+    the window size `size`, with the throwaway profile folder `profile`."""
+    return [chrome, "--headless", f"--user-data-dir={profile}", "--no-first-run", "--hide-scrollbars",
+            "--force-device-scale-factor=1", f"--window-size={size[0]},{size[1]}",
+            f"--virtual-time-budget={PAGE_TIME_MS}", f"--screenshot={picture}", Path(page).as_uri()]
+
+
+def one_slide_page(page, folder, number):
+    """The deck's page `page` showing only slide `number` (1 for the first),
+    at its real size from the window's corner, its links resolved from the
+    deck's folder `folder`."""
+    base = Path(folder).as_uri() + "/"
+    style = ("<style>body { padding: 0 !important; background: none !important; }"
+             " .toolbar { display: none !important; }"
+             " .slides-wrapper { transform: none !important; }"
+             " .slide { margin: 0 !important; box-shadow: none !important; }"
+             f" .slides-wrapper > .slide:not(:nth-child({number})) {{ display: none !important; }}</style>")
+    return page.replace("<head>", f'<head>\n    <base href="{base}">\n    {style}', 1)
 
 
 def main(argv=None):

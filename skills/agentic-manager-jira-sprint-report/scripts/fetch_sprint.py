@@ -49,15 +49,6 @@ def log(message):
     print(message, file=sys.stderr)
 
 
-def stored_sprint_id(report_dir):
-    """An earlier report's sprint id, or None if it can't be read."""
-    try:
-        with open(os.path.join(report_dir, RAW_DIR, SPRINT_FILE), encoding="utf-8") as f:
-            return str(json.load(f).get("id"))
-    except (OSError, ValueError, AttributeError):
-        return None
-
-
 def prepare_report_dir(report_dir, sprint_id, log):
     """Delete the report already in the destination folder (the same sprint and
     day), then return a new, empty _raw folder."""
@@ -71,6 +62,15 @@ def prepare_report_dir(report_dir, sprint_id, log):
     raw_dir = os.path.join(report_dir, RAW_DIR)
     os.makedirs(raw_dir)
     return raw_dir
+
+
+def stored_sprint_id(report_dir):
+    """An earlier report's sprint id, or None if it can't be read."""
+    try:
+        with open(os.path.join(report_dir, RAW_DIR, SPRINT_FILE), encoding="utf-8") as f:
+            return str(json.load(f).get("id"))
+    except (OSError, ValueError, AttributeError):
+        return None
 
 
 def previous_sprint(sprint, board_sprints):

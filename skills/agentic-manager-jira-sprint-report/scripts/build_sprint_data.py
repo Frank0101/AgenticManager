@@ -67,21 +67,6 @@ NON_DELIVERY_MARKERS = {
 CHANGE_ORDER = {"points": 0, "status": 1, "move": 2}
 
 
-def sprint_date(ts, zone, end_of_period=False):
-    """Calendar date of a timestamp in the reporting timezone, including its
-    daylight-saving rules.
-
-    With `end_of_period`, a boundary exactly on midnight names the last day
-    worked rather than the next day: an end of 00:00 on the 8th means the sprint
-    ran through the 7th."""
-    if not ts:
-        return None
-    moment = parse_ts(ts).astimezone(zone)
-    if end_of_period and moment.time() == time.min:
-        moment -= timedelta(seconds=1)
-    return moment.date().isoformat()
-
-
 class Context:
     """What every ticket is built with: the sprint and the previous one, the
     site's fields and statuses, the epics' names and the reporting timezone."""
@@ -113,22 +98,15 @@ def epic_names(raw_issues, parents):
     return names
 
 
-def description(fields):
-    """An issue's description as plain text, whole, so its every chunk can be
-    read, not only the first."""
-    return plain_text((fields or {}).get("description"))
-
-
 def epic_descriptions(parents):
     """{epic key: its description} from parents.json."""
     return {p["key"]: description(p.get("fields")) for p in parents if p.get("key")}
 
 
-def non_delivery_marker(status, resolution):
-    for value in ((status or "").lower(), (resolution or "").lower()):
-        if value in NON_DELIVERY_MARKERS:
-            return value
-    return None
+def description(fields):
+    """An issue's description as plain text, whole, so its every chunk can be
+    read, not only the first."""
+    return plain_text((fields or {}).get("description"))
 
 
 def load_changelogs(changelog_dir, raw_issues):
@@ -144,63 +122,6 @@ def load_changelogs(changelog_dir, raw_issues):
         raise SystemExit("missing changelogs for " + ", ".join(sorted(missing)) +
                          "; fetch the sprint again rather than guessing when they joined")
     return changes
-
-
-def in_sprint_when_closed(raw, changes, sprint):
-    """Whether the issue was in `sprint`, a closed sprint, at the instant it
-    closed. Jira keeps a closed sprint in the Sprint field of the issues it
-    held, so an issue whose changes never name the sprint was never in it; one
-    whose first change already has it was in it from its creation."""
-    if not sprint:
-        return False
-    sprint_id = str(sprint["id"])
-    if not any(sprint_id in split_ids(c.get("from")) | split_ids(c.get("to"))
-               for c in changes if c.get("field") == "sprint"):
-        return False
-    return in_sprint_at(issue_moves(raw, changes, sprint_id), parse_ts(sprint["completeDate"]))
-
-
-def event(at, kind, points, done, zone, **extra):
-    return {"at": at, "date": sprint_date(at, zone), "type": kind, "points": points, "done": done, **extra}
-
-
-def spell_events(history, moves, start_ts, in_at_start, changes, cutoff, zone):
-    """A ticket's spells in the sprint, as lists of events (see the module
-    docstring), from the start to the cutoff."""
-    start = parse_ts(start_ts)
-    spells, inside, points, done = [], False, None, False
-
-    def enter(ts, kind):
-        nonlocal inside, points, done
-        state = history.state_at(parse_ts(ts))
-        inside, points, done = True, state["storyPoints"], state["statusCategory"] == "done"
-        spells.append([event(ts, kind, points, done, zone)])
-    if in_at_start:
-        enter(start_ts, "committed")
-    steps = [(when, CHANGE_ORDER["move"], ts, "move", move)
-             for when, move, ts in moves if start < when <= cutoff]
-    steps += [(parse_ts(c["created"]), CHANGE_ORDER[c["field"]], c["created"], c["field"], None)
-              for c in changes if c["field"] in ("points", "status") and start < parse_ts(c["created"]) <= cutoff]
-    for when, _, ts, kind, move in sorted(steps, key=lambda s: (s[0], s[1])):
-        if kind == "move":
-            if move < 0 and inside:
-                inside = False
-                spells[-1].append(event(ts, "removed", points, done, zone))
-            elif move > 0 and not inside:
-                enter(ts, "joined")
-            continue
-        if not inside:
-            continue
-        state = history.state_at(when)
-        if kind == "points" and state["storyPoints"] != points:
-            spells[-1].append(event(ts, "reestimated",
-                              state["storyPoints"], done, zone, fromPoints=points))
-            points = state["storyPoints"]
-        elif kind == "status" and (state["statusCategory"] == "done") != done:
-            done = not done
-            spells[-1].append(event(ts, "completed" if done else "reopened",
-                              points, done, zone))
-    return spells
 
 
 def build_spells(raw, changes, context, moment):
@@ -256,15 +177,83 @@ def build_spells(raw, changes, context, moment):
     return spells
 
 
-def replay(events, until):
-    """(in the sprint, Done, points) after a spell's events up to `until`, or
-    None before it began."""
-    state = None
-    for e in events:
-        if parse_ts(e["at"]) > until:
-            break
-        state = (e["type"] != "removed", e["done"], e["points"])
-    return state
+def spell_events(history, moves, start_ts, in_at_start, changes, cutoff, zone):
+    """A ticket's spells in the sprint, as lists of events (see the module
+    docstring), from the start to the cutoff."""
+    start = parse_ts(start_ts)
+    spells, inside, points, done = [], False, None, False
+
+    def enter(ts, kind):
+        nonlocal inside, points, done
+        state = history.state_at(parse_ts(ts))
+        inside, points, done = True, state["storyPoints"], state["statusCategory"] == "done"
+        spells.append([event(ts, kind, points, done, zone)])
+    if in_at_start:
+        enter(start_ts, "committed")
+    steps = [(when, CHANGE_ORDER["move"], ts, "move", move)
+             for when, move, ts in moves if start < when <= cutoff]
+    steps += [(parse_ts(c["created"]), CHANGE_ORDER[c["field"]], c["created"], c["field"], None)
+              for c in changes if c["field"] in ("points", "status") and start < parse_ts(c["created"]) <= cutoff]
+    for when, _, ts, kind, move in sorted(steps, key=lambda s: (s[0], s[1])):
+        if kind == "move":
+            if move < 0 and inside:
+                inside = False
+                spells[-1].append(event(ts, "removed", points, done, zone))
+            elif move > 0 and not inside:
+                enter(ts, "joined")
+            continue
+        if not inside:
+            continue
+        state = history.state_at(when)
+        if kind == "points" and state["storyPoints"] != points:
+            spells[-1].append(event(ts, "reestimated",
+                              state["storyPoints"], done, zone, fromPoints=points))
+            points = state["storyPoints"]
+        elif kind == "status" and (state["statusCategory"] == "done") != done:
+            done = not done
+            spells[-1].append(event(ts, "completed" if done else "reopened",
+                              points, done, zone))
+    return spells
+
+
+def event(at, kind, points, done, zone, **extra):
+    return {"at": at, "date": sprint_date(at, zone), "type": kind, "points": points, "done": done, **extra}
+
+
+def sprint_date(ts, zone, end_of_period=False):
+    """Calendar date of a timestamp in the reporting timezone, including its
+    daylight-saving rules.
+
+    With `end_of_period`, a boundary exactly on midnight names the last day
+    worked rather than the next day: an end of 00:00 on the 8th means the sprint
+    ran through the 7th."""
+    if not ts:
+        return None
+    moment = parse_ts(ts).astimezone(zone)
+    if end_of_period and moment.time() == time.min:
+        moment -= timedelta(seconds=1)
+    return moment.date().isoformat()
+
+
+def in_sprint_when_closed(raw, changes, sprint):
+    """Whether the issue was in `sprint`, a closed sprint, at the instant it
+    closed. Jira keeps a closed sprint in the Sprint field of the issues it
+    held, so an issue whose changes never name the sprint was never in it; one
+    whose first change already has it was in it from its creation."""
+    if not sprint:
+        return False
+    sprint_id = str(sprint["id"])
+    if not any(sprint_id in split_ids(c.get("from")) | split_ids(c.get("to"))
+               for c in changes if c.get("field") == "sprint"):
+        return False
+    return in_sprint_at(issue_moves(raw, changes, sprint_id), parse_ts(sprint["completeDate"]))
+
+
+def non_delivery_marker(status, resolution):
+    for value in ((status or "").lower(), (resolution or "").lower()):
+        if value in NON_DELIVERY_MARKERS:
+            return value
+    return None
 
 
 def outcome_breakdown(spells):
@@ -302,22 +291,6 @@ def target_completion(spells):
     return {"completed": len(done), "total": len(original),
             "completed_points": sum(s["points"] or 0 for s in done),
             "total_points": sum(s["points"] or 0 for s in original)}
-
-
-def scope_group(spell):
-    """(the commentary group of a counted spell, or None, why it is left out).
-    Work Done when its spell began and never reopened was done before it,
-    even if it was then descoped."""
-    if spell["outcome"] == "removed":
-        done_throughout = spell["doneAtStart"] and not spell["reopened"]
-        return (None, "done_at_start") if done_throughout else ("descoped", None)
-    if spell["outcome"] == "not_completed":
-        return ("in_review" if "review" in (spell["status"] or "").lower() else "not_completed"), None
-    if spell["closedAsNonDelivery"]:
-        return None, "non_delivery"
-    if not any(e["type"] == "completed" for e in spell["events"]):
-        return None, "done_at_start"
-    return "completed", None
 
 
 def build_epics(spells, descriptions=None):
@@ -360,6 +333,22 @@ def build_epics(spells, descriptions=None):
             epic["removed_points"] += points
     return sorted(epics.values(),
                   key=lambda e: (-(e["original_points_total"] + e["extra_points_total"]), key_order(e["key"])))
+
+
+def scope_group(spell):
+    """(the commentary group of a counted spell, or None, why it is left out).
+    Work Done when its spell began and never reopened was done before it,
+    even if it was then descoped."""
+    if spell["outcome"] == "removed":
+        done_throughout = spell["doneAtStart"] and not spell["reopened"]
+        return (None, "done_at_start") if done_throughout else ("descoped", None)
+    if spell["outcome"] == "not_completed":
+        return ("in_review" if "review" in (spell["status"] or "").lower() else "not_completed"), None
+    if spell["closedAsNonDelivery"]:
+        return None, "non_delivery"
+    if not any(e["type"] == "completed" for e in spell["events"]):
+        return None, "done_at_start"
+    return "completed", None
 
 
 def build_timeline(spells, status, start, end, complete, today):
@@ -408,6 +397,17 @@ def build_burndown(spells, start_date, last_date, moment, zone):
                      "committed_stories": committed_stories, "total_stories": total_stories})
         day += timedelta(days=1)
     return rows
+
+
+def replay(events, until):
+    """(in the sprint, Done, points) after a spell's events up to `until`, or
+    None before it began."""
+    state = None
+    for e in events:
+        if parse_ts(e["at"]) > until:
+            break
+        state = (e["type"] != "removed", e["done"], e["points"])
+    return state
 
 
 def cross_check(report, in_scope, completed, removed, later_moves=()):

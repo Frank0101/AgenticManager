@@ -26,6 +26,22 @@ from common import (INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expect
                     ratio, report_file, report_timezone, scope_group_label, whole_percentage, word_count)
 
 
+def run_checks(md, data, report_dir):
+    tables = {table_kind(t): t for t in html_tables(md)}
+    c = Checker()
+    check_model(c, data)
+    check_header(c, md, data)
+    check_commentary(c, md, data)
+    check_framing(c, md)
+    check_images(c, md, report_dir)
+    check_files(c, report_dir, data)
+    check_timeline(c, tables.get("timeline"), data)
+    check_epics(c, tables.get("epics"), data)
+    check_style(c, md)
+    check_vocabulary(c, md, data)
+    return c
+
+
 class Checker:
     def __init__(self):
         self.failures, self.passes = [], []
@@ -47,36 +63,8 @@ class Checker:
         return 0
 
 
-def run_checks(md, data, report_dir):
-    tables = {table_kind(t): t for t in html_tables(md)}
-    c = Checker()
-    check_model(c, data)
-    check_header(c, md, data)
-    check_commentary(c, md, data)
-    check_framing(c, md)
-    check_images(c, md, report_dir)
-    check_files(c, report_dir, data)
-    check_timeline(c, tables.get("timeline"), data)
-    check_epics(c, tables.get("epics"), data)
-    check_style(c, md)
-    check_vocabulary(c, md, data)
-    return c
-
-
 def html_tables(md):
     return re.findall(r"<table.*?</table>", md, re.S)
-
-
-def rows_of(table):
-    return re.findall(r"<tr>(.*?)</tr>", table, re.S)
-
-
-def cells_of(row):
-    return re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S)
-
-
-def strip_tags(text):
-    return re.sub(r"<[^>]+>", " ", text).strip()
 
 
 def table_kind(table):
@@ -88,238 +76,12 @@ def table_kind(table):
     return None
 
 
-HEADER_START = "| Field | Detail |\n|---|---|\n"
-HEADER_LABELS = ["Dates", "Goal", ai(
-    "Goal outcome"), "Sprint target completion"]
+def rows_of(table):
+    return re.findall(r"<tr>(.*?)</tr>", table, re.S)
 
 
-def header_rows(md):
-    """[(label, value)] of the table above the charts, or None if it's missing."""
-    if HEADER_START not in md:
-        return None
-    body = md.split(HEADER_START, 1)[1].split("\n\n", 1)[0]
-    rows = []
-    for line in body.splitlines():
-        cells = re.fullmatch(r"\| (.+?) \| (.*) \|", line)
-        rows.append((cells.group(1), cells.group(2))
-                    if cells else (line, None))
-    return rows
-
-
-def check_header(c, md, data):
-    rows = header_rows(md)
-    if not c.check(rows is not None, "header", "table above the charts found") or rows is None:
-        return
-    labels = [label for label, _ in rows]
-    if not c.check(labels == HEADER_LABELS, "header", f"rows are exactly {HEADER_LABELS} (got {labels})"):
-        return
-    values = dict(rows)
-
-    dates = f"{display_date(data['sprint_start'])}–{display_date(data['sprint_end'])}"
-    if data["sprint_complete_date"] and data["sprint_complete_date"] != data["sprint_end"]:
-        dates += f" (completed {display_date(data['sprint_complete_date'])})"
-    c.check(values["Dates"] == dates, "header", f"Dates is {dates!r}")
-
-    goal = values["Goal"]
-    shown = re.sub(r"\[(" + ISSUE_KEY.pattern + r")\]\([^)]*\)",
-                   r"\1", goal).replace("\\|", "|")
-    lines = [line.strip()
-             for line in data["sprint_goal"].splitlines() if line.strip()]
-    expected_goal = "<br>".join(html.escape(line, quote=False)
-                                for line in lines) if lines else "*No goal was set in Jira for this sprint*"
-    c.check(shown == expected_goal, "header",
-            "Goal is Jira's goal, one line per <br>")
-
-    original_spells = [t for t in data["spells"] if t["scope"] == "original"]
-    done = [t for t in original_spells if t["outcome"] == "completed"]
-    so_far = " so far" if data["sprint_status"] == "active" else ""
-    target = "No commitment" if not original_spells else (
-        f"{whole_percentage(len(done), len(original_spells))}, "
-        + ratio(len(done), len(original_spells), sum(t["points"] or 0 for t in done),
-                sum(t["points"] or 0 for t in original_spells))
-        + f" completed{so_far}")
-    c.check(values["Sprint target completion"] == target,
-            "header", f"Sprint target completion is {target!r}")
-
-
-# The commentary's caveats, which its word limit doesn't count.
-CAVEATS = ("resolved as Duplicate or Won't Do",
-           "is reconstructed from changelogs")
-
-
-def commentary_of(md):
-    """The paragraph right after the timeline table, as plain text, or None."""
-    table = next((t for t in html_tables(
-        md) if table_kind(t) == "timeline"), None)
-    if table is None:
-        return None
-    after = [p for p in md.split(table, 1)[1].split("\n\n") if p.strip()]
-    if not after or after[0].startswith("#"):
-        return None
-    return link_text(after[0].strip())
-
-
-def check_commentary(c, md, data):
-    """The timeline's commentary states, from the spells, every way the sprint
-    departed from the ideal and no other, within the word limit before its
-    caveats, and the caveats whenever they apply."""
-    text = commentary_of(md)
-    if not c.check(text is not None, "commentary", "the timeline is followed by its commentary") or text is None:
-        return
-    sentences = SENTENCE_BREAK.split(text)
-    core = " ".join(s for s in sentences if not any(m in s for m in CAVEATS))
-    c.check(word_count(core) <= COMMENTARY_WORDS, "commentary",
-            f"at most {COMMENTARY_WORDS} words before its caveats (got {word_count(core)})")
-    spells = data["spells"]
-    original = [s for s in spells if s["scope"] == "original"]
-    committed = qty(len(original), data["burndown_baseline"])
-    c.check((f"{committed} in the commitment" if original else "Nothing was committed at the start") in text,
-            "commentary", f"states the commitment, {committed}" if original else "states that nothing was committed")
-    descoped = [s for s in original if s["outcome"] == "removed"]
-    extra = [s for s in spells if s["scope"] == "extra" and s["counted"]]
-    for kind, items in (("descoped", descoped), ("added as extra", extra)):
-        if len(items) > 1:
-            amount = qty(len(items), known_sum(s["points"] for s in items))
-            c.check(f"{amount} {plural(len(items), 'was', 'were')} {kind}" in text,
-                    "commentary", f"states {amount} {kind}")
-    returns = [s for i, s in enumerate(spells)
-               if s["events"][0]["type"] == "joined" and any(o["key"] == s["key"] for o in spells[:i])]
-    departures = [
-        ("already Done at the start", r"already Done at the start",
-         any(s["events"][0]["done"] for s in original)),
-        ("descoped from the commitment", r"\b(?:was|were) descoped", bool(descoped)),
-        ("added as extra", r"\b(?:was|were) added as extra", bool(extra)),
-        ("added and descoped again", r"added and descoped again",
-         any(not s["counted"] for s in spells)),
-        ("reopened", r"\breopened\b", any(
-            e["type"] == "reopened" for s in spells for e in s["events"])),
-        ("re-estimated", r"\bre-estimated\b",
-         any(e["type"] == "reestimated" for s in spells for e in s["events"])),
-        ("left and came back", r"left the sprint and came back", bool(returns)),
-    ]
-    for name, pattern, happened in departures:
-        c.check(bool(re.search(pattern, core)) == happened, "commentary",
-                f"{'mentions' if happened else 'does not mention'} {name}")
-    open_spells = [s for s in spells if s["counted"]
-                   and s["outcome"] == "not_completed"]
-    if open_spells:
-        amount = qty(len(open_spells), known_sum(
-            s["points"] for s in open_spells))
-        c.check(amount in core, "commentary",
-                f"states what is still open, {amount}")
-    else:
-        expected = "Nothing is open" if data["sprint_status"] == "active" else "Everything in the sprint was completed by the close"
-        c.check(expected in core, "commentary",
-                "states that nothing is still open")
-    keys = {s["key"] for s in spells}
-    excluded = set(data["membership_cross_check_excluded_keys"])
-    c.check(all(set(ISSUE_KEY.findall(sentence)) <=
-                (keys | excluded if CAVEATS[1] in sentence else keys)
-                for sentence in sentences), "commentary", "names only tickets of the sprint or its membership caveat")
-    non_delivery = data["non_delivery_closures"]["count"]
-    c.check((CAVEATS[0] in text) == bool(non_delivery), "commentary",
-            "states the non-delivery closures" if non_delivery else "states no non-delivery closures")
-    c.check((CAVEATS[1] in text) == bool(excluded), "commentary",
-            "states the membership cross-check limitation" if excluded else "states no cross-check limitation")
-    caveat_keys = [(CAVEATS[0], {s["key"] for s in spells
-                                 if s["counted"] and s["closedAsNonDelivery"]}),
-                   (CAVEATS[1], excluded)]
-    for marker, expected_keys in caveat_keys:
-        shown_keys = {key for sentence in sentences if marker in sentence
-                      for key in ISSUE_KEY.findall(sentence)}
-        c.check(shown_keys == expected_keys, "commentary",
-                f"the {marker} caveat names every affected ticket and no others")
-
-
-def check_framing(c, md):
-    """Each big table has a heading directly above it (only charts may sit in
-    between). The paragraph after the timeline is check_commentary's."""
-    for table in html_tables(md):
-        kind = table_kind(table)
-        if kind is None:
-            continue
-        before = md.partition(table)[0]
-        headings = list(re.finditer(r"^##+ +(.+)$", before, re.M))
-        if c.check(bool(headings), "headings", f"{kind} table has a heading above it"):
-            between = "\n".join(
-                line for line in before[headings[-1].end():].splitlines()
-                if line.strip() and not ((m := INLINE_LINK.fullmatch(line.strip())) and m[1]))
-            c.check(between.strip() == "", "headings",
-                    f"{kind} table directly follows '{headings[-1].group(1).strip()}'")
-
-
-def epic_figures(data):
-    """{epic key: {scope: [completed, all, completed pts, all pts]}} recomputed
-    from the counted spells, so a ticket under the wrong epic can't pass by
-    agreeing with data.json's own epic figures."""
-    figures = {}
-    for spell in (s for s in data["spells"] if s["counted"]):
-        row = figures.setdefault(spell["parentKey"] or NO_EPIC, {
-                                 "original": [0] * 4, "extra": [0] * 4})[spell["scope"]]
-        points = spell["points"] or 0
-        row[1] += 1
-        row[3] += points
-        if spell["outcome"] == "completed":
-            row[0] += 1
-            row[2] += points
-    return figures
-
-
-def check_epics(c, table, data):
-    if not c.check(table is not None, "epics", "table found"):
-        return
-    figures = epic_figures(data)
-    c.check({e["key"] for e in data["epics"]} == set(figures), "epics",
-            f"the epics are the spells' epics {sorted(figures, key=key_order)}")
-    for epic in data["epics"]:
-        title = f"<td>{epic['name']}</td>" if epic["key"] == NO_EPIC else f">{epic['key']}: "
-        row = next((r for r in rows_of(table) if title in r), None)
-        if not c.check(row is not None, "epics", f"{epic['key']} has a row"):
-            continue
-        cells = cells_of(row)[1:3]
-        expected = []
-        for kind in ("original", "extra"):
-            done, total, done_pts, total_pts = figures.get(
-                epic["key"], {}).get(kind, [0] * 4)
-            expected.append(ratio(done, total, done_pts,
-                            total_pts) if total else "–")
-        c.check(cells == expected, "epics",
-                f"{epic['key']} shows {' '.join(expected)} (got {' '.join(cells)})")
-        check_epic_commentary(c, epic, cells_of(row)[3], data["sprint_status"])
-
-
-def check_epic_commentary(c, epic, cell, status):
-    """The labels of the groups the epic has tickets to describe in, in order;
-    "–" if there are none. The sentences are the agent's, checked when the
-    report is written."""
-    labels = [scope_group_label(g, status) for g in epic_groups(epic)]
-    if not labels:
-        c.check(cell.strip() == "–", "epics",
-                f"{epic['key']} has no scope to describe, so its commentary is –")
-        return
-    lines = [re.match(r"<b>([^<]+):</b> (.+)", line.strip())
-             for line in cell.split("<br>")]
-    found = [m.group(1) if m else None for m in lines]
-    c.check(found == labels, "epics",
-            f"{epic['key']} commentary has {', '.join(labels)} (got {found})")
-
-
-# The event kinds of a spell.
-EVENT_KINDS = {"committed", "joined", "completed",
-               "reopened", "reestimated", "removed"}
-
-
-def tag_labels(e):
-    """The tags the timeline shows for an event."""
-    if e["type"] in ("committed", "joined"):
-        return ["Added"] + (["Already done"] if e["done"] else [])
-    if e["type"] == "reestimated":
-        return [f"Re-estimated: {estimate(e['fromPoints'])} → {pts(e['points'])}"]
-    return [{"completed": "Completed", "reopened": "Reopened", "removed": "Descoped"}[e["type"]]]
-
-
-def text_of(cell):
-    return " ".join(html.unescape(strip_tags(cell)).split())
+def strip_tags(text):
+    return re.sub(r"<[^>]+>", " ", text).strip()
 
 
 def check_model(c, data):
@@ -421,21 +183,183 @@ def check_model(c, data):
             "the timeline holds exactly the spells' events")
 
 
-def timeline_days(table):
-    """[{date, rowspan, tickets: [(ticket text, [tags])], end}] from the
-    timeline table's rows."""
-    days = []
-    for row in rows_of(table)[1:]:
-        cells = re.findall(r"<td([^>]*)>(.*?)</td>", row, re.S)
-        if cells and "rowspan" in cells[0][0]:
-            span = re.search(r'rowspan="(\d+)"', cells[0][0])
-            days.append({"date": text_of(cells[0][1]), "rowspan": int(span.group(1)) if span else 1,
-                         "end": text_of(cells[-1][1]), "tickets": []})
-            cells = cells[1:-1]
-        if days and len(cells) == 2:
-            days[-1]["tickets"].append((text_of(cells[0][1]),
-                                        [html.unescape(t) for t in re.findall(r"<span[^>]*>(.*?)</span>", cells[1][1])]))
-    return days
+HEADER_START = "| Field | Detail |\n|---|---|\n"
+HEADER_LABELS = ["Dates", "Goal", ai(
+    "Goal outcome"), "Sprint target completion"]
+
+
+def check_header(c, md, data):
+    rows = header_rows(md)
+    if not c.check(rows is not None, "header", "table above the charts found") or rows is None:
+        return
+    labels = [label for label, _ in rows]
+    if not c.check(labels == HEADER_LABELS, "header", f"rows are exactly {HEADER_LABELS} (got {labels})"):
+        return
+    values = dict(rows)
+
+    dates = f"{display_date(data['sprint_start'])}–{display_date(data['sprint_end'])}"
+    if data["sprint_complete_date"] and data["sprint_complete_date"] != data["sprint_end"]:
+        dates += f" (completed {display_date(data['sprint_complete_date'])})"
+    c.check(values["Dates"] == dates, "header", f"Dates is {dates!r}")
+
+    goal = values["Goal"]
+    shown = re.sub(r"\[(" + ISSUE_KEY.pattern + r")\]\([^)]*\)",
+                   r"\1", goal).replace("\\|", "|")
+    lines = [line.strip()
+             for line in data["sprint_goal"].splitlines() if line.strip()]
+    expected_goal = "<br>".join(html.escape(line, quote=False)
+                                for line in lines) if lines else "*No goal was set in Jira for this sprint*"
+    c.check(shown == expected_goal, "header",
+            "Goal is Jira's goal, one line per <br>")
+
+    original_spells = [t for t in data["spells"] if t["scope"] == "original"]
+    done = [t for t in original_spells if t["outcome"] == "completed"]
+    so_far = " so far" if data["sprint_status"] == "active" else ""
+    target = "No commitment" if not original_spells else (
+        f"{whole_percentage(len(done), len(original_spells))}, "
+        + ratio(len(done), len(original_spells), sum(t["points"] or 0 for t in done),
+                sum(t["points"] or 0 for t in original_spells))
+        + f" completed{so_far}")
+    c.check(values["Sprint target completion"] == target,
+            "header", f"Sprint target completion is {target!r}")
+
+
+def header_rows(md):
+    """[(label, value)] of the table above the charts, or None if it's missing."""
+    if HEADER_START not in md:
+        return None
+    body = md.split(HEADER_START, 1)[1].split("\n\n", 1)[0]
+    rows = []
+    for line in body.splitlines():
+        cells = re.fullmatch(r"\| (.+?) \| (.*) \|", line)
+        rows.append((cells.group(1), cells.group(2))
+                    if cells else (line, None))
+    return rows
+
+
+# The commentary's caveats, which its word limit doesn't count.
+CAVEATS = ("resolved as Duplicate or Won't Do",
+           "is reconstructed from changelogs")
+
+
+def check_commentary(c, md, data):
+    """The timeline's commentary states, from the spells, every way the sprint
+    departed from the ideal and no other, within the word limit before its
+    caveats, and the caveats whenever they apply."""
+    text = commentary_of(md)
+    if not c.check(text is not None, "commentary", "the timeline is followed by its commentary") or text is None:
+        return
+    sentences = SENTENCE_BREAK.split(text)
+    core = " ".join(s for s in sentences if not any(m in s for m in CAVEATS))
+    c.check(word_count(core) <= COMMENTARY_WORDS, "commentary",
+            f"at most {COMMENTARY_WORDS} words before its caveats (got {word_count(core)})")
+    spells = data["spells"]
+    original = [s for s in spells if s["scope"] == "original"]
+    committed = qty(len(original), data["burndown_baseline"])
+    c.check((f"{committed} in the commitment" if original else "Nothing was committed at the start") in text,
+            "commentary", f"states the commitment, {committed}" if original else "states that nothing was committed")
+    descoped = [s for s in original if s["outcome"] == "removed"]
+    extra = [s for s in spells if s["scope"] == "extra" and s["counted"]]
+    for kind, items in (("descoped", descoped), ("added as extra", extra)):
+        if len(items) > 1:
+            amount = qty(len(items), known_sum(s["points"] for s in items))
+            c.check(f"{amount} {plural(len(items), 'was', 'were')} {kind}" in text,
+                    "commentary", f"states {amount} {kind}")
+    returns = [s for i, s in enumerate(spells)
+               if s["events"][0]["type"] == "joined" and any(o["key"] == s["key"] for o in spells[:i])]
+    departures = [
+        ("already Done at the start", r"already Done at the start",
+         any(s["events"][0]["done"] for s in original)),
+        ("descoped from the commitment", r"\b(?:was|were) descoped", bool(descoped)),
+        ("added as extra", r"\b(?:was|were) added as extra", bool(extra)),
+        ("added and descoped again", r"added and descoped again",
+         any(not s["counted"] for s in spells)),
+        ("reopened", r"\breopened\b", any(
+            e["type"] == "reopened" for s in spells for e in s["events"])),
+        ("re-estimated", r"\bre-estimated\b",
+         any(e["type"] == "reestimated" for s in spells for e in s["events"])),
+        ("left and came back", r"left the sprint and came back", bool(returns)),
+    ]
+    for name, pattern, happened in departures:
+        c.check(bool(re.search(pattern, core)) == happened, "commentary",
+                f"{'mentions' if happened else 'does not mention'} {name}")
+    open_spells = [s for s in spells if s["counted"]
+                   and s["outcome"] == "not_completed"]
+    if open_spells:
+        amount = qty(len(open_spells), known_sum(
+            s["points"] for s in open_spells))
+        c.check(amount in core, "commentary",
+                f"states what is still open, {amount}")
+    else:
+        expected = "Nothing is open" if data["sprint_status"] == "active" else "Everything in the sprint was completed by the close"
+        c.check(expected in core, "commentary",
+                "states that nothing is still open")
+    keys = {s["key"] for s in spells}
+    excluded = set(data["membership_cross_check_excluded_keys"])
+    c.check(all(set(ISSUE_KEY.findall(sentence)) <=
+                (keys | excluded if CAVEATS[1] in sentence else keys)
+                for sentence in sentences), "commentary", "names only tickets of the sprint or its membership caveat")
+    non_delivery = data["non_delivery_closures"]["count"]
+    c.check((CAVEATS[0] in text) == bool(non_delivery), "commentary",
+            "states the non-delivery closures" if non_delivery else "states no non-delivery closures")
+    c.check((CAVEATS[1] in text) == bool(excluded), "commentary",
+            "states the membership cross-check limitation" if excluded else "states no cross-check limitation")
+    caveat_keys = [(CAVEATS[0], {s["key"] for s in spells
+                                 if s["counted"] and s["closedAsNonDelivery"]}),
+                   (CAVEATS[1], excluded)]
+    for marker, expected_keys in caveat_keys:
+        shown_keys = {key for sentence in sentences if marker in sentence
+                      for key in ISSUE_KEY.findall(sentence)}
+        c.check(shown_keys == expected_keys, "commentary",
+                f"the {marker} caveat names every affected ticket and no others")
+
+
+def commentary_of(md):
+    """The paragraph right after the timeline table, as plain text, or None."""
+    table = next((t for t in html_tables(
+        md) if table_kind(t) == "timeline"), None)
+    if table is None:
+        return None
+    after = [p for p in md.split(table, 1)[1].split("\n\n") if p.strip()]
+    if not after or after[0].startswith("#"):
+        return None
+    return link_text(after[0].strip())
+
+
+def check_framing(c, md):
+    """Each big table has a heading directly above it (only charts may sit in
+    between). The paragraph after the timeline is check_commentary's."""
+    for table in html_tables(md):
+        kind = table_kind(table)
+        if kind is None:
+            continue
+        before = md.partition(table)[0]
+        headings = list(re.finditer(r"^##+ +(.+)$", before, re.M))
+        if c.check(bool(headings), "headings", f"{kind} table has a heading above it"):
+            between = "\n".join(
+                line for line in before[headings[-1].end():].splitlines()
+                if line.strip() and not ((m := INLINE_LINK.fullmatch(line.strip())) and m[1]))
+            c.check(between.strip() == "", "headings",
+                    f"{kind} table directly follows '{headings[-1].group(1).strip()}'")
+
+
+def check_images(c, md, report_dir):
+    embedded = [m[3] for m in INLINE_LINK.finditer(md) if m[1]]
+    for name in CHART_FILES.values():
+        c.check(name in embedded, "images", f"{name} embedded")
+    for src in embedded:
+        c.check(os.path.exists(os.path.join(report_dir, src)),
+                "images", f"{src} exists")
+    section = md.split("## Scope Timeline", 1)
+    c.check(len(section) == 2 and CHART_FILES["burndown"] in re.split(r"^## ", section[1], maxsplit=1, flags=re.M)[0],
+            "images", "burndown sits under the Scope Timeline heading")
+
+
+def check_files(c, report_dir, data):
+    extra = sorted(name for name in os.listdir(report_dir)
+                   if not name.startswith(".") and name not in expected_files(data["label"]))
+    c.check(not extra, "files",
+            f"only the report's files are in the folder (unexpected: {extra or 'none'})")
 
 
 def check_timeline(c, table, data):
@@ -480,23 +404,113 @@ def check_timeline(c, table, data):
                 f"{label} end of day is {expected_end!r}")
 
 
-def check_images(c, md, report_dir):
-    embedded = [m[3] for m in INLINE_LINK.finditer(md) if m[1]]
-    for name in CHART_FILES.values():
-        c.check(name in embedded, "images", f"{name} embedded")
-    for src in embedded:
-        c.check(os.path.exists(os.path.join(report_dir, src)),
-                "images", f"{src} exists")
-    section = md.split("## Scope Timeline", 1)
-    c.check(len(section) == 2 and CHART_FILES["burndown"] in re.split(r"^## ", section[1], maxsplit=1, flags=re.M)[0],
-            "images", "burndown sits under the Scope Timeline heading")
+# The event kinds of a spell.
+EVENT_KINDS = {"committed", "joined", "completed",
+               "reopened", "reestimated", "removed"}
 
 
-def check_files(c, report_dir, data):
-    extra = sorted(name for name in os.listdir(report_dir)
-                   if not name.startswith(".") and name not in expected_files(data["label"]))
-    c.check(not extra, "files",
-            f"only the report's files are in the folder (unexpected: {extra or 'none'})")
+def timeline_days(table):
+    """[{date, rowspan, tickets: [(ticket text, [tags])], end}] from the
+    timeline table's rows."""
+    days = []
+    for row in rows_of(table)[1:]:
+        cells = re.findall(r"<td([^>]*)>(.*?)</td>", row, re.S)
+        if cells and "rowspan" in cells[0][0]:
+            span = re.search(r'rowspan="(\d+)"', cells[0][0])
+            days.append({"date": text_of(cells[0][1]), "rowspan": int(span.group(1)) if span else 1,
+                         "end": text_of(cells[-1][1]), "tickets": []})
+            cells = cells[1:-1]
+        if days and len(cells) == 2:
+            days[-1]["tickets"].append((text_of(cells[0][1]),
+                                        [html.unescape(t) for t in re.findall(r"<span[^>]*>(.*?)</span>", cells[1][1])]))
+    return days
+
+
+def text_of(cell):
+    return " ".join(html.unescape(strip_tags(cell)).split())
+
+
+def tag_labels(e):
+    """The tags the timeline shows for an event."""
+    if e["type"] in ("committed", "joined"):
+        return ["Added"] + (["Already done"] if e["done"] else [])
+    if e["type"] == "reestimated":
+        return [f"Re-estimated: {estimate(e['fromPoints'])} → {pts(e['points'])}"]
+    return [{"completed": "Completed", "reopened": "Reopened", "removed": "Descoped"}[e["type"]]]
+
+
+def check_epics(c, table, data):
+    if not c.check(table is not None, "epics", "table found"):
+        return
+    figures = epic_figures(data)
+    c.check({e["key"] for e in data["epics"]} == set(figures), "epics",
+            f"the epics are the spells' epics {sorted(figures, key=key_order)}")
+    for epic in data["epics"]:
+        title = f"<td>{epic['name']}</td>" if epic["key"] == NO_EPIC else f">{epic['key']}: "
+        row = next((r for r in rows_of(table) if title in r), None)
+        if not c.check(row is not None, "epics", f"{epic['key']} has a row"):
+            continue
+        cells = cells_of(row)[1:3]
+        expected = []
+        for kind in ("original", "extra"):
+            done, total, done_pts, total_pts = figures.get(
+                epic["key"], {}).get(kind, [0] * 4)
+            expected.append(ratio(done, total, done_pts,
+                            total_pts) if total else "–")
+        c.check(cells == expected, "epics",
+                f"{epic['key']} shows {' '.join(expected)} (got {' '.join(cells)})")
+        check_epic_commentary(c, epic, cells_of(row)[3], data["sprint_status"])
+
+
+def epic_figures(data):
+    """{epic key: {scope: [completed, all, completed pts, all pts]}} recomputed
+    from the counted spells, so a ticket under the wrong epic can't pass by
+    agreeing with data.json's own epic figures."""
+    figures = {}
+    for spell in (s for s in data["spells"] if s["counted"]):
+        row = figures.setdefault(spell["parentKey"] or NO_EPIC, {
+                                 "original": [0] * 4, "extra": [0] * 4})[spell["scope"]]
+        points = spell["points"] or 0
+        row[1] += 1
+        row[3] += points
+        if spell["outcome"] == "completed":
+            row[0] += 1
+            row[2] += points
+    return figures
+
+
+def check_epic_commentary(c, epic, cell, status):
+    """The labels of the groups the epic has tickets to describe in, in order;
+    "–" if there are none. The sentences are the agent's, checked when the
+    report is written."""
+    labels = [scope_group_label(g, status) for g in epic_groups(epic)]
+    if not labels:
+        c.check(cell.strip() == "–", "epics",
+                f"{epic['key']} has no scope to describe, so its commentary is –")
+        return
+    lines = [re.match(r"<b>([^<]+):</b> (.+)", line.strip())
+             for line in cell.split("<br>")]
+    found = [m.group(1) if m else None for m in lines]
+    c.check(found == labels, "epics",
+            f"{epic['key']} commentary has {', '.join(labels)} (got {found})")
+
+
+def cells_of(row):
+    return re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S)
+
+
+def check_style(c, md):
+    generated = generated_text(md)
+    c.check("—" not in generated, "em dashes", "none in generated text")
+    iso = dict(text_rule_problems(generated)).get(DATE_RULE, [])
+    c.check(not iso, "dates", f"{DATE_RULE} {iso[:3] or ''}".strip())
+    # The title is plain text; every other key, including copied fields, is linked.
+    md = re.sub(r"^# Sprint Summary:.*$", "", md, flags=re.M)
+    stripped = INLINE_LINK.sub("", md)
+    stripped = re.sub(r"<a\s[^>]*>.*?</a>", "", stripped, flags=re.S)
+    unlinked = sorted(set(ISSUE_KEY.findall(stripped)))
+    c.check(not unlinked, "links",
+            f"every Jira key is linked (unlinked: {unlinked[:5] or 'none'})")
 
 
 def generated_text(md):
@@ -509,40 +523,6 @@ def generated_text(md):
                 r"(<tr>\s*)<td>.*?</td>", r"\1<td></td>", table, flags=re.S)
             md = md.replace(table, without_names, 1)
     return md
-
-
-def historical_references(data):
-    """Allowed single-ticket references in the generator's fixed commentary phrases."""
-    allowed = set()
-    spells = data["spells"]
-    latest = {s["key"]: s["points"] for s in spells}
-    for index, spell in enumerate(spells):
-        key, points, events = spell["key"], spell["points"], spell["events"]
-        reference = f"{key} ({pts(points)}) "
-        if spell["scope"] == "original":
-            if events[0]["done"]:
-                allowed.add(
-                    f"{key} ({pts(events[0]['points'])}) was already Done at the start")
-            if spell["outcome"] == "removed":
-                allowed.add(reference + "was descoped")
-        elif spell["counted"]:
-            allowed.add(reference + "was added as extra")
-        if not spell["counted"]:
-            allowed.add(reference + "was added and descoped again")
-        if any(e["type"] == "reopened" for e in events):
-            allowed.add(reference + "was reopened")
-        changes = [e for e in events if e["type"] == "reestimated"]
-        if changes:
-            old = estimate(changes[0]["fromPoints"])
-            allowed.add(f"{key} ({old} → {pts(points)}) was re-estimated")
-        if events[0]["type"] == "joined" and any(s["key"] == key for s in spells[:index]):
-            allowed.add(reference + "left the sprint and came back")
-        if spell["counted"] and spell["closedAsNonDelivery"]:
-            allowed.add(reference + "was resolved as Duplicate or Won't Do")
-    for key in data["membership_cross_check_excluded_keys"]:
-        allowed.add(
-            f"{key} ({pts(latest.get(key))}) is reconstructed from changelogs")
-    return allowed
 
 
 def check_vocabulary(c, md, data):
@@ -586,18 +566,38 @@ def check_vocabulary(c, md, data):
             f"historical ticket estimates match their commentary event {wrong[:3] or ''}".strip())
 
 
-def check_style(c, md):
-    generated = generated_text(md)
-    c.check("—" not in generated, "em dashes", "none in generated text")
-    iso = dict(text_rule_problems(generated)).get(DATE_RULE, [])
-    c.check(not iso, "dates", f"{DATE_RULE} {iso[:3] or ''}".strip())
-    # The title is plain text; every other key, including copied fields, is linked.
-    md = re.sub(r"^# Sprint Summary:.*$", "", md, flags=re.M)
-    stripped = INLINE_LINK.sub("", md)
-    stripped = re.sub(r"<a\s[^>]*>.*?</a>", "", stripped, flags=re.S)
-    unlinked = sorted(set(ISSUE_KEY.findall(stripped)))
-    c.check(not unlinked, "links",
-            f"every Jira key is linked (unlinked: {unlinked[:5] or 'none'})")
+def historical_references(data):
+    """Allowed single-ticket references in the generator's fixed commentary phrases."""
+    allowed = set()
+    spells = data["spells"]
+    latest = {s["key"]: s["points"] for s in spells}
+    for index, spell in enumerate(spells):
+        key, points, events = spell["key"], spell["points"], spell["events"]
+        reference = f"{key} ({pts(points)}) "
+        if spell["scope"] == "original":
+            if events[0]["done"]:
+                allowed.add(
+                    f"{key} ({pts(events[0]['points'])}) was already Done at the start")
+            if spell["outcome"] == "removed":
+                allowed.add(reference + "was descoped")
+        elif spell["counted"]:
+            allowed.add(reference + "was added as extra")
+        if not spell["counted"]:
+            allowed.add(reference + "was added and descoped again")
+        if any(e["type"] == "reopened" for e in events):
+            allowed.add(reference + "was reopened")
+        changes = [e for e in events if e["type"] == "reestimated"]
+        if changes:
+            old = estimate(changes[0]["fromPoints"])
+            allowed.add(f"{key} ({old} → {pts(points)}) was re-estimated")
+        if events[0]["type"] == "joined" and any(s["key"] == key for s in spells[:index]):
+            allowed.add(reference + "left the sprint and came back")
+        if spell["counted"] and spell["closedAsNonDelivery"]:
+            allowed.add(reference + "was resolved as Duplicate or Won't Do")
+    for key in data["membership_cross_check_excluded_keys"]:
+        allowed.add(
+            f"{key} ({pts(latest.get(key))}) is reconstructed from changelogs")
+    return allowed
 
 
 def main():

@@ -68,101 +68,7 @@ OUTCOME_SEGMENTS = [(outcome, *OUTCOME_COLOURS[outcome])
                     for outcome in OUTCOMES]
 
 
-def esc(text):
-    return html.escape(str(text), quote=True)
-
-
-# Character widths in em, after Helvetica and Arial; anything else counts as a
-# lower-case letter.
-CHAR_WIDTHS = {**dict.fromkeys("ijl|", 0.23), **dict.fromkeys(" ftI.,:;'!/", 0.28),
-               **dict.fromkeys("r()-", 0.34), **dict.fromkeys("cksvxyz", 0.5),
-               **dict.fromkeys("FTZ", 0.61), **dict.fromkeys("ABEKPSVXY", 0.67),
-               **dict.fromkeys("CDHNRUw", 0.72), **dict.fromkeys("GOQ", 0.78),
-               **dict.fromkeys("mM", 0.84), "%": 0.89, "W": 0.95, "→": 1.0}
-
-
-def text_width(text, size, bold=False):
-    """Estimated rendered width, close enough to size the label column and to
-    decide whether a label fits a bar."""
-    return sum(CHAR_WIDTHS.get(c, 0.56) for c in str(text)) * size * (1.08 if bold else 1)
-
-
-def text(x, y, content, size=12, color=INK, anchor="start", bold=False, extra=""):
-    weight = ' font-weight="bold"' if bold else ""
-    return (f'<text x="{x:.1f}" y="{y:.1f}" font-size="{size}" fill="{color}" '
-            f'text-anchor="{anchor}"{weight}{extra}>{esc(content)}</text>')
-
-
-def svg(width, height, body):
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0f}" height="{height:.0f}" '
-            f'viewBox="0 0 {width:.0f} {height:.0f}" font-family="{FONT}">\n'
-            f'<rect width="100%" height="100%" fill="{SURFACE}"/>\n' + "\n".join(body) + "\n</svg>\n")
-
-
 # --- outcome charts
-
-def amount_text(n, is_points):
-    """An amount in pts or in tickets: "3 pts", "1 ticket"."""
-    return pts(n) if is_points else f"{n} {unit(n)}"
-
-
-def outcome_segments(data):
-    """The outcome segments, labelled with the report's outcome words."""
-    return [(seg, scope_group_label({"removed": "descoped"}.get(seg, seg), data["sprint_status"]), color, ink)
-            for seg, color, ink in OUTCOME_SEGMENTS]
-
-
-def outcome_rows(data):
-    """[(row key, label)]: the original commitment split into carry-over and
-    new work, then the extra scope."""
-    previous = data["previous_sprint"]
-    carried = f"Carried over from {previous['name']}" if previous else "Carried over (no previous sprint)"
-    return [("carried_in", carried), ("new", "New commitment"), ("extra", "Extra")]
-
-
-def outcome_labels(data, is_points):
-    """What one outcome chart writes beside its bars: (breakdown, totals,
-    grand total, [(row, label, sublabel)], the bracket's lines)."""
-    breakdown = data["outcome_breakdown_points" if is_points else "outcome_breakdown_counts"]
-    rows = outcome_rows(data)
-    totals = {row: outcome_total(breakdown, row)
-              for row in ("original", *(r for r, _ in rows))}
-    grand = totals["original"] + totals["extra"]
-
-    def sublabel(row):
-        text_ = amount_text(totals[row], is_points)
-        if row in ORIGINAL_ROWS and totals["original"]:
-            text_ += f" ({whole_percentage(totals[row], totals['original'])} of commitment)"
-        elif row == "extra" and grand:
-            text_ += f" ({whole_percentage(totals[row], grand)} of total)"
-        return text_
-
-    group_lines = [("Commitment", 12, INK),
-                   (amount_text(totals['original'], is_points), 11, MUTED)]
-    if grand:
-        group_lines.append(
-            (f"({whole_percentage(totals['original'], grand)} of total)", 11, MUTED))
-    return breakdown, totals, grand, [(row, label, sublabel(row)) for row, label in rows], group_lines
-
-
-def outcome_layout(data):
-    """(width, bracket position, bar start), shared by the tickets and points
-    charts so they look alike: the label column fits the longer labels of
-    either chart and the bars take the rest of the width. The width grows past
-    OUTCOME_WIDTH only to keep the bars at OUTCOME_MIN_BAR_SHARE of it."""
-    group_w = label_w = 0
-    for is_points in (False, True):
-        *_, rows, group_lines = outcome_labels(data, is_points)
-        group_w = max(group_w, *(text_width(t, size, i == 0)
-                      for i, (t, size, _) in enumerate(group_lines)))
-        label_w = max(label_w, *(max(text_width(label, 12),
-                      text_width(sub, 11)) for _, label, sub in rows))
-    bracket_x = math.ceil(OUTCOME_MARGIN + group_w + 8)
-    left = math.ceil(bracket_x + 10 + label_w + 12)
-    width = max(OUTCOME_WIDTH, math.ceil(
-        (left + OUTCOME_MARGIN) / (1 - OUTCOME_MIN_BAR_SHARE)))
-    return width, bracket_x, left
-
 
 def outcome_chart(data, is_points):
     breakdown, totals, grand, rows, group_lines = outcome_labels(
@@ -261,18 +167,101 @@ def outcome_chart(data, is_points):
     return svg(width, legend_y + 18, body)
 
 
+# Character widths in em, after Helvetica and Arial; anything else counts as a
+# lower-case letter.
+CHAR_WIDTHS = {**dict.fromkeys("ijl|", 0.23), **dict.fromkeys(" ftI.,:;'!/", 0.28),
+               **dict.fromkeys("r()-", 0.34), **dict.fromkeys("cksvxyz", 0.5),
+               **dict.fromkeys("FTZ", 0.61), **dict.fromkeys("ABEKPSVXY", 0.67),
+               **dict.fromkeys("CDHNRUw", 0.72), **dict.fromkeys("GOQ", 0.78),
+               **dict.fromkeys("mM", 0.84), "%": 0.89, "W": 0.95, "→": 1.0}
+
+
+def outcome_labels(data, is_points):
+    """What one outcome chart writes beside its bars: (breakdown, totals,
+    grand total, [(row, label, sublabel)], the bracket's lines)."""
+    breakdown = data["outcome_breakdown_points" if is_points else "outcome_breakdown_counts"]
+    rows = outcome_rows(data)
+    totals = {row: outcome_total(breakdown, row)
+              for row in ("original", *(r for r, _ in rows))}
+    grand = totals["original"] + totals["extra"]
+
+    def sublabel(row):
+        text_ = amount_text(totals[row], is_points)
+        if row in ORIGINAL_ROWS and totals["original"]:
+            text_ += f" ({whole_percentage(totals[row], totals['original'])} of commitment)"
+        elif row == "extra" and grand:
+            text_ += f" ({whole_percentage(totals[row], grand)} of total)"
+        return text_
+
+    group_lines = [("Commitment", 12, INK),
+                   (amount_text(totals['original'], is_points), 11, MUTED)]
+    if grand:
+        group_lines.append(
+            (f"({whole_percentage(totals['original'], grand)} of total)", 11, MUTED))
+    return breakdown, totals, grand, [(row, label, sublabel(row)) for row, label in rows], group_lines
+
+
+def outcome_rows(data):
+    """[(row key, label)]: the original commitment split into carry-over and
+    new work, then the extra scope."""
+    previous = data["previous_sprint"]
+    carried = f"Carried over from {previous['name']}" if previous else "Carried over (no previous sprint)"
+    return [("carried_in", carried), ("new", "New commitment"), ("extra", "Extra")]
+
+
+def amount_text(n, is_points):
+    """An amount in pts or in tickets: "3 pts", "1 ticket"."""
+    return pts(n) if is_points else f"{n} {unit(n)}"
+
+
+def outcome_layout(data):
+    """(width, bracket position, bar start), shared by the tickets and points
+    charts so they look alike: the label column fits the longer labels of
+    either chart and the bars take the rest of the width. The width grows past
+    OUTCOME_WIDTH only to keep the bars at OUTCOME_MIN_BAR_SHARE of it."""
+    group_w = label_w = 0
+    for is_points in (False, True):
+        *_, rows, group_lines = outcome_labels(data, is_points)
+        group_w = max(group_w, *(text_width(t, size, i == 0)
+                      for i, (t, size, _) in enumerate(group_lines)))
+        label_w = max(label_w, *(max(text_width(label, 12),
+                      text_width(sub, 11)) for _, label, sub in rows))
+    bracket_x = math.ceil(OUTCOME_MARGIN + group_w + 8)
+    left = math.ceil(bracket_x + 10 + label_w + 12)
+    width = max(OUTCOME_WIDTH, math.ceil(
+        (left + OUTCOME_MARGIN) / (1 - OUTCOME_MIN_BAR_SHARE)))
+    return width, bracket_x, left
+
+
+def outcome_segments(data):
+    """The outcome segments, labelled with the report's outcome words."""
+    return [(seg, scope_group_label({"removed": "descoped"}.get(seg, seg), data["sprint_status"]), color, ink)
+            for seg, color, ink in OUTCOME_SEGMENTS]
+
+
+def svg(width, height, body):
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0f}" height="{height:.0f}" '
+            f'viewBox="0 0 {width:.0f} {height:.0f}" font-family="{FONT}">\n'
+            f'<rect width="100%" height="100%" fill="{SURFACE}"/>\n' + "\n".join(body) + "\n</svg>\n")
+
+
+def text(x, y, content, size=12, color=INK, anchor="start", bold=False, extra=""):
+    weight = ' font-weight="bold"' if bold else ""
+    return (f'<text x="{x:.1f}" y="{y:.1f}" font-size="{size}" fill="{color}" '
+            f'text-anchor="{anchor}"{weight}{extra}>{esc(content)}</text>')
+
+
+def esc(text):
+    return html.escape(str(text), quote=True)
+
+
+def text_width(text, size, bold=False):
+    """Estimated rendered width, close enough to size the label column and to
+    decide whether a label fits a bar."""
+    return sum(CHAR_WIDTHS.get(c, 0.56) for c in str(text)) * size * (1.08 if bold else 1)
+
+
 # --- burndown
-
-def daterange(start, end):
-    day = start
-    while day <= end:
-        yield day
-        day += timedelta(days=1)
-
-
-def is_weekday(day):
-    return day.weekday() < 5
-
 
 def build_series(data):
     actuals = {date.fromisoformat(
@@ -309,11 +298,15 @@ def build_series(data):
             "last_actual": last_actual, "weekdays": weekdays}
 
 
-def nice_step(span):
-    for step in (1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000):
-        if span / step <= 8:
-            return step
-    return 1000 * (int(span / 8000) + 1)
+def daterange(start, end):
+    day = start
+    while day <= end:
+        yield day
+        day += timedelta(days=1)
+
+
+def is_weekday(day):
+    return day.weekday() < 5
 
 
 def burndown_chart(data, series):
@@ -411,6 +404,13 @@ def burndown_chart(data, series):
         body.append(text(lx + 38, legend_y, spec["label"]))
         lx += 38 + text_width(spec["label"], 12) + 28
     return svg(width, legend_y + 16, body)
+
+
+def nice_step(span):
+    for step in (1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000):
+        if span / step <= 8:
+            return step
+    return 1000 * (int(span / 8000) + 1)
 
 
 def print_series(series):

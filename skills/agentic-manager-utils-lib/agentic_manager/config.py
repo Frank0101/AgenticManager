@@ -21,59 +21,6 @@ PLACEHOLDER = re.compile(r"^<.*>$")
 FIX = "Run agentic_manager/check_config.py to see how to fix it."
 
 
-def _reject_duplicates(pairs):
-    seen = {}
-    for key, value in pairs:
-        if key in seen:
-            raise ValueError(f'duplicate key "{key}"')
-        seen[key] = value
-    return seen
-
-
-def load_json(path):
-    """Loads a JSON object, rejecting duplicate keys. Raises ValueError with a
-    message for the user, or OSError if the file can't be opened."""
-    if not os.path.exists(path):
-        raise ValueError(f"{path} not found")
-    if not os.path.isfile(path):
-        raise ValueError(f"{path} is not a file")
-    try:
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f, object_pairs_hook=_reject_duplicates)
-    except ValueError as e:  # bad JSON, bad encoding or a duplicate key
-        raise ValueError(f"invalid JSON in {path}: {e}")
-    if not isinstance(data, dict):
-        raise ValueError(f"top level of {path} must be a JSON object")
-    return data
-
-
-def is_filled(value) -> TypeGuard[str]:
-    """Whether `value` is a string holding a value, not a blank or a
-    placeholder."""
-    if not isinstance(value, str):
-        return False
-    value = value.strip()
-    return bool(value) and not PLACEHOLDER.match(value)
-
-
-def load_config():
-    """The user's config, for a script. Exits if it can't be read."""
-    try:
-        return load_json(CONFIG_PATH)
-    except (ValueError, OSError):
-        raise SystemExit(f"could not read {CONFIG_PATH}. {FIX}")
-
-
-def is_enabled(group, source):
-    """Whether a source is enabled in the user's config, for a script that
-    uses a source's tool, such as a CLI, only when the user enabled it. Exits
-    if the config can't be read."""
-    groups = load_config().get("sources")
-    entries = groups.get(group) if isinstance(groups, dict) else None
-    settings = entries.get(source) if isinstance(entries, dict) else None
-    return isinstance(settings, dict) and settings.get("enabled") is True
-
-
 def read_source(group, source, keys, lists=()):
     """The given settings of one source, for a script that needs them itself:
     `keys` are text settings, which must be filled in, and `lists` lists of
@@ -93,6 +40,59 @@ def read_source(group, source, keys, lists=()):
             f"{where} setting(s) not a list of strings: {', '.join(wrong)}. {FIX}")
     return {**{k: settings[k].strip() for k in keys},
             **{k: [v.strip() for v in settings.get(k, [])] for k in lists}}
+
+
+def is_enabled(group, source):
+    """Whether a source is enabled in the user's config, for a script that
+    uses a source's tool, such as a CLI, only when the user enabled it. Exits
+    if the config can't be read."""
+    groups = load_config().get("sources")
+    entries = groups.get(group) if isinstance(groups, dict) else None
+    settings = entries.get(source) if isinstance(entries, dict) else None
+    return isinstance(settings, dict) and settings.get("enabled") is True
+
+
+def load_config():
+    """The user's config, for a script. Exits if it can't be read."""
+    try:
+        return load_json(CONFIG_PATH)
+    except (ValueError, OSError):
+        raise SystemExit(f"could not read {CONFIG_PATH}. {FIX}")
+
+
+def load_json(path):
+    """Loads a JSON object, rejecting duplicate keys. Raises ValueError with a
+    message for the user, or OSError if the file can't be opened."""
+    if not os.path.exists(path):
+        raise ValueError(f"{path} not found")
+    if not os.path.isfile(path):
+        raise ValueError(f"{path} is not a file")
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f, object_pairs_hook=_reject_duplicates)
+    except ValueError as e:  # bad JSON, bad encoding or a duplicate key
+        raise ValueError(f"invalid JSON in {path}: {e}")
+    if not isinstance(data, dict):
+        raise ValueError(f"top level of {path} must be a JSON object")
+    return data
+
+
+def _reject_duplicates(pairs):
+    seen = {}
+    for key, value in pairs:
+        if key in seen:
+            raise ValueError(f'duplicate key "{key}"')
+        seen[key] = value
+    return seen
+
+
+def is_filled(value) -> TypeGuard[str]:
+    """Whether `value` is a string holding a value, not a blank or a
+    placeholder."""
+    if not isinstance(value, str):
+        return False
+    value = value.strip()
+    return bool(value) and not PLACEHOLDER.match(value)
 
 
 def is_text_list(value) -> TypeGuard[list[str]]:

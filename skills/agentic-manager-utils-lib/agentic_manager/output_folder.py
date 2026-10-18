@@ -102,17 +102,17 @@ def clear_folder(path):
     return True
 
 
-def add_name_argument(parser):
-    """Adds --name, the skill's output folder, to the command line `parser`."""
-    parser.add_argument("--name", type=folder_name, required=True,
-                        help="the name of the skill's output folder, such as tech-investigations")
-
-
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Print, and create, the folder a skill writes its files to.")
     add_name_argument(parser)
     return parser.parse_args(argv)
+
+
+def add_name_argument(parser):
+    """Adds --name, the skill's output folder, to the command line `parser`."""
+    parser.add_argument("--name", type=folder_name, required=True,
+                        help="the name of the skill's output folder, such as tech-investigations")
 
 
 def main():

@@ -78,11 +78,6 @@ class Flow:
                     self.requests.append((sender, receiver, text.strip()))
 
 
-def plain(cell):
-    """A ledger cell's text, without Markdown link syntax."""
-    return link_text(cell).strip()
-
-
 def components(rows):
     """{name in lower case: (status mark, type)} from the component rows."""
     found = {}
@@ -96,10 +91,9 @@ def components(rows):
     return found
 
 
-def component_of(label, known):
-    """The ledger component a participant's label names, or None."""
-    name = re.sub(r"\s*\([^()]*\)\s*$", "", plain(label)).strip().lower()
-    return known.get(name)
+def plain(cell):
+    """A ledger cell's text, without Markdown link syntax."""
+    return link_text(cell).strip()
 
 
 def unknown_participants(flow, known):
@@ -108,24 +102,10 @@ def unknown_participants(flow, known):
             if not actor and component_of(label, known) is None]
 
 
-def quoted(text):
-    """A label quoted for Mermaid."""
-    # A leading backtick would open a Mermaid Markdown string.
-    return '"' + text.replace('"', "#quot;").replace("`", "#96;") + '"'
-
-
-def node(number, label, actor, component):
-    """A flowchart node, shaped by whether it is a person and by the component's type."""
-    kind = component[1] if component else ""
-    if actor:
-        return f"n{number}([{quoted(label)}])"
-    if "store" in kind:
-        return f"n{number}[({quoted(label)})]"
-    if re.search(r"queue|topic|stream", kind):
-        return f"n{number}@{{ shape: h-cyl, label: {quoted(label)} }}"
-    if "external" in kind:
-        return f"n{number}[[{quoted(label)}]]"
-    return f"n{number}[{quoted(label)}]"
+def component_of(label, known):
+    """The ledger component a participant's label names, or None."""
+    name = re.sub(r"\s*\([^()]*\)\s*$", "", plain(label)).strip().lower()
+    return known.get(name)
 
 
 def flowchart(flow, known):
@@ -163,6 +143,26 @@ def flowchart(flow, known):
         lines += [f"    classDef {style} {styles[style]}",
                   f"    class {','.join(members)} {style}"]
     return "\n".join(lines) + "\n"
+
+
+def node(number, label, actor, component):
+    """A flowchart node, shaped by whether it is a person and by the component's type."""
+    kind = component[1] if component else ""
+    if actor:
+        return f"n{number}([{quoted(label)}])"
+    if "store" in kind:
+        return f"n{number}[({quoted(label)})]"
+    if re.search(r"queue|topic|stream", kind):
+        return f"n{number}@{{ shape: h-cyl, label: {quoted(label)} }}"
+    if "external" in kind:
+        return f"n{number}[[{quoted(label)}]]"
+    return f"n{number}[{quoted(label)}]"
+
+
+def quoted(text):
+    """A label quoted for Mermaid."""
+    # A leading backtick would open a Mermaid Markdown string.
+    return '"' + text.replace('"', "#quot;").replace("`", "#96;") + '"'
 
 
 def marks(flow, known):

@@ -226,17 +226,17 @@ def topic_of(folder):
 CELL_PIPE = re.compile(r"(?<!\\)\|")
 
 
-def table_row(cells):
-    """A Markdown table row from its cells, each pipe in one escaped as \\|."""
-    return "| " + " | ".join(CELL_PIPE.sub(r"\\|", str(cell)) for cell in cells) + " |"
-
-
 def table(header, rows):
     """A Markdown table, each cell on one line with its pipes escaped."""
     lines = [table_row(header), table_row(["---"] * len(header))]
     lines += [table_row([" ".join(str(cell).split()) for cell in row])
               for row in rows]
     return "\n".join(lines)
+
+
+def table_row(cells):
+    """A Markdown table row from its cells, each pipe in one escaped as \\|."""
+    return "| " + " | ".join(CELL_PIPE.sub(r"\\|", str(cell)) for cell in cells) + " |"
 
 
 # Ticket keys and pull requests, written as links. A ticket key is linked once
@@ -263,25 +263,6 @@ PROTECTED = re.compile(
     r"`[^`\n]*`|!?\[[^\]\n]*\]\([^)\n]*\)|!?\[[^\]\n]+\]\[[^\]\n]*\]|https?://\S+")
 
 
-def _map_open(line, transform):
-    """`line` with `transform` applied to each part outside code, links and URLs."""
-    out, at = [], 0
-    for match in PROTECTED.finditer(line):
-        out += [transform(line[at:match.start()]), match[0]]
-        at = match.end()
-    out.append(transform(line[at:]))
-    return "".join(out)
-
-
-def _skipped(line):
-    """Headings, whose anchor a link would change, and link definitions."""
-    return re.match(r"^ {0,3}(#{1,6}(\s|$)|\[[^\]]+\]:)", line) is not None
-
-
-ANY_REFERENCE = re.compile(
-    rf"{REPO_PR.pattern}|{TICKET.pattern}|{BARE_PR.pattern}")
-
-
 def unlinked_references(text):
     """The ticket keys and pull requests of `text` written outside a link, in order."""
     found = []
@@ -295,9 +276,23 @@ def unlinked_references(text):
     return found
 
 
-def ticket_sites(urls):
-    """{project: Jira site} of the ticket links among `urls`."""
-    return {match[2]: match[1] for url in urls if (match := TICKET_URL.fullmatch(url))}
+def _skipped(line):
+    """Headings, whose anchor a link would change, and link definitions."""
+    return re.match(r"^ {0,3}(#{1,6}(\s|$)|\[[^\]]+\]:)", line) is not None
+
+
+ANY_REFERENCE = re.compile(
+    rf"{REPO_PR.pattern}|{TICKET.pattern}|{BARE_PR.pattern}")
+
+
+def _map_open(line, transform):
+    """`line` with `transform` applied to each part outside code, links and URLs."""
+    out, at = [], 0
+    for match in PROTECTED.finditer(line):
+        out += [transform(line[at:match.start()]), match[0]]
+        at = match.end()
+    out.append(transform(line[at:]))
+    return "".join(out)
 
 
 def autolink(text, definitions):
@@ -336,6 +331,11 @@ def autolink(text, definitions):
     lines = [line if _skipped(line) else _map_open(line, transform)
              for line in text.split("\n")]
     return "\n".join(lines), unresolved
+
+
+def ticket_sites(urls):
+    """{project: Jira site} of the ticket links among `urls`."""
+    return {match[2]: match[1] for url in urls if (match := TICKET_URL.fullmatch(url))}
 
 
 def upgraded_tickets(line, sites):
@@ -382,33 +382,16 @@ def claim_length_warning(ident, claim):
     return f"{ident}'s claim is {words} words; split it into findings of one claim each"
 
 
-def _review_outcomes(completed):
-    """The outcomes of the independent review's rows among the completed
-    actions, as rows, in order."""
-    return [row[-1].strip() for row in completed if len(row) > 2 and row[2] == REVIEW_QUESTION]
-
-
-def last_review(completed):
-    """The outcome of the latest independent review among the completed
-    actions, as rows, or None if none is recorded."""
-    outcomes = _review_outcomes(completed)
-    return outcomes[-1] if outcomes else None
-
-
 def review_rounds(completed):
     """How many independent review rounds ran: the review rows, apart from
     one recording the user's choice to stop."""
     return sum(1 for outcome in _review_outcomes(completed) if not outcome.startswith(REVIEW_STOPPED))
 
 
-def reviewed(completed):
-    """Whether the review is finished: rounds repeat until one raises no
-    action, since the actions a round raises change the ledger and the report
-    the next round reads. Record fixes, which change nothing in the report,
-    raise no action, so they don't keep the rounds going. The user's choice
-    to stop also ends it."""
-    outcome = last_review(completed)
-    return outcome is not None and (outcome == REVIEW_NONE or outcome.startswith(REVIEW_STOPPED))
+def _review_outcomes(completed):
+    """The outcomes of the independent review's rows among the completed
+    actions, as rows, in order."""
+    return [row[-1].strip() for row in completed if len(row) > 2 and row[2] == REVIEW_QUESTION]
 
 
 def review_problem(completed):
@@ -419,6 +402,23 @@ def review_problem(completed):
         return ("the last review round raised actions: once they are done, run another round with the same "
                 "brief, until one raises no action or the user chooses to stop")
     return None
+
+
+def last_review(completed):
+    """The outcome of the latest independent review among the completed
+    actions, as rows, or None if none is recorded."""
+    outcomes = _review_outcomes(completed)
+    return outcomes[-1] if outcomes else None
+
+
+def reviewed(completed):
+    """Whether the review is finished: rounds repeat until one raises no
+    action, since the actions a round raises change the ledger and the report
+    the next round reads. Record fixes, which change nothing in the report,
+    raise no action, so they don't keep the rounds going. The user's choice
+    to stop also ends it."""
+    outcome = last_review(completed)
+    return outcome is not None and (outcome == REVIEW_NONE or outcome.startswith(REVIEW_STOPPED))
 
 
 # The rules below are each defined once: ledger.py applies them to a row as it
@@ -435,15 +435,15 @@ GAP_FIX = ("Blocked by starts with one of: " + "; ".join(BLOCKERS) + ". A gap no
            "user has said so, and 'Asked the user, no answer' only after you asked")
 
 
-def listed(items):
-    """`items` for a message: the first six, then how many more."""
-    return ", ".join(items[:6]) + (f" and {len(items) - 6} more" if len(items) > 6 else "")
-
-
 def backtick_error(where, spans):
     """The error for references in backticks outside a link."""
     return (f"{where}: references in backticks without a link: {listed([f'`{s}`' for s in spans])}. "
             "Link each to its pinned revision, or write it as plain words")
+
+
+def listed(items):
+    """`items` for a message: the first six, then how many more."""
+    return ", ".join(items[:6]) + (f" and {len(items) - 6} more" if len(items) > 6 else "")
 
 
 def gap_problem(row):
@@ -474,12 +474,6 @@ def coverage_material_missing(row):
     return not LINK.search(row[1])
 
 
-def _strip_links(text):
-    """`text` without its links, inline or by reference, and without the
-    definition lines the references use."""
-    return REFERENCE_LINK.sub(" ", INLINE_LINK.sub(" ", DEFINITION.sub(" ", text)))
-
-
 def unlinked_backticks(prose, linked_text=""):
     """The backticked spans of `prose` that sit outside a link, in order. Backticks
     mark a reference to code or a source, so each is a link to its pinned
@@ -490,6 +484,12 @@ def unlinked_backticks(prose, linked_text=""):
     projects = ticket_sites(urls)
     spans = [span[1:-1] for span in QUERY.findall(_strip_links(prose))]
     return [s for s in spans if not (TICKET.fullmatch(s) and s.split("-")[0] not in projects)]
+
+
+def _strip_links(text):
+    """`text` without its links, inline or by reference, and without the
+    definition lines the references use."""
+    return REFERENCE_LINK.sub(" ", INLINE_LINK.sub(" ", DEFINITION.sub(" ", text)))
 
 
 # Every recorded ID has an anchor, so any citation of it can link to it: a
@@ -503,14 +503,14 @@ ID_ANCHOR = re.compile(rf'<a id="{ANCHOR_ID}"></a>')
 ROW_START = rf"^\|\s*(?:{ID_ANCHOR.pattern})?"
 
 
-def anchor_tag(ident):
-    """The HTML anchor of `ident`, which its citations link to."""
-    return f'<a id="{ident.lower()}"></a>'
-
-
 def anchored(ident):
     """`ident` after its anchor, as its row's ID cell holds it."""
     return anchor_tag(ident) + ident
+
+
+def anchor_tag(ident):
+    """The HTML anchor of `ident`, which its citations link to."""
+    return f'<a id="{ident.lower()}"></a>'
 
 
 def anchor_ids(text):
@@ -518,26 +518,10 @@ def anchor_ids(text):
     return set(re.findall(rf'<a id="({ANCHOR_ID})"></a>', text))
 
 
-def strip_anchors(text):
-    """A text without its ID anchors."""
-    return ID_ANCHOR.sub("", text)
-
-
-def table_cells(line, keep_anchors=False):
-    """A Markdown table row's cells, trimmed; an ID without its anchor unless
-    `keep_anchors`. A pipe escaped as \\| stays inside its cell, read as |."""
-    cells = [c.strip().replace("\\|", "|")
-             for c in CELL_PIPE.split(line.strip().strip("|"))]
-    return cells if keep_anchors else [strip_anchors(c) for c in cells]
-
-
-def section_span(lines, heading):
-    """(index of the line `heading`, index of the next heading or the end), or None."""
-    start = next((i for i, line in enumerate(lines)
-                 if line.strip() == heading), None)
-    if start is None:
-        return None
-    return start, next((i for i in range(start + 1, len(lines)) if lines[i].startswith("#")), len(lines))
+def component_rows(body):
+    """The component inventory's rows, as cells."""
+    return [row for row in ledger_rows(body, TABLE_HEADINGS["components"])
+            if re.fullmatch(r"C\d+", row[0]) and len(row) > 4]
 
 
 def ledger_rows(text, heading):
@@ -556,10 +540,26 @@ def ledger_rows(text, heading):
             and not (i + 1 < len(section) and separator[i + 1])]
 
 
-def component_rows(body):
-    """The component inventory's rows, as cells."""
-    return [row for row in ledger_rows(body, TABLE_HEADINGS["components"])
-            if re.fullmatch(r"C\d+", row[0]) and len(row) > 4]
+def section_span(lines, heading):
+    """(index of the line `heading`, index of the next heading or the end), or None."""
+    start = next((i for i, line in enumerate(lines)
+                 if line.strip() == heading), None)
+    if start is None:
+        return None
+    return start, next((i for i in range(start + 1, len(lines)) if lines[i].startswith("#")), len(lines))
+
+
+def table_cells(line, keep_anchors=False):
+    """A Markdown table row's cells, trimmed; an ID without its anchor unless
+    `keep_anchors`. A pipe escaped as \\| stays inside its cell, read as |."""
+    cells = [c.strip().replace("\\|", "|")
+             for c in CELL_PIPE.split(line.strip().strip("|"))]
+    return cells if keep_anchors else [strip_anchors(c) for c in cells]
+
+
+def strip_anchors(text):
+    """A text without its ID anchors."""
+    return ID_ANCHOR.sub("", text)
 
 
 def linked_ids(text, recorded):
@@ -575,23 +575,22 @@ RECORD_DEFINITION = re.compile(
     rf"(?:{ROW_START}|^[-*]\s+\*\*|^#{{3}}\s+)({RECORD.pattern})", re.M)
 
 
-def recorded_ids(body):
-    """Every ID the ledger `body` records: table rows, bold labels, headings
-    and findings."""
-    return set(RECORD_DEFINITION.findall(body)) | set(FINDING_HEADING.findall(body))
-
-
 def unrecorded_ids(body):
     """The source, action, decision, gap and component IDs the ledger cites but
     never records in a table row, a bold label or a heading."""
     return sorted(set(RECORD.findall(body)) - recorded_ids(body), key=id_order)
 
 
-def finding_blocks(text):
-    """{finding ID: its block, from its heading to the next finding} in `text`."""
-    found = list(FINDING_START.finditer(text))
-    ends = [match.start() for match in found[1:]] + [len(text)]
-    return {match[1]: text[match.start():end].strip("\n") for match, end in zip(found, ends)}
+def id_order(ident):
+    """A sort key for IDs in number order: S2 before S10."""
+    match = re.match(r"([A-Za-z]+)(\d+)", ident)
+    return (match[1], int(match[2])) if match else (ident, 0)
+
+
+def recorded_ids(body):
+    """Every ID the ledger `body` records: table rows, bold labels, headings
+    and findings."""
+    return set(RECORD_DEFINITION.findall(body)) | set(FINDING_HEADING.findall(body))
 
 
 def cited_sources(body):
@@ -604,10 +603,11 @@ def cited_sources(body):
     return cited
 
 
-def id_order(ident):
-    """A sort key for IDs in number order: S2 before S10."""
-    match = re.match(r"([A-Za-z]+)(\d+)", ident)
-    return (match[1], int(match[2])) if match else (ident, 0)
+def finding_blocks(text):
+    """{finding ID: its block, from its heading to the next finding} in `text`."""
+    found = list(FINDING_START.finditer(text))
+    ends = [match.start() for match in found[1:]] + [len(text)]
+    return {match[1]: text[match.start():end].strip("\n") for match, end in zip(found, ends)}
 
 
 # The Findings a source row lists, which ledger.py writes and check_report.py reads.
@@ -637,11 +637,6 @@ def depth_problem(depth):
             "then any detail, such as 'partial: lines 1-120 of 400'")
 
 
-def _code_path(url):
-    """A GitHub-style URL with /tree/ or /blob/ made the same, for prefix matching."""
-    return re.sub(r"/(?:tree|blob)/", "/-/", url.rstrip("/"))
-
-
 def unread_components(components, coverage, definitions):
     """The components whose Status claims code (🟩, 🟨) without file coverage
     read at READ_DEPTHS under their repository path. `components` are rows
@@ -660,6 +655,11 @@ def unread_components(components, coverage, definitions):
         if not any(r == p or r.startswith(p + "/") for p in paths for r in read):
             found.append(row[0])
     return found
+
+
+def _code_path(url):
+    """A GitHub-style URL with /tree/ or /blob/ made the same, for prefix matching."""
+    return re.sub(r"/(?:tree|blob)/", "/-/", url.rstrip("/"))
 
 
 def unread_message(found):

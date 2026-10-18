@@ -27,9 +27,9 @@ skills/agentic-manager-utils-lib/
 tests/<skill>/           tests for that skill, mirroring skills/: unit tests per script or
                          module (test_<module>.py) and end-to-end tests (test_e2e_*.py)
 tests/repo/              checks of the repo's own integrity: every module and listed
-                         function says what it is for, every script answers --help,
-                         and every link to a section in AGENTS.md and each SKILL.md
-                         reaches a heading
+                         function says what it is for, every module reads top-down,
+                         every script answers --help, and every link to a section in
+                         AGENTS.md and each SKILL.md reaches a heading
 tests/run.py             runs every skill's tests, each skill in its own process (its own
                          tests are in tests/runner/)
 .claude/skills  ─┐       symlinks to skills/, so the skills load when you run
@@ -133,6 +133,7 @@ What a skill's instructions and scripts must do, on top of the rules that always
 
 - Scripts use only the Python standard library and need Python 3.14+: skills have no install step, so nothing else can be relied on (a chart is drawn as SVG by hand). A tool outside Python is the exception, and the skill lists it as a dependency with its version pinned, or, for one that updates itself, such as a browser, the version it was tested with.
 - Every module starts with a header comment whose first sentence says what it is for, followed by the reasons for its rules: the decisions that justify the code, in a few lines, not what the code already says. Describe what the script does, not who calls it or how: a list of its callers goes stale whenever one changes.
+- A module reads top-down, so an agent meets what it does before the details: its header comment, imports and constants, then its functions and classes, each below the first one that uses it, grouped by what they serve, and `main` last. A function that module-level code calls goes above that code, as Python needs.
 - Every function or class other code may use has a docstring whose first sentence says what it is for: in the library, and in a skill's module without a `main`, every public one (top level, no leading underscore); in a skill's command, only those its other scripts import from it. The library's `code_map.py` builds the map of the code from these first sentences, and `tests/repo/` fails when one is missing. The map is for whoever builds a skill, so no SKILL.md asks the agent running it to read it.
 - Every script answers `--help` with what it does, its commands and what each argument is for. A SKILL.md spells out its mechanical steps, but a step it leaves to the agent's judgment can need a script or a command it doesn't name, so every SKILL.md that runs scripts says once, where it introduces them, that a script's `--help` gives its commands and arguments.
 - A script the agent feeds structured input, such as a JSON object or a row's cells, shows in its `help`, for every command that writes, the input's shape and a command to copy, with the input in a quoted here-document so nothing in it needs escaping; its error for a wrong input shows the same. The agent then never guesses a field's name or fights shell quoting.
@@ -153,6 +154,7 @@ What a skill's instructions and scripts must do, on top of the rules that always
 - A rule the final check applies is also applied when the data is written, wherever the script that writes it can: one function in the skill's shared module, called by both, so the two can't differ. The final check keeps it, since a file can be written without the script. A rule about another record, which may be written later, such as an ID cited before it is recorded, is a warning on write and an error in the final check.
 - When changing a report rule, update its generator, checker and relevant tests together.
 - A length given for AI-written text is room to articulate, never a quota. State it as an approximate target or an "at most", tell the agent to write fewer words when the point is simple or the evidence thin, and have a check flag only excess or a stub (far below the target, such as under a third), never brevity. A check that pushes the agent up to a minimum produces padding.
+- A SKILL.md runs in the order the agent works: the prerequisite, then the steps as they run, with reference material, such as rules and schemas, after the steps or where it is first needed. Sections every SKILL.md has come in the same order in each.
 - State each rule once in the SKILL.md, where it belongs: a second sentence repeating it, or an exception to it elsewhere, is where the two drift apart. Prefer the simplest rule: reuse an existing cell, field or file before adding a column, a state or a marker.
 - Don't add guardrails for improbable cases, such as an agent writing fields from an older version of the skill: deal with them if they happen. A skill always assumes it runs from a clean state.
 

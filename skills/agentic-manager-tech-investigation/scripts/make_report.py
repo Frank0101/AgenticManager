@@ -67,88 +67,6 @@ def make_report(relative):
             "sequences": [s.title for s in flows]}
 
 
-def build(content):
-    """(report text, [Sequence])."""
-    data = content.data
-    skip = skipped(content)
-    if "evolution" in skip and "next_steps" in data:
-        content.errors.append(
-            "next_steps: evolution is skipped, so the report has no Next steps and evolution")
-    problem = content.paragraphs(data.get("problem"), "problem")
-    content.length(problem, TARGETS["problem"], "problem")
-    current_status = content.paragraphs(
-        data.get("current_status"), "current_status")
-    content.length(current_status,
-                   TARGETS["current_status"], "current_status")
-    next_steps = []
-    if "evolution" not in skip:
-        next_steps = content.paragraphs(data.get("next_steps"), "next_steps")
-        content.length(next_steps, TARGETS["next_steps"], "next_steps")
-    architect = "architecture" not in skip
-    for key in ("architecture", "decisions_and_gaps"):
-        if not architect and key in data:
-            content.errors.append(
-                f"{key}: architecture is skipped, so the report has no Architect summary")
-    decisions = data.get("decisions_and_gaps") if architect else []
-    if architect and (not isinstance(decisions, list) or not decisions):
-        content.errors.append(
-            "decisions_and_gaps: needs a list of decisions and gaps")
-        decisions = []
-    rows = decision_rows(content, "decisions_and_gaps", decisions)
-    shown = ["current"] + ([] if "evolution" in skip else ["next"])
-    sections, flows = {}, []
-    if architect:
-        architecture = data.get("architecture")
-        architecture = architecture if isinstance(architecture, dict) else {}
-        if not architecture:
-            content.errors.append(
-                "architecture: needs current" + ("" if "evolution" in skip else " and next"))
-        for key in architecture:
-            if key not in shown:
-                content.errors.append(f"architecture.{key}: the report doesn't show this section"
-                                      + (", as evolution is skipped" if key == "next" else ""))
-        for key in shown:
-            stage = architecture.get(key)
-            if not isinstance(stage, dict):
-                if architecture:
-                    content.errors.append(f"architecture.{key}: missing")
-                continue
-            sections[key], flow = architect_section(content, key, stage)
-            if flow:
-                flows.append(flow)
-    # Rendering takes a while: only when the content is otherwise valid.
-    if not content.errors:
-        render_check(content, flows)
-    parts = [f"# {content.text(data.get('title'), 'title', inline=True)}",
-             f"Evidence snapshot: {snapshot(content, data.get('evidence_snapshot'))}. Code links pin inspected "
-             "commits; ticket, PR and document links may display later changes. Evidence revisions and "
-             f"access limits are recorded in the [Research ledger]({LEDGER}).",
-             HEADING_LINE["exec"], HEADING_LINE["exec.problem"], *problem]
-    parts += [HEADING_LINE["exec.current"], *current_status]
-    if "evolution" not in skip:
-        parts += [HEADING_LINE["exec.next"], *next_steps]
-    parts += [HEADING_LINE["exec.decisions"], *key_decisions(content)]
-    if architect:
-        parts.append(HEADING_LINE["arch"])
-        for key in shown:
-            parts.append(HEADING_LINE[f"arch.{key}"])
-            parts += sections.get(key, [])
-        parts += [HEADING_LINE["arch.decisions"],
-                  "The table records source-backed decisions and evidence gaps. It does not select an option.",
-                  table(["Decision or gap"] + DECISION_COLUMNS, rows)]
-    parts += [HEADING_LINE["references"], *references(content)]
-    return "\n\n".join(parts) + "\n", flows
-
-
-def snapshot(content, value):
-    try:
-        day = date.fromisoformat(str(value))
-    except ValueError:
-        content.errors.append("evidence_snapshot: must be a date, YYYY-MM-DD")
-        return str(value)
-    return f"{day.day} {day:%B %Y}"
-
-
 class Content:
     """content.json, checked as it is read: problems collect in `errors`."""
 
@@ -243,24 +161,128 @@ class Ledger:
         return before[-1][2] if before else None
 
 
-class Sequence:
-    """A titled sequence and the design view of the components it crosses."""
+def build(content):
+    """(report text, [Sequence])."""
+    data = content.data
+    skip = skipped(content)
+    if "evolution" in skip and "next_steps" in data:
+        content.errors.append(
+            "next_steps: evolution is skipped, so the report has no Next steps and evolution")
+    problem = content.paragraphs(data.get("problem"), "problem")
+    content.length(problem, TARGETS["problem"], "problem")
+    current_status = content.paragraphs(
+        data.get("current_status"), "current_status")
+    content.length(current_status,
+                   TARGETS["current_status"], "current_status")
+    next_steps = []
+    if "evolution" not in skip:
+        next_steps = content.paragraphs(data.get("next_steps"), "next_steps")
+        content.length(next_steps, TARGETS["next_steps"], "next_steps")
+    architect = "architecture" not in skip
+    for key in ("architecture", "decisions_and_gaps"):
+        if not architect and key in data:
+            content.errors.append(
+                f"{key}: architecture is skipped, so the report has no Architect summary")
+    decisions = data.get("decisions_and_gaps") if architect else []
+    if architect and (not isinstance(decisions, list) or not decisions):
+        content.errors.append(
+            "decisions_and_gaps: needs a list of decisions and gaps")
+        decisions = []
+    rows = decision_rows(content, "decisions_and_gaps", decisions)
+    shown = ["current"] + ([] if "evolution" in skip else ["next"])
+    sections, flows = {}, []
+    if architect:
+        architecture = data.get("architecture")
+        architecture = architecture if isinstance(architecture, dict) else {}
+        if not architecture:
+            content.errors.append(
+                "architecture: needs current" + ("" if "evolution" in skip else " and next"))
+        for key in architecture:
+            if key not in shown:
+                content.errors.append(f"architecture.{key}: the report doesn't show this section"
+                                      + (", as evolution is skipped" if key == "next" else ""))
+        for key in shown:
+            stage = architecture.get(key)
+            if not isinstance(stage, dict):
+                if architecture:
+                    content.errors.append(f"architecture.{key}: missing")
+                continue
+            sections[key], flow = architect_section(content, key, stage)
+            if flow:
+                flows.append(flow)
+    # Rendering takes a while: only when the content is otherwise valid.
+    if not content.errors:
+        render_check(content, flows)
+    parts = [f"# {content.text(data.get('title'), 'title', inline=True)}",
+             f"Evidence snapshot: {snapshot(content, data.get('evidence_snapshot'))}. Code links pin inspected "
+             "commits; ticket, PR and document links may display later changes. Evidence revisions and "
+             f"access limits are recorded in the [Research ledger]({LEDGER}).",
+             HEADING_LINE["exec"], HEADING_LINE["exec.problem"], *problem]
+    parts += [HEADING_LINE["exec.current"], *current_status]
+    if "evolution" not in skip:
+        parts += [HEADING_LINE["exec.next"], *next_steps]
+    parts += [HEADING_LINE["exec.decisions"], *key_decisions(content)]
+    if architect:
+        parts.append(HEADING_LINE["arch"])
+        for key in shown:
+            parts.append(HEADING_LINE[f"arch.{key}"])
+            parts += sections.get(key, [])
+        parts += [HEADING_LINE["arch.decisions"],
+                  "The table records source-backed decisions and evidence gaps. It does not select an option.",
+                  table(["Decision or gap"] + DECISION_COLUMNS, rows)]
+    parts += [HEADING_LINE["references"], *references(content)]
+    return "\n\n".join(parts) + "\n", flows
 
-    def __init__(self, title, lines, ledger):
-        self.title = title
-        self.source = "sequenceDiagram\n    autonumber\n" + \
-            "".join(f"    {line}\n" for line in lines)
-        self.flow = flow_components.Flow(lines)
-        self.design = flow_components.flowchart(
-            self.flow, ledger.components)
-        statuses = ", ".join(flow_components.marks(
-            self.flow, ledger.components))
-        people = any(actor for _, actor, _ in self.flow.participants.values())
-        self.caption = (f"The components this flow crosses, coloured by their status in the "
-                        f"[component inventory]({LEDGER}#{heading_anchor(INVENTORY)})"
-                        + (f": {statuses}" if statuses else "") + "."
-                        + (" A person is drawn rounded." if people else "")
-                        + " Arrows are its requests; the sequence below shows them in order.")
+
+def skipped(content):
+    """The dimensions content.json skips, checked."""
+    skip = content.data.get("skip", [])
+    if not isinstance(skip, list) or not all(isinstance(d, str) for d in skip):
+        content.errors.append(
+            "skip: must list the dimensions left out, architecture or evolution")
+        return []
+    for dimension in skip:
+        if dimension not in SKIPS:
+            content.errors.append(
+                f"skip: only {' or '.join(SKIPS)} can be skipped, not {dimension!r}")
+    return [d for d in SKIPS if d in skip]
+
+
+def decision_rows(content, key, items):
+    """The rows of a decisions table: the decision, why it matters, the
+    established position and the evidence, which carries the ledger link."""
+    rows = []
+    for index, item in enumerate(items, 1):
+        item = item if isinstance(item, dict) else {}
+        rows.append([content.text(item.get(field), f"{key} {index}.{field}",
+                                  inline=True, trace=field == "evidence")
+                     for field in DECISION_FIELDS])
+    return rows
+
+
+def architect_section(content, key, stage):
+    """([lines], Sequence or None) under one Architect summary heading: the
+    text, then its titled flow (caption, components diagram, sequence), or a
+    flow gap saying why there is none."""
+    where = f"architecture.{key}"
+    unknown = [k for k in stage if k not in (
+        "summary", "sequence", "flow_gap")]
+    if unknown:
+        content.errors.append(f"{where}: unknown {', '.join(unknown)}; a section has only "
+                              "summary, sequence and flow_gap")
+    summary = content.paragraphs(stage.get("summary"), f"{where}.summary")
+    content.length(summary, TARGETS["summary"], f"{where}.summary")
+    flow = sequence_of(content, stage, where)
+    lines = summary[:]
+    if flow:
+        lines += [f"#### {flow.title}", flow.caption,
+                  f"```mermaid\n{flow.design}```", f"```mermaid\n{flow.source}```"]
+    if stage.get("flow_gap"):
+        lines.append("**Flow evidence gap:** " +
+                     content.text(stage["flow_gap"], f"{where}.flow_gap", trace=True))
+    elif not flow:
+        content.errors.append(f"{where}: needs a sequence, or a flow_gap")
+    return lines, flow
 
 
 def sequence_of(content, stage, where):
@@ -298,29 +320,24 @@ def sequence_of(content, stage, where):
     return sequence
 
 
-def architect_section(content, key, stage):
-    """([lines], Sequence or None) under one Architect summary heading: the
-    text, then its titled flow (caption, components diagram, sequence), or a
-    flow gap saying why there is none."""
-    where = f"architecture.{key}"
-    unknown = [k for k in stage if k not in (
-        "summary", "sequence", "flow_gap")]
-    if unknown:
-        content.errors.append(f"{where}: unknown {', '.join(unknown)}; a section has only "
-                              "summary, sequence and flow_gap")
-    summary = content.paragraphs(stage.get("summary"), f"{where}.summary")
-    content.length(summary, TARGETS["summary"], f"{where}.summary")
-    flow = sequence_of(content, stage, where)
-    lines = summary[:]
-    if flow:
-        lines += [f"#### {flow.title}", flow.caption,
-                  f"```mermaid\n{flow.design}```", f"```mermaid\n{flow.source}```"]
-    if stage.get("flow_gap"):
-        lines.append("**Flow evidence gap:** " +
-                     content.text(stage["flow_gap"], f"{where}.flow_gap", trace=True))
-    elif not flow:
-        content.errors.append(f"{where}: needs a sequence, or a flow_gap")
-    return lines, flow
+class Sequence:
+    """A titled sequence and the design view of the components it crosses."""
+
+    def __init__(self, title, lines, ledger):
+        self.title = title
+        self.source = "sequenceDiagram\n    autonumber\n" + \
+            "".join(f"    {line}\n" for line in lines)
+        self.flow = flow_components.Flow(lines)
+        self.design = flow_components.flowchart(
+            self.flow, ledger.components)
+        statuses = ", ".join(flow_components.marks(
+            self.flow, ledger.components))
+        people = any(actor for _, actor, _ in self.flow.participants.values())
+        self.caption = (f"The components this flow crosses, coloured by their status in the "
+                        f"[component inventory]({LEDGER}#{heading_anchor(INVENTORY)})"
+                        + (f": {statuses}" if statuses else "") + "."
+                        + (" A person is drawn rounded." if people else "")
+                        + " Arrows are its requests; the sequence below shows them in order.")
 
 
 def render_check(content, flows):
@@ -339,6 +356,31 @@ def render_check(content, flows):
         which = "the components diagram" if index % 2 == 0 else "the sequence"
         content.errors.append(
             f"{flows[index // 2].title}: {which} doesn't render: {message or error}")
+
+
+DECISION_FIELDS = ("decision", "why", "position", "evidence")
+DECISION_COLUMNS = ["Why it matters", "Established position", "Evidence"]
+
+
+def snapshot(content, value):
+    try:
+        day = date.fromisoformat(str(value))
+    except ValueError:
+        content.errors.append("evidence_snapshot: must be a date, YYYY-MM-DD")
+        return str(value)
+    return f"{day.day} {day:%B %Y}"
+
+
+def key_decisions(content):
+    items = content.data.get("key_decisions")
+    if not isinstance(items, list):
+        content.errors.append(
+            "key_decisions: needs a list, empty when no item is evidenced")
+        return []
+    if not items:
+        return ["No decision, blocker or risk in the inspected evidence warrants technical-leadership attention."]
+    return ["These items describe implications of the linked evidence.",
+            table(["Decision or risk"] + DECISION_COLUMNS, decision_rows(content, "key_decisions", items))]
 
 
 def references(content):
@@ -369,48 +411,6 @@ def references(content):
     lines.append(f"The [research ledger]({LEDGER}) holds the full validation trail: revisions, searches, "
                  "the component inventory, reconciled findings, decisions and limitations.")
     return lines
-
-
-DECISION_FIELDS = ("decision", "why", "position", "evidence")
-DECISION_COLUMNS = ["Why it matters", "Established position", "Evidence"]
-
-
-def decision_rows(content, key, items):
-    """The rows of a decisions table: the decision, why it matters, the
-    established position and the evidence, which carries the ledger link."""
-    rows = []
-    for index, item in enumerate(items, 1):
-        item = item if isinstance(item, dict) else {}
-        rows.append([content.text(item.get(field), f"{key} {index}.{field}",
-                                  inline=True, trace=field == "evidence")
-                     for field in DECISION_FIELDS])
-    return rows
-
-
-def key_decisions(content):
-    items = content.data.get("key_decisions")
-    if not isinstance(items, list):
-        content.errors.append(
-            "key_decisions: needs a list, empty when no item is evidenced")
-        return []
-    if not items:
-        return ["No decision, blocker or risk in the inspected evidence warrants technical-leadership attention."]
-    return ["These items describe implications of the linked evidence.",
-            table(["Decision or risk"] + DECISION_COLUMNS, decision_rows(content, "key_decisions", items))]
-
-
-def skipped(content):
-    """The dimensions content.json skips, checked."""
-    skip = content.data.get("skip", [])
-    if not isinstance(skip, list) or not all(isinstance(d, str) for d in skip):
-        content.errors.append(
-            "skip: must list the dimensions left out, architecture or evolution")
-        return []
-    for dimension in skip:
-        if dimension not in SKIPS:
-            content.errors.append(
-                f"skip: only {' or '.join(SKIPS)} can be skipped, not {dimension!r}")
-    return [d for d in SKIPS if d in skip]
 
 
 def main(argv=None):

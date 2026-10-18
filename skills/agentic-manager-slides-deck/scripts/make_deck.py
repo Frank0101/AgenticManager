@@ -93,60 +93,6 @@ def make_deck(deck, open_page=False):
     return result
 
 
-def build(content, texts, image_credits, depth=1):
-    """The deck's HTML page from valid content and the slides' HTML problems()
-    returned for it, crediting each downloaded image in
-    `image_credits` on every slide that shows it, `depth` folders below the
-    skill's output folder."""
-    charts, rings = content.get("charts", {}), content.get("rings", {})
-    style = "\n".join(content.get("style", []))
-    slides = []
-    for number, (slide, text) in enumerate(zip(content["slides"], texts), 1):
-        classes = " ".join(["slide"] + slide.get("class", "").split())
-        body = TOKEN.sub(lambda match: place(match, rings, depth),
-                         text.replace(PAGE, str(number)))
-        shown = [name for name in placed_images(text) if name in image_credits]
-        if shown:
-            line = "; ".join(credit_line(
-                image_credits[name]) for name in shown)
-            body += f'\n<p class="asset-credit">{html.escape(line)}</p>'
-        slides.append(f'      <div class="{classes}">\n{body}\n      </div>')
-    scripts = [ZOOM_SCRIPT]
-    if charts:
-        data = json.dumps(charts, ensure_ascii=False).replace("<", "\\u003c")
-        scripts.append(CHART_SCRIPT.format(src=CHART_JS, charts=data))
-    return f"""<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{html.escape(content["title"].strip())}</title>
-    <style>
-{BASE_CSS}
-
-      /* ── presentation-specific styles below ── */
-{style}
-    </style>
-  </head>
-  <body>
-{TOOLBAR}
-
-    <div class="slides-wrapper">
-{chr(10).join(slides)}
-    </div>
-
-{chr(10).join(scripts)}
-  </body>
-</html>
-"""
-
-
-# An image token as the whole value of an attribute that links an image: the
-# one place the page's links, and so the check, can see it.
-PLACED_ASSET = re.compile(
-    rf"""\b(?:{"|".join(URL_ATTRIBUTES)})\s*=\s*(["'])\{{\{{asset:[^{{}}]*\}}\}}\1""", re.I)
-
-
 def problems(content, assets=frozenset()):
     """(errors, slides' HTML) of slides.json's content, `assets` being the images in _assets; errors name
     the field to fix."""
@@ -225,72 +171,17 @@ def problems(content, assets=frozenset()):
     return errors, texts
 
 
-class SlideParser(HTMLParser):
-    """Reads one slide's HTML: the first problem with it."""
-
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.open, self.problem = [], None
-
-    def fail(self, message):
-        if not self.problem:
-            self.problem = f"line {self.getpos()[0]}: {message}"
-
-    def handle_starttag(self, tag, attrs):
-        self.read_tag(tag, attrs)
-        if tag not in VOID:
-            self.open.append((tag, self.getpos()[0]))
-
-    def handle_startendtag(self, tag, attrs):
-        # A self-closed tag, such as SVG's <path />.
-        self.read_tag(tag, attrs)
-
-    def read_tag(self, tag, attrs):
-        if tag in FORBIDDEN:
-            self.fail(f"<{tag}> isn't allowed in a slide: put CSS in `style`, and charts and rings "
-                      "in their own fields")
-        for name, value in attrs:
-            value = (value or "").strip()
-            if name in URL_ATTRIBUTES and REMOTE.match(value):
-                self.fail(f"<{tag} {name}> loads a remote file, which an offline deck can't show: "
-                          "add the image with add_asset.py and write {{asset:<name>}}, or use an "
-                          "[IMAGE: ...] placeholder or inline SVG")
-            elif name in URL_ATTRIBUTES and value and not value.startswith("data:"):
-                self.fail(f"<{tag} {name}> loads {value!r}: add the image with add_asset.py "
-                          "and write {{asset:<name>}}")
-            elif name == "style" and REMOTE_CSS.search(value):
-                self.fail(f"<{tag} style> loads a remote file")
-            elif name == "class" and "mermaid" in value.split():
-                self.fail(
-                    f"<{tag} class='mermaid'>: draw a diagram as inline SVG, in the deck's look")
-
-    def handle_endtag(self, tag):
-        if tag in VOID:
-            return
-        if not self.open or self.open[-1][0] != tag:
-            expected = (f"<{self.open[-1][0]}> opened on line {self.open[-1][1]} is still open"
-                        if self.open else "nothing is open")
-            self.fail(f"</{tag}> closes nothing: {expected}")
-            return
-        self.open.pop()
-
-    def finish(self):
-        self.close()
-        if self.open and not self.problem:
-            tag, line = self.open[-1]
-            self.problem = f"<{tag}> opened on line {line} is never closed"
+# An image token as the whole value of an attribute that links an image: the
+# one place the page's links, and so the check, can see it.
+PLACED_ASSET = re.compile(
+    rf"""\b(?:{"|".join(URL_ATTRIBUTES)})\s*=\s*(["'])\{{\{{asset:[^{{}}]*\}}\}}\1""", re.I)
 
 
-def read_slide(text):
-    """The first problem with one slide's HTML, or None."""
-    parser = SlideParser()
-    parser.feed(text)
-    parser.finish()
-    return parser.problem
-
-
-def is_number(value) -> TypeIs[int | float]:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+def unknown(item, allowed, where, errors):
+    extra = sorted(set(item) - allowed)
+    if extra:
+        errors.append(f"{where}: unknown field(s) {', '.join(extra)} "
+                      f"(allowed: {', '.join(sorted(allowed))})")
 
 
 def lines(value, where, errors, required=True):
@@ -303,13 +194,6 @@ def lines(value, where, errors, required=True):
         errors.append(f"{where}: is empty")
         return None
     return text
-
-
-def unknown(item, allowed, where, errors):
-    extra = sorted(set(item) - allowed)
-    if extra:
-        errors.append(f"{where}: unknown field(s) {', '.join(extra)} "
-                      f"(allowed: {', '.join(sorted(allowed))})")
 
 
 def check_chart(chart, where, errors):
@@ -390,24 +274,129 @@ def check_ring(ring, where, errors):
                           f"{narrowest:g}° wide")
 
 
-def number(value):
-    """A coordinate for SVG: at most 2 decimals, no trailing zeros."""
-    text = f"{value:.2f}".rstrip("0").rstrip(".")
-    return "0" if text == "-0" else text
+def is_number(value) -> TypeIs[int | float]:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def segment_path(cx, cy, outer, inner, start, end):
-    """The SVG path of one ring segment from `start` to `end` degrees,
-    clockwise from 12 o'clock, between the radii `inner` and `outer`."""
-    def point(radius, degrees):
-        angle = math.radians(degrees - 90)
-        return number(cx + radius * math.cos(angle)), number(cy + radius * math.sin(angle))
-    (ox1, oy1), (ox2, oy2) = point(outer, start), point(outer, end)
-    (ix2, iy2), (ix1, iy1) = point(inner, end), point(inner, start)
-    large = 1 if end - start > 180 else 0
-    R, r = number(outer), number(inner)
-    return (f"M{ox1},{oy1} A{R},{R},0,{large},1,{ox2},{oy2} "
-            f"L{ix2},{iy2} A{r},{r},0,{large},0,{ix1},{iy1} Z")
+def read_slide(text):
+    """The first problem with one slide's HTML, or None."""
+    parser = SlideParser()
+    parser.feed(text)
+    parser.finish()
+    return parser.problem
+
+
+class SlideParser(HTMLParser):
+    """Reads one slide's HTML: the first problem with it."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.open, self.problem = [], None
+
+    def fail(self, message):
+        if not self.problem:
+            self.problem = f"line {self.getpos()[0]}: {message}"
+
+    def handle_starttag(self, tag, attrs):
+        self.read_tag(tag, attrs)
+        if tag not in VOID:
+            self.open.append((tag, self.getpos()[0]))
+
+    def handle_startendtag(self, tag, attrs):
+        # A self-closed tag, such as SVG's <path />.
+        self.read_tag(tag, attrs)
+
+    def read_tag(self, tag, attrs):
+        if tag in FORBIDDEN:
+            self.fail(f"<{tag}> isn't allowed in a slide: put CSS in `style`, and charts and rings "
+                      "in their own fields")
+        for name, value in attrs:
+            value = (value or "").strip()
+            if name in URL_ATTRIBUTES and REMOTE.match(value):
+                self.fail(f"<{tag} {name}> loads a remote file, which an offline deck can't show: "
+                          "add the image with add_asset.py and write {{asset:<name>}}, or use an "
+                          "[IMAGE: ...] placeholder or inline SVG")
+            elif name in URL_ATTRIBUTES and value and not value.startswith("data:"):
+                self.fail(f"<{tag} {name}> loads {value!r}: add the image with add_asset.py "
+                          "and write {{asset:<name>}}")
+            elif name == "style" and REMOTE_CSS.search(value):
+                self.fail(f"<{tag} style> loads a remote file")
+            elif name == "class" and "mermaid" in value.split():
+                self.fail(
+                    f"<{tag} class='mermaid'>: draw a diagram as inline SVG, in the deck's look")
+
+    def handle_endtag(self, tag):
+        if tag in VOID:
+            return
+        if not self.open or self.open[-1][0] != tag:
+            expected = (f"<{self.open[-1][0]}> opened on line {self.open[-1][1]} is still open"
+                        if self.open else "nothing is open")
+            self.fail(f"</{tag}> closes nothing: {expected}")
+            return
+        self.open.pop()
+
+    def finish(self):
+        self.close()
+        if self.open and not self.problem:
+            tag, line = self.open[-1]
+            self.problem = f"<{tag}> opened on line {line} is never closed"
+
+
+def build(content, texts, image_credits, depth=1):
+    """The deck's HTML page from valid content and the slides' HTML problems()
+    returned for it, crediting each downloaded image in
+    `image_credits` on every slide that shows it, `depth` folders below the
+    skill's output folder."""
+    charts, rings = content.get("charts", {}), content.get("rings", {})
+    style = "\n".join(content.get("style", []))
+    slides = []
+    for number, (slide, text) in enumerate(zip(content["slides"], texts), 1):
+        classes = " ".join(["slide"] + slide.get("class", "").split())
+        body = TOKEN.sub(lambda match: place(match, rings, depth),
+                         text.replace(PAGE, str(number)))
+        shown = [name for name in placed_images(text) if name in image_credits]
+        if shown:
+            line = "; ".join(credit_line(
+                image_credits[name]) for name in shown)
+            body += f'\n<p class="asset-credit">{html.escape(line)}</p>'
+        slides.append(f'      <div class="{classes}">\n{body}\n      </div>')
+    scripts = [ZOOM_SCRIPT]
+    if charts:
+        data = json.dumps(charts, ensure_ascii=False).replace("<", "\\u003c")
+        scripts.append(CHART_SCRIPT.format(src=CHART_JS, charts=data))
+    return f"""<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{html.escape(content["title"].strip())}</title>
+    <style>
+{BASE_CSS}
+
+      /* ── presentation-specific styles below ── */
+{style}
+    </style>
+  </head>
+  <body>
+{TOOLBAR}
+
+    <div class="slides-wrapper">
+{chr(10).join(slides)}
+    </div>
+
+{chr(10).join(scripts)}
+  </body>
+</html>
+"""
+
+
+def place(match, rings, depth):
+    kind, ident = match[1], match[2]
+    if kind == "chart":
+        return f'<div class="chart"><canvas id="chart-{ident}"></canvas></div>'
+    if kind == "asset":
+        return html.escape(asset_link(ident, depth))
+    return ring_svg(ident, rings[ident])
 
 
 def ring_svg(ident, ring):
@@ -428,13 +417,24 @@ def ring_svg(ident, ring):
             f'height="{side}">{"".join(paths)}</svg>')
 
 
-def place(match, rings, depth):
-    kind, ident = match[1], match[2]
-    if kind == "chart":
-        return f'<div class="chart"><canvas id="chart-{ident}"></canvas></div>'
-    if kind == "asset":
-        return html.escape(asset_link(ident, depth))
-    return ring_svg(ident, rings[ident])
+def number(value):
+    """A coordinate for SVG: at most 2 decimals, no trailing zeros."""
+    text = f"{value:.2f}".rstrip("0").rstrip(".")
+    return "0" if text == "-0" else text
+
+
+def segment_path(cx, cy, outer, inner, start, end):
+    """The SVG path of one ring segment from `start` to `end` degrees,
+    clockwise from 12 o'clock, between the radii `inner` and `outer`."""
+    def point(radius, degrees):
+        angle = math.radians(degrees - 90)
+        return number(cx + radius * math.cos(angle)), number(cy + radius * math.sin(angle))
+    (ox1, oy1), (ox2, oy2) = point(outer, start), point(outer, end)
+    (ix2, iy2), (ix1, iy1) = point(inner, end), point(inner, start)
+    large = 1 if end - start > 180 else 0
+    R, r = number(outer), number(inner)
+    return (f"M{ox1},{oy1} A{R},{R},0,{large},1,{ox2},{oy2} "
+            f"L{ix2},{iy2} A{r},{r},0,{large},0,{ix1},{iy1} Z")
 
 
 BASE_CSS = f"""      * {{

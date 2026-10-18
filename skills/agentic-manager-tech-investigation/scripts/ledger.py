@@ -108,100 +108,15 @@ FINDINGS_HEADING = f"## {LEDGER_SECTIONS[4]}"
 TEXT_SECTIONS = ["Resume here", "Boundary, method and access", "Reflection"]
 
 
-def render(cells, anchor=False):
-    """A table row; with `anchor`, its ID carries the anchor citations link to."""
-    if anchor and re.fullmatch(r"[A-Z]\d+", cells[0]):
-        cells = [anchored(cells[0]), *cells[1:]]
-    return table_row(cells)
-
-
-def section(lines, heading):
-    """(index of the heading, index of the next heading or the end); exits if
-    the ledger has no such section."""
-    span = section_span(lines, heading)
-    if span is None:
-        raise SystemExit(f"the ledger has no {heading!r} section")
-    return span
-
-
-def table_span(lines, heading):
-    """(start, end) of the first table under `heading`, or None."""
-    start, end = section(lines, heading)
-    first = next((i for i in range(start + 1, end)
-                 if lines[i].startswith("|")), None)
-    if first is None:
-        return None
-    last = first
-    while last < end and lines[last].startswith("|"):
-        last += 1
-    return first, last
-
-
-def drop_placeholder(lines, after, end):
-    """Remove the first non-blank line in lines[after:end] if it is a placeholder."""
-    for i in range(after, end):
-        if lines[i].strip():
-            if lines[i].strip() in PLACEHOLDERS:
-                del lines[i]
-            return
-
-
-def table_rows(lines, name):
-    """The data rows of the table `name`, as cells; [] while it has none."""
-    return ledger_rows("\n".join(lines), TABLES[name][0])
-
-
-def write_rows(lines, name, rows, header=None):
-    """Put `rows` in the table `name`, creating it under its heading if there is none."""
-    heading, default, letters = TABLES[name]
-    anchored_rows = bool(letters)
-    span = table_span(lines, heading)
-    if span is None:
-        start, end = section(lines, heading)
-        drop_placeholder(lines, start + 1, end)
-        block = ["", render(header or default), render(
-            ["---"] * len(header or default))]
-        block += [render(r, anchored_rows) for r in rows] + [""]
-        lines[start + 1:start + 1] = block
-        return
-    head = lines[span[0]:span[0] + 2]
-    lines[span[0]:span[1]] = head + [render(r, anchored_rows) for r in rows]
-    table_end = span[0] + 2 + len(rows)
-    _, end = section(lines, heading)
-    if rows:
-        drop_placeholder(lines, table_end, end)
-    elif not any(line.strip() in PLACEHOLDERS for line in lines[table_end:end]):
-        lines[table_end:table_end] = ["", "None."]
-
-
-def header_of(lines, name):
-    span = table_span(lines, TABLES[name][0])
-    return table_cells(lines[span[0]]) if span else TABLES[name][1]
-
-
-def areas_of(row):
-    """The evidence areas a source or gap row names in its last cell, Areas."""
-    return [a for a in (x.strip() for x in row[-1].split(",")) if a]
-
-
-def check_areas(name, header, cells):
-    """The Areas cell of a source or a gap names evidence areas, comma separated."""
-    if header[-1] != "Areas" or not cells:
-        return
-    wrong = [a for a in areas_of(cells) if a not in AREAS]
-    if wrong:
-        raise SystemExit(f"{name} Areas must be some of: " +
-                         ", ".join(AREAS) + "; not " + ", ".join(wrong))
-
-
-# How every help entry calls the script: the path the skill pre-approves.
-CALL = "<scripts>/ledger.py"
-
-
 def heredoc(command, body):
     """A command to copy, its input in a quoted here-document, so nothing in
     the input, such as a link's brackets or quotes, needs escaping."""
     return "\n".join([f"  {CALL} {command} <<'EOF'", *(f"  {line}" for line in body.split("\n")), "  EOF"])
+
+
+def full_help():
+    """Every table's entry, then every other command's."""
+    return "\n\n".join([*(table_help(name) for name in TABLES), *COMMAND_HELP.values()])
 
 
 def table_help(name):
@@ -224,6 +139,141 @@ def table_help(name):
     out.append(f"  to edit a row, read it as written with: {CALL} show --investigation <investigation> --raw "
                + (f"--id {letters}01" if letters else f"--table {name}"))
     return "\n".join(out)
+
+
+def brief(lines):
+    """What writing the report reads, from the ledger as it stands: the boundary
+    and Resume here, each source's exact reference with its limits, every finding, and the
+    components, decisions and gaps. Links show their text, IDs are plain, and a
+    source's reference keeps its URL for the report's references."""
+    def plain(text):
+        return link_text(strip_anchors(text))
+
+    out = []
+    for name in ("Boundary, method and access", "Resume here"):
+        start, end = text_span(lines, name)
+        out += [f"## {name}", "",
+                plain("\n".join(lines[start + 1:end]).strip()), ""]
+    out += ["## Sources: exact references", ""]
+    # A source's limits or what supersedes it decides a historical reference.
+    out += [f"{row[0]}: {as_written(lines, row[2])}" + ("" if row[5].strip() in ("", "None") else
+                                                        f" ({plain(row[5])})")
+            for row in table_rows(lines, "sources")] or ["None."]
+    blocks, _, _ = findings_of(lines)
+    out += ["", FINDINGS_HEADING, ""]
+    out += ["\n".join(line for line in plain(blocks[k]).split("\n") if line.strip()) + "\n"
+            for k in sorted(blocks, key=id_order)] or ["None.", ""]
+    for name in ("components", "decisions", "gaps"):
+        rows = table_rows(lines, name)
+        out += [TABLES[name][0], ""]
+        out += ([" | ".join(header_of(lines, name))] + [plain(" | ".join(row)) for row in rows]
+                if rows else ["None."])
+        out.append("")
+    return "\n".join(out).rstrip() + "\n"
+
+
+def show_raw(lines, ident, name, heading):
+    """A section, a finding, a row or a table's rows as the input their writing
+    command reads."""
+    if heading:
+        start, end = text_span(lines, heading)
+        return as_written(lines, "\n".join(lines[start + 1:end]).strip())
+    if name:
+        if name == "findings":
+            raise SystemExit("show --raw takes a finding by --id")
+        return "\n".join(json.dumps([as_written(lines, c) for c in row[1 if TABLES[name][2] else 0:]],
+                                    ensure_ascii=False) for row in table_rows(lines, name)) or "None."
+    _, found = record(lines, ident)
+    if isinstance(found, list):
+        return json.dumps([as_written(lines, c) for c in found[1:]], ensure_ascii=False)
+    head, *body = found.split("\n")
+    fields = {"title": head.split(" — ", 1)[1]}
+    for line in body:
+        if field := re.match(r"- \*\*(.+?):\*\* (.*)", line):
+            fields[field[1]] = field[2]
+    return json.dumps({k: as_written(lines, v) for k, v in fields.items()}, ensure_ascii=False, indent=2)
+
+
+def record(lines, ident):
+    """("findings", the finding's block) or (table, row) of the record
+    `ident`; exits if the ledger has none."""
+    if re.fullmatch(r"F\d+", ident):
+        blocks, _, _ = findings_of(lines)
+        if ident not in blocks:
+            raise SystemExit(f"no finding {ident}")
+        return "findings", blocks[ident]
+    for table in TABLES:
+        if TABLES[table][2] is None:
+            continue
+        for row in table_rows(lines, table):
+            if row[0].casefold() == ident.casefold():
+                return table, row
+    raise SystemExit(f"no record {ident}")
+
+
+def as_written(lines, text):
+    """`text` in the form it was written in: IDs plain and links inline, as
+    the writing commands read them. Writing it back stores it unchanged, so an
+    edit needs no undoing of the stored form by hand."""
+    definitions = links_section(lines)
+
+    def inline(match):
+        url = definitions.get((match[3] or match[2]).casefold())
+        return f"{match[1]}[{match[2]}]({url})" if url else match[0]
+    return REFERENCE_LINK.sub(inline, ID_CITATION.sub(r"\1", strip_anchors(text)))
+
+
+def show(lines, ident, name):
+    if name == "findings":
+        blocks, _, _ = findings_of(lines)
+        return "\n".join(b.splitlines()[0].removeprefix("### ") for _, b in
+                         sorted(blocks.items(), key=lambda kv: id_order(kv[0]))) or "No findings."
+    if name:
+        return "\n".join(table_markdown(lines, name)) or "None."
+    table, found = record(lines, ident)
+    if table == "findings":
+        return found
+    return "\n".join([f"{table} {found[0]}"] + [f"{h}: {c}" for h, c in
+                                                zip(header_of(lines, table)[1:], found[1:])])
+
+
+def table_markdown(lines, name):
+    span = table_span(lines, TABLES[name][0])
+    return lines[span[0]:span[1]] if span else []
+
+
+# How every help entry calls the script: the path the skill pre-approves.
+CALL = "<scripts>/ledger.py"
+
+
+def find(lines, text):
+    needle = text.casefold()
+    hits = []
+    for table in TABLES:
+        for row in table_rows(lines, table):
+            cells = " | ".join(row)
+            if needle in cells.casefold():
+                hits.append(f"{table} {row[0]}: {snippet(cells, needle)}")
+    blocks, _, _ = findings_of(lines)
+    for ident, block in sorted(blocks.items(), key=lambda kv: id_order(kv[0])):
+        if needle in block.casefold():
+            line = next(line for line in block.splitlines()
+                        if needle in line.casefold())
+            hits.append(f"finding {ident}: {snippet(line, needle)}")
+    start, end = section(lines, LINKS_HEADING)
+    for line in lines[start + 1:end]:
+        if line.startswith("[") and needle in line.casefold():
+            hits.append(f"link {line}")
+    if not hits:
+        return f"no match for {text!r}"
+    shown = hits[:40]
+    return "\n".join(shown + ([f"... and {len(hits) - 40} more"] if len(hits) > 40 else []))
+
+
+def snippet(text, needle, width=110):
+    at = text.casefold().find(needle)
+    start = max(0, at - 30)
+    return ("..." if start else "") + text[start:start + width].replace("\n", " ")
 
 
 FINDING_EXAMPLE = {"title": "Search API serves queries from the index",
@@ -296,457 +346,6 @@ COMMAND_HELP = {
 }
 
 
-def full_help():
-    """Every table's entry, then every other command's."""
-    return "\n\n".join([*(table_help(name) for name in TABLES), *COMMAND_HELP.values()])
-
-
-def check_cells(lines, name, row):
-    """Exit if a cell holds a value its column doesn't allow."""
-    problem = None
-    if name == "components":
-        problem = status_problem(row[0], row[4])
-    elif name == "file-coverage":
-        problem = depth_problem(row[2]) or (
-            coverage_material_missing(row) and f"for {row[0]}: link the material read in Material")
-    elif name == "queue-completed":
-        problem = outcome_problem(row[0], row[-1], row[2])
-    elif name == "gaps":
-        problem = (blocked := gap_problem(row)) and f"{blocked}. {GAP_FIX}"
-    elif name == "sources" and source_reference_missing(row):
-        problem = f"{row[0]}: {SOURCE_LINK_FIX}"
-    if problem:
-        raise SystemExit(f"{name} {problem}")
-    if name == "components" and unread_components([row], table_rows(lines, "file-coverage"), links_section(lines)):
-        raise SystemExit(unread_message([row[0]]))
-    # A search's query is the one backticked text allowed outside a link.
-    check_backticks(lines, [c for i, c in enumerate(
-        row) if not (name == "sources" and i == 2)], name)
-
-
-def check_backticks(lines, values, where):
-    """Exit if `values` put a reference in backticks outside a link."""
-    spans = [span for value in values for span in unlinked_backticks(
-        value, "\n".join(lines))]
-    if spans:
-        raise SystemExit(backtick_error(where, spans))
-
-
-def link_ids(lines):
-    """Write every citation of a recorded ID as a link to its anchor, so any ID
-    can be followed to its row or finding. An ID cell holds the anchor itself."""
-    recorded = recorded_ids("\n".join(lines))
-    for i, line in enumerate(lines):
-        if line.startswith("|"):
-            cells = [c if ID_ANCHOR.search(c) else linked_ids(
-                c, recorded) for c in table_cells(line, keep_anchors=True)]
-            lines[i] = table_row(cells)
-        else:
-            lines[i] = linked_ids(line, recorded)
-
-
-def upgrade_tickets(lines):
-    """Link each ticket key written as code, `PROJ-7`, whose project the ledger
-    now links: it was written before a ticket of its project was."""
-    sites = ticket_sites(links_section(lines).values())
-    if not sites:
-        return
-    for i in range(len(lines)):
-        upgraded = upgraded_tickets(lines[i], sites)
-        if upgraded != lines[i]:
-            lines[i] = reference_links(lines, upgraded)
-
-
-def matching_row(rows, name, match):
-    """The index of the one row of `rows` containing `match`; exits if none or
-    several do. A file coverage row has no ID, so its text identifies it."""
-    found = [i for i, r in enumerate(rows) if match in " | ".join(r)]
-    if not found:
-        raise SystemExit(f"no {name} row containing {match!r}")
-    if len(found) > 1:
-        raise SystemExit(
-            f"{match!r} matches {len(found)} rows; use more of the text")
-    return found[0]
-
-
-def set_row(lines, name, row_id, cells, match=None):
-    header = header_of(lines, name)
-    row = ([row_id] if row_id else []) + list(cells)
-    if len(row) != len(header):
-        raise SystemExit(f"{name} has {len(header)} columns, counting the ID if it has one; got {len(row)}.\n"
-                         + table_help(name))
-    check_areas(name, header, row)
-    check_cells(lines, name, row)
-    rows = table_rows(lines, name)
-    if row_id:
-        rows = [r for r in rows if r[0] != row_id] + [row]
-        rows.sort(key=lambda row: id_order(row[0]))
-    elif match:
-        rows[matching_row(rows, name, match)] = row
-    else:
-        rows.append(row)
-    write_rows(lines, name, rows, header)
-
-
-def find_row(lines, row_id):
-    for name in QUEUE_TABLES:
-        for row in table_rows(lines, name):
-            if row[0] == row_id:
-                return name, row
-    raise SystemExit(f"no queue row {row_id}")
-
-
-def move_row(lines, row_id, target, sets):
-    source, row = find_row(lines, row_id)
-    header = header_of(lines, source)
-    for assignment in sets:
-        column, _, value = assignment.partition("=")
-        names = [h.casefold() for h in header]
-        if column.casefold() not in names:
-            raise SystemExit(
-                f"no column {column!r}; the queue's are: " + " | ".join(header))
-        row[names.index(column.casefold())] = value
-    write_rows(lines, source, [r for r in table_rows(
-        lines, source) if r[0] != row_id], header)
-    set_row(lines, target, row[0], row[1:])
-
-
-def next_id(text, kind):
-    if kind == "F":
-        found = [ident[1:] for ident in FINDING_START.findall(text)]
-    else:
-        found = re.findall(rf"{ROW_START}{kind}(\d+)\s*\|", text, re.M)
-    width = max([2] + [len(n) for n in found])
-    return f"{kind}{max([0] + [int(n) for n in found]) + 1:0{width}d}"
-
-
-def links_section(lines):
-    """{key: URL} of the Links section, keys in lower case."""
-    span = section_span(lines, LINKS_HEADING)
-    return link_definitions("\n".join(lines[span[0] + 1:span[1]])) if span else {}
-
-
-def reference_links(lines, text):
-    """`text` with each inline link [text](url) written as the reference link
-    [text][key] the ledger uses, its key defined in the Links section: the
-    key the URL already has, else one made from the text. Writing a link inline
-    costs no separate `link` call, and a URL still lives in one place."""
-    def reference(match):
-        image, label, url = match[1], match[2], match[3].strip("<>")
-        if image or not re.match(r"https?://", url):
-            return match[0]
-        definitions = links_section(lines)
-        key = next((k for k, v in definitions.items() if v == url), None)
-        if key is None:
-            key = free_name(slug(label.casefold()) or "link",
-                            definitions.__contains__)
-            set_link(lines, key, url)
-        return f"[{label}][{key}]"
-    return INLINE_LINK.sub(reference, text)
-
-
-def linked(lines, values):
-    """`values` with every link written by reference, and ticket keys and
-    owner/repo#123 linked. Inline links go first, so a ticket or a page of a
-    code host linked in one value lets the same project's keys or host's pull
-    requests be linked in the others.
-    Exits, writing nothing, if a reference can't be linked."""
-    values = [reference_links(lines, v) for v in values]
-    out, unresolved = [], []
-    for value in values:
-        definitions = links_section(lines)
-        value, missing = autolink(value, definitions)
-        # A key the agent wrote as code, of a project the ledger links, is linked too.
-        sites = ticket_sites(definitions.values())
-        value = "\n".join(upgraded_tickets(line, sites)
-                          for line in value.split("\n"))
-        unresolved += missing
-        out.append(reference_links(lines, value))
-    if unresolved:
-        raise SystemExit("couldn't link " + unresolved_message(unresolved))
-    return out
-
-
-def set_link(lines, key, url):
-    if LINKS_HEADING not in [line.strip() for line in lines]:
-        lines += ["", LINKS_HEADING, "", "None yet."]
-    start, end = section(lines, LINKS_HEADING)
-    definitions = links_section(lines)
-    definitions[key] = url
-    body = ["", *(f"[{k}]: {v}" for k, v in sorted(definitions.items(),
-                  key=lambda kv: kv[0].casefold())), ""]
-    lines[start + 1:end] = body
-
-
-def h2_end(lines, start):
-    """Index of the next ## heading after `start`, or the end."""
-    return next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
-
-
-def findings_of(lines):
-    """({ID: block text}, start, end) of the findings section."""
-    start, _ = section(lines, FINDINGS_HEADING)
-    end = h2_end(lines, start)
-    return finding_blocks("\n".join(lines[start + 1:end])), start, end
-
-
-def write_findings(lines, blocks, start, end):
-    body = "\n\n".join(blocks[k] for k in sorted(
-        blocks, key=id_order)) if blocks else "None yet."
-    lines[start + 1:end] = ["", *body.split("\n"), ""]
-
-
-def finding_block(ident, fields):
-    wanted = ["title", *FINDING_FIELDS]
-    missing = [f for f in wanted if not isinstance(
-        fields.get(f), str) or not fields[f].strip()]
-    extra = [f for f in fields if f not in wanted + FINDING_OPTIONAL]
-    if missing or extra:
-        raise SystemExit("ledger.py help --table findings shows the input and a command to copy. "
-                         "A finding needs these fields, each text: " +
-                         ", ".join(wanted)
-                         + "; it may also have " + ", ".join(FINDING_OPTIONAL)
-                         + (f"; missing {', '.join(missing)}" if missing else "")
-                         + (f"; unknown {', '.join(extra)}" if extra else ""))
-    clean = {k: " ".join(v.split()) for k, v in fields.items()}
-    return "\n".join([f"### {ident} — {clean['title']}", "", anchor_tag(ident), "",
-                      *(f"- **{f}:** {clean[f]}" for f in FINDING_FIELDS + FINDING_OPTIONAL if f in clean)])
-
-
-def set_finding(lines, ident, fields):
-    blocks, start, end = findings_of(lines)
-    blocks[ident] = finding_block(ident, fields)
-    write_findings(lines, blocks, start, end)
-
-
-def remove_finding(lines, ident):
-    blocks, start, end = findings_of(lines)
-    if ident not in blocks:
-        raise SystemExit(f"no finding {ident}")
-    del blocks[ident]
-    write_findings(lines, blocks, start, end)
-
-
-def remove_row(lines, name, row_id, match):
-    rows = table_rows(lines, name)
-    if row_id:
-        kept = [r for r in rows if r[0] != row_id]
-        if len(kept) == len(rows):
-            raise SystemExit(f"no {name} row {row_id}")
-    else:
-        index = matching_row(rows, name, match)
-        kept = rows[:index] + rows[index + 1:]
-    write_rows(lines, name, kept, header_of(lines, name))
-
-
-def remove_link(lines, key):
-    start, end = section(lines, LINKS_HEADING)
-    kept = [line for line in lines[start + 1:end]
-            if not ((match := DEFINITION.match(line)) and match[1].casefold() == key)]
-    if len(kept) == len(lines[start + 1:end]):
-        raise SystemExit(f"no link {key!r}")
-    if not any(line.startswith("[") for line in kept):
-        kept = ["", "None yet.", ""]
-    lines[start + 1:end] = kept
-
-
-def still_cited(lines, ident):
-    """Where `ident` is still written: a table row's ID, else a line number. Run
-    after a finding is removed, so nothing cites a finding that is gone unseen."""
-    found = []
-    for i, line in enumerate(lines):
-        if re.search(rf"\b{ident}\b", line):
-            found.append(table_cells(line)[0] if line.startswith(
-                "|") else f"line {i + 1}")
-    return found
-
-
-def sync_sources(lines):
-    """Write each source row's `Findings: ...` from the Evidence lines of the findings."""
-    cited = cited_sources("\n".join(lines))
-    rows = table_rows(lines, "sources")
-    for row in rows:
-        row[4] = SOURCE_FINDINGS.sub("", row[4])
-        if id_order(row[0])[1] in cited:
-            found = sorted(cited[id_order(row[0])[1]], key=id_order)
-            row[4] = f"{row[4].rstrip()} Findings: {', '.join(found)}.".strip()
-    write_rows(lines, "sources", rows, header_of(lines, "sources"))
-
-
-def text_span(lines, name):
-    """(index of its heading, index of the next ## heading or the end) of the
-    text section `name`; exits if it isn't one."""
-    if name not in TEXT_SECTIONS:
-        raise SystemExit("--section is one of: " + ", ".join(TEXT_SECTIONS))
-    start, _ = section(lines, f"## {name}")
-    return start, h2_end(lines, start)
-
-
-def set_text(lines, name, text):
-    start, end = text_span(lines, name)
-    lines[start + 1:end] = ["", *text.strip().split("\n"), ""]
-
-
-def table_markdown(lines, name):
-    span = table_span(lines, TABLES[name][0])
-    return lines[span[0]:span[1]] if span else []
-
-
-ID_CITATION = re.compile(r"\[([A-Z]\d+)\]\(#[a-z]\d+\)")
-
-
-def as_written(lines, text):
-    """`text` in the form it was written in: IDs plain and links inline, as
-    the writing commands read them. Writing it back stores it unchanged, so an
-    edit needs no undoing of the stored form by hand."""
-    definitions = links_section(lines)
-
-    def inline(match):
-        url = definitions.get((match[3] or match[2]).casefold())
-        return f"{match[1]}[{match[2]}]({url})" if url else match[0]
-    return REFERENCE_LINK.sub(inline, ID_CITATION.sub(r"\1", strip_anchors(text)))
-
-
-def record(lines, ident):
-    """("findings", the finding's block) or (table, row) of the record
-    `ident`; exits if the ledger has none."""
-    if re.fullmatch(r"F\d+", ident):
-        blocks, _, _ = findings_of(lines)
-        if ident not in blocks:
-            raise SystemExit(f"no finding {ident}")
-        return "findings", blocks[ident]
-    for table in TABLES:
-        if TABLES[table][2] is None:
-            continue
-        for row in table_rows(lines, table):
-            if row[0].casefold() == ident.casefold():
-                return table, row
-    raise SystemExit(f"no record {ident}")
-
-
-def show_raw(lines, ident, name, heading):
-    """A section, a finding, a row or a table's rows as the input their writing
-    command reads."""
-    if heading:
-        start, end = text_span(lines, heading)
-        return as_written(lines, "\n".join(lines[start + 1:end]).strip())
-    if name:
-        if name == "findings":
-            raise SystemExit("show --raw takes a finding by --id")
-        return "\n".join(json.dumps([as_written(lines, c) for c in row[1 if TABLES[name][2] else 0:]],
-                                    ensure_ascii=False) for row in table_rows(lines, name)) or "None."
-    _, found = record(lines, ident)
-    if isinstance(found, list):
-        return json.dumps([as_written(lines, c) for c in found[1:]], ensure_ascii=False)
-    head, *body = found.split("\n")
-    fields = {"title": head.split(" — ", 1)[1]}
-    for line in body:
-        if field := re.match(r"- \*\*(.+?):\*\* (.*)", line):
-            fields[field[1]] = field[2]
-    return json.dumps({k: as_written(lines, v) for k, v in fields.items()}, ensure_ascii=False, indent=2)
-
-
-def show(lines, ident, name):
-    if name == "findings":
-        blocks, _, _ = findings_of(lines)
-        return "\n".join(b.splitlines()[0].removeprefix("### ") for _, b in
-                         sorted(blocks.items(), key=lambda kv: id_order(kv[0]))) or "No findings."
-    if name:
-        return "\n".join(table_markdown(lines, name)) or "None."
-    table, found = record(lines, ident)
-    if table == "findings":
-        return found
-    return "\n".join([f"{table} {found[0]}"] + [f"{h}: {c}" for h, c in
-                                                zip(header_of(lines, table)[1:], found[1:])])
-
-
-def brief(lines):
-    """What writing the report reads, from the ledger as it stands: the boundary
-    and Resume here, each source's exact reference with its limits, every finding, and the
-    components, decisions and gaps. Links show their text, IDs are plain, and a
-    source's reference keeps its URL for the report's references."""
-    def plain(text):
-        return link_text(strip_anchors(text))
-
-    out = []
-    for name in ("Boundary, method and access", "Resume here"):
-        start, end = text_span(lines, name)
-        out += [f"## {name}", "",
-                plain("\n".join(lines[start + 1:end]).strip()), ""]
-    out += ["## Sources: exact references", ""]
-    # A source's limits or what supersedes it decides a historical reference.
-    out += [f"{row[0]}: {as_written(lines, row[2])}" + ("" if row[5].strip() in ("", "None") else
-                                                        f" ({plain(row[5])})")
-            for row in table_rows(lines, "sources")] or ["None."]
-    blocks, _, _ = findings_of(lines)
-    out += ["", FINDINGS_HEADING, ""]
-    out += ["\n".join(line for line in plain(blocks[k]).split("\n") if line.strip()) + "\n"
-            for k in sorted(blocks, key=id_order)] or ["None.", ""]
-    for name in ("components", "decisions", "gaps"):
-        rows = table_rows(lines, name)
-        out += [TABLES[name][0], ""]
-        out += ([" | ".join(header_of(lines, name))] + [plain(" | ".join(row)) for row in rows]
-                if rows else ["None."])
-        out.append("")
-    return "\n".join(out).rstrip() + "\n"
-
-
-def snippet(text, needle, width=110):
-    at = text.casefold().find(needle)
-    start = max(0, at - 30)
-    return ("..." if start else "") + text[start:start + width].replace("\n", " ")
-
-
-def find(lines, text):
-    needle = text.casefold()
-    hits = []
-    for table in TABLES:
-        for row in table_rows(lines, table):
-            cells = " | ".join(row)
-            if needle in cells.casefold():
-                hits.append(f"{table} {row[0]}: {snippet(cells, needle)}")
-    blocks, _, _ = findings_of(lines)
-    for ident, block in sorted(blocks.items(), key=lambda kv: id_order(kv[0])):
-        if needle in block.casefold():
-            line = next(line for line in block.splitlines()
-                        if needle in line.casefold())
-            hits.append(f"finding {ident}: {snippet(line, needle)}")
-    start, end = section(lines, LINKS_HEADING)
-    for line in lines[start + 1:end]:
-        if line.startswith("[") and needle in line.casefold():
-            hits.append(f"link {line}")
-    if not hits:
-        return f"no match for {text!r}"
-    shown = hits[:40]
-    return "\n".join(shown + ([f"... and {len(hits) - 40} more"] if len(hits) > 40 else []))
-
-
-def coverage(lines):
-    """Lines counting, per evidence area, the sources of each group and the gaps."""
-    sources, gaps = table_rows(lines, "sources"), table_rows(lines, "gaps")
-    tally = {a: {g: 0 for g in GROUPS} for a in AREAS}
-    untagged = []
-    for row in sources:
-        group = next(
-            (g for g in GROUPS if row[1].casefold().startswith(g)), None)
-        tagged = [a for a in areas_of(row) if a in AREAS]
-        if group and not tagged:
-            untagged.append(row[0])
-        for area in tagged:
-            if group:
-                tally[area][group] += 1
-    out = ["coverage (sources per area: " + " / ".join(GROUPS) + "; gaps):"]
-    for area in AREAS:
-        open_gaps = sum(area in areas_of(g) for g in gaps)
-        counts = " / ".join(str(tally[area][g]) for g in GROUPS)
-        thin = [g for g in GROUPS if not tally[area][g]]
-        out.append(f"  {area}: {counts}, {open_gaps} gaps" +
-                   (f"  (none from {', '.join(thin)})" if thin else ""))
-    if untagged:
-        out.append("  sources with no Areas: " + ", ".join(untagged))
-    return out
-
-
 def status(lines, report=False):
     out = []
     queue = {table: table_rows(lines, table) for table in QUEUE_TABLES}
@@ -778,8 +377,30 @@ def status(lines, report=False):
     return "\n".join(out)
 
 
-# How a review round is recorded, as next_step tells it.
-RECORD_ROUND = "ledger.py review --raised <the ready actions its real issues became, or none>"
+def coverage(lines):
+    """Lines counting, per evidence area, the sources of each group and the gaps."""
+    sources, gaps = table_rows(lines, "sources"), table_rows(lines, "gaps")
+    tally = {a: {g: 0 for g in GROUPS} for a in AREAS}
+    untagged = []
+    for row in sources:
+        group = next(
+            (g for g in GROUPS if row[1].casefold().startswith(g)), None)
+        tagged = [a for a in areas_of(row) if a in AREAS]
+        if group and not tagged:
+            untagged.append(row[0])
+        for area in tagged:
+            if group:
+                tally[area][group] += 1
+    out = ["coverage (sources per area: " + " / ".join(GROUPS) + "; gaps):"]
+    for area in AREAS:
+        open_gaps = sum(area in areas_of(g) for g in gaps)
+        counts = " / ".join(str(tally[area][g]) for g in GROUPS)
+        thin = [g for g in GROUPS if not tally[area][g]]
+        out.append(f"  {area}: {counts}, {open_gaps} gaps" +
+                   (f"  (none from {', '.join(thin)})" if thin else ""))
+    if untagged:
+        out.append("  sources with no Areas: " + ", ".join(untagged))
+    return out
 
 
 def next_step(queue, reflection_missing, report):
@@ -807,30 +428,100 @@ def next_step(queue, reflection_missing, report):
     return "hand over: run check_report.py --handover"
 
 
-def record_review(lines, raised="none", stopped=None):
-    """Add the independent review as a completed action answered by the
-    actions it raised, which must already be in the queue, or by the user's
-    choice to stop reviewing."""
-    if stopped is not None:
-        if not stopped.strip():
+def section(lines, heading):
+    """(index of the heading, index of the next heading or the end); exits if
+    the ledger has no such section."""
+    span = section_span(lines, heading)
+    if span is None:
+        raise SystemExit(f"the ledger has no {heading!r} section")
+    return span
+
+
+def h2_end(lines, start):
+    """Index of the next ## heading after `start`, or the end."""
+    return next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+
+
+def text_span(lines, name):
+    """(index of its heading, index of the next ## heading or the end) of the
+    text section `name`; exits if it isn't one."""
+    if name not in TEXT_SECTIONS:
+        raise SystemExit("--section is one of: " + ", ".join(TEXT_SECTIONS))
+    start, _ = section(lines, f"## {name}")
+    return start, h2_end(lines, start)
+
+
+def table_rows(lines, name):
+    """The data rows of the table `name`, as cells; [] while it has none."""
+    return ledger_rows("\n".join(lines), TABLES[name][0])
+
+
+def table_span(lines, heading):
+    """(start, end) of the first table under `heading`, or None."""
+    start, end = section(lines, heading)
+    first = next((i for i in range(start + 1, end)
+                 if lines[i].startswith("|")), None)
+    if first is None:
+        return None
+    last = first
+    while last < end and lines[last].startswith("|"):
+        last += 1
+    return first, last
+
+
+def header_of(lines, name):
+    span = table_span(lines, TABLES[name][0])
+    return table_cells(lines[span[0]]) if span else TABLES[name][1]
+
+
+def findings_of(lines):
+    """({ID: block text}, start, end) of the findings section."""
+    start, _ = section(lines, FINDINGS_HEADING)
+    end = h2_end(lines, start)
+    return finding_blocks("\n".join(lines[start + 1:end])), start, end
+
+
+def links_section(lines):
+    """{key: URL} of the Links section, keys in lower case."""
+    span = section_span(lines, LINKS_HEADING)
+    return link_definitions("\n".join(lines[span[0] + 1:span[1]])) if span else {}
+
+
+def put_batch(lines, items, warnings):
+    """Write each row and finding of `items` in order and return (every value
+    as written, what each item wrote: an ID, or the table of a row without
+    one). Exits at the first item that can't be written, naming it; the ledger
+    is saved only after every item is, so nothing is written then."""
+    if not isinstance(items, list) or not items:
+        raise SystemExit(
+            "the input must be a non-empty JSON list of rows and findings:\n" + COMMAND_HELP["batch"])
+    written, done = [], []
+    for number, item in enumerate(items, 1):
+        try:
+            if not isinstance(item, dict) or ("finding" in item) == ("table" in item):
+                raise SystemExit("each item is a row {\"table\", \"id\", \"match\", \"cells\"} or a "
+                                 "finding {\"finding\", \"id\"}, its optional keys left out")
+            extra = set(item) - ({"finding", "id"} if "finding" in item
+                                 else {"table", "id", "match", "cells"})
+            if extra:
+                raise SystemExit(f"unknown keys {', '.join(sorted(extra))}")
+            if "finding" in item:
+                ident, values = put_finding(
+                    lines, item.get("id"), item["finding"], warnings)
+            else:
+                if item["table"] not in TABLES:
+                    raise SystemExit(
+                        "table is one of: " + ", ".join(TABLES))
+                ident = item.get("id") or item["table"]
+                values = put_row(lines, item["table"], item.get("id"), item.get("match"),
+                                 item.get("cells"))
+        except SystemExit as error:
             raise SystemExit(
-                "--stopped is what the user said when they chose to stop the review")
-        by, outcome = "The user, asked whether to go on", f"{REVIEW_STOPPED} {stopped.strip()}"
-    else:
-        ids = [] if raised.strip().casefold() == "none" else [
-            r.strip() for r in raised.split(",") if r.strip()]
-        queued = {row[0]
-                  for name in QUEUE_TABLES for row in table_rows(lines, name)}
-        missing = [i for i in ids if i not in queued]
-        if missing:
-            raise SystemExit(f"--raised names actions not in the queue: {', '.join(missing)}. "
-                             "Add each doable real issue as a ready action first")
-        by = "Subagent given the skill's brief"
-        outcome = "Raised " + ", ".join(ids) if ids else REVIEW_NONE
-    row_id = next_id("\n".join(lines), "Q")
-    set_row(lines, "queue-completed", row_id,
-            ["Independent review", REVIEW_QUESTION, by, "None", "High", outcome])
-    return row_id
+                f"item {number}: {error.code}\nnothing was written")
+        written += values
+        done.append(ident)
+    sync_sources(lines)
+    return written, done
 
 
 def put_row(lines, name, row_id, match, cells):
@@ -877,41 +568,350 @@ def put_finding(lines, ident, fields, warnings):
     return ident, written
 
 
-def put_batch(lines, items, warnings):
-    """Write each row and finding of `items` in order and return (every value
-    as written, what each item wrote: an ID, or the table of a row without
-    one). Exits at the first item that can't be written, naming it; the ledger
-    is saved only after every item is, so nothing is written then."""
-    if not isinstance(items, list) or not items:
-        raise SystemExit(
-            "the input must be a non-empty JSON list of rows and findings:\n" + COMMAND_HELP["batch"])
-    written, done = [], []
-    for number, item in enumerate(items, 1):
-        try:
-            if not isinstance(item, dict) or ("finding" in item) == ("table" in item):
-                raise SystemExit("each item is a row {\"table\", \"id\", \"match\", \"cells\"} or a "
-                                 "finding {\"finding\", \"id\"}, its optional keys left out")
-            extra = set(item) - ({"finding", "id"} if "finding" in item
-                                 else {"table", "id", "match", "cells"})
-            if extra:
-                raise SystemExit(f"unknown keys {', '.join(sorted(extra))}")
-            if "finding" in item:
-                ident, values = put_finding(
-                    lines, item.get("id"), item["finding"], warnings)
-            else:
-                if item["table"] not in TABLES:
-                    raise SystemExit(
-                        "table is one of: " + ", ".join(TABLES))
-                ident = item.get("id") or item["table"]
-                values = put_row(lines, item["table"], item.get("id"), item.get("match"),
-                                 item.get("cells"))
-        except SystemExit as error:
+def next_id(text, kind):
+    if kind == "F":
+        found = [ident[1:] for ident in FINDING_START.findall(text)]
+    else:
+        found = re.findall(rf"{ROW_START}{kind}(\d+)\s*\|", text, re.M)
+    width = max([2] + [len(n) for n in found])
+    return f"{kind}{max([0] + [int(n) for n in found]) + 1:0{width}d}"
+
+
+def set_finding(lines, ident, fields):
+    blocks, start, end = findings_of(lines)
+    blocks[ident] = finding_block(ident, fields)
+    write_findings(lines, blocks, start, end)
+
+
+def finding_block(ident, fields):
+    wanted = ["title", *FINDING_FIELDS]
+    missing = [f for f in wanted if not isinstance(
+        fields.get(f), str) or not fields[f].strip()]
+    extra = [f for f in fields if f not in wanted + FINDING_OPTIONAL]
+    if missing or extra:
+        raise SystemExit("ledger.py help --table findings shows the input and a command to copy. "
+                         "A finding needs these fields, each text: " +
+                         ", ".join(wanted)
+                         + "; it may also have " + ", ".join(FINDING_OPTIONAL)
+                         + (f"; missing {', '.join(missing)}" if missing else "")
+                         + (f"; unknown {', '.join(extra)}" if extra else ""))
+    clean = {k: " ".join(v.split()) for k, v in fields.items()}
+    return "\n".join([f"### {ident} — {clean['title']}", "", anchor_tag(ident), "",
+                      *(f"- **{f}:** {clean[f]}" for f in FINDING_FIELDS + FINDING_OPTIONAL if f in clean)])
+
+
+def linked(lines, values):
+    """`values` with every link written by reference, and ticket keys and
+    owner/repo#123 linked. Inline links go first, so a ticket or a page of a
+    code host linked in one value lets the same project's keys or host's pull
+    requests be linked in the others.
+    Exits, writing nothing, if a reference can't be linked."""
+    values = [reference_links(lines, v) for v in values]
+    out, unresolved = [], []
+    for value in values:
+        definitions = links_section(lines)
+        value, missing = autolink(value, definitions)
+        # A key the agent wrote as code, of a project the ledger links, is linked too.
+        sites = ticket_sites(definitions.values())
+        value = "\n".join(upgraded_tickets(line, sites)
+                          for line in value.split("\n"))
+        unresolved += missing
+        out.append(reference_links(lines, value))
+    if unresolved:
+        raise SystemExit("couldn't link " + unresolved_message(unresolved))
+    return out
+
+
+def reference_links(lines, text):
+    """`text` with each inline link [text](url) written as the reference link
+    [text][key] the ledger uses, its key defined in the Links section: the
+    key the URL already has, else one made from the text. Writing a link inline
+    costs no separate `link` call, and a URL still lives in one place."""
+    def reference(match):
+        image, label, url = match[1], match[2], match[3].strip("<>")
+        if image or not re.match(r"https?://", url):
+            return match[0]
+        definitions = links_section(lines)
+        key = next((k for k, v in definitions.items() if v == url), None)
+        if key is None:
+            key = free_name(slug(label.casefold()) or "link",
+                            definitions.__contains__)
+            set_link(lines, key, url)
+        return f"[{label}][{key}]"
+    return INLINE_LINK.sub(reference, text)
+
+
+def set_link(lines, key, url):
+    if LINKS_HEADING not in [line.strip() for line in lines]:
+        lines += ["", LINKS_HEADING, "", "None yet."]
+    start, end = section(lines, LINKS_HEADING)
+    definitions = links_section(lines)
+    definitions[key] = url
+    body = ["", *(f"[{k}]: {v}" for k, v in sorted(definitions.items(),
+                  key=lambda kv: kv[0].casefold())), ""]
+    lines[start + 1:end] = body
+
+
+def sync_sources(lines):
+    """Write each source row's `Findings: ...` from the Evidence lines of the findings."""
+    cited = cited_sources("\n".join(lines))
+    rows = table_rows(lines, "sources")
+    for row in rows:
+        row[4] = SOURCE_FINDINGS.sub("", row[4])
+        if id_order(row[0])[1] in cited:
+            found = sorted(cited[id_order(row[0])[1]], key=id_order)
+            row[4] = f"{row[4].rstrip()} Findings: {', '.join(found)}.".strip()
+    write_rows(lines, "sources", rows, header_of(lines, "sources"))
+
+
+def move_row(lines, row_id, target, sets):
+    source, row = find_row(lines, row_id)
+    header = header_of(lines, source)
+    for assignment in sets:
+        column, _, value = assignment.partition("=")
+        names = [h.casefold() for h in header]
+        if column.casefold() not in names:
             raise SystemExit(
-                f"item {number}: {error.code}\nnothing was written")
-        written += values
-        done.append(ident)
-    sync_sources(lines)
-    return written, done
+                f"no column {column!r}; the queue's are: " + " | ".join(header))
+        row[names.index(column.casefold())] = value
+    write_rows(lines, source, [r for r in table_rows(
+        lines, source) if r[0] != row_id], header)
+    set_row(lines, target, row[0], row[1:])
+
+
+def find_row(lines, row_id):
+    for name in QUEUE_TABLES:
+        for row in table_rows(lines, name):
+            if row[0] == row_id:
+                return name, row
+    raise SystemExit(f"no queue row {row_id}")
+
+
+def set_row(lines, name, row_id, cells, match=None):
+    header = header_of(lines, name)
+    row = ([row_id] if row_id else []) + list(cells)
+    if len(row) != len(header):
+        raise SystemExit(f"{name} has {len(header)} columns, counting the ID if it has one; got {len(row)}.\n"
+                         + table_help(name))
+    check_areas(name, header, row)
+    check_cells(lines, name, row)
+    rows = table_rows(lines, name)
+    if row_id:
+        rows = [r for r in rows if r[0] != row_id] + [row]
+        rows.sort(key=lambda row: id_order(row[0]))
+    elif match:
+        rows[matching_row(rows, name, match)] = row
+    else:
+        rows.append(row)
+    write_rows(lines, name, rows, header)
+
+
+def check_areas(name, header, cells):
+    """The Areas cell of a source or a gap names evidence areas, comma separated."""
+    if header[-1] != "Areas" or not cells:
+        return
+    wrong = [a for a in areas_of(cells) if a not in AREAS]
+    if wrong:
+        raise SystemExit(f"{name} Areas must be some of: " +
+                         ", ".join(AREAS) + "; not " + ", ".join(wrong))
+
+
+def areas_of(row):
+    """The evidence areas a source or gap row names in its last cell, Areas."""
+    return [a for a in (x.strip() for x in row[-1].split(",")) if a]
+
+
+def check_cells(lines, name, row):
+    """Exit if a cell holds a value its column doesn't allow."""
+    problem = None
+    if name == "components":
+        problem = status_problem(row[0], row[4])
+    elif name == "file-coverage":
+        problem = depth_problem(row[2]) or (
+            coverage_material_missing(row) and f"for {row[0]}: link the material read in Material")
+    elif name == "queue-completed":
+        problem = outcome_problem(row[0], row[-1], row[2])
+    elif name == "gaps":
+        problem = (blocked := gap_problem(row)) and f"{blocked}. {GAP_FIX}"
+    elif name == "sources" and source_reference_missing(row):
+        problem = f"{row[0]}: {SOURCE_LINK_FIX}"
+    if problem:
+        raise SystemExit(f"{name} {problem}")
+    if name == "components" and unread_components([row], table_rows(lines, "file-coverage"), links_section(lines)):
+        raise SystemExit(unread_message([row[0]]))
+    # A search's query is the one backticked text allowed outside a link.
+    check_backticks(lines, [c for i, c in enumerate(
+        row) if not (name == "sources" and i == 2)], name)
+
+
+ID_CITATION = re.compile(r"\[([A-Z]\d+)\]\(#[a-z]\d+\)")
+
+
+def check_backticks(lines, values, where):
+    """Exit if `values` put a reference in backticks outside a link."""
+    spans = [span for value in values for span in unlinked_backticks(
+        value, "\n".join(lines))]
+    if spans:
+        raise SystemExit(backtick_error(where, spans))
+
+
+def matching_row(rows, name, match):
+    """The index of the one row of `rows` containing `match`; exits if none or
+    several do. A file coverage row has no ID, so its text identifies it."""
+    found = [i for i, r in enumerate(rows) if match in " | ".join(r)]
+    if not found:
+        raise SystemExit(f"no {name} row containing {match!r}")
+    if len(found) > 1:
+        raise SystemExit(
+            f"{match!r} matches {len(found)} rows; use more of the text")
+    return found[0]
+
+
+def write_rows(lines, name, rows, header=None):
+    """Put `rows` in the table `name`, creating it under its heading if there is none."""
+    heading, default, letters = TABLES[name]
+    anchored_rows = bool(letters)
+    span = table_span(lines, heading)
+    if span is None:
+        start, end = section(lines, heading)
+        drop_placeholder(lines, start + 1, end)
+        block = ["", render(header or default), render(
+            ["---"] * len(header or default))]
+        block += [render(r, anchored_rows) for r in rows] + [""]
+        lines[start + 1:start + 1] = block
+        return
+    head = lines[span[0]:span[0] + 2]
+    lines[span[0]:span[1]] = head + [render(r, anchored_rows) for r in rows]
+    table_end = span[0] + 2 + len(rows)
+    _, end = section(lines, heading)
+    if rows:
+        drop_placeholder(lines, table_end, end)
+    elif not any(line.strip() in PLACEHOLDERS for line in lines[table_end:end]):
+        lines[table_end:table_end] = ["", "None."]
+
+
+def drop_placeholder(lines, after, end):
+    """Remove the first non-blank line in lines[after:end] if it is a placeholder."""
+    for i in range(after, end):
+        if lines[i].strip():
+            if lines[i].strip() in PLACEHOLDERS:
+                del lines[i]
+            return
+
+
+def render(cells, anchor=False):
+    """A table row; with `anchor`, its ID carries the anchor citations link to."""
+    if anchor and re.fullmatch(r"[A-Z]\d+", cells[0]):
+        cells = [anchored(cells[0]), *cells[1:]]
+    return table_row(cells)
+
+
+def remove_finding(lines, ident):
+    blocks, start, end = findings_of(lines)
+    if ident not in blocks:
+        raise SystemExit(f"no finding {ident}")
+    del blocks[ident]
+    write_findings(lines, blocks, start, end)
+
+
+def write_findings(lines, blocks, start, end):
+    body = "\n\n".join(blocks[k] for k in sorted(
+        blocks, key=id_order)) if blocks else "None yet."
+    lines[start + 1:end] = ["", *body.split("\n"), ""]
+
+
+def still_cited(lines, ident):
+    """Where `ident` is still written: a table row's ID, else a line number. Run
+    after a finding is removed, so nothing cites a finding that is gone unseen."""
+    found = []
+    for i, line in enumerate(lines):
+        if re.search(rf"\b{ident}\b", line):
+            found.append(table_cells(line)[0] if line.startswith(
+                "|") else f"line {i + 1}")
+    return found
+
+
+def remove_row(lines, name, row_id, match):
+    rows = table_rows(lines, name)
+    if row_id:
+        kept = [r for r in rows if r[0] != row_id]
+        if len(kept) == len(rows):
+            raise SystemExit(f"no {name} row {row_id}")
+    else:
+        index = matching_row(rows, name, match)
+        kept = rows[:index] + rows[index + 1:]
+    write_rows(lines, name, kept, header_of(lines, name))
+
+
+# How a review round is recorded, as next_step tells it.
+RECORD_ROUND = "ledger.py review --raised <the ready actions its real issues became, or none>"
+
+
+def remove_link(lines, key):
+    start, end = section(lines, LINKS_HEADING)
+    kept = [line for line in lines[start + 1:end]
+            if not ((match := DEFINITION.match(line)) and match[1].casefold() == key)]
+    if len(kept) == len(lines[start + 1:end]):
+        raise SystemExit(f"no link {key!r}")
+    if not any(line.startswith("[") for line in kept):
+        kept = ["", "None yet.", ""]
+    lines[start + 1:end] = kept
+
+
+def record_review(lines, raised="none", stopped=None):
+    """Add the independent review as a completed action answered by the
+    actions it raised, which must already be in the queue, or by the user's
+    choice to stop reviewing."""
+    if stopped is not None:
+        if not stopped.strip():
+            raise SystemExit(
+                "--stopped is what the user said when they chose to stop the review")
+        by, outcome = "The user, asked whether to go on", f"{REVIEW_STOPPED} {stopped.strip()}"
+    else:
+        ids = [] if raised.strip().casefold() == "none" else [
+            r.strip() for r in raised.split(",") if r.strip()]
+        queued = {row[0]
+                  for name in QUEUE_TABLES for row in table_rows(lines, name)}
+        missing = [i for i in ids if i not in queued]
+        if missing:
+            raise SystemExit(f"--raised names actions not in the queue: {', '.join(missing)}. "
+                             "Add each doable real issue as a ready action first")
+        by = "Subagent given the skill's brief"
+        outcome = "Raised " + ", ".join(ids) if ids else REVIEW_NONE
+    row_id = next_id("\n".join(lines), "Q")
+    set_row(lines, "queue-completed", row_id,
+            ["Independent review", REVIEW_QUESTION, by, "None", "High", outcome])
+    return row_id
+
+
+def set_text(lines, name, text):
+    start, end = text_span(lines, name)
+    lines[start + 1:end] = ["", *text.strip().split("\n"), ""]
+
+
+def upgrade_tickets(lines):
+    """Link each ticket key written as code, `PROJ-7`, whose project the ledger
+    now links: it was written before a ticket of its project was."""
+    sites = ticket_sites(links_section(lines).values())
+    if not sites:
+        return
+    for i in range(len(lines)):
+        upgraded = upgraded_tickets(lines[i], sites)
+        if upgraded != lines[i]:
+            lines[i] = reference_links(lines, upgraded)
+
+
+def link_ids(lines):
+    """Write every citation of a recorded ID as a link to its anchor, so any ID
+    can be followed to its row or finding. An ID cell holds the anchor itself."""
+    recorded = recorded_ids("\n".join(lines))
+    for i, line in enumerate(lines):
+        if line.startswith("|"):
+            cells = [c if ID_ANCHOR.search(c) else linked_ids(
+                c, recorded) for c in table_cells(line, keep_anchors=True)]
+            lines[i] = table_row(cells)
+        else:
+            lines[i] = linked_ids(line, recorded)
 
 
 def read_input(args, as_json=False):

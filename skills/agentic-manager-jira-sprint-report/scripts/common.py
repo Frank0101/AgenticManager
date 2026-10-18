@@ -89,19 +89,6 @@ BLOCKED_STATUSES = {"blocked", "impeded",
                     "on hold", "waiting", "waiting for support"}
 
 
-def is_blocker_candidate(flagged, status, status_category, priority):
-    """Whether a ticket's flag, status and priority make it a blocker candidate."""
-    if flagged or (status or "").lower() in BLOCKED_STATUSES:
-        return True
-    return status_category != "done" and (priority or "").lower() in HIGH_PRIORITIES
-
-
-def standard_issues(issues):
-    """The issues that aren't sub-tasks: Jira's sprint report and board totals
-    count only these, with sub-task work rolled into the parent."""
-    return [i for i in issues if not nested(i.get("fields"), ["issuetype", "subtask"])]
-
-
 def blocker_candidate_keys(issues, changes, categories, flagged_field, points_field, sprint_id, moment):
     """The keys of the standard issues in the sprint at `moment` that were
     flagged, blocked or high priority and not done then. One definition for
@@ -118,35 +105,66 @@ def blocker_candidate_keys(issues, changes, categories, flagged_field, points_fi
     return keys
 
 
-def history_fields(flagged_field, points_field):
-    """The fields whose history the report reads, by the name changelogs/<KEY>.json
-    stores their changes under, and how Jira's changelog names them. The story
-    points and Flagged fields are the site's own custom fields."""
-    return {"sprint": "Sprint", "status": "status", "resolution": "resolution",
-            "priority": "priority", "parent": "IssueParentAssociation",
-            "points": points_field, "flagged": flagged_field}
+def standard_issues(issues):
+    """The issues that aren't sub-tasks: Jira's sprint report and board totals
+    count only these, with sub-task work rolled into the parent."""
+    return [i for i in issues if not nested(i.get("fields"), ["issuetype", "subtask"])]
 
 
-def status_categories(statuses):
-    """{status id: status category key} from Jira's list of statuses."""
-    return {str(s["id"]): nested(s, ["statusCategory", "key"]) for s in statuses}
+def is_blocker_candidate(flagged, status, status_category, priority):
+    """Whether a ticket's flag, status and priority make it a blocker candidate."""
+    if flagged or (status or "").lower() in BLOCKED_STATUSES:
+        return True
+    return status_category != "done" and (priority or "").lower() in HIGH_PRIORITIES
 
 
-def points_value(value):
-    """Story points as a number, or None: whole points as int, fractions kept.
-    Takes the issue field's number or a changelog's string."""
-    if value is None or value == "":
-        return None
-    value = float(value)
-    return int(value) if value.is_integer() else value
+def in_sprint_at(moves, instant):
+    """Membership at an instant, from the complete, ordered sprint moves."""
+    state = False
+    for when, move, _ in moves:
+        if when > instant:
+            break
+        state = move > 0
+    return state
 
 
-def as_of(sprint, fetched_at):
-    """The moment the report describes: when a closed sprint closed, else when
-    the data was fetched."""
-    if (sprint.get("state") or "").lower() == "closed":
-        return sprint.get("completeDate") or sprint.get("endDate")
-    return fetched_at
+def issue_moves(raw, changes, sprint_id):
+    """An issue's moves into and out of the sprint (see sprint_moves), from its
+    changelog."""
+    added, removed = add_and_remove_events(changes, sprint_id)
+    return sprint_moves(added, removed, nested(raw.get("fields"), ["created"]))
+
+
+def add_and_remove_events(changes, sprint_id):
+    """(added, removed) timestamps for this sprint, each in time order."""
+    added, removed = [], []
+    for change in changes:
+        if change.get("field") != "sprint":
+            continue
+        from_ids, to_ids = split_ids(change.get(
+            "from")), split_ids(change.get("to"))
+        if sprint_id in to_ids and sprint_id not in from_ids:
+            added.append(change["created"])
+        elif sprint_id in from_ids and sprint_id not in to_ids:
+            removed.append(change["created"])
+    return sorted(added, key=parse_ts), sorted(removed, key=parse_ts)
+
+
+def split_ids(value):
+    """The set of IDs in a comma-separated changelog value."""
+    return {piece.strip() for piece in (value or "").split(",") if piece.strip()}
+
+
+def sprint_moves(added, removed, created):
+    """An issue's moves into (+1) and out of (-1) the sprint, as (instant, move,
+    timestamp) in time order. If the first move isn't an add, the sprint was set
+    when the issue was created: Jira logs no change for a field's initial
+    value, so the creation counts as the first add."""
+    moves = sorted([(parse_ts(t), 1, t) for t in added] +
+                   [(parse_ts(t), -1, t) for t in removed])
+    if not moves or moves[0][1] < 0:
+        moves.insert(0, (parse_ts(created), 1, created))
+    return moves
 
 
 class History:
@@ -204,53 +222,35 @@ class History:
                 "parentId": str(parent_id) if parent_id else None, "parentKey": parent_key or None}
 
 
-def split_ids(value):
-    """The set of IDs in a comma-separated changelog value."""
-    return {piece.strip() for piece in (value or "").split(",") if piece.strip()}
+def points_value(value):
+    """Story points as a number, or None: whole points as int, fractions kept.
+    Takes the issue field's number or a changelog's string."""
+    if value is None or value == "":
+        return None
+    value = float(value)
+    return int(value) if value.is_integer() else value
 
 
-def add_and_remove_events(changes, sprint_id):
-    """(added, removed) timestamps for this sprint, each in time order."""
-    added, removed = [], []
-    for change in changes:
-        if change.get("field") != "sprint":
-            continue
-        from_ids, to_ids = split_ids(change.get(
-            "from")), split_ids(change.get("to"))
-        if sprint_id in to_ids and sprint_id not in from_ids:
-            added.append(change["created"])
-        elif sprint_id in from_ids and sprint_id not in to_ids:
-            removed.append(change["created"])
-    return sorted(added, key=parse_ts), sorted(removed, key=parse_ts)
+def history_fields(flagged_field, points_field):
+    """The fields whose history the report reads, by the name changelogs/<KEY>.json
+    stores their changes under, and how Jira's changelog names them. The story
+    points and Flagged fields are the site's own custom fields."""
+    return {"sprint": "Sprint", "status": "status", "resolution": "resolution",
+            "priority": "priority", "parent": "IssueParentAssociation",
+            "points": points_field, "flagged": flagged_field}
 
 
-def sprint_moves(added, removed, created):
-    """An issue's moves into (+1) and out of (-1) the sprint, as (instant, move,
-    timestamp) in time order. If the first move isn't an add, the sprint was set
-    when the issue was created: Jira logs no change for a field's initial
-    value, so the creation counts as the first add."""
-    moves = sorted([(parse_ts(t), 1, t) for t in added] +
-                   [(parse_ts(t), -1, t) for t in removed])
-    if not moves or moves[0][1] < 0:
-        moves.insert(0, (parse_ts(created), 1, created))
-    return moves
+def status_categories(statuses):
+    """{status id: status category key} from Jira's list of statuses."""
+    return {str(s["id"]): nested(s, ["statusCategory", "key"]) for s in statuses}
 
 
-def issue_moves(raw, changes, sprint_id):
-    """An issue's moves into and out of the sprint (see sprint_moves), from its
-    changelog."""
-    added, removed = add_and_remove_events(changes, sprint_id)
-    return sprint_moves(added, removed, nested(raw.get("fields"), ["created"]))
-
-
-def in_sprint_at(moves, instant):
-    """Membership at an instant, from the complete, ordered sprint moves."""
-    state = False
-    for when, move, _ in moves:
-        if when > instant:
-            break
-        state = move > 0
-    return state
+def as_of(sprint, fetched_at):
+    """The moment the report describes: when a closed sprint closed, else when
+    the data was fetched."""
+    if (sprint.get("state") or "").lower() == "closed":
+        return sprint.get("completeDate") or sprint.get("endDate")
+    return fetched_at
 
 
 def run_script(script, *args, **kwargs):
@@ -261,16 +261,21 @@ def run_script(script, *args, **kwargs):
                            *args], stdout=subprocess.PIPE, text=True, **kwargs)
 
 
-def report_file(label):
-    """The report's file name for a label."""
-    return f"{label}_Sprint_Report.md"
-
-
 def expected_files(label):
     """Every file a report folder holds, and nothing else: the fetched _raw
     folder, the three data files, the charts and the report."""
     return {RAW_DIR, DATA_FILE, CONTENT_FILE, BRIEF_FILE,
             *CHART_FILES.values(), report_file(label)}
+
+
+def report_file(label):
+    """The report's file name for a label."""
+    return f"{label}_Sprint_Report.md"
+
+
+def write_json(path, payload):
+    """Writes a value as indented JSON inside the skill's output folder."""
+    write_report_file(path, json.dumps(payload, indent=2))
 
 
 def write_report_file(path, text):
@@ -281,11 +286,6 @@ def write_report_file(path, text):
     relative = os.path.relpath(
         os.path.realpath(path), os.path.realpath(folder))
     write_output_file(REPORTS_FOLDER, relative, text.encode("utf-8"))
-
-
-def write_json(path, payload):
-    """Writes a value as indented JSON inside the skill's output folder."""
-    write_report_file(path, json.dumps(payload, indent=2))
 
 
 def report_label(project_key, sprint_name):
@@ -336,34 +336,6 @@ def report_label(project_key, sprint_name):
 SENTENCE_BREAK = re.compile(r"(?<=[.!?]) +(?=[A-Z0-9])")
 
 
-def number(value):
-    """A number as text: a whole one without a decimal point, and a fraction
-    rounded to two decimals, so a sum of fractional estimates never shows
-    floating-point noise such as 0.30000000000000004."""
-    if isinstance(value, float):
-        value = round(value, 2)
-        if value.is_integer():
-            return str(int(value))
-    return str(value)
-
-
-def plural(count, one, many):
-    """The word for `count` things: `one` for exactly 1, else `many`."""
-    return one if count == 1 else many
-
-
-def unit(count):
-    """"ticket" or "tickets" for a count."""
-    return plural(count, "ticket", "tickets")
-
-
-def pts(points):
-    """Story points: "3 pts", "1 pt", or "– pts" when there's no estimate."""
-    if points is None:
-        return "– pts"
-    return f"{number(points)} {plural(points, 'pt', 'pts')}"
-
-
 def known_sum(estimates):
     """The sum of the estimates that are set, or None if none is, so work with
     no estimate shows as "– pts", never "0 pts"."""
@@ -376,6 +348,34 @@ def qty(count, points):
     return f"{count} {unit(count)} ({pts(points)})"
 
 
+def unit(count):
+    """"ticket" or "tickets" for a count."""
+    return plural(count, "ticket", "tickets")
+
+
+def plural(count, one, many):
+    """The word for `count` things: `one` for exactly 1, else `many`."""
+    return one if count == 1 else many
+
+
+def pts(points):
+    """Story points: "3 pts", "1 pt", or "– pts" when there's no estimate."""
+    if points is None:
+        return "– pts"
+    return f"{number(points)} {plural(points, 'pt', 'pts')}"
+
+
+def number(value):
+    """A number as text: a whole one without a decimal point, and a fraction
+    rounded to two decimals, so a sum of fractional estimates never shows
+    floating-point noise such as 0.30000000000000004."""
+    if isinstance(value, float):
+        value = round(value, 2)
+        if value.is_integer():
+            return str(int(value))
+    return str(value)
+
+
 def ratio(done, total, done_points, total_points):
     """Done out of total: "11/22 tickets (34/74 pts)"."""
     return f"{done}/{total} {unit(total)} ({number(done_points)}/{number(total_points)} pts)"
@@ -384,11 +384,6 @@ def ratio(done, total, done_points, total_points):
 def ticket_ref(key, points):
     """One ticket: "PROJ-20 (2 pts)", or "PROJ-13 (– pts)" with no estimate."""
     return f"{key} ({pts(points)})"
-
-
-def estimate(points):
-    """An estimate for display: "–" when there is none."""
-    return "–" if points is None else number(points)
 
 
 def whole_percentage(part, whole):
@@ -408,6 +403,31 @@ def whole_percentage(part, whole):
 def display_date(iso_date):
     """An ISO date as the report shows it, DD/MM/YYYY."""
     return date.fromisoformat(iso_date).strftime(DISPLAY_DATE)
+
+
+def text_rule_problems(text, latest=None):
+    """[(rule, found)] for each rule of the report's vocabulary and formats
+    that the text breaks: banned words first, as "no <rule>", then the formats.
+    With `latest`, {key: latest estimate}, a ticket of the sprint must also
+    read KEY (N pts) at that estimate, outside a bracketed list of keys. One function for the agent's text when
+    it is written and the report's when it is checked, so the two can't
+    differ."""
+    found = [(f"no {rule}", words) for rule, words in banned_words(text)]
+    bold = re.findall(r"\*\*(.+?)\*\*", text) + \
+        re.findall(r"<b>(.+?)</b>", text)
+    breaking = {
+        PERCENT_RULE: re.findall(r"\d+\.\d+%", text),
+        RATIO_RULE: re.findall(
+            r"(?<![\d/.])\d+(?:\.\d+)?/\d+(?:\.\d+)?(?![\d/])(?!\.\d)(?! (?:tickets?|pts)\b)", text),
+        AMOUNT_RULE: re.findall(r"\d+ (?:tickets?|stories|story) / ", text),
+        BOLD_RULE: [b for b in bold if not b.endswith(":")],
+        DATE_RULE: re.findall(r"\b\d{4}-\d\d-\d\d\b", text),
+    }
+    formats = [(rule, breaking[rule]) for rule in FORMAT_RULES]
+    if latest is not None:
+        formats.append((ESTIMATE_RULE, [m.group(0) for m in TICKET_ESTIMATE.finditer(KEY_LIST.sub("", text))
+                                        if m.group(1) in latest and m.group(2) != estimate(latest[m.group(1)])]))
+    return found + [(rule, items) for rule, items in formats if items]
 
 
 # The words the rules above ban, with what to write instead.
@@ -451,29 +471,9 @@ KEY_LIST = re.compile(
     r"\((" + ISSUE_KEY.pattern + r"(?:, " + ISSUE_KEY.pattern + r")*)\)")
 
 
-def text_rule_problems(text, latest=None):
-    """[(rule, found)] for each rule of the report's vocabulary and formats
-    that the text breaks: banned words first, as "no <rule>", then the formats.
-    With `latest`, {key: latest estimate}, a ticket of the sprint must also
-    read KEY (N pts) at that estimate, outside a bracketed list of keys. One function for the agent's text when
-    it is written and the report's when it is checked, so the two can't
-    differ."""
-    found = [(f"no {rule}", words) for rule, words in banned_words(text)]
-    bold = re.findall(r"\*\*(.+?)\*\*", text) + \
-        re.findall(r"<b>(.+?)</b>", text)
-    breaking = {
-        PERCENT_RULE: re.findall(r"\d+\.\d+%", text),
-        RATIO_RULE: re.findall(
-            r"(?<![\d/.])\d+(?:\.\d+)?/\d+(?:\.\d+)?(?![\d/])(?!\.\d)(?! (?:tickets?|pts)\b)", text),
-        AMOUNT_RULE: re.findall(r"\d+ (?:tickets?|stories|story) / ", text),
-        BOLD_RULE: [b for b in bold if not b.endswith(":")],
-        DATE_RULE: re.findall(r"\b\d{4}-\d\d-\d\d\b", text),
-    }
-    formats = [(rule, breaking[rule]) for rule in FORMAT_RULES]
-    if latest is not None:
-        formats.append((ESTIMATE_RULE, [m.group(0) for m in TICKET_ESTIMATE.finditer(KEY_LIST.sub("", text))
-                                        if m.group(1) in latest and m.group(2) != estimate(latest[m.group(1)])]))
-    return found + [(rule, items) for rule, items in formats if items]
+def estimate(points):
+    """An estimate for display: "–" when there is none."""
+    return "–" if points is None else number(points)
 
 
 # The goal verdicts the agent chooses from, word for word. A running sprint

@@ -84,6 +84,11 @@ PLACEHOLDER = re.compile(
     r"\[(?:CHART|IMAGE|DIAGRAM|TABLE|PLACEHOLDER): [^\]\n]+\]")
 
 
+def expected_files(deck):
+    """The closed set of files the deck folder `deck` holds."""
+    return {SLIDES, deck_file(deck)}
+
+
 def deck_file(deck):
     """The deck's HTML file name, <Name>_Slides.html, from its folder name."""
     match = DAY_FOLDER.fullmatch(deck)
@@ -91,11 +96,6 @@ def deck_file(deck):
         raise SystemExit(
             f"{deck!r} is not a deck folder, <Name>_<YY-MM-DD>")
     return match["subject"] + DECK_SUFFIX
-
-
-def expected_files(deck):
-    """The closed set of files the deck folder `deck` holds."""
-    return {SLIDES, deck_file(deck)}
 
 
 # The examples, each a folder of its own: the skill's, real slides each kept as
@@ -109,6 +109,19 @@ EXAMPLES_DIR = os.path.join(os.path.dirname(
 USER_EXAMPLES = "_examples"
 WIREFRAME, EXAMPLE_PAGE = "wireframe.svg", "slide.html"
 USE_FOR = "Use for"
+
+
+def deck_dir(deck):
+    """The absolute path of the deck folder `deck` inside the skill's output
+    folder. Exits if `deck` isn't a deck folder name, would lead outside it or
+    doesn't exist."""
+    deck_file(deck)
+    folder, _ = output_folder(FOLDER_NAME)
+    path = target(folder, deck)
+    if not os.path.isdir(path):
+        raise SystemExit(
+            f"{deck} doesn't exist in {folder}: run init_deck.py first")
+    return path
 
 
 def examples():
@@ -132,6 +145,12 @@ def examples():
     return found
 
 
+def user_examples_dir():
+    """The absolute path of _examples, the slides the user kept, in the skill's
+    output folder; it may not exist yet."""
+    return os.path.join(output_folder(FOLDER_NAME)[0], USER_EXAMPLES)
+
+
 def asset_link(name, depth=1):
     """The link to the image `name` in _assets from a page `depth` folders
     below the skill's output folder: 1 for a deck, 2 for a kept example."""
@@ -152,19 +171,6 @@ def assets_dir():
     return os.path.join(output_folder(FOLDER_NAME)[0], ASSETS)
 
 
-def user_examples_dir():
-    """The absolute path of _examples, the slides the user kept, in the skill's
-    output folder; it may not exist yet."""
-    return os.path.join(output_folder(FOLDER_NAME)[0], USER_EXAMPLES)
-
-
-def asset_names():
-    """The names of the images in _assets, none if it doesn't exist yet."""
-    folder = assets_dir()
-    return frozenset(name for name in (os.listdir(folder) if os.path.isdir(folder) else ())
-                     if SLUG.fullmatch(name) and asset_image(name))
-
-
 def describe_asset(title, shows, credit=None):
     """The description.md of an image titled `title` that shows `shows`, with
     its `credit` ({"credit", "license", "source", "image"}) if downloaded."""
@@ -172,6 +178,17 @@ def describe_asset(title, shows, credit=None):
     lines += [f"**{label}:** {credit[key]}" for key,
               label in CREDIT_FIELDS.items()] if credit else []
     return "\n\n".join(lines) + "\n"
+
+
+def credits():
+    """{name: {"credit", "license", "source", "image"}} of the images in
+    _assets downloaded from the internet, none if there are none."""
+    return {asset["name"]: asset["credit"] for asset in assets() if asset["credit"]}
+
+
+def assets():
+    """Every image in _assets, by name, as read_asset() reads it."""
+    return [read_asset(name) for name in sorted(asset_names())]
 
 
 def read_asset(name):
@@ -191,15 +208,11 @@ def read_asset(name):
             "credit": credit if credit["credit"] else None}
 
 
-def assets():
-    """Every image in _assets, by name, as read_asset() reads it."""
-    return [read_asset(name) for name in sorted(asset_names())]
-
-
-def credits():
-    """{name: {"credit", "license", "source", "image"}} of the images in
-    _assets downloaded from the internet, none if there are none."""
-    return {asset["name"]: asset["credit"] for asset in assets() if asset["credit"]}
+def asset_names():
+    """The names of the images in _assets, none if it doesn't exist yet."""
+    folder = assets_dir()
+    return frozenset(name for name in (os.listdir(folder) if os.path.isdir(folder) else ())
+                     if SLUG.fullmatch(name) and asset_image(name))
 
 
 def placed_images(text):
@@ -210,16 +223,3 @@ def placed_images(text):
 def credit_line(entry):
     """The text that credits a downloaded image on a slide, from its credit."""
     return f"{entry['credit']} · {entry['license']}"
-
-
-def deck_dir(deck):
-    """The absolute path of the deck folder `deck` inside the skill's output
-    folder. Exits if `deck` isn't a deck folder name, would lead outside it or
-    doesn't exist."""
-    deck_file(deck)
-    folder, _ = output_folder(FOLDER_NAME)
-    path = target(folder, deck)
-    if not os.path.isdir(path):
-        raise SystemExit(
-            f"{deck} doesn't exist in {folder}: run init_deck.py first")
-    return path

@@ -48,23 +48,6 @@ TAGS = {
 }
 
 
-def tag(kind, suffix=""):
-    label, background, colour = TAGS[kind]
-    return (f'<span style="background:{background};color:{colour};border-radius:10px;padding:1px 7px;'
-            f'margin:1px 3px 1px 0;font-size:90%;white-space:nowrap;display:inline-block">'
-            f'{html.escape(label + suffix)}</span>')
-
-
-def amount(spells):
-    """The amount of work of some spells: "N tickets (N pts)", "– pts" if
-    none has an estimate."""
-    return qty(len(spells), known_sum(s["points"] for s in spells))
-
-
-def were(count):
-    return plural(count, "was", "were")
-
-
 def strip_em_dashes(value):
     if isinstance(value, str):
         return re.sub(r"\s*—\s*", ", ", value)
@@ -75,11 +58,75 @@ def strip_em_dashes(value):
     return value
 
 
-# Phrases of the commentary, each with the shorter form used when the text is
-# over its word limit: one place for both, so they can't drift apart.
-RETURNED = ("counting as descoped and then as extra", "descoped, then extra")
-UNESTIMATED = ("of them without an estimate", "unestimated")
-FROM_COMMITMENT = ("of them from the commitment", "from the commitment")
+def validate_content(content, data):
+    problems = []
+    for field in ("key_achievements", "blockers_risks"):
+        if not isinstance(content.get(field), str) or not content[field].strip():
+            problems.append(
+                f"{field} must be a non-empty string: one paragraph")
+    notes = content.get("retro_notes")
+    if (not isinstance(notes, list) or not 1 <= len(notes) <= RETRO_NOTES
+            or any(not isinstance(n, str) or not n.strip().endswith("?") for n in notes)):
+        problems.append(
+            f"retro_notes must be a list of 1-{RETRO_NOTES} notes, each ending with a question")
+    if content.get("goal_verdict") not in allowed_verdicts(data):
+        problems.append("goal_verdict must be one of: " +
+                        ", ".join(f'"{v}"' for v in allowed_verdicts(data)))
+    commentary = content.get("epic_commentary")
+    if not isinstance(commentary, dict):
+        problems.append(
+            "epic_commentary must map each epic key to its groups' sentences")
+    else:
+        for epic in data["epics"]:
+            groups, given = epic_groups(
+                epic), commentary.get(epic["key"]) or {}
+            if not isinstance(given, dict):
+                problems.append(
+                    f"epic_commentary.{epic['key']} must map each group to a sentence")
+                continue
+            written = [g for g in SCOPE_GROUPS if isinstance(
+                given.get(g), str) and given[g].strip()]
+            if written != groups or set(given) - set(groups):
+                problems.append(f"epic_commentary.{epic['key']} needs a sentence for exactly these groups: "
+                                + (", ".join(groups) or "none"))
+    if not problems:
+        problems += text_problems(content, data)
+    if problems:
+        raise SystemExit("content.json:\n  - " + "\n  - ".join(problems))
+
+
+def text_problems(content, data):
+    """The rules for the AI-written text, each problem naming the field to fix,
+    so the fix stays next to the text that needs it."""
+    problems, texts = [], [("key_achievements", content["key_achievements"], SUMMARY_WORDS),
+                           ("blockers_risks", content["blockers_risks"], SUMMARY_WORDS)]
+    for epic in data["epics"]:
+        given = content["epic_commentary"].get(epic["key"]) or {}
+        texts.append((f"epic_commentary.{epic['key']}", " ".join(
+            given.values()), EPIC_COMMENTARY_WORDS))
+        for group, text in given.items():
+            if len(SENTENCE_BREAK.split(text.strip())) != 1:
+                problems.append(
+                    f"epic_commentary.{epic['key']}.{group}: must be one sentence")
+    for field, text, limit in texts:
+        if word_count(text) > limit:
+            problems.append(
+                f"{field}: {word_count(text)} words, at most {limit}")
+        if ISSUE_KEY.search(text):
+            problems.append(
+                f"{field}: names tickets {ISSUE_KEY.findall(text)[:3]}; describe the work instead")
+    for field, text, _ in texts[:2]:
+        if "\n" in text.strip():
+            problems.append(f"{field}: must be a single paragraph")
+    texts += [(f"retro_notes[{i}]", note, None)
+              for i, note in enumerate(content["retro_notes"])]
+    latest = {s["key"]: s["points"] for s in data["spells"]}
+    for field, text, limit in texts:
+        # Only the retro notes (no word limit) may name tickets, so only they
+        # are held to the tickets' latest estimates.
+        for rule, found in text_rule_problems(text, latest if limit is None else None):
+            problems.append(f"{field}: {rule}, found {found[:3]}")
+    return problems
 
 
 class Report:
@@ -417,75 +464,28 @@ class Report:
         return "\n\n".join(parts).rstrip() + "\n"
 
 
-def validate_content(content, data):
-    problems = []
-    for field in ("key_achievements", "blockers_risks"):
-        if not isinstance(content.get(field), str) or not content[field].strip():
-            problems.append(
-                f"{field} must be a non-empty string: one paragraph")
-    notes = content.get("retro_notes")
-    if (not isinstance(notes, list) or not 1 <= len(notes) <= RETRO_NOTES
-            or any(not isinstance(n, str) or not n.strip().endswith("?") for n in notes)):
-        problems.append(
-            f"retro_notes must be a list of 1-{RETRO_NOTES} notes, each ending with a question")
-    if content.get("goal_verdict") not in allowed_verdicts(data):
-        problems.append("goal_verdict must be one of: " +
-                        ", ".join(f'"{v}"' for v in allowed_verdicts(data)))
-    commentary = content.get("epic_commentary")
-    if not isinstance(commentary, dict):
-        problems.append(
-            "epic_commentary must map each epic key to its groups' sentences")
-    else:
-        for epic in data["epics"]:
-            groups, given = epic_groups(
-                epic), commentary.get(epic["key"]) or {}
-            if not isinstance(given, dict):
-                problems.append(
-                    f"epic_commentary.{epic['key']} must map each group to a sentence")
-                continue
-            written = [g for g in SCOPE_GROUPS if isinstance(
-                given.get(g), str) and given[g].strip()]
-            if written != groups or set(given) - set(groups):
-                problems.append(f"epic_commentary.{epic['key']} needs a sentence for exactly these groups: "
-                                + (", ".join(groups) or "none"))
-    if not problems:
-        problems += text_problems(content, data)
-    if problems:
-        raise SystemExit("content.json:\n  - " + "\n  - ".join(problems))
+# Phrases of the commentary, each with the shorter form used when the text is
+# over its word limit: one place for both, so they can't drift apart.
+RETURNED = ("counting as descoped and then as extra", "descoped, then extra")
+UNESTIMATED = ("of them without an estimate", "unestimated")
+FROM_COMMITMENT = ("of them from the commitment", "from the commitment")
 
 
-def text_problems(content, data):
-    """The rules for the AI-written text, each problem naming the field to fix,
-    so the fix stays next to the text that needs it."""
-    problems, texts = [], [("key_achievements", content["key_achievements"], SUMMARY_WORDS),
-                           ("blockers_risks", content["blockers_risks"], SUMMARY_WORDS)]
-    for epic in data["epics"]:
-        given = content["epic_commentary"].get(epic["key"]) or {}
-        texts.append((f"epic_commentary.{epic['key']}", " ".join(
-            given.values()), EPIC_COMMENTARY_WORDS))
-        for group, text in given.items():
-            if len(SENTENCE_BREAK.split(text.strip())) != 1:
-                problems.append(
-                    f"epic_commentary.{epic['key']}.{group}: must be one sentence")
-    for field, text, limit in texts:
-        if word_count(text) > limit:
-            problems.append(
-                f"{field}: {word_count(text)} words, at most {limit}")
-        if ISSUE_KEY.search(text):
-            problems.append(
-                f"{field}: names tickets {ISSUE_KEY.findall(text)[:3]}; describe the work instead")
-    for field, text, _ in texts[:2]:
-        if "\n" in text.strip():
-            problems.append(f"{field}: must be a single paragraph")
-    texts += [(f"retro_notes[{i}]", note, None)
-              for i, note in enumerate(content["retro_notes"])]
-    latest = {s["key"]: s["points"] for s in data["spells"]}
-    for field, text, limit in texts:
-        # Only the retro notes (no word limit) may name tickets, so only they
-        # are held to the tickets' latest estimates.
-        for rule, found in text_rule_problems(text, latest if limit is None else None):
-            problems.append(f"{field}: {rule}, found {found[:3]}")
-    return problems
+def tag(kind, suffix=""):
+    label, background, colour = TAGS[kind]
+    return (f'<span style="background:{background};color:{colour};border-radius:10px;padding:1px 7px;'
+            f'margin:1px 3px 1px 0;font-size:90%;white-space:nowrap;display:inline-block">'
+            f'{html.escape(label + suffix)}</span>')
+
+
+def amount(spells):
+    """The amount of work of some spells: "N tickets (N pts)", "– pts" if
+    none has an estimate."""
+    return qty(len(spells), known_sum(s["points"] for s in spells))
+
+
+def were(count):
+    return plural(count, "was", "were")
 
 
 def main():
