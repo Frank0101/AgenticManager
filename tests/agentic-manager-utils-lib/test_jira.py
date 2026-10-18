@@ -366,9 +366,32 @@ class ClientTest(unittest.TestCase):
         self.assert_exits("SEC-3 is of a project excluded",
                           lambda: client.issue("OLD-2", ["summary"]))
 
+    def test_only_projects_the_account_sees_are_excluded_in_jql(self):
+        # JQL refuses a project the account can't see, and no search returns
+        # its tickets, so it is left out of the clause; each project is
+        # looked up once.
+        FakeJira.routes["/rest/api/3/search/jql"] = {"issues": []}
+        FakeJira.routes["/rest/api/3/project/SEC"] = {"key": "SEC"}
+        client = self.make_client(self.base_url, excluded=["GONE", "SEC"])
+        for _ in range(2):
+            client.search("text ~ x", ["summary"])
+        self.assertEqual([q.get("jql") for path, q in FakeJira.requests if path.endswith("/search/jql")],
+                         ['(text ~ x) AND project not in ("SEC")'] * 2)
+        self.assertEqual([path for path, _ in FakeJira.requests if "/project/" in path],
+                         ["/rest/api/3/project/GONE", "/rest/api/3/project/SEC"])
+        # None seen: no clause, and a sprint's issues are asked without one.
+        unseen = self.make_client(self.base_url, excluded=["GONE"])
+        FakeJira.routes["/rest/agile/1.0/sprint/7/issue"] = {
+            "issues": [], "total": 0}
+        FakeJira.requests = []
+        unseen.sprint_issues(7, ["summary"])
+        self.assertNotIn("jql", FakeJira.requests[-1][1])
+
     def test_search_puts_the_exclusion_before_the_ordering(self):
         FakeJira.routes["/rest/api/3/search/jql"] = {
             "issues": [{"key": "PROJ-1"}]}
+        FakeJira.routes["/rest/api/3/project/IN"] = {"key": "IN"}
+        FakeJira.routes["/rest/api/3/project/SEC"] = {"key": "SEC"}
         client = self.make_client(self.base_url, excluded=["IN", "SEC"])
         cases = [("ordered", "parent = PROJ-1 order  BY key",
                   '(parent = PROJ-1) AND project not in ("IN","SEC") order  BY key'),
@@ -380,7 +403,7 @@ class ClientTest(unittest.TestCase):
                 FakeJira.requests = []
                 self.assertEqual(client.search(
                     jql, ["summary"]), [{"key": "PROJ-1"}])
-                self.assertEqual(FakeJira.requests[0][1]["jql"], sent)
+                self.assertEqual(FakeJira.requests[-1][1]["jql"], sent)
         FakeJira.requests = []
         self.client.search("parent = PROJ-1 ORDER BY key", ["summary"])
         self.assertEqual(
@@ -431,6 +454,7 @@ class ClientTest(unittest.TestCase):
         # Searches leave SEC out in Jira, and nothing of it is asked for.
         client = self.make_client(self.base_url, excluded=["SEC"])
         FakeJira.routes.update({
+            "/rest/api/3/project/SEC": {"key": "SEC"},
             "/rest/api/3/search/jql": {"issues": [{"key": "PROJ-1"}]},
             "/rest/agile/1.0/sprint/7/issue": {"issues": [{"key": "PROJ-1"}], "total": 1},
         })
@@ -447,7 +471,7 @@ class ClientTest(unittest.TestCase):
             with self.subTest(name):
                 FakeJira.requests = []
                 self.assertEqual(call(), [{"key": "PROJ-1"}])
-                self.assertEqual(FakeJira.requests[0][1].get("jql"), jql)
+                self.assertEqual(FakeJira.requests[-1][1].get("jql"), jql)
         # What a returned issue says of excluded projects is dropped: its
         # parent, links and sub-tasks.
         FakeJira.routes["/rest/api/3/issue/PROJ-2"] = {"id": "2", "key": "PROJ-2", "fields": {

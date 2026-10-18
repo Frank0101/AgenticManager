@@ -10,7 +10,8 @@ URLs and status codes only, never headers.
 Its `excluded-projects` lists the projects the user's organisation doesn't
 allow AI agents to read. The client enforces it, so no skill has to: it
 refuses a request for an excluded project or ticket, leaves excluded projects
-out of every search, and drops them from the parent, links and sub-tasks of
+out of every search (those the account can see: JQL refuses a project it
+can't, whose tickets no search returns anyway), and drops them from the parent, links and sub-tasks of
 the issues it returns, as if they didn't exist.
 
 The greenhopper endpoints (board estimation field, sprint report) are internal,
@@ -70,6 +71,7 @@ class JiraClient:
         credentials = f"{settings['email']}:{settings['api-token']}".encode()
         self._auth = "Basic " + base64.b64encode(credentials).decode()
         self.excluded = frozenset(settings[EXCLUDED])
+        self._visible = None
 
     def is_excluded(self, key):
         """Whether issue `key`, or project `key`, is of an excluded project."""
@@ -79,6 +81,19 @@ class JiraClient:
         if self.is_excluded(key):
             raise SystemExit(f"{key} is of a project excluded by `{EXCLUDED}` in {SOURCE}: "
                              "it is never read")
+
+    def _visible_excluded(self):
+        """The excluded projects the account can see, looked up once."""
+        if self._visible is None:
+            visible = []
+            for key in sorted(self.excluded):
+                try:
+                    self._get(f"/rest/api/3/project/{key}")
+                    visible.append(key)
+                except NotFound:
+                    pass
+            self._visible = visible
+        return self._visible
 
     def _scrubbed(self, issue):
         """`issue` without the parent, links and sub-tasks of excluded projects."""
@@ -95,11 +110,12 @@ class JiraClient:
 
     def _not_excluded(self, jql):
         """`jql` with the clause that leaves excluded projects out, before its ordering."""
-        if not self.excluded:
+        visible = self._visible_excluded()
+        if not visible:
             return jql
         # Quoted: a key can be a JQL reserved word, such as IN.
         clause = "project not in (" + \
-            ",".join(f'"{key}"' for key in sorted(self.excluded)) + ")"
+            ",".join(f'"{key}"' for key in visible) + ")"
         order = ORDER_BY.search(jql)
         where, ordering = (jql[:order.start()],
                            jql[order.start():]) if order else (jql, "")
@@ -209,8 +225,8 @@ class JiraClient:
 
     def sprint_issues(self, sprint_id, fields):
         params = {"fields": ",".join(fields)}
-        if self.excluded:
-            params["jql"] = self._not_excluded("")
+        if clause := self._not_excluded(""):
+            params["jql"] = clause
         return [self._scrubbed(issue) for issue in
                 self._paginate(f"/rest/agile/1.0/sprint/{sprint_id}/issue", params, "issues")]
 

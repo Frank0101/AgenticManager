@@ -69,7 +69,7 @@ A user's config may only contain what the template lists, but it may leave thing
 ### Adding a source or a group
 
 - Add the source to [config-template.json](skills/agentic-manager-utils-lib/agentic_manager/config-template.json) under its group in `sources`, named `<tool>-<channel>` (channel `mcp`, `cli`, `api` or `fs`), with `"enabled": false`.
-- Give each text setting a placeholder in angle brackets, such as `"<token>"`: the config check (see [Prerequisite, sources and permissions](#prerequisite-sources-and-permissions)) reports a placeholder as not filled in when the source is enabled. Give an optional list setting an empty list, `[]`. When the agent must act on a setting, say what it does in `SETTING_NOTES` in `check_config.py`, which returns it as the source's `notes`.
+- Give each text setting a placeholder in angle brackets, such as `"<token>"`: the config check (see [Prerequisite, sources and permissions](#prerequisite-sources-and-permissions)) reports a placeholder as not filled in when the source is enabled. Give an optional list setting an empty list, `[]`.
 - For a new group, also add it to the groups table in the library's [SKILL.md](skills/agentic-manager-utils-lib/SKILL.md#config-sources), and for a new channel, to its channels table. Tests check that both match the template.
 
 ## Where AI is used
@@ -114,14 +114,14 @@ What a skill's instructions and scripts must do, on top of the rules that always
 
 #### Prerequisite, sources and permissions
 
-- Unless it's a utility, start the instructions with the prerequisite: run the library's `agentic_manager/check_config.py`. The check only validates the config: it fails if the config is missing or malformed, and otherwise returns every supported source by [group](skills/agentic-manager-utils-lib/SKILL.md#config-sources), saying whether each is enabled and, if not, how to enable it, and giving an enabled one's `notes`, which the agent follows. On a failure, or after creating the config, it also prints `next_steps`, which the agent follows, so skills don't repeat them. The check doesn't know what the skill needs, so the skill names it: any enabled source of a group, such as `workflow`, when it can work with whatever tool a team uses, or a specific source, such as `jira-api`, when its steps only work with one tool. It also says what it does if they aren't enabled (usually stop and show their `setup`):
+- Unless it's a utility, start the instructions with the prerequisite: run the library's `agentic_manager/check_config.py`. The check only validates the config: it fails if the config is missing or malformed, and otherwise returns every supported source by [group](skills/agentic-manager-utils-lib/SKILL.md#config-sources), saying whether each is enabled and, if not, how to enable it. On a failure, or after creating the config, it also prints `next_steps`, which the agent follows, so skills don't repeat them. The check doesn't know what the skill needs, so the skill names it: any enabled source of a group, such as `workflow`, when it can work with whatever tool a team uses, or a specific source, such as `jira-api`, when its steps only work with one tool. It also says what it does if they aren't enabled (usually stop and show their `setup`):
 
   ```markdown
   ## Prerequisite
 
   Run the config check, `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py`, pre-approved in the frontmatter. If it fails, stop here and follow its `next_steps`. If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ as `python3`; if the script is missing, tell them to reinstall every skill.
 
-  This skill needs any enabled source of `workflow`, and the `github-cli` source. If one is missing, stop and tell the user how to enable it, showing its `setup` and the config `path`. Follow the `notes` the check gives for the sources it uses.
+  This skill needs any enabled source of `workflow`, and the `github-cli` source. If one is missing, stop and tell the user how to enable it, showing its `setup` and the config `path`.
   ```
 
 - If the skill runs its own scripts, pre-approve them in the frontmatter so Claude Code doesn't ask permission for each step, and tell the agent to call them by that same path: `allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/<script>.py *)`, one per script, separated by spaces. Never pre-approve a command that changes the user's config or anything outside the skill's own output; without the ` *`, a rule approves only the command with no arguments, as `check_config.py`'s does, so its `--init` still asks.

@@ -30,10 +30,9 @@ makes it. The config is only ever written by --init, and never overwritten.
 "sources" lists every source of the template by group, enabled or not, so the
 calling skill decides what it needs. A source named "<tool>-<channel>" (e.g.
 "jira-api") comes already split into tool and channel, so skills never parse
-the name. A disabled source has "setup": how to enable it, and an enabled one
-"notes" on any of its settings the agent must act on (SETTING_NOTES). Setting
-values are never returned: they can hold secrets, which a script reads from
-the config itself.
+the name. A disabled source has "setup": how to enable it. Setting values are
+never returned: they can hold secrets, which a script reads from the config
+itself.
 """
 
 import json
@@ -49,15 +48,6 @@ from agentic_manager.config import CONFIG_PATH, is_filled, is_text_list, load_js
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "config-template.json")
-
-# What the agent does about a setting of an enabled source. The organisation's
-# instructions reach the agent, never a script, so the agent is the one that
-# can tell the user a setting is missing what they forbid.
-SETTING_NOTES = {
-    "excluded-projects": "Scripts never read a Jira project this setting lists. If your instructions forbid "
-                         "reading a Jira project it doesn't list, tell the user to add that project's key to it "
-                         "in the config, and never read that project meanwhile.",
-}
 
 # What the user does to the config once it exists.
 EDIT = ("edit the config at `path`: enable the sources they use, fill in their "
@@ -158,8 +148,6 @@ def _list_sources(config, template):
             if not entry["enabled"]:
                 entry["setup"] = _setup_steps(
                     group, name, template_settings, config)
-            elif notes := [SETTING_NOTES[k] for k in template_settings if k in SETTING_NOTES]:
-                entry["notes"] = notes
             sources[group][name] = entry
     return sources
 

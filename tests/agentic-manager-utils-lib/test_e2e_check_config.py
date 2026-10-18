@@ -262,8 +262,6 @@ class CheckConfigTest(ScriptTest):
                         tool, _, channel = source_name.rpartition("-")
                         if source["enabled"]:
                             found.add(f"{group}.{source_name}")
-                            # test_check_config.py checks the notes.
-                            source.pop("notes", None)
                             self.assertEqual(
                                 source, {"tool": tool, "channel": channel, "enabled": True})
                         else:

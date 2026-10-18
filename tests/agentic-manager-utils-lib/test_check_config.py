@@ -164,9 +164,7 @@ class ListSourcesTest(unittest.TestCase):
         listed = check_config._list_sources(enabled, TEMPLATE)
         self.assertEqual(listed, {
             "workflow": {
-                # An enabled source carries the notes on its settings.
-                "jira-api": {"tool": "jira", "channel": "api", "enabled": True,
-                             "notes": [check_config.SETTING_NOTES["excluded-projects"]]},
+                "jira-api": {"tool": "jira", "channel": "api", "enabled": True},
                 "azure-devops-cli": {"tool": "azure-devops", "channel": "cli", "enabled": False,
                                      "setup": 'add "azure-devops-cli": {"enabled": true} inside "sources.workflow"'}},
             "messaging": {

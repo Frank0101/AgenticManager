@@ -100,18 +100,23 @@ def text_problems(content, data):
     so the fix stays next to the text that needs it."""
     problems, texts = [], [("key_achievements", content["key_achievements"], SUMMARY_WORDS),
                            ("blockers_risks", content["blockers_risks"], SUMMARY_WORDS)]
+    # An epic's groups share its limit: their counts say where to cut.
+    groups = {}
     for epic in data["epics"]:
         given = content["epic_commentary"].get(epic["key"]) or {}
         texts.append((f"epic_commentary.{epic['key']}", " ".join(
             given.values()), EPIC_COMMENTARY_WORDS))
+        groups[f"epic_commentary.{epic['key']}"] = given
         for group, text in given.items():
             if len(SENTENCE_BREAK.split(text.strip())) != 1:
                 problems.append(
                     f"epic_commentary.{epic['key']}.{group}: must be one sentence")
     for field, text, limit in texts:
         if word_count(text) > limit:
+            shares = ", ".join(
+                f"{group} {word_count(part)}" for group, part in groups.get(field, {}).items())
             problems.append(
-                f"{field}: {word_count(text)} words, at most {limit}")
+                f"{field}: {word_count(text)} words, at most {limit}" + (f" ({shares})" if shares else ""))
         if ISSUE_KEY.search(text):
             problems.append(
                 f"{field}: names tickets {ISSUE_KEY.findall(text)[:3]}; describe the work instead")

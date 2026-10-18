@@ -468,8 +468,9 @@ class ValidateContentTest(unittest.TestCase):
             ("epic_commentary.PROJ-100.completed: must be one sentence",
              {"epic_commentary": {**commentary, "PROJ-100": {**commentary["PROJ-100"],
                                   "completed": "Staff can sign in. Password reset also works."}}}),
-            # An epic's limit counts all its groups' sentences together.
-            ("epic_commentary.PROJ-100: 67 words, at most 60",
+            # An epic's limit counts all its groups' sentences together, and
+            # the error gives each group's share, to show where to cut.
+            ("epic_commentary.PROJ-100: 67 words, at most 60 (completed 50, not_completed 9, descoped 8)",
              {"epic_commentary": {**commentary, "PROJ-100": {**commentary["PROJ-100"], "completed": "word " * 50}}}),
             ("epic_commentary.__no_epic__: names tickets ['PROJ-3']",
              {"epic_commentary": {**commentary, NO_EPIC: {"completed": "PROJ-3 shipped."}}}),
