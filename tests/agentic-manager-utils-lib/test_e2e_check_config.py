@@ -221,9 +221,9 @@ class CheckConfigTest(ScriptTest):
             config["output"]["root"] = root
             return lambda: self.write_raw(json.dumps(config))
 
-        def jira_api_and_mcp(c):
+        def jira_and_github(c):
             self.enable_jira(c)
-            c["workflow"]["jira-mcp"]["enabled"] = True
+            c["source_control"]["github-cli"]["enabled"] = True
         # name: (the config, the sources enabled)
         cases = [
             ("the template as is", self.write_config, set()),
@@ -240,8 +240,12 @@ class CheckConfigTest(ScriptTest):
                 {"base-url": "https://acme.atlassian.net", "email": "me@acme.test", "api-token": "s3cret"})), set()),
             ("an fs source with a path", change(lambda c: c["local_vault"]["logseq-fs"].update(
                 enabled=True, path="~/logseq")), {"local_vault.logseq-fs"}),
-            ("several enabled", change(jira_api_and_mcp),
-             {"workflow.jira-api", "workflow.jira-mcp"}),
+            ("several enabled", change(jira_and_github),
+             {"workflow.jira-api", "source_control.github-cli"}),
+            ("a list setting filled in", change(lambda c: (self.enable_jira(c), c["workflow"]["jira-api"].update(
+                {"excluded-projects": ["SEC"]}))), {"workflow.jira-api"}),
+            ("a list setting left out", change(lambda c: (self.enable_jira(c), c["workflow"]["jira-api"].pop(
+                "excluded-projects"))), {"workflow.jira-api"}),
             ("the output root a placeholder", output_root("<path>"), set()),
             ("the output root blank", output_root(""), set()),
             ("the output root set", output_root("~/reports"), set()),
@@ -258,6 +262,8 @@ class CheckConfigTest(ScriptTest):
                         tool, _, channel = source_name.rpartition("-")
                         if source["enabled"]:
                             found.add(f"{group}.{source_name}")
+                            # test_check_config.py checks the notes.
+                            source.pop("notes", None)
                             self.assertEqual(
                                 source, {"tool": tool, "channel": channel, "enabled": True})
                         else:
@@ -313,8 +319,12 @@ class CheckConfigTest(ScriptTest):
                 self.assertRegex(
                     name, r"^[a-z0-9]+(-[a-z0-9]+)*-(mcp|cli|api|fs)$", where)
                 self.assertIs(settings.get("enabled"), False, where)
+                # A text setting is a placeholder; a list setting, which is
+                # optional, is empty.
                 for key, value in settings.items():
-                    if key != "enabled":
+                    if isinstance(value, list):
+                        self.assertEqual(value, [], f"{where}.{key}")
+                    elif key != "enabled":
                         self.assertRegex(value, r"^<.+>$", f"{where}.{key}")
         for key, value in self.template["output"].items():
             self.assertRegex(value, r"^<.+>$", f"output.{key}")

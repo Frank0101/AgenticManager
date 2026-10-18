@@ -46,8 +46,8 @@ class ConfigTest(unittest.TestCase):
         source.update(settings)
         return {"sources": {"workflow": {"jira-api": source}}}
 
-    def read_source(self):
-        return config.read_source("workflow", "jira-api", SETTINGS)
+    def read_source(self, lists=()):
+        return config.read_source("workflow", "jira-api", SETTINGS, lists)
 
     def test_load_json(self):
         # None: no file; a str: the file's text. Anything but a JSON object,
@@ -74,12 +74,40 @@ class ConfigTest(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIs(config.is_filled(value), filled)
 
+    def test_is_text_list(self):
+        for value, ok in [([], True), (["SEC"], True), (["SEC", 5], False), ("SEC", False), (None, False)]:
+            with self.subTest(value=value):
+                self.assertIs(config.is_text_list(value), ok)
+
+    def test_is_enabled(self):
+        for name, written, enabled in [("enabled", self.jira(), True),
+                                       ("disabled", self.jira(
+                                           enabled=False), False),
+                                       ("not a boolean", self.jira(
+                                           enabled="true"), False),
+                                       ("left out", {}, False)]:
+            with self.subTest(name):
+                self.write(written)
+                self.assertIs(config.is_enabled(
+                    "workflow", "jira-api"), enabled)
+
     def test_read_source(self):
         # Only the settings asked for, trimmed.
         self.write(
             self.jira(**{"base-url": " https://acme.test ", "email": "me@acme.test"}))
         self.assertEqual(self.read_source(),
                          {"base-url": "https://acme.test", "api-token": "s3cret"})
+
+    def test_read_source_lists(self):
+        # A list setting left out is empty; one given is trimmed.
+        cases = [("left out", self.jira(), []),
+                 ("empty", self.jira(**{"excluded-projects": []}), []),
+                 ("given", self.jira(**{"excluded-projects": [" SEC ", "HR"]}), ["SEC", "HR"])]
+        for name, written, expected in cases:
+            with self.subTest(name):
+                self.write(written)
+                self.assertEqual(self.read_source(
+                    lists=("excluded-projects",))["excluded-projects"], expected)
 
     def test_read_source_failures(self):
         # Each failure says what to fix, never showing a setting's value.
@@ -103,12 +131,16 @@ class ConfigTest(unittest.TestCase):
             (self.jira(**{"api-token": None}), "not filled in: api-token."),
             (self.jira(**{"base-url": None, "api-token": ""}),
              "not filled in: base-url, api-token."),
+            (self.jira(**{"excluded-projects": "SEC"}),
+             "not a list of strings: excluded-projects."),
+            (self.jira(**{"excluded-projects": ["SEC", 5]}),
+             "not a list of strings: excluded-projects."),
         ]
         for written, expected in cases:
             with self.subTest(expected, config=written):
                 self.write(written)
                 with self.assertRaises(SystemExit) as raised:
-                    self.read_source()
+                    self.read_source(lists=("excluded-projects",))
                 self.assertIn(expected, str(raised.exception))
                 self.assertNotIn("s3cret", str(raised.exception))
 

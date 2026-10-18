@@ -6,6 +6,7 @@ import os
 import tempfile
 from unittest import mock
 
+import common  # noqa: F401  (puts the library on the path)
 from agentic_manager import config, output_folder
 
 DECK = "Acme-Q3-Review_26-10-05"

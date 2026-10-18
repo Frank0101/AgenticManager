@@ -45,6 +45,7 @@ MAX_BYTES = 20 * 1024 * 1024
 # An image's type by its first bytes; SVG is text, found by its root element.
 SIGNATURES = [(b"\x89PNG\r\n\x1a\n", "png"), (b"\xff\xd8\xff", "jpg"), (b"GIF87a", "gif"),
               (b"GIF89a", "gif")]
+NOT_AN_IMAGE = "is not a PNG, JPEG, GIF, WebP or SVG image"
 
 
 def add_asset(path, title, shows, name=None):
@@ -59,8 +60,7 @@ def add_asset(path, title, shows, name=None):
         data = f.read()
     kind = image_type(data)
     if not kind:
-        raise SystemExit(
-            f"{path!r} is not a PNG, JPEG, GIF, WebP or SVG image")
+        raise SystemExit(f"{path!r} {NOT_AN_IMAGE}")
     return save(name, data, kind, text)
 
 
@@ -80,8 +80,8 @@ def add_download(url, page, license, credit, title, shows, name=None):
     data = download(url)
     kind = image_type(data)
     if not kind:
-        raise SystemExit(f"{url} is not a PNG, JPEG, GIF, WebP or SVG image: give the image's own "
-                         "address, not the page that shows it")
+        raise SystemExit(
+            f"{url} {NOT_AN_IMAGE}: give the image's own address, not the page that shows it")
     return save(name, data, kind, text)
 
 
@@ -92,10 +92,13 @@ def redescribe(name, title, shows):
     if not image:
         raise SystemExit(
             f"_assets has no image {name!r}: add it with --file or --url")
-    text = describe(title, shows, read_asset(name)["credit"])
+    write_description(name, describe(title, shows, read_asset(name)["credit"]))
+    return {"asset": name, "path": os.path.join(assets_dir(), name, image), "replaced": False}
+
+
+def write_description(name, text):
     write_output_file(
         FOLDER_NAME, f"{ASSETS}/{name}/{EXAMPLE_DESCRIPTION}", text.encode("utf-8"))
-    return {"asset": name, "path": os.path.join(assets_dir(), name, image), "replaced": False}
 
 
 def describe(title, shows, credit=None):
@@ -113,8 +116,7 @@ def save(name, data, kind, description):
         shutil.rmtree(folder)
     # The description goes through the shared writer; the image, not text, is
     # written beside it, in the folder the writer has just checked and made.
-    write_output_file(
-        FOLDER_NAME, f"{ASSETS}/{name}/{EXAMPLE_DESCRIPTION}", description.encode("utf-8"))
+    write_description(name, description)
     path = os.path.join(folder, f"image.{kind}")
     with open(path, "wb") as f:
         f.write(data)

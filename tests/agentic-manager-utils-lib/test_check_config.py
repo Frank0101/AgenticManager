@@ -21,7 +21,7 @@ from agentic_manager import check_config  # noqa: E402
 
 TEMPLATE = {"sources": {
     "workflow": {
-        "jira-api": {"enabled": False, "api-token": "<token>"},
+        "jira-api": {"enabled": False, "api-token": "<token>", "excluded-projects": []},
         "azure-devops-cli": {"enabled": False},
     },
     "messaging": {"slack-mcp": {"enabled": False}},
@@ -34,6 +34,7 @@ class HelpersTest(unittest.TestCase):
         cases = [
             ("type_name of a bool", check_config._type_name(True), "true or false"),
             ("type_name of a string", check_config._type_name("<token>"), "a string"),
+            ("type_name of a list", check_config._type_name([]), "a list of strings"),
             ("quoted", check_config._quoted(["a", "b"]), '"a", "b"'),
             ("check_unknown, a group", check_config._check_unknown(
                 "sources", {"workflow": {}, "chat": {}}, GROUPS, "group"),
@@ -51,7 +52,8 @@ class HelpersTest(unittest.TestCase):
 class CheckSourceTest(unittest.TestCase):
     def test_check_source(self):
         # A disabled source may leave its settings blank; an enabled one must
-        # fill them all in.
+        # fill in every text setting. A list setting is optional, but must
+        # hold only text.
         where = "sources.workflow.jira-api"
         unfilled = f'{where}.api-token is not filled in: fill it in, or disable "{where}"'
         cases = [
@@ -68,8 +70,15 @@ class CheckSourceTest(unittest.TestCase):
             ({"enabled": True, "api-token": ""}, [unfilled]),
             ({"enabled": True, "api-token": " "}, [unfilled]),
             ({"enabled": True, "api-token": "<token>"}, [unfilled]),
+            ({"enabled": True, "api-token": "abc", "excluded-projects": []}, []),
+            ({"enabled": True, "api-token": "abc",
+             "excluded-projects": ["SEC"]}, []),
+            ({"enabled": True, "api-token": "abc", "excluded-projects": "SEC"},
+             [f"{where}.excluded-projects must be a list of strings"]),
+            ({"enabled": False, "excluded-projects": ["SEC", 5]},
+             [f"{where}.excluded-projects must be a list of strings"]),
             ({"enabled": True, "url": "x"},
-             [f'unknown setting "{where}.url" (supported: enabled, api-token)', unfilled]),
+             [f'unknown setting "{where}.url" (supported: enabled, api-token, excluded-projects)', unfilled]),
         ]
         for settings, expected in cases:
             with self.subTest(settings=settings):
@@ -125,7 +134,7 @@ class CheckOutputTest(unittest.TestCase):
 
 class SetupStepsTest(unittest.TestCase):
     def test_setup_steps(self):
-        jira = '{"enabled": true, "api-token": "<token>"}'
+        jira = '{"enabled": true, "api-token": "<token>", "excluded-projects": []}'
         cases = [
             ({}, "jira-api",
              f'add "sources": {{"workflow": {{"jira-api": {jira}}}}} at the top level, then fill in "api-token"'),
@@ -155,7 +164,9 @@ class ListSourcesTest(unittest.TestCase):
         listed = check_config._list_sources(enabled, TEMPLATE)
         self.assertEqual(listed, {
             "workflow": {
-                "jira-api": {"tool": "jira", "channel": "api", "enabled": True},
+                # An enabled source carries the notes on its settings.
+                "jira-api": {"tool": "jira", "channel": "api", "enabled": True,
+                             "notes": [check_config.SETTING_NOTES["excluded-projects"]]},
                 "azure-devops-cli": {"tool": "azure-devops", "channel": "cli", "enabled": False,
                                      "setup": 'add "azure-devops-cli": {"enabled": true} inside "sources.workflow"'}},
             "messaging": {

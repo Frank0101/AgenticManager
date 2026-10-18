@@ -17,14 +17,12 @@
       }
     },
     "workflow": {
-      "jira-mcp": {
-        "enabled": false
-      },
       "jira-api": {
         "enabled": false,
         "base-url": "<https://your-site.atlassian.net>",
         "email": "<email>",
-        "api-token": "<token>"
+        "api-token": "<token>",
+        "excluded-projects": []
       }
     },
     "messaging": {

@@ -91,6 +91,14 @@ class ProblemsTest(unittest.TestCase):
              "`{{` starts no token"),
             ("image not in _assets", set_slide("<img src='{{asset:logo.svg}}'>"),
              "slides[0].html: {{asset:logo.svg}} names no image in _assets"),
+            # An image placed where the page links nothing, as a CSS
+            # background or as text, is refused here, not by the check.
+            ("image as a background", set_slide("<div style=\"background: url('{{asset:logo.svg}}')\"></div>"),
+             "{{asset:logo.svg}} goes only in an image's link"),
+            ("image as text", set_slide(
+                "<p>{{asset:logo.svg}}</p>"), "{{asset:logo.svg}} goes only in an image's link"),
+            ("token in the style", lambda d: d.update(style=["a { background: url({{asset:logo.svg}}) }"]),
+             "style: holds a {{...}} token"),
             ("image by its path", set_slide("<img src='/Users/me/logo.png'>"),
              "<img src> loads '/Users/me/logo.png': add the image with add_asset.py"),
             ("image by a relative path", set_slide("<img src='../_assets/logo.png'>"),
@@ -197,7 +205,7 @@ class BuildTest(unittest.TestCase):
     def test_page(self):
         # The page wraps each slide in its frame with its own classes, puts
         # the deck's CSS after the fixed rules, places charts and rings, and
-        # loads each library only when a slide uses it.
+        # loads Chart.js only when a slide holds a chart.
         page = self.build(content())
         self.assertIn("<title>Acme Q3 Review</title>", page)
         self.assertLess(page.index("@media print"),

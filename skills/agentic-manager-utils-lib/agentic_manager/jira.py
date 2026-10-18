@@ -7,13 +7,21 @@ Basic auth (email + token). The token is never printed or written to any file;
 errors name a setting, never its value. If you add debug output here, print
 URLs and status codes only, never headers.
 
+Its `excluded-projects` lists the projects the user's organisation doesn't
+allow AI agents to read. The client enforces it, so no skill has to: it
+refuses a request for an excluded project or ticket, leaves excluded projects
+out of every search, and drops them from the parent, links and sub-tasks of
+the issues it returns, as if they didn't exist.
+
 The greenhopper endpoints (board estimation field, sprint report) are internal,
 not part of Atlassian's documented API, so they could change without notice. The
 sprint report is still required: it is the only source of `puntedIssues`
 (issues removed from a sprint). Once an issue leaves a sprint its own Sprint
 field no longer mentions it, so the public API can't find it. If its shape
 changes, sprint_report() fails rather than return a sprint report with its
-removals missing.
+removals missing. The dev-status endpoints, behind an issue's Development
+panel, are internal too: they are the only way to the pull requests a code
+host's integration links to an issue.
 """
 import base64
 import json
@@ -31,6 +39,7 @@ from agentic_manager.web import ssl_context
 GROUP, NAME = "workflow", "jira-api"
 SOURCE = f"sources.{GROUP}.{NAME}"
 SETTINGS = ("base-url", "email", "api-token")
+EXCLUDED = "excluded-projects"
 
 # Field names that hold story points, tried in order when the board's own
 # estimation setting can't be read. Sites differ: company-managed projects
@@ -38,6 +47,12 @@ SETTINGS = ("base-url", "email", "api-token")
 STORY_POINT_FIELD_NAMES = ("Story Points", "Story point estimate")
 
 PAGE_SIZE = 100
+DEV_STATUS = "/rest/dev-status/latest/issue"
+# The type of Jira Software's Sprint field. A site can have other fields named
+# Sprint, so the field is found by its type.
+SPRINT_TYPE = "com.pyxis.greenhopper.jira:gh-sprint"
+# Where a JQL query's ordering starts: a clause added to the query goes before it.
+ORDER_BY = re.compile(r"\border\s+by\b", re.I)
 
 # A Jira issue key such as PROJ-12: its project key, capitals and digits
 # starting with a letter, then the issue's number. PROJECT_KEY is the pattern
@@ -47,13 +62,49 @@ ISSUE_KEY = re.compile(rf"\b{PROJECT_KEY}-\d+\b")
 
 
 class JiraClient:
-    """The client: the user's profile, fields, statuses, sprints, boards, issues, their field changes, comments and the sprint report."""
+    """The client for the user's Jira site, which never reads a project `excluded-projects` lists."""
 
     def __init__(self):
-        settings = read_source(GROUP, NAME, SETTINGS)
+        settings = read_source(GROUP, NAME, SETTINGS, lists=(EXCLUDED,))
         self.base_url = settings["base-url"].rstrip("/")
         credentials = f"{settings['email']}:{settings['api-token']}".encode()
         self._auth = "Basic " + base64.b64encode(credentials).decode()
+        self.excluded = frozenset(settings[EXCLUDED])
+
+    def is_excluded(self, key):
+        """Whether issue `key`, or project `key`, is of an excluded project."""
+        return key.rpartition("-")[0] in self.excluded or key in self.excluded
+
+    def _refuse_excluded(self, key):
+        if self.is_excluded(key):
+            raise SystemExit(f"{key} is of a project excluded by `{EXCLUDED}` in {SOURCE}: "
+                             "it is never read")
+
+    def _scrubbed(self, issue):
+        """`issue` without the parent, links and sub-tasks of excluded projects."""
+        fields = issue.get("fields") or {}
+        if self.is_excluded(nested(fields, ["parent", "key"], "")):
+            fields.pop("parent")
+        if "issuelinks" in fields:
+            fields["issuelinks"] = [link for link in fields["issuelinks"] if not self.is_excluded(
+                nested(link, ["outwardIssue", "key"]) or nested(link, ["inwardIssue", "key"], ""))]
+        if "subtasks" in fields:
+            fields["subtasks"] = [task for task in fields["subtasks"]
+                                  if not self.is_excluded(task.get("key", ""))]
+        return issue
+
+    def _not_excluded(self, jql):
+        """`jql` with the clause that leaves excluded projects out, before its ordering."""
+        if not self.excluded:
+            return jql
+        # Quoted: a key can be a JQL reserved word, such as IN.
+        clause = "project not in (" + \
+            ",".join(f'"{key}"' for key in sorted(self.excluded)) + ")"
+        order = ORDER_BY.search(jql)
+        where, ordering = (jql[:order.start()],
+                           jql[order.start():]) if order else (jql, "")
+        where = f"({where.strip()}) AND {clause}" if where.strip() else clause
+        return f"{where} {ordering.strip()}".strip()
 
     def whoami(self):
         """The authenticated user profile, including displayName and timeZone."""
@@ -61,6 +112,20 @@ class JiraClient:
 
     def fields(self):
         return self._get("/rest/api/3/field")
+
+    def field_ids(self):
+        """{field name: field id} of the site's fields; of several fields with
+        one name, the first Jira lists."""
+        by_name = {}
+        for field in self.fields():
+            by_name.setdefault(field.get("name"), field.get("id"))
+        return by_name
+
+    def sprint_field(self):
+        """The id of the Sprint field, whose value is each sprint the issue was
+        in with its name, state and goal; None on a site without one."""
+        return next((f.get("id") for f in self.fields()
+                     if nested(f, ["schema", "custom"]) == SPRINT_TYPE), None)
 
     def statuses(self):
         return self._get("/rest/api/3/status")
@@ -135,6 +200,7 @@ class JiraClient:
         return self._get(f"/rest/agile/1.0/sprint/{sprint_id}")
 
     def boards_for_project(self, project_key):
+        self._refuse_excluded(project_key)
         return self._paginate("/rest/agile/1.0/board", {"projectKeyOrId": project_key}, "values")
 
     def sprints_for_board(self, board_id, state=None):
@@ -142,8 +208,11 @@ class JiraClient:
         return self._paginate(f"/rest/agile/1.0/board/{board_id}/sprint", params, "values")
 
     def sprint_issues(self, sprint_id, fields):
-        return self._paginate(f"/rest/agile/1.0/sprint/{sprint_id}/issue",
-                              {"fields": ",".join(fields)}, "issues")
+        params = {"fields": ",".join(fields)}
+        if self.excluded:
+            params["jql"] = self._not_excluded("")
+        return [self._scrubbed(issue) for issue in
+                self._paginate(f"/rest/agile/1.0/sprint/{sprint_id}/issue", params, "issues")]
 
     def sprint_report(self, board_id, sprint_id):
         """Jira's own sprint report, the only source of removed issues."""
@@ -161,9 +230,7 @@ class JiraClient:
         """(Flagged field id, story points field id); either may be None. The
         points field is the board's own estimation setting, else the first
         field named as in STORY_POINT_FIELD_NAMES."""
-        by_name = {}
-        for field in self.fields():
-            by_name.setdefault(field.get("name"), field.get("id"))
+        by_name = self.field_ids()
         points = self.board_estimation_field(board_id)
         if not points:
             points = next(
@@ -187,10 +254,68 @@ class JiraClient:
             return stat["fieldId"]
         return None
 
+    def issue(self, key, fields):
+        """One issue by key, with `fields`. A key of a ticket moved to another
+        project still finds it, under its current key."""
+        self._refuse_excluded(key)
+        issue = self._get(
+            f"/rest/api/3/issue/{key}", {"fields": ",".join(fields)})
+        self._refuse_excluded(issue["key"])
+        return self._scrubbed(issue)
+
+    def search(self, jql, fields):
+        """Every issue a JQL query matches, with `fields`, excluded projects
+        left out. Paging is token-based and ends only when `nextPageToken` is
+        absent."""
+        out, token = [], None
+        while True:
+            params = {"jql": self._not_excluded(jql), "maxResults": PAGE_SIZE,
+                      "fields": ",".join(fields)}
+            if token:
+                params["nextPageToken"] = token
+            page = self._get("/rest/api/3/search/jql", params)
+            out.extend(self._scrubbed(issue)
+                       for issue in page.get("issues", []))
+            token = page.get("nextPageToken")
+            if not token:
+                return out
+
+    def pull_requests(self, issue_id):
+        """The pull requests an issue's Development panel lists, from every
+        code host connected to the site, as the panel describes them: name,
+        url, status, source and destination branch, lastUpdate,
+        repositoryName; [] for none."""
+        return self._development(issue_id, "pullrequest", "pullRequests")
+
+    def commits(self, issue_id):
+        """The repositories an issue's Development panel lists, each with the
+        commits that name the issue: name, url and commits (id, displayId,
+        message, authorTimestamp, url); [] for none."""
+        return self._development(issue_id, "repository", "repositories")
+
+    def _development(self, issue_id, data_type, items):
+        """The `items` of one kind of the Development panel, from every code
+        host its summary names."""
+        summary = self._get(f"{DEV_STATUS}/summary", {"issueId": issue_id})
+        hosts = nested(summary, ["summary", data_type, "byInstanceType"], {})
+        out = []
+        for host in hosts:
+            detail = self._get(f"{DEV_STATUS}/detail", {"issueId": issue_id, "applicationType": host,
+                                                        "dataType": data_type})
+            out += [item for found in detail.get("detail", [])
+                    for item in found.get(items, [])]
+        return out
+
+    def remote_links(self, key):
+        """An issue's web links, such as pages and documents, each with its
+        object's title and url."""
+        self._refuse_excluded(key)
+        return self._get(f"/rest/api/3/issue/{key}/remotelink")
+
     def issues_by_keys(self, keys, fields):
         """Issues by key through JQL; [] for no keys rather than a query that
-        matches everything."""
-        return self._issues_where("key", keys, fields)
+        matches everything. Keys of excluded projects are left out."""
+        return self._issues_where("key", [k for k in keys if not self.is_excluded(k)], fields)
 
     def issues_by_ids(self, ids, fields):
         """Issues by numeric id, as changelogs name them; [] for no ids."""
@@ -204,6 +329,7 @@ class JiraClient:
         without one, its name ("IssueParentAssociation"). Reads the whole
         changelog, since the changes can sit past the first page; a truncated
         changelog would give a wrong history with no error anywhere."""
+        self._refuse_excluded(issue_key)
         names = {ident: name for name, ident in fields.items() if ident}
         values = self._paginate(
             f"/rest/api/3/issue/{issue_key}/changelog", {}, "values")
@@ -221,6 +347,7 @@ class JiraClient:
         return changes
 
     def comments(self, issue_key):
+        self._refuse_excluded(issue_key)
         return self._paginate(f"/rest/api/3/issue/{issue_key}/comment", {}, "comments")
 
     def _get(self, path, params=None):
@@ -265,23 +392,8 @@ class JiraClient:
         return out
 
     def _issues_where(self, clause, values, fields):
-        """Issues whose `clause` is one of `values`. Paging is token-based and
-        ends only when `nextPageToken` is absent."""
-        if not values:
-            return []
-        out, token = [], None
-        while True:
-            params = {"jql": f"{clause} in ({','.join(values)})", "maxResults": PAGE_SIZE,
-                      "fields": ",".join(fields)}
-            if token:
-                params["nextPageToken"] = token
-            page = self._get("/rest/api/3/search/jql", params)
-            batch = page.get("issues", [])
-            out.extend(batch)
-            token = page.get("nextPageToken")
-            if not token:
-                break
-        return out
+        """Issues whose `clause` is one of `values`."""
+        return self.search(f"{clause} in ({','.join(values)})", fields) if values else []
 
 
 class NotFound(SystemExit):
@@ -330,12 +442,13 @@ ADF_BLOCKS = {"paragraph", "heading", "listItem", "codeBlock",
               "blockquote", "tableRow", "rule", "mediaGroup"}
 
 
-def plain_text(value):
+def plain_text(value, links=False):
     """A rich-text field (a description or a comment) as plain text, whether
     Jira returns it in Atlassian Document Format, as API v3 does, or as a
     string, as the Agile API does; "" for none. Line breaks between blocks are
     kept, other whitespace collapsed. ADF date timestamps become UTC calendar
-    dates in DD/MM/YYYY format."""
+    dates in DD/MM/YYYY format. With `links`, linked text is followed by its
+    URL in brackets, so the pages a ticket links can be followed."""
     if not value:
         return ""
     if isinstance(value, str):
@@ -346,7 +459,11 @@ def plain_text(value):
         def walk(node, in_cell=False):
             kind, attrs = node.get("type"), node.get("attrs") or {}
             if kind == "text":
-                parts.append(node.get("text", ""))
+                text = node.get("text", "")
+                href = next((m.get("attrs", {}).get("href") for m in node.get("marks") or []
+                             if m.get("type") == "link"), None)
+                parts.append(
+                    f"{text} ({href})" if links and href and href != text else text)
             elif kind == "hardBreak":
                 parts.append(" " if in_cell else "\n")
             elif kind == "date":

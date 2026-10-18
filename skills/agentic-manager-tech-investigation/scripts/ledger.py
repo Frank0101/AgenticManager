@@ -951,10 +951,27 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Edit the research ledger's tables, findings, text and links by ID.")
     commands = parser.add_subparsers(dest="command", required=True)
-    names = ("next-id", "row", "batch", "move", "remove", "finding",
-             "link", "unlink", "sync-sources", "text", "show", "find", "status", "brief", "help", "review")
-    for name in names:
-        sub = commands.add_parser(name)
+    # What each command does; `help` prints the input each writing one reads.
+    names = {
+        "next-id": "print the next free ID of a kind",
+        "row": "write a table's row, its cells on standard input",
+        "batch": "write many rows and findings in one call, all or nothing",
+        "move": "move an action between ready, blocked and completed",
+        "remove": "delete a row or a finding",
+        "finding": "add or replace a finding, read from standard input",
+        "link": "add a link definition under Links",
+        "unlink": "remove a link definition",
+        "sync-sources": "rewrite each source's findings from the findings' evidence",
+        "text": "replace a text section, read from standard input",
+        "show": "print a finding, a row, a table or a text section",
+        "find": "print every record that mentions a text",
+        "status": "print the counts, open work and the next step",
+        "brief": "print what writing the report reads",
+        "help": "print each table's columns and values, and each writing command's input, with a command to copy",
+        "review": "record an independent review round",
+    }
+    for name, about in names.items():
+        sub = commands.add_parser(name, help=about, description=about)
         if name == "help":
             sub.add_argument("--table", choices=list(TABLES) + list(COMMAND_HELP),
                              help="a table, or one of the other commands: " + ", ".join(COMMAND_HELP) + "; leave out for all")
@@ -971,10 +988,11 @@ def main(argv=None):
             choice.add_argument("--stopped",
                                 help="what the user said when, asked whether to go on, they chose to stop")
         if name == "next-id":
-            sub.add_argument("--kind", required=True, choices=list("SQFCDG"))
+            sub.add_argument("--kind", required=True, choices=list("SQFCDG"),
+                             help="the ID's letter")
         if name in ("row", "remove"):
             sub.add_argument("--table", required=True, choices=list(TABLES) +
-                             (["findings"] if name == "remove" else []))
+                             (["findings"] if name == "remove" else []), help="the table")
             sub.add_argument(
                 "--id", help="the row's ID; leave out for file-coverage")
             sub.add_argument(
@@ -984,25 +1002,28 @@ def main(argv=None):
             sub.add_argument(
                 "--id", help="the finding to replace; leave out to add the next one")
         if name == "move":
-            sub.add_argument("--id", required=True)
+            sub.add_argument("--id", required=True, help="the action's ID")
             sub.add_argument("--to", required=True,
-                             choices=["ready", "blocked", "completed"])
+                             choices=["ready", "blocked", "completed"], help="where it goes")
             sub.add_argument("--set", action="append",
                              default=[], help='"Column=value"')
         if name in ("link", "unlink"):
-            sub.add_argument("--key", required=True)
+            sub.add_argument("--key", required=True,
+                             help="the link's key, as reference links name it")
         if name == "link":
-            sub.add_argument("--url", required=True)
+            sub.add_argument("--url", required=True, help="the link's URL")
         if name == "show":
             sub.add_argument(
                 "--id", help="a finding, or a row's ID")
-            sub.add_argument("--table", choices=list(TABLES) + ["findings"])
+            sub.add_argument("--table", choices=list(TABLES) + ["findings"],
+                             help="a whole table")
             sub.add_argument(
                 "--section", help="a text section, printed as written: " + " or ".join(TEXT_SECTIONS))
             sub.add_argument("--raw", action="store_true",
                              help="print a finding or rows as the input their writing command reads")
         if name == "find":
-            sub.add_argument("--text", required=True)
+            sub.add_argument("--text", required=True,
+                             help="the text to look for, such as a source, a file or a term")
         if name == "text":
             sub.add_argument("--section", required=True,
                              help=" or ".join(TEXT_SECTIONS))

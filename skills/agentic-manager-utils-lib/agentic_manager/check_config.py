@@ -6,6 +6,7 @@ where skills write files.
 
 Usage: check_config.py [--init]
   --init  copies the template to the config path first, if no config exists yet.
+  --help  prints this.
 
 Prints one line of JSON:
   success: {"ok": true, "path": ..., "template": ..., "created": bool,
@@ -18,7 +19,8 @@ The config may hold only what the template lists, with the same types, but may
 leave things out: a missing group or source counts as disabled, and a missing
 output setting as not set, so configs keep working when the template gains new
 ones. The user only switches "enabled" and fills in settings; an enabled source
-must have every setting filled in, while output settings are optional.
+must have every text setting filled in, while a list setting, which the
+template holds as an empty list, and output settings are optional.
 
 "next_steps" tells the agent what to do about the config, so no skill repeats
 it: the agent only changes the config to create it when it is missing, and only
@@ -28,9 +30,10 @@ makes it. The config is only ever written by --init, and never overwritten.
 "sources" lists every source of the template by group, enabled or not, so the
 calling skill decides what it needs. A source named "<tool>-<channel>" (e.g.
 "jira-api") comes already split into tool and channel, so skills never parse
-the name. A disabled source has "setup": how to enable it. Setting values are
-never returned: they can hold secrets, which a script reads from the config
-itself.
+the name. A disabled source has "setup": how to enable it, and an enabled one
+"notes" on any of its settings the agent must act on (SETTING_NOTES). Setting
+values are never returned: they can hold secrets, which a script reads from
+the config itself.
 """
 
 import json
@@ -42,10 +45,19 @@ if not __package__:
     # Run as a script: import the package from the folder that holds it.
     sys.path.insert(0, os.path.dirname(
         os.path.dirname(os.path.realpath(__file__))))
-from agentic_manager.config import CONFIG_PATH, is_filled, load_json  # noqa: E402
+from agentic_manager.config import CONFIG_PATH, is_filled, is_text_list, load_json  # noqa: E402
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "config-template.json")
+
+# What the agent does about a setting of an enabled source. The organisation's
+# instructions reach the agent, never a script, so the agent is the one that
+# can tell the user a setting is missing what they forbid.
+SETTING_NOTES = {
+    "excluded-projects": "Scripts never read a Jira project this setting lists. If your instructions forbid "
+                         "reading a Jira project it doesn't list, tell the user to add that project's key to it "
+                         "in the config, and never read that project meanwhile.",
+}
 
 # What the user does to the config once it exists.
 EDIT = ("edit the config at `path`: enable the sources they use, fill in their "
@@ -108,9 +120,10 @@ def _check_source(where, settings, template_settings):
     enabled = settings.get("enabled")
     for key, default in template_settings.items():
         value = settings.get(key)
-        if key in settings and type(value) is not type(default):
+        if key in settings and (type(value) is not type(default)
+                                or isinstance(default, list) and not is_text_list(value)):
             errors.append(f"{where}.{key} must be {_type_name(default)}")
-        elif key != "enabled" and enabled is True and not is_filled(value):
+        elif isinstance(default, str) and enabled is True and not is_filled(value):
             errors.append(
                 f'{where}.{key} is not filled in: fill it in, or disable "{where}"')
     return errors
@@ -124,9 +137,10 @@ def _check_unknown(where, actual, expected, kind):
             for k in actual if k not in expected]
 
 
-# The template only holds "enabled" (true or false) and string placeholders.
+# The template only holds "enabled" (true or false), string placeholders and
+# empty lists.
 def _type_name(value):
-    return {bool: "true or false", str: "a string"}[type(value)]
+    return {bool: "true or false", str: "a string", list: "a list of strings"}[type(value)]
 
 
 def _quoted(keys):
@@ -148,6 +162,8 @@ def _list_sources(config, template):
             if not entry["enabled"]:
                 entry["setup"] = _setup_steps(
                     group, name, template_settings, config)
+            elif notes := [SETTING_NOTES[k] for k in template_settings if k in SETTING_NOTES]:
+                entry["notes"] = notes
             sources[group][name] = entry
     return sources
 
@@ -156,7 +172,7 @@ def _list_sources(config, template):
 # be valid. Names the settings to fill in, never their values.
 def _setup_steps(group, name, template_settings, config):
     entry = dict(template_settings, enabled=True)
-    settings = [k for k in template_settings if k != "enabled"]
+    settings = [k for k, v in template_settings.items() if isinstance(v, str)]
     groups = config.get("sources", {})
     if "sources" not in config:
         step = f'add "sources": {json.dumps({group: {name: entry}})} at the top level'
@@ -175,6 +191,9 @@ def _setup_steps(group, name, template_settings, config):
 
 def main():
     args = sys.argv[1:]
+    if args in (["-h"], ["--help"]):
+        print(__doc__)
+        return
     init = "--init" in args
     result = {"path": CONFIG_PATH, "template": TEMPLATE_PATH}
     created, sources = False, {}

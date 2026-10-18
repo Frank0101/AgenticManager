@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import struct
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -42,6 +43,15 @@ class FindChromeTest(unittest.TestCase):
     def test_without_chrome_it_says_to_skip_the_check(self):
         with mock.patch.object(snap_deck, "find_chrome", return_value=None), \
                 self.assertRaisesRegex(SystemExit, "skip the slide check"):
+            snap_deck.snap(DECK)
+
+    def test_a_chrome_that_hangs_says_to_skip_the_check(self):
+        write_slides(temp_output(self), content())
+        make_deck.make_deck(DECK)
+        hang = subprocess.TimeoutExpired("chrome", 60)
+        with mock.patch.object(snap_deck, "find_chrome", return_value="/chrome"), \
+                mock.patch.object(snap_deck.subprocess, "run", side_effect=hang), \
+                self.assertRaisesRegex(SystemExit, "Chrome took over 60 seconds .* skip the slide check"):
             snap_deck.snap(DECK)
 
 

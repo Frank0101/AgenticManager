@@ -21,7 +21,7 @@ npx skills add Frank0101/AgenticManager --skill '*' --agent claude-code codex -g
 
 Skills read one global config, `~/.config/agentic-manager/config.json`, wherever you run the agent. You can create it from the [template](skills/agentic-manager-utils-lib/agentic_manager/config-template.json), which lists every supported source, all disabled, by group inside its `sources` object.
 
-- Enable the sources you use by setting `enabled` to `true`, and fill in all their settings.
+- Enable the sources you use by setting `enabled` to `true`, and fill in their settings; a list setting may stay empty.
 - Set `output.root` to the folder where skills write their files, such as reports. If you don't set it, they write to a temporary folder.
 
 > [!CAUTION]

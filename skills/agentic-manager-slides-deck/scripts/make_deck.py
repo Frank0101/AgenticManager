@@ -6,7 +6,7 @@ with check_deck.py.
 The page around the slides is fixed, and this script owns it: the slide's
 size, the grey page behind the slides, the toolbar with zoom and PDF export,
 the print rules that put one slide on each PDF page, and the scripts that
-draw the charts and diagrams. slides.json holds only what needs judgment: the
+zoom and draw the charts. slides.json holds only what needs judgment: the
 title, the deck's own CSS and each slide's HTML, plus the data of its charts
 and rings. Its fields are in SKILL.md.
 
@@ -141,6 +141,12 @@ def build(content, texts, image_credits, depth=1):
 """
 
 
+# An image token as the whole value of an attribute that links an image: the
+# one place the page's links, and so the check, can see it.
+PLACED_ASSET = re.compile(
+    rf"""\b(?:{"|".join(URL_ATTRIBUTES)})\s*=\s*(["'])\{{\{{asset:[^{{}}]*\}}\}}\1""", re.I)
+
+
 def problems(content, assets=frozenset()):
     """(errors, slides' HTML) of slides.json's content, `assets` being the images in _assets; errors name
     the field to fix."""
@@ -155,6 +161,9 @@ def problems(content, assets=frozenset()):
     if style and (REMOTE_CSS.search(style) or re.search(r"</style", style, re.I)):
         errors.append("style: must not load remote files (url() of a remote file or @import) "
                       "or close the style element")
+    if style and TOKEN.search(style):
+        errors.append(
+            "style: holds a {{...}} token, which only a slide's html can")
     elements = {}
     for kind, check in (("chart", check_chart), ("ring", check_ring)):
         field = kind + "s"
@@ -197,6 +206,10 @@ def problems(content, assets=frozenset()):
             else:
                 errors.append(
                     f"{where}.html: {match[0]} names no {match[1]} in `{match[1]}s`")
+        for match in TOKEN.finditer(PLACED_ASSET.sub("", text)):
+            if match[1] == "asset":
+                errors.append(f"{where}.html: {match[0]} goes only in an image's link, as "
+                              f"<img src=\"{match[0]}\">")
         bare = TOKEN.sub("", text).replace(PAGE, "")
         if "{{" in bare:
             errors.append(

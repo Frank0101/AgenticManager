@@ -10,16 +10,17 @@ itself is never changed: for each slide a copy of its page goes to a
 temporary folder, showing that slide alone at its real size, with a <base>
 pointing at the deck's folder so its images in _assets still load. Each copy
 is shot in its own Chrome with its own throwaway profile, in parallel, and
-given a few seconds of page time so charts and diagrams, drawn by scripts
-loaded from the internet, are there when it is shot.
+given a few seconds of page time so charts, drawn by Chart.js loaded from
+the internet, are there when it is shot.
 
 The pictures are then laid out, numbered, at a third of their size, in one
 sheet, so the whole deck is looked at in a single image and a slide's own
 picture is opened only where something looks wrong.
 
 Prints one line of JSON: the `sheet`, then `slides`, the picture of each slide
-in order, all in a new temporary folder. Exits 1 if Chrome isn't installed,
-saying to skip the check.
+in order, all in a new temporary folder. Exits 1, saying to skip the check, if
+Chrome isn't installed or takes over 60 seconds on a picture; exits too if
+Chrome makes no picture.
 """
 import argparse
 import html
@@ -125,8 +126,12 @@ def snap(deck):
         with open(source, "w", encoding="utf-8") as f:
             f.write(text)
         with tempfile.TemporaryDirectory(prefix="chrome-profile-") as profile:
-            run = subprocess.run(chrome_command(chrome, profile, picture, source, size),
-                                 capture_output=True, text=True, timeout=60)
+            try:
+                run = subprocess.run(chrome_command(chrome, profile, picture, source, size),
+                                     capture_output=True, text=True, timeout=60)
+            except subprocess.TimeoutExpired:
+                raise SystemExit(
+                    f"Chrome took over 60 seconds to picture {name}: skip the slide check")
         os.remove(source)
         if not os.path.isfile(picture):
             raise SystemExit(

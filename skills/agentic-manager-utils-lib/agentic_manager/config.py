@@ -64,18 +64,38 @@ def load_config():
         raise SystemExit(f"could not read {CONFIG_PATH}. {FIX}")
 
 
-def read_source(group, source, keys):
-    """The given settings of one source, for a script that needs them itself.
-    Exits with a message that names what's wrong, never a value."""
-    where = f"sources.{group}.{source}"
-    config = load_config()
-    groups = config.get("sources")
+def is_enabled(group, source):
+    """Whether a source is enabled in the user's config, for a script that
+    uses a source's tool, such as a CLI, only when the user enabled it. Exits
+    if the config can't be read."""
+    groups = load_config().get("sources")
     entries = groups.get(group) if isinstance(groups, dict) else None
     settings = entries.get(source) if isinstance(entries, dict) else None
-    if not isinstance(settings, dict) or settings.get("enabled") is not True:
+    return isinstance(settings, dict) and settings.get("enabled") is True
+
+
+def read_source(group, source, keys, lists=()):
+    """The given settings of one source, for a script that needs them itself:
+    `keys` are text settings, which must be filled in, and `lists` lists of
+    text, which may be left out and then are empty. Exits with a message that
+    names what's wrong, never a value."""
+    where = f"sources.{group}.{source}"
+    if not is_enabled(group, source):
         raise SystemExit(f"{where} is not enabled in {CONFIG_PATH}. {FIX}")
+    settings = load_config()["sources"][group][source]
     missing = [k for k in keys if not is_filled(settings.get(k))]
     if missing:
         raise SystemExit(
             f"{where} setting(s) not filled in: {', '.join(missing)}. {FIX}")
-    return {k: settings[k].strip() for k in keys}
+    wrong = [k for k in lists if not is_text_list(settings.get(k, []))]
+    if wrong:
+        raise SystemExit(
+            f"{where} setting(s) not a list of strings: {', '.join(wrong)}. {FIX}")
+    return {**{k: settings[k].strip() for k in keys},
+            **{k: [v.strip() for v in settings.get(k, [])] for k in lists}}
+
+
+def is_text_list(value) -> TypeGuard[list[str]]:
+    """Whether `value` is a list of strings, as a list setting must be; an
+    empty list is one."""
+    return isinstance(value, list) and all(isinstance(v, str) for v in value)

@@ -67,7 +67,7 @@ Drive the conversation: don't wait for the user to know what to ask for.
 
 ## 2. Start the deck
 
-When you have enough, say "I have enough for a first draft. Generating now — we can iterate from there." Choose a short `<Name>`, capitalised words joined by hyphens (or the user's), and run the command below. Call every script by exactly the path this skill shows, so it runs without a permission prompt; a script's `--help` gives its arguments:
+When you have enough, say "I have enough for a first draft. Generating now — we can iterate from there." Choose a short `<Name>`, capitalised words joined by hyphens (or the user's), and run the command below. Call every script by exactly the path this skill shows, so it runs without a permission prompt; a script's `--help` gives its commands and arguments:
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/init_deck.py --name <Name>

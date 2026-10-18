@@ -27,8 +27,9 @@ skills/agentic-manager-utils-lib/
 tests/<skill>/           tests for that skill, mirroring skills/: unit tests per script or
                          module (test_<module>.py) and end-to-end tests (test_e2e_*.py)
 tests/repo/              checks of the repo's own integrity: every module and listed
-                         function says what it is for, and every link to a section in
-                         AGENTS.md and each SKILL.md reaches a heading
+                         function says what it is for, every script answers --help,
+                         and every link to a section in AGENTS.md and each SKILL.md
+                         reaches a heading
 tests/run.py             runs every skill's tests, each skill in its own process (its own
                          tests are in tests/runner/)
 .claude/skills  ─┐       symlinks to skills/, so the skills load when you run
@@ -68,7 +69,7 @@ A user's config may only contain what the template lists, but it may leave thing
 ### Adding a source or a group
 
 - Add the source to [config-template.json](skills/agentic-manager-utils-lib/agentic_manager/config-template.json) under its group in `sources`, named `<tool>-<channel>` (channel `mcp`, `cli`, `api` or `fs`), with `"enabled": false`.
-- Give each setting a placeholder in angle brackets, such as `"<token>"`. The config check (see [Prerequisite, sources and permissions](#prerequisite-sources-and-permissions)) reports a placeholder as not filled in when the source is enabled.
+- Give each text setting a placeholder in angle brackets, such as `"<token>"`: the config check (see [Prerequisite, sources and permissions](#prerequisite-sources-and-permissions)) reports a placeholder as not filled in when the source is enabled. Give an optional list setting an empty list, `[]`. When the agent must act on a setting, say what it does in `SETTING_NOTES` in `check_config.py`, which returns it as the source's `notes`.
 - For a new group, also add it to the groups table in the library's [SKILL.md](skills/agentic-manager-utils-lib/SKILL.md#config-sources), and for a new channel, to its channels table. Tests check that both match the template.
 
 ## Where AI is used
@@ -113,14 +114,14 @@ What a skill's instructions and scripts must do, on top of the rules that always
 
 #### Prerequisite, sources and permissions
 
-- Unless it's a utility, start the instructions with the prerequisite: run the library's `agentic_manager/check_config.py`. The check only validates the config: it fails if the config is missing or malformed, and otherwise returns every supported source by [group](skills/agentic-manager-utils-lib/SKILL.md#config-sources), saying whether each is enabled and, if not, how to enable it. On a failure, or after creating the config, it also prints `next_steps`, which the agent follows, so skills don't repeat them. The check doesn't know what the skill needs, so the skill names it: any enabled source of a group, such as `workflow`, when it can work with whatever tool a team uses, or a specific source, such as `jira-api`, when its steps only work with one tool. It also says what it does if they aren't enabled (usually stop and show their `setup`):
+- Unless it's a utility, start the instructions with the prerequisite: run the library's `agentic_manager/check_config.py`. The check only validates the config: it fails if the config is missing or malformed, and otherwise returns every supported source by [group](skills/agentic-manager-utils-lib/SKILL.md#config-sources), saying whether each is enabled and, if not, how to enable it, and giving an enabled one's `notes`, which the agent follows. On a failure, or after creating the config, it also prints `next_steps`, which the agent follows, so skills don't repeat them. The check doesn't know what the skill needs, so the skill names it: any enabled source of a group, such as `workflow`, when it can work with whatever tool a team uses, or a specific source, such as `jira-api`, when its steps only work with one tool. It also says what it does if they aren't enabled (usually stop and show their `setup`):
 
   ```markdown
   ## Prerequisite
 
   Run the config check, `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py`, pre-approved in the frontmatter. If it fails, stop here and follow its `next_steps`. If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ as `python3`; if the script is missing, tell them to reinstall every skill.
 
-  This skill needs any enabled source of `workflow`, and the `github-cli` source. If one is missing, stop and tell the user how to enable it, showing its `setup` and the config `path`.
+  This skill needs any enabled source of `workflow`, and the `github-cli` source. If one is missing, stop and tell the user how to enable it, showing its `setup` and the config `path`. Follow the `notes` the check gives for the sources it uses.
   ```
 
 - If the skill runs its own scripts, pre-approve them in the frontmatter so Claude Code doesn't ask permission for each step, and tell the agent to call them by that same path: `allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/<script>.py *)`, one per script, separated by spaces. Never pre-approve a command that changes the user's config or anything outside the skill's own output; without the ` *`, a rule approves only the command with no arguments, as `check_config.py`'s does, so its `--init` still asks.
@@ -133,6 +134,7 @@ What a skill's instructions and scripts must do, on top of the rules that always
 - Scripts use only the Python standard library and need Python 3.14+: skills have no install step, so nothing else can be relied on (a chart is drawn as SVG by hand). A tool outside Python is the exception, and the skill lists it as a dependency with its version pinned, or, for one that updates itself, such as a browser, the version it was tested with.
 - Every module starts with a header comment whose first sentence says what it is for, followed by the reasons for its rules: the decisions that justify the code, in a few lines, not what the code already says. Describe what the script does, not who calls it or how: a list of its callers goes stale whenever one changes.
 - Every function or class other code may use has a docstring whose first sentence says what it is for: in the library, and in a skill's module without a `main`, every public one (top level, no leading underscore); in a skill's command, only those its other scripts import from it. The library's `code_map.py` builds the map of the code from these first sentences, and `tests/repo/` fails when one is missing. The map is for whoever builds a skill, so no SKILL.md asks the agent running it to read it.
+- Every script answers `--help` with what it does, its commands and what each argument is for. A SKILL.md spells out its mechanical steps, but a step it leaves to the agent's judgment can need a script or a command it doesn't name, so every SKILL.md that runs scripts says once, where it introduces them, that a script's `--help` gives its commands and arguments.
 - A script the agent feeds structured input, such as a JSON object or a row's cells, shows in its `help`, for every command that writes, the input's shape and a command to copy, with the input in a quoted here-document so nothing in it needs escaping; its error for a wrong input shows the same. The agent then never guesses a field's name or fights shell quoting.
 - A SKILL.md doesn't repeat what a script tells the agent when it needs it, in its `help`, its errors or its output, such as a table's columns and allowed values, a command's arguments or the shape of its result. It says when to run each script, by its full pre-approved path, and keeps only judgment and what the agent needs before its first call, such as the shape of a file it writes from scratch and a value the script accepts without checking.
 - When a tool result is too large and saved to a file, the agent lists what it needs from it with the library's `agentic_manager/extract_saved.py`, never by reading it whole or writing code to pick it apart; pre-approve it in the frontmatter of a skill that may meet one.

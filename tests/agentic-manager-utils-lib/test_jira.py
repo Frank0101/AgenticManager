@@ -126,6 +126,16 @@ class HelpersTest(unittest.TestCase):
         for name, value, expected in cases:
             with self.subTest(name):
                 self.assertEqual(jira.plain_text(value), expected)
+        # With links, linked text is followed by its URL, unless it is the URL.
+        linked = para({"type": "text", "text": "the design", "marks": [
+            {"type": "link", "attrs": {"href": "https://acme.test/design"}}]}, txt(" and "),
+            {"type": "text", "text": "https://acme.test/x", "marks": [
+                {"type": "link", "attrs": {"href": "https://acme.test/x"}}]})
+        for links, expected in [(False, "the design and https://acme.test/x"),
+                                (True, "the design (https://acme.test/design) and https://acme.test/x")]:
+            with self.subTest(links=links):
+                self.assertEqual(jira.plain_text(
+                    linked, links=links), expected)
 
     def test_value_at(self):
         changes = [
@@ -170,12 +180,13 @@ class ClientTest(unittest.TestCase):
         FakeJira.requests = []
         FakeJira.authorizations = []
 
-    def make_client(self, base_url):
-        settings = {"base-url": base_url,
-                    "email": "me@acme.test", "api-token": TOKEN}
+    def make_client(self, base_url, excluded=()):
+        settings = {"base-url": base_url, "email": "me@acme.test", "api-token": TOKEN,
+                    "excluded-projects": list(excluded)}
         with mock.patch.object(jira, "read_source", return_value=settings) as read:
             client = jira.JiraClient()
-        read.assert_called_once_with("workflow", "jira-api", jira.SETTINGS)
+        read.assert_called_once_with(
+            "workflow", "jira-api", jira.SETTINGS, lists=(jira.EXCLUDED,))
         return client
 
     def paths(self):
@@ -341,6 +352,136 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(changes[0], {"created": "2026-03-29T08:00:00.000+0200", "field": "status",
                                       "from": "1", "to": "3", "fromString": "To Do", "toString": "Done"})
 
+    def test_issue(self):
+        # A moved ticket is found under its current key; one that moved into
+        # an excluded project is refused.
+        FakeJira.routes["/rest/api/3/issue/OLD-1"] = {
+            "id": "1", "key": "NEW-5", "fields": {}}
+        FakeJira.routes["/rest/api/3/issue/OLD-2"] = {
+            "id": "2", "key": "SEC-3", "fields": {}}
+        self.assertEqual(self.client.issue(
+            "OLD-1", ["summary", "status"])["key"], "NEW-5")
+        self.assertEqual(FakeJira.requests[0][1], {"fields": "summary,status"})
+        client = self.make_client(self.base_url, excluded=["SEC"])
+        self.assert_exits("SEC-3 is of a project excluded",
+                          lambda: client.issue("OLD-2", ["summary"]))
+
+    def test_search_puts_the_exclusion_before_the_ordering(self):
+        FakeJira.routes["/rest/api/3/search/jql"] = {
+            "issues": [{"key": "PROJ-1"}]}
+        client = self.make_client(self.base_url, excluded=["IN", "SEC"])
+        cases = [("ordered", "parent = PROJ-1 order  BY key",
+                  '(parent = PROJ-1) AND project not in ("IN","SEC") order  BY key'),
+                 ("unordered", "text ~ retry",
+                  '(text ~ retry) AND project not in ("IN","SEC")'),
+                 ("only an ordering", "ORDER BY created", 'project not in ("IN","SEC") ORDER BY created')]
+        for name, jql, sent in cases:
+            with self.subTest(name):
+                FakeJira.requests = []
+                self.assertEqual(client.search(
+                    jql, ["summary"]), [{"key": "PROJ-1"}])
+                self.assertEqual(FakeJira.requests[0][1]["jql"], sent)
+        FakeJira.requests = []
+        self.client.search("parent = PROJ-1 ORDER BY key", ["summary"])
+        self.assertEqual(
+            FakeJira.requests[0][1]["jql"], "parent = PROJ-1 ORDER BY key")
+
+    def test_development_panel(self):
+        # Every code host the panel's summary names is asked for one kind of
+        # data; none named, nothing more is asked.
+        detail = "/rest/dev-status/latest/issue/detail"
+        # name: (call, the kind asked for, the key its items come under)
+        kinds = [("pull requests", self.client.pull_requests, "pullrequest", "pullRequests"),
+                 ("commits", self.client.commits, "repository", "repositories")]
+        for name, call, kind, items in kinds:
+            for hosts, expected in (({"host-a": {}}, [{"n": 1}, {"n": 2}]), ({}, [])):
+                with self.subTest(name, hosts=hosts):
+                    self.reset_jira()
+                    FakeJira.routes["/rest/dev-status/latest/issue/summary"] = {
+                        "summary": {kind: {"byInstanceType": hosts}}}
+                    FakeJira.routes[detail] = {"detail": [
+                        {items: [{"n": 1}]}, {items: [{"n": 2}]}]}
+                    self.assertEqual(call("1001"), expected)
+                    self.assertEqual([q for path, q in FakeJira.requests if path == detail],
+                                     [{"issueId": "1001", "applicationType": host, "dataType": kind}
+                                      for host in hosts])
+
+    def test_remote_links(self):
+        FakeJira.routes["/rest/api/3/issue/PROJ-1/remotelink"] = [
+            {"object": {"title": "Design", "url": "https://acme.test/d"}}]
+        self.assertEqual(self.client.remote_links("PROJ-1")
+                         [0]["object"]["title"], "Design")
+        client = self.make_client(self.base_url, excluded=["SEC"])
+        self.assert_exits("SEC-1 is of a project excluded",
+                          lambda: client.remote_links("SEC-1"))
+
+    def test_sprint_field(self):
+        # A site can have other fields named Sprint; the one of its type is it.
+        cases = [([{"id": "customfield_1", "name": "Sprint", "schema": {"custom": "labels"}},
+                   {"id": "customfield_7", "name": "Sprint", "schema": {"custom": jira.SPRINT_TYPE}}], "customfield_7"),
+                 ([{"id": "customfield_1", "name": "Sprint"}], None)]
+        for fields, expected in cases:
+            with self.subTest(expected):
+                FakeJira.routes["/rest/api/3/field"] = fields
+                self.assertEqual(self.client.sprint_field(), expected)
+
+    # --- excluded projects
+
+    def test_excluded_projects(self):
+        # Searches leave SEC out in Jira, and nothing of it is asked for.
+        client = self.make_client(self.base_url, excluded=["SEC"])
+        FakeJira.routes.update({
+            "/rest/api/3/search/jql": {"issues": [{"key": "PROJ-1"}]},
+            "/rest/agile/1.0/sprint/7/issue": {"issues": [{"key": "PROJ-1"}], "total": 1},
+        })
+        # name: (call, the JQL of its request)
+        cases = [
+            ("by key", lambda: client.issues_by_keys(["PROJ-1", "SEC-1"], ["summary"]),
+             '(key in (PROJ-1)) AND project not in ("SEC")'),
+            ("by id", lambda: client.issues_by_ids(["1001"], ["summary"]),
+             '(id in (1001)) AND project not in ("SEC")'),
+            ("a sprint's issues", lambda: client.sprint_issues(
+                7, ["summary"]), 'project not in ("SEC")'),
+        ]
+        for name, call, jql in cases:
+            with self.subTest(name):
+                FakeJira.requests = []
+                self.assertEqual(call(), [{"key": "PROJ-1"}])
+                self.assertEqual(FakeJira.requests[0][1].get("jql"), jql)
+        # What a returned issue says of excluded projects is dropped: its
+        # parent, links and sub-tasks.
+        FakeJira.routes["/rest/api/3/issue/PROJ-2"] = {"id": "2", "key": "PROJ-2", "fields": {
+            "parent": {"key": "SEC-7"},
+            "issuelinks": [{"outwardIssue": {"key": "SEC-8"}}, {"inwardIssue": {"key": "PROJ-3"}}],
+            "subtasks": [{"key": "SEC-9"}, {"key": "PROJ-4"}]}}
+        self.assertEqual(client.issue("PROJ-2", ["parent"])["fields"], {
+            "issuelinks": [{"inwardIssue": {"key": "PROJ-3"}}], "subtasks": [{"key": "PROJ-4"}]})
+        FakeJira.routes["/rest/api/3/search/jql"] = {"issues": [
+            {"key": "PROJ-5", "fields": {"parent": {"key": "SEC-7"}}}]}
+        self.assertEqual(client.search("text ~ x", ["parent"]), [
+                         {"key": "PROJ-5", "fields": {}}])
+        FakeJira.routes["/rest/agile/1.0/sprint/7/issue"] = {"issues": [
+            {"key": "PROJ-6", "fields": {"parent": {"key": "SEC-7"}}}], "total": 1}
+        self.assertEqual(client.sprint_issues(7, ["parent"]), [
+                         {"key": "PROJ-6", "fields": {}}])
+        # A request for an excluded ticket or project is refused, unsent.
+        FakeJira.requests = []
+        with self.subTest("only excluded keys"):
+            self.assertEqual(client.issues_by_keys(["SEC-1"], ["summary"]), [])
+        for name, call in [("changelog", lambda: client.field_changes("SEC-1", {})),
+                           ("comments", lambda: client.comments("SEC-1")),
+                           ("boards", lambda: client.boards_for_project("SEC")),
+                           ("a sprint by project", lambda: client.find_sprint(project="SEC"))]:
+            with self.subTest(name):
+                self.assert_exits(
+                    "is of a project excluded by `excluded-projects`", call)
+        self.assertEqual(FakeJira.requests, [])
+        # Without excluded projects, queries are unchanged.
+        self.client.issues_by_keys(["SEC-1"], ["summary"])
+        self.client.sprint_issues(7, ["summary"])
+        self.assertEqual([q.get("jql") for _, q in FakeJira.requests], [
+                         "key in (SEC-1)", None])
+
     # --- board and sprint report
 
     def estimation(self, statistic):
@@ -382,6 +523,15 @@ class ClientTest(unittest.TestCase):
     def fields(self, *names):
         FakeJira.routes["/rest/api/3/field"] = [
             {"id": f"customfield_{i}", "name": name} for i, name in enumerate(names)]
+
+    def test_field_ids(self):
+        # Of two fields with one name, the first Jira lists.
+        FakeJira.routes["/rest/api/3/field"] = [{"id": "customfield_1", "name": "Acceptance Criteria"},
+                                                {"id": "customfield_2",
+                                                    "name": "Acceptance Criteria"},
+                                                {"id": "summary", "name": "Summary"}]
+        self.assertEqual(self.client.field_ids(), {
+                         "Acceptance Criteria": "customfield_1", "Summary": "summary"})
 
     def test_flagged_and_points_fields(self):
         cases = [
