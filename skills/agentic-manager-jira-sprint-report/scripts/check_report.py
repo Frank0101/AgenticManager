@@ -92,8 +92,8 @@ EVENT_KINDS = {"committed", "joined", "completed",
 def check_model(c, data):
     """Each spell's events are well formed, and its outcome, latest estimate
     and whether it's counted are what its events give; the charts' breakdown,
-    the non-delivery closures, the ticket counts, the burndown and the
-    timeline are built from the same spells."""
+    the non-delivery closures, the ticket counts, the burndown, the timeline
+    and the epics' commentary groups are built from the same spells."""
     seen_keys = set()
     for t in data["spells"]:
         events, key = t["events"], t["key"]
@@ -186,6 +186,32 @@ def check_model(c, data):
                       for t in data["spells"] for e in t["events"])
     c.check(logged == replayed, "model",
             "the timeline holds exactly the spells' events")
+    check_commentary_groups(c, data)
+
+
+def check_commentary_groups(c, data):
+    """Each epic's commentary groups, and the work left out of them, hold
+    the counted spells their outcomes and events give: descoped work is
+    always described, and completed work only if the sprint did it."""
+    expected = {}
+    for t in (t for t in data["spells"] if t["counted"]):
+        if t["outcome"] == "removed":
+            group = "descoped"
+        elif t["outcome"] == "not_completed":
+            group = "in_review" if "review" in (
+                t["status"] or "").lower() else "not_completed"
+        elif t["closedAsNonDelivery"] or not any(e["type"] == "completed" for e in t["events"]):
+            group = "left_out"
+        else:
+            group = "completed"
+        epic = expected.setdefault(t["parentKey"] or NO_EPIC, {})
+        epic.setdefault(group, []).append(t["key"])
+    for epic in data["epics"]:
+        groups = {**epic["scope_groups"], "left_out": epic["left_out"]}
+        stored = {group: [t["key"] for t in tickets]
+                  for group, tickets in groups.items() if tickets}
+        c.check(stored == expected.get(epic["key"], {}), "model",
+                f"{epic['key']}'s commentary groups hold the tickets their outcomes give")
 
 
 HEADER_START = "| Field | Detail |\n|---|---|\n"

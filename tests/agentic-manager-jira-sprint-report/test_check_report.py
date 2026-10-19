@@ -377,6 +377,19 @@ class ChecksTest(unittest.TestCase):
              "model: the charts' new removed is the counted spells'"),
             ("the charted commitment", lambda d: d["outcome_breakdown_counts"].update(original_removed=0),
              "model: the charts' original removed is the counted spells'"),
+            # The commentary groups are recomputed from the spells too.
+            ("completed work described as descoped", lambda d: d["epics"][0]["scope_groups"].update(
+                completed=[], descoped=[{"key": "PROJ-1"}] + d["epics"][0]["scope_groups"]["descoped"]),
+             "model: PROJ-100's commentary groups hold the tickets their outcomes give"),
+            ("work done before the sprint described as completed", lambda d: d["epics"][0].update(
+                left_out=[t for t in d["epics"][0]
+                          ["left_out"] if t["key"] != "PROJ-4"],
+                scope_groups={**d["epics"][0]["scope_groups"], "completed": [{"key": "PROJ-1"}, {"key": "PROJ-4"}]}),
+             "model: PROJ-100's commentary groups hold the tickets their outcomes give"),
+            ("descoped work left out", lambda d: d["epics"][0].update(
+                left_out=d["epics"][0]["left_out"] + [{"key": "PROJ-6"}],
+                scope_groups={**d["epics"][0]["scope_groups"], "descoped": [{"key": "PROJ-2"}]}),
+             "model: PROJ-100's commentary groups hold the tickets their outcomes give"),
         ]
         for name, breakage, expected in cases:
             with self.subTest(name):
