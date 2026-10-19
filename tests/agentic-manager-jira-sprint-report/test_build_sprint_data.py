@@ -368,7 +368,7 @@ class BreakdownAndEpicsTest(unittest.TestCase):
     def test_epic_scope_groups(self):
         # Completed holds only work completed during the spell; work done
         # before it, or resolved as a non-delivery, is left out, though the
-        # figures count it.
+        # figures count it. Descoped work is always Descoped.
         def completed_in_sprint(key, **extra):
             return ticket(key, [ev(2, "committed"), ev(4, "completed", done=True)], "completed", **extra)
         spells = [
@@ -390,21 +390,18 @@ class BreakdownAndEpicsTest(unittest.TestCase):
             # joined already Done
             ticket("PROJ-9", [ev(3, "joined", done=True)],
                    "completed", scope="extra"),
-            # Done, then descoped
+            # Done, then descoped: described as descoped all the same
             ticket("PROJ-10", [ev(2, "committed", done=True),
                    ev(4, "removed", done=True)], "removed"),
-            ticket("PROJ-11", [ev(2, "committed", done=True), ev(3, "reopened"), ev(4, "removed")],
-                   "removed"),
         ]
         spells[3]["flagged"] = True
         epic = build.build_epics(spells, {"PROJ-100": "Staff sign-in"})[0]
         self.assertEqual(epic["description"], "Staff sign-in")
         self.assertEqual({group: [t["key"] for t in tickets] for group, tickets in epic["scope_groups"].items()},
                          {"completed": ["PROJ-1"], "in_review": ["PROJ-4", "PROJ-5"], "not_completed": ["PROJ-6"],
-                          "descoped": ["PROJ-7", "PROJ-11"]})
+                          "descoped": ["PROJ-7", "PROJ-10"]})
         self.assertEqual([(t["key"], t["reason"]) for t in epic["left_out"]],
-                         [("PROJ-2", "done_at_start"), ("PROJ-3", "non_delivery"), ("PROJ-9", "done_at_start"),
-                          ("PROJ-10", "done_at_start")])
+                         [("PROJ-2", "done_at_start"), ("PROJ-3", "non_delivery"), ("PROJ-9", "done_at_start")])
         # Each ticket carries what the commentary needs to describe it,
         # including its estimate, status, flag and whether it was carried over.
         self.assertEqual(epic["scope_groups"]["in_review"][0],

@@ -33,7 +33,9 @@ Decisions behind the model:
     merely in it at some point.
   * The epic commentary groups (`scope_groups`) leave out work the sprint didn't
     do (`left_out`): Duplicates, Won't Do, and work already Done when its spell
-    began. The figures still count it; the AI text mustn't describe it.
+    began that stayed in the sprint. The figures still count it; the AI text
+    mustn't describe it. Descoped work is always in the descoped group, even
+    if it was already Done, as the figures count it as descoped.
 
 Jira logs no change for a field's initial value, so a ticket whose sprint
 changes don't start with an add was in the sprint from its creation.
@@ -337,11 +339,10 @@ def build_epics(spells, descriptions=None):
 
 def scope_group(spell):
     """(the commentary group of a counted spell, or None, why it is left out).
-    Work Done when its spell began and never reopened was done before it,
-    even if it was then descoped."""
+    Descoped work is always described as descoped, even if it was already
+    Done, since the figures count it as descoped."""
     if spell["outcome"] == "removed":
-        done_throughout = spell["doneAtStart"] and not spell["reopened"]
-        return (None, "done_at_start") if done_throughout else ("descoped", None)
+        return "descoped", None
     if spell["outcome"] == "not_completed":
         return ("in_review" if "review" in (spell["status"] or "").lower() else "not_completed"), None
     if spell["closedAsNonDelivery"]:
