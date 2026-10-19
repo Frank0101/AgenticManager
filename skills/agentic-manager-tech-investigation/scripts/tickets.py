@@ -21,7 +21,8 @@ merge, are only counted; and those gh couldn't check are listed apart, never
 claimed either way. Without gh, or with github-cli disabled, the panel's pull
 requests and commits are printed and the output says what wasn't read.
 Projects the user excludes don't exist here: the library's client never reads
-them.
+them, and a key of one is answered with why, as a key Jira doesn't have is, so
+the other keys still print.
 
 A pull request's description, reviews and comments are a command of their
 own: which pull requests matter is known only once the ticket is read, and
@@ -44,6 +45,9 @@ LINE_FIELDS = ["summary", "status", "issuetype", "parent"]
 # The field sites use for acceptance criteria, found by its name.
 CRITERIA = "acceptance criteria"
 GH_PR_FIELDS = "mergeCommit,mergedAt,baseRefName,headRefName,changedFiles,files,commits"
+# What a pull request's discussion is read with.
+GH_DISCUSSION_FIELDS = ("title,state,author,body,reviews,comments,createdAt,mergedAt,baseRefName,"
+                        "headRefName,mergeCommit,url")
 SEARCH_LIMIT = 50
 # Why a pull request Jira doesn't link is listed.
 NAMES_KEY = "names the key, not linked in Jira"
@@ -59,6 +63,9 @@ def ticket(client, key, site, owners, gh, run=subprocess.run):
             key, FIELDS + [f for f in (criteria, sprint) if f])
     except NotFound:
         return f"{key}: Jira has no such ticket, or this account can't see it"
+    except SystemExit as refused:
+        # Such as a ticket of an excluded project: the other keys still print.
+        return str(refused.code)
     fields = issue["fields"]
     current = issue["key"]
     calls = {"children": lambda: client.search(f"parent = {current} ORDER BY key", LINE_FIELDS),
@@ -327,11 +334,6 @@ def sprint_lines(sprints):
             for s in sprints or []]
 
 
-# What a pull request's discussion is read with.
-GH_DISCUSSION_FIELDS = ("title,state,author,body,reviews,comments,createdAt,mergedAt,baseRefName,"
-                        "headRefName,mergeCommit,url")
-
-
 def gh_available():
     """Whether gh can be used: installed, and enabled as the user's github-cli source."""
     return shutil.which("gh") is not None and is_enabled("source_control", "github-cli")
@@ -401,26 +403,26 @@ def main(argv=None):
                                "links, web links, pull requests, commits and comments",
                                description="print tickets in full, with their sprints, history, children, "
                                "links, web links, pull requests, commits and comments")
-    show.add_argument("--key", action="append", required=True,
-                      help="a ticket's key, such as PROJ-123; repeat for more")
+    show.add_argument("keys", nargs="+", metavar="KEY", help="a ticket's key, such as PROJ-123; give several "
+                      "for one call")
     show.add_argument("--owner", action="append", default=[],
                       help="a GitHub owner whose repositories to search for pull requests that name the key, "
                       "besides those of the pull requests Jira links; repeat for more")
     pr = commands.add_parser("pr", help="print pull requests' descriptions, reviews and comments in full",
                              description="print pull requests' descriptions, reviews and comments in full")
-    pr.add_argument("--url", action="append", required=True,
-                    help="a pull request's URL, as show prints it; repeat for more")
+    pr.add_argument("urls", nargs="+", metavar="URL", help="a pull request's URL, as show prints it; give "
+                    "several for one call")
     search = commands.add_parser("search", help="print the tickets a JQL query finds, one line each",
                                  description="print the tickets a JQL query finds, one line each")
-    search.add_argument("--jql", required=True,
-                        help="the query, such as 'parent = PROJ-100 ORDER BY key'")
+    search.add_argument(
+        "jql", help="the query, such as 'parent = PROJ-100 ORDER BY key'")
     args = parser.parse_args(argv)
     if args.command == "pr":
         if not gh_available():
             raise SystemExit("gh isn't available or github-cli isn't enabled: a pull request's discussion "
                              "is read with it")
         with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-            print("\n\n".join(pool.map(pr_discussion, args.url)))
+            print("\n\n".join(pool.map(pr_discussion, args.urls)))
         return
     client = JiraClient()
     if args.command == "search":
@@ -431,7 +433,7 @@ def main(argv=None):
     site, gh = site_fields(client), gh_available()
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         texts = list(pool.map(lambda key: ticket(
-            client, key, site, args.owner, gh), args.key))
+            client, key, site, args.owner, gh), args.keys))
     print("\n\n".join(texts))
 
 

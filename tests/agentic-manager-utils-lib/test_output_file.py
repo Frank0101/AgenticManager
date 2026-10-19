@@ -44,7 +44,7 @@ class OutputFileTest(unittest.TestCase):
         cases = [("a file", "notes.md", "# Notes\n"),
                  ("the same file again", "notes.md", "second"),
                  ("missing folders on the way",
-                  "Topic_26-03-29/ledgers.md", "| a |\n"),
+                  "Topic_26-03-29/ledger.md", "| a |\n"),
                  ("text that isn't ASCII", "_examples/README.md", "🟩 Existing, déjà vu\n")]
         for name, relative, content in cases:
             with self.subTest(name):
@@ -123,6 +123,30 @@ class OutputFileTest(unittest.TestCase):
                 output_file.patch_output_file("reports", "doc.md", content)
             self.assertIn("--patch <<'EOF'", str(raised.exception))
 
+    def test_set_changes_one_field(self):
+        # A field is named by its path, list positions included; what isn't
+        # named stays, and a refused --set writes nothing.
+        relative = "Topic_26-03-29/content.json"
+        output_file.write_output_file("reports", relative, json.dumps(
+            {"title": "Old", "architecture": {"current": {"summary": ["One.", "Two."]}}}).encode())
+        output_file.set_output_fields("reports", relative, [
+            "architecture.current.summary.1=Two, \"quoted\".", "title=New", "skip=none"])
+        with open(os.path.join(self.folder, relative), encoding="utf-8") as f:
+            self.assertEqual(json.load(f), {"title": "New", "skip": "none",
+                                            "architecture": {"current": {"summary": ["One.", 'Two, "quoted".']}}})
+        before = self.read(os.path.join(self.folder, relative))
+        cases = [("no equals sign", "title", "write --set as field=text"),
+                 ("a list position not there",
+                  "architecture.current.summary.5=x", "no such field"),
+                 ("a key not there", "architecture.next.summary=x", "no such field"),
+                 ("a text holds no fields", "title.part=x", "no such field")]
+        for name, assignment, expected in cases:
+            with self.subTest(name), self.assertRaisesRegex(SystemExit, expected):
+                output_file.set_output_fields(
+                    "reports", relative, ["title=Changed", assignment])
+            self.assertEqual(
+                self.read(os.path.join(self.folder, relative)), before)
+
     def test_read_json(self):
         # Any JSON value; a missing or unreadable file exits naming it, never a traceback.
         path = os.path.join(self.folder, "data.json")
@@ -139,18 +163,20 @@ class OutputFileTest(unittest.TestCase):
                     self.assertEqual(output_file.read_json(path), expected)
 
     def test_command_line(self):
-        for argv, patch in ((["--name", "reports", "--path", "a/b.md"], False),
-                            (["--name", "reports", "--path", "a/b.md", "--patch"], True)):
-            with self.subTest(argv=argv):
-                args = output_file.parse_args(argv)
-                self.assertEqual((args.name, args.path, args.patch),
-                                 ("reports", "a/b.md", patch))
+        for extra, patch, sets in (([], False, []), (["--patch"], True, []),
+                                   (["--set", "a=1", "--set", "b=2"], False, ["a=1", "b=2"])):
+            with self.subTest(extra=extra):
+                args = output_file.parse_args(
+                    ["--name", "reports", "--path", "a/b.md", *extra])
+                self.assertEqual((args.name, args.path, args.patch, args.set),
+                                 ("reports", "a/b.md", patch, sets))
         # --help shows a command to copy for writing a file and for patching one.
         out = io.StringIO()
         with self.assertRaises(SystemExit), contextlib.redirect_stdout(out):
             output_file.parse_args(["--help"])
         self.assertEqual(out.getvalue().count("<<'EOF'"), 2)
-        for argv in (["--name", "../x", "--path", "a.md"], ["--name", "reports"], ["--path", "a.md"]):
+        for argv in (["--name", "../x", "--path", "a.md"], ["--name", "reports"], ["--path", "a.md"],
+                     ["--name", "reports", "--path", "a.md", "--patch", "--set", "a=1"]):
             with self.subTest(argv=argv), self.assertRaises(SystemExit), mock.patch("sys.stderr"):
                 output_file.parse_args(argv)
 

@@ -48,37 +48,8 @@ class StructureTest(unittest.TestCase):
                 self.assertEqual(common.read_skip(folder), expected)
 
     def test_expected_files(self):
-        base = {"ledgers.md", "content.json", "Acme_Report.md"}
-        cases = [("a report", (), base),
-                 ("with a short output", ("exec-summary",),
-                  base | {"exec-summary.json", "exec-summary.md"})]
-        for name, formats, expected in cases:
-            with self.subTest(name):
-                self.assertEqual(common.expected_files(
-                    "Acme_Report.md", formats), expected)
-
-    def test_short_formats(self):
-        # Only a <format>.json with its <format>.md; the research artifacts' names are never formats.
-        cases = [(["exec-summary.json", "exec-summary.md"], {"exec-summary"}),
-                 (["notes.md"], set()), (["draft.json"], set()),
-                 (["content.json", "content.md"], set()),
-                 (["ledgers.json", "ledgers.md"], set()),
-                 (["Bad Name.json", "Bad Name.md"], set())]
-        for names, expected in cases:
-            with self.subTest(names=names), tempfile.TemporaryDirectory() as folder:
-                for name in names:
-                    open(os.path.join(folder, name), "w").close()
-                self.assertEqual(common.short_formats(folder), expected)
-
-    def test_check_format(self):
-        for label, ok in (("exec-summary", True), ("long-analysis", True), ("slack-update2", True),
-                          ("Exec Summary", False), ("exec_summary", False), ("-exec", False), ("", False)):
-            with self.subTest(label=label):
-                if ok:
-                    self.assertEqual(common.check_format(label), label)
-                else:
-                    with self.assertRaisesRegex(SystemExit, "short lower-case label"):
-                        common.check_format(label)
+        self.assertEqual(common.expected_files("Acme_Report.md"),
+                         {"ledger.md", "content.json", "Acme_Report.md"})
 
 
 class FoldersTest(unittest.TestCase):
@@ -179,21 +150,30 @@ class ReferencesTest(unittest.TestCase):
                 self.assertEqual(problem is None, accepted, problem)
 
     def test_unread_components(self):
-        definitions = {
-            "search": "https://git.example/acme/api/tree/abc/services/search"}
-        component = ["C01", "n", "r", "[search][search]", "🟩 Implemented"]
-        cases = [([], ["C01"]),
-                 ([["S01", "[f](https://git.example/acme/api/blob/abc/services/search/README.md)", "README"]],
-                  ["C01"]),
-                 ([["S01", "[f](https://git.example/acme/api/blob/abc/services/searcher/main.py)", "full"]],
-                  ["C01"]),
-                 ([["S01", "[f](https://git.example/acme/api/blob/abc/services/search/main.py)", "Full"]], [])]
-        for coverage, expected in cases:
-            with self.subTest(coverage=coverage):
+        # A component claiming code needs coverage, at a reading depth, of its
+        # path, a file under it, or a folder above it, which covers its files.
+        definitions = {"search": "https://git.example/acme/api/tree/abc/services/search",
+                       "client": "https://git.example/acme/api/blob/abc/app/plugins/client.ts"}
+        unread = {"C01": ["acme/api: services/search"]}
+        cases = [("nothing read", "[search][search]", [], unread),
+                 ("a README", "[search][search]",
+                  [["S01", "[f](https://git.example/acme/api/blob/abc/services/search/README.md)", "README"]], unread),
+                 ("a sibling folder", "[search][search]",
+                  [["S01", "[f](https://git.example/acme/api/blob/abc/services/searcher/main.py)", "full"]], unread),
+                 ("a file under it", "[search][search]",
+                  [["S01", "[f](https://git.example/acme/api/blob/abc/services/search/main.py)", "Full"]], {}),
+                 ("a folder above it", "[client][client]",
+                  [["S01", "[plugins](https://git.example/acme/api/tree/abc/app/plugins)", "full"]], {})]
+        for name, repository, coverage, expected in cases:
+            with self.subTest(name):
+                component = ["C01", "n", "r", repository, "🟩 Implemented"]
                 self.assertEqual(common.unread_components(
                     [component], coverage, definitions), expected)
         self.assertEqual(common.unread_components(
-            [component[:4] + ["⬜ Unverified"]], [], definitions), [])
+            [["C01", "n", "r", "[search][search]", "⬜ Unverified"]], [], definitions), {})
+        # The message names the path to read.
+        self.assertIn("C01 links acme/api: services/search",
+                      common.unread_message(unread))
 
 
 if __name__ == "__main__":

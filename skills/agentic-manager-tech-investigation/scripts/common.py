@@ -15,12 +15,12 @@ import sys
 LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
-from agentic_manager.config import is_enabled  # noqa: E402,F401
+from agentic_manager.config import enabled_sources, is_enabled  # noqa: E402,F401
 from agentic_manager.jira import ISSUE_KEY, PROJECT_KEY, JiraClient, NotFound, browse_url, plain_text  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, clear_folder, day_folder, output_folder  # noqa: E402,F401
-from agentic_manager.text import DEFINITION, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, SLUG, free_name, heading_anchor, headings, link_definitions, link_text, links, local_link, markdown, slug, word_count  # noqa: E402,F401
+from agentic_manager.text import DEFINITION, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, free_name, heading_anchor, headings, link_definitions, link_text, links, local_link, markdown, slug, word_count  # noqa: E402,F401
 
 FOLDER_NAME = "tech-investigations"
 EXAMPLES = "_examples"
@@ -28,18 +28,13 @@ EXAMPLES = "_examples"
 # good, as the agent wrote it when the user approved it.
 WHY_GOOD_LABEL = "**Why it's good:**"
 WHY_GOOD = re.compile(rf"^{re.escape(WHY_GOOD_LABEL)} (.+)$", re.M)
-LEDGER = "ledgers.md"
+LEDGER = "ledger.md"
 CONTENT = "content.json"
 REPORT_SUFFIX = "_Report.md"
 
 # <Topic>_<YY-MM-DD>: words joined by hyphens, capitalised by the agent, or
 # as the user named it.
 TOPIC, INVESTIGATION = NAME, DAY_FOLDER
-# The label of an output's shape, such as long-analysis or exec-summary.
-FORMAT = SLUG
-# The labels a short output can't take: its <format>.json or <format>.md would
-# be content.json or the ledger.
-RESERVED_FORMATS = {CONTENT.removesuffix(".json"), LEDGER.removesuffix(".md")}
 
 # The report's headings: (level, title, id). The architect summary repeats the
 # executive layer's two section titles, so a skip names headings by id.
@@ -63,37 +58,44 @@ SKIPS = {
     "evolution": ["exec.next", "arch.next"],
 }
 
-# The ledger's sections, in order, and the queue's subsections.
+# The ledger's sections, in order, and the queue's subsections. Each title is
+# named once, here: one typed differently elsewhere would leave a check reading
+# an empty section.
+QUEUE = "Research action queue"
+BOUNDARY = "Boundary, method and access"
+REGISTER = "Revisions and source register"
+FINDINGS = "Findings and validation chains"
 INVENTORY = "Component inventory and evolution"
-LEDGER_SECTIONS = [
-    "Resume here",
-    "Research action queue",
-    "Boundary, method and access",
-    "Revisions and source register",
-    "Findings and validation chains",
-    INVENTORY,
-    "Open decisions",
-    "Evidence gaps",
-    "Reflection",
-    "Links",
-]
-QUEUE_SUBSECTIONS = ["Ready / in progress", "Blocked", "Completed"]
-QUEUE_TABLES = ["queue-ready", "queue-blocked", "queue-completed"]
+DECISIONS = "Open decisions"
+GAPS = "Evidence gaps"
+REFLECTION = "Reflection"
+LINKS = "Links"
+LEDGER_SECTIONS = [QUEUE, BOUNDARY, REGISTER, FINDINGS,
+                   INVENTORY, DECISIONS, GAPS, REFLECTION, LINKS]
+# An action is ready until someone starts it, so that after a break, or with
+# work shared out, what is under way shows apart from what is waiting.
+QUEUE_SUBSECTIONS = ["Ready", "In progress", "Blocked", "Completed"]
+QUEUE_TABLES = ["queue-ready", "queue-in-progress",
+                "queue-blocked", "queue-completed"]
 # The heading each of the ledger's tables sits under, by the name ledger.py's
 # commands use: one place, since a heading typed differently elsewhere would
 # leave a check reading an empty table.
 TABLE_HEADINGS = {**{table: f"### {title}" for table, title in zip(QUEUE_TABLES, QUEUE_SUBSECTIONS)},
-                  "sources": f"## {LEDGER_SECTIONS[3]}", "file-coverage": "### File reading coverage",
-                  "decisions": f"## {LEDGER_SECTIONS[6]}", "gaps": f"## {LEDGER_SECTIONS[7]}",
+                  "sources": f"## {REGISTER}", "file-coverage": "### File reading coverage",
+                  "decisions": f"## {DECISIONS}", "gaps": f"## {GAPS}",
                   "components": f"## {INVENTORY}"}
 QUEUE_HEADER = ["ID", "Trigger / linked finding", "Question or check",
                 "Sources and validation required", "Depends on",
                 "Priority / severity", "Outcome / finding IDs"]
 # The evidence areas a source or a gap is tagged with; `ledger.py status` counts
-# them across the three groups, so no table of its own holds that grid.
+# them across the source groups, so no table of its own holds that grid.
 AREAS = ["Architecture", "Delivery", "Implementation", "Security and data",
          "Identity and credentials", "Runtime and operations"]
-GROUPS = ["documentation", "workflow", "source_control"]
+# The source groups in their order of authority, each with the name the ledger
+# and the output give it: when two disagree, the earlier one wins, so the first
+# actions search them in it.
+GROUPS = {"source_control": "code", "workflow": "tracker",
+          "documentation": "documentation"}
 SOURCE_HEADER = ["Source ID", "Group / evidence kind", "Exact reference",
                  "Revision / environment / date checked",
                  "Material read and findings", "Access limits / superseded by",
@@ -160,6 +162,59 @@ FINDING_OPTIONAL = ["Supersedes or contradicted by"]
 FINDING_HEADING = re.compile(r"^### (F\d+) — \S.*$", re.M)
 # Where a finding's block starts, whatever its title.
 FINDING_START = re.compile(r"^### (F\d+) ", re.M)
+# A finding's Evidence line: what follows its label.
+EVIDENCE_LINE = re.compile(r"- \*\*Evidence:\*\*(.*)")
+# A pipe that separates table cells: one escaped as \| stays inside its cell.
+CELL_PIPE = re.compile(r"(?<!\\)\|")
+# Ticket keys and pull requests, written as links. A ticket key is linked to
+# the Jira site of its project: the one the ledger's links give, else the one
+# that has the project, looked up on the Jira site. Any other key-shaped text,
+# such as a ticket of a project neither knows or SHA-256, stays visible as
+# code, `PROJ-123`, so nothing forces a link and no non-ticket gets one. A
+# pull request names its repository, owner/repo#123, since a bare #123 is
+# ambiguous once two repositories are involved.
+# The key's shape is the Jira library's; the context around it is the skill's:
+# not inside a URL path, a link's text or a longer hyphenated word.
+TICKET = re.compile(rf"(?<![\w/\[-])({PROJECT_KEY})-\d+(?![\w\]-])")
+REPO_PR = re.compile(
+    r"(?<![\w/.\[-])([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#(\d{1,6})\b")
+BARE_PR = re.compile(r"(?<![\w/&#\[])#\d{1,6}\b")
+TICKET_URL = re.compile(
+    rf"(https?://[^/\s()<>]+)/browse/({PROJECT_KEY})-\d+")
+REPO_URL = re.compile(
+    r"^(https?://[^/\s]+)/([\w.-]+/[\w.-]+)/(?:pull|issues|blob|tree|commit|commits)\b")
+# A pull request's page: its repository, owner/name, and number.
+PULL_URL = re.compile(r"^https?://[^/\s]+/(([\w.-]+)/[\w.-]+)/pull/(\d+)")
+# What a reference inside them is already part of: code, links and bare URLs.
+PROTECTED = re.compile(
+    r"`[^`\n]*`|!?\[[^\]\n]*\]\([^)\n]*\)|!?\[[^\]\n]+\]\[[^\]\n]*\]|https?://\S+")
+ANY_REFERENCE = re.compile(
+    rf"{REPO_PR.pattern}|{TICKET.pattern}|{BARE_PR.pattern}")
+# How to fix a row that breaks a rule, worded once for ledger.py's refusal and
+# check_report.py's error.
+SOURCE_LINK_FIX = ("link the Exact reference at its pinned revision, or, for a search, give it as "
+                   '{"query": "<the exact query>"} and the script writes it')
+GAP_FIX = ("Blocked by starts with one of: " + "; ".join(BLOCKERS) + ". A gap nothing blocks is a ready action in "
+           "the queue: do it. Never write a blocker that is not true: write 'approved by the user' only after the "
+           "user has said so, and 'Asked the user, no answer' only after you asked")
+# A link, inline or by reference, or a bare URL: where a claim's trail ends.
+LINK = re.compile(r"\]\(https?://[^)\s]+\)|\]\[[^\]]*\]|https?://\S+")
+# A search has no URL to pin, so its exact query, between backticks, stands in.
+QUERY = re.compile(r"`[^`\n]+`")
+# Every recorded ID has an anchor, so any citation of it can link to it: a
+# table row carries an HTML anchor in its ID cell, which Markdown viewers such
+# as VS Code and GitHub render, and a finding one under its heading. A heading's
+# own anchor would change with its title; these don't.
+ID = re.compile(r"\b[SQFCDG]\d{2,}\b")
+ANCHOR_ID = r"[a-z]+\d+"
+ID_ANCHOR = re.compile(rf'<a id="{ANCHOR_ID}"></a>')
+# The start of a table row, before its ID and the anchor that may precede it.
+ROW_START = rf"^\|\s*(?:{ID_ANCHOR.pattern})?"
+RECORD = re.compile(r"\b[SQDGC]\d{2,}\b")
+RECORD_DEFINITION = re.compile(
+    rf"(?:{ROW_START}|^[-*]\s+\*\*|^#{{3}}\s+)({RECORD.pattern})", re.M)
+# The Findings a source row lists, which ledger.py writes and check_report.py reads.
+SOURCE_FINDINGS = re.compile(r"\s*Findings: ([^.]*)\.\s*$")
 
 
 def report_headings(skip=()):
@@ -178,31 +233,10 @@ def read_skip(folder):
     return tuple(d for d in SKIPS if isinstance(skip, list) and d in skip)
 
 
-def expected_files(report_name, formats=()):
+def expected_files(report_name):
     """Every file an investigation folder holds, and nothing else: the ledger,
-    content.json and the report, and a <format>.json and <format>.md for each
-    short output."""
-    files = {LEDGER, CONTENT, report_name}
-    for wanted in formats:
-        files |= {f"{wanted}.json", f"{wanted}.md"}
-    return files
-
-
-def short_formats(folder):
-    """The short-output formats in `folder`: each <format>.json with its
-    <format>.md. A lone file is not one, so it counts as an unexpected file."""
-    names = set(os.listdir(folder))
-    return {name[:-5] for name in names
-            if name.endswith(".json") and FORMAT.fullmatch(name[:-5])
-            and name[:-5] not in RESERVED_FORMATS and f"{name[:-5]}.md" in names}
-
-
-def check_format(wanted):
-    """`wanted`, the label of an output's shape, or exits if it isn't one."""
-    if not FORMAT.fullmatch(wanted):
-        raise SystemExit(
-            f"{wanted!r}: the format is a short lower-case label, such as exec-summary")
-    return wanted
+    content.json and the report."""
+    return {LEDGER, CONTENT, report_name}
 
 
 def investigation_dir(relative):
@@ -222,10 +256,6 @@ def topic_of(folder):
     return match["subject"]
 
 
-# A pipe that separates table cells: one escaped as \| stays inside its cell.
-CELL_PIPE = re.compile(r"(?<!\\)\|")
-
-
 def table(header, rows):
     """A Markdown table, each cell on one line with its pipes escaped."""
     lines = [table_row(header), table_row(["---"] * len(header))]
@@ -237,30 +267,6 @@ def table(header, rows):
 def table_row(cells):
     """A Markdown table row from its cells, each pipe in one escaped as \\|."""
     return "| " + " | ".join(CELL_PIPE.sub(r"\\|", str(cell)) for cell in cells) + " |"
-
-
-# Ticket keys and pull requests, written as links. A ticket key is linked once
-# the ledger links a ticket of its project, which gives both the Jira site and
-# proof that the project exists; any other key-shaped text, such as a ticket of
-# a project nothing links yet or SHA-256, stays visible as code, `PROJ-123`, so
-# nothing forces a link and no non-ticket gets one. A pull request names its
-# repository, owner/repo#123, since a bare #123 is ambiguous once two
-# repositories are involved.
-# The key's shape is the Jira library's; the context around it is the skill's:
-# not inside a URL path, a link's text or a longer hyphenated word.
-TICKET = re.compile(rf"(?<![\w/\[-])({PROJECT_KEY})-\d+(?![\w\]-])")
-REPO_PR = re.compile(
-    r"(?<![\w/.\[-])([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#(\d{1,6})\b")
-BARE_PR = re.compile(r"(?<![\w/&#\[])#\d{1,6}\b")
-TICKET_URL = re.compile(
-    rf"(https?://[^/\s()<>]+)/browse/({PROJECT_KEY})-\d+")
-REPO_URL = re.compile(
-    r"^(https?://[^/\s]+)/([\w.-]+/[\w.-]+)/(?:pull|issues|blob|tree|commit|commits)\b")
-# A pull request's page: its repository, owner/name, and number.
-PULL_URL = re.compile(r"^https?://[^/\s]+/(([\w.-]+)/[\w.-]+)/pull/(\d+)")
-# What a reference inside them is already part of: code, links and bare URLs.
-PROTECTED = re.compile(
-    r"`[^`\n]*`|!?\[[^\]\n]*\]\([^)\n]*\)|!?\[[^\]\n]+\]\[[^\]\n]*\]|https?://\S+")
 
 
 def unlinked_references(text):
@@ -281,10 +287,6 @@ def _skipped(line):
     return re.match(r"^ {0,3}(#{1,6}(\s|$)|\[[^\]]+\]:)", line) is not None
 
 
-ANY_REFERENCE = re.compile(
-    rf"{REPO_PR.pattern}|{TICKET.pattern}|{BARE_PR.pattern}")
-
-
 def _map_open(line, transform):
     """`line` with `transform` applied to each part outside code, links and URLs."""
     out, at = [], 0
@@ -295,12 +297,13 @@ def _map_open(line, transform):
     return "".join(out)
 
 
-def autolink(text, definitions):
+def autolink(text, definitions, site_of=None):
     """(`text` with each ticket key and owner/repo#123 written as an inline link,
-    [what couldn't be linked]). The Jira site and the repository host come from
-    the links already defined, so no tool or URL is assumed: a ticket of a
-    project nothing links yet is written as code, and a pull request on a host
-    nothing links yet, or a bare #123, can't be resolved."""
+    [what couldn't be linked]). The Jira site of a key's project comes from the
+    links already defined, else from `site_of(project)`, which gives the site
+    that has the project, or None; a key of a project neither knows is written
+    as code. A pull request's host comes from the links: one on a host nothing
+    links yet, or a bare #123, can't be resolved."""
     sites = ticket_sites(definitions.values())
     hosts, repos = set(), {}
     for url in definitions.values():
@@ -310,7 +313,7 @@ def autolink(text, definitions):
     unresolved = []
 
     def ticket(match):
-        site = sites.get(match[1])
+        site = sites.get(match[1]) or (site_of(match[1]) if site_of else None)
         if site is None:
             return f"`{match[0]}`"
         return f"[{match[0]}]({browse_url(site, match[0])})"
@@ -390,7 +393,7 @@ def review_rounds(completed):
 
 def _review_outcomes(completed):
     """The outcomes of the independent review's rows among the completed
-    actions, as rows, in order."""
+    rows, in order."""
     return [row[-1].strip() for row in completed if len(row) > 2 and row[2] == REVIEW_QUESTION]
 
 
@@ -406,7 +409,7 @@ def review_problem(completed):
 
 def last_review(completed):
     """The outcome of the latest independent review among the completed
-    actions, as rows, or None if none is recorded."""
+    rows, or None."""
     outcomes = _review_outcomes(completed)
     return outcomes[-1] if outcomes else None
 
@@ -423,16 +426,7 @@ def reviewed(completed):
 
 # The rules below are each defined once: ledger.py applies them to a row as it
 # is written, and check_report.py to the whole ledger, which also catches a
-# ledger edited without the script. A rule that refers to another row, which
-# may be written later, is only a warning on write and an error at handover.
-
-# How to fix a row that breaks a rule, worded once for ledger.py's refusal and
-# check_report.py's error.
-SOURCE_LINK_FIX = ("link the Exact reference at its pinned revision, or, for a search, write its exact query in "
-                   "plain text between backticks")
-GAP_FIX = ("Blocked by starts with one of: " + "; ".join(BLOCKERS) + ". A gap nothing blocks is a ready action in "
-           "the queue: do it. Never write a blocker that is not true: write 'approved by the user' only after the "
-           "user has said so, and 'Asked the user, no answer' only after you asked")
+# ledger edited without the script.
 
 
 def backtick_error(where, spans):
@@ -456,12 +450,6 @@ def gap_problem(row):
     if blocker == "Waiting on decision" and not re.search(r"\bD\d{2,}\b", row[4]):
         return f"{row[0]} waits on a decision but names none (D01...)"
     return None
-
-
-# A link, inline or by reference, or a bare URL: where a claim's trail ends.
-LINK = re.compile(r"\]\(https?://[^)\s]+\)|\]\[[^\]]*\]|https?://\S+")
-# A search has no URL to pin, so its exact query, between backticks, stands in.
-QUERY = re.compile(r"`[^`\n]+`")
 
 
 def source_reference_missing(row):
@@ -490,17 +478,6 @@ def _strip_links(text):
     """`text` without its links, inline or by reference, and without the
     definition lines the references use."""
     return REFERENCE_LINK.sub(" ", INLINE_LINK.sub(" ", DEFINITION.sub(" ", text)))
-
-
-# Every recorded ID has an anchor, so any citation of it can link to it: a
-# table row carries an HTML anchor in its ID cell, which Markdown viewers such
-# as VS Code and GitHub render, and a finding one under its heading. A heading's
-# own anchor would change with its title; these don't.
-ID = re.compile(r"\b[SQFCDG]\d{2,}\b")
-ANCHOR_ID = r"[a-z]+\d+"
-ID_ANCHOR = re.compile(rf'<a id="{ANCHOR_ID}"></a>')
-# The start of a table row, before its ID and the anchor that may precede it.
-ROW_START = rf"^\|\s*(?:{ID_ANCHOR.pattern})?"
 
 
 def anchored(ident):
@@ -549,6 +526,15 @@ def section_span(lines, heading):
     return start, next((i for i in range(start + 1, len(lines)) if lines[i].startswith("#")), len(lines))
 
 
+def h2_span(lines, title):
+    """(index of the line `## title`, index of the next ## heading or the end),
+    or None: a ## section with the ### headings inside it."""
+    span = section_span(lines, f"## {title}")
+    if span is None:
+        return None
+    return span[0], next((i for i in range(span[0] + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+
+
 def table_cells(line, keep_anchors=False):
     """A Markdown table row's cells, trimmed; an ID without its anchor unless
     `keep_anchors`. A pipe escaped as \\| stays inside its cell, read as |."""
@@ -568,11 +554,6 @@ def linked_ids(text, recorded):
     def link(part):
         return ID.sub(lambda m: f"[{m[0]}](#{m[0].lower()})" if m[0] in recorded else m[0], part)
     return "\n".join(line if _skipped(line) else _map_open(line, link) for line in text.split("\n"))
-
-
-RECORD = re.compile(r"\b[SQDGC]\d{2,}\b")
-RECORD_DEFINITION = re.compile(
-    rf"(?:{ROW_START}|^[-*]\s+\*\*|^#{{3}}\s+)({RECORD.pattern})", re.M)
 
 
 def unrecorded_ids(body):
@@ -597,7 +578,7 @@ def cited_sources(body):
     """{source number: the findings whose Evidence line names it} in the ledger `body`."""
     cited = {}
     for ident, block in finding_blocks(body).items():
-        if evidence := re.search(r"- \*\*Evidence:\*\*(.*)", block):
+        if evidence := EVIDENCE_LINE.search(block):
             for source in set(re.findall(r"\bS(\d+)\b", evidence[1])):
                 cited.setdefault(int(source), set()).add(ident)
     return cited
@@ -610,15 +591,25 @@ def finding_blocks(text):
     return {match[1]: text[match.start():end].strip("\n") for match, end in zip(found, ends)}
 
 
-# The Findings a source row lists, which ledger.py writes and check_report.py reads.
-SOURCE_FINDINGS = re.compile(r"\s*Findings: ([^.]*)\.\s*$")
-
-
 def unrecorded_citations(values, body):
     """The IDs, findings included, that `values` cite and the ledger `body`
     doesn't record yet."""
     cited = {i for v in values for i in ID.findall(v)}
     return sorted(cited - recorded_ids(body), key=id_order)
+
+
+def areas_problem(row):
+    """Why a source or gap row's Areas cell names something other than AREAS,
+    or None."""
+    wrong = [a for a in areas_of(row) if a not in AREAS]
+    if not wrong:
+        return None
+    return f"{row[0]}: Areas must be some of: {', '.join(AREAS)}; not {', '.join(wrong)}"
+
+
+def areas_of(row):
+    """The evidence areas a source or gap row names in its last cell, Areas."""
+    return [a for a in (x.strip() for x in row[-1].split(",")) if a]
 
 
 def status_problem(row_id, status):
@@ -638,23 +629,30 @@ def depth_problem(depth):
 
 
 def unread_components(components, coverage, definitions):
-    """The components whose Status claims code (🟩, 🟨) without file coverage
-    read at READ_DEPTHS under their repository path. `components` are rows
-    (ID, ..., repository cell at 3, status at 4); `coverage` rows (source,
-    material, depth)."""
+    """{component ID: the paths it links} of the components whose Status
+    claims code (🟩, 🟨) without file coverage read at READ_DEPTHS of one of
+    those paths, of a file or folder under it, or of a folder above it, which
+    covers the files in it. `components` are rows (ID, ..., repository cell
+    at 3, status at 4); `coverage` rows (source, material, depth)."""
     def urls(cell):
         return [url for _, _, _, url in links(cell, definitions) if url]
     read = [_code_path(url) for row in coverage
-            if any(row[2].casefold().startswith(d) for d in READ_DEPTHS)
+            if read_in_full(row[2])
             for url in urls(row[1])]
-    found = []
+    found = {}
     for row in components:
         if not row[4].startswith(CODE_STATUSES):
             continue
         paths = [_code_path(url) for url in urls(row[3])]
-        if not any(r == p or r.startswith(p + "/") for p in paths for r in read):
-            found.append(row[0])
+        if not any(r == p or r.startswith(p + "/") or p.startswith(r + "/") for p in paths for r in read):
+            found[row[0]] = [_shown_path(p) for p in paths]
     return found
+
+
+def read_in_full(depth):
+    """Whether a file coverage Depth cell says the material was read at
+    READ_DEPTHS, enough to establish what the code does."""
+    return any(depth.casefold().startswith(d) for d in READ_DEPTHS)
 
 
 def _code_path(url):
@@ -662,9 +660,17 @@ def _code_path(url):
     return re.sub(r"/(?:tree|blob)/", "/-/", url.rstrip("/"))
 
 
+def _shown_path(path):
+    """A code path as a message names it: owner/repo and the path after the revision."""
+    match = re.match(r"https?://[^/]+/([^/]+/[^/]+)/-/[^/]+/?(.*)", path)
+    return f"{match[1]}: {match[2] or '/'}" if match else path
+
+
 def unread_message(found):
-    """What to do about components claiming code with no code read."""
-    return (f"{', '.join(found)}: a component marked {' or '.join(CODE_STATUSES)} needs its code read. Read "
-            "its entrypoints and routes, add file coverage rows at depth "
-            f"{' or '.join(READ_DEPTHS)} under the path its Repository cell links, then set the status. "
-            "Until then it is ⬜ Unverified")
+    """What to do about components claiming code with no code read, `found`
+    as unread_components returns it."""
+    return (f"a component marked {' or '.join(CODE_STATUSES)} needs its code read, at depth "
+            f"{' or '.join(READ_DEPTHS)}, in a file coverage row of the path it links, of a file under it or "
+            "of a folder above it: " + "; ".join(f"{ident} links {', '.join(paths) or 'no code'}"
+                                                 for ident, paths in found.items())
+            + ". Read it and add the row, then set the status; until then it is ⬜ Unverified")

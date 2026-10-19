@@ -5,6 +5,7 @@ Run with: python3 tests/run.py agentic-manager-tech-investigation
 The config's path is patched to the test's own config, in a temporary folder.
 """
 
+import json
 import os
 import sys
 import unittest
@@ -21,6 +22,7 @@ import init_investigation  # noqa: E402
 import output_diagram  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from investigation_fixture import temp_output  # noqa: E402
+from agentic_manager import config  # noqa: E402
 
 TODAY = date(2026, 10, 5)
 
@@ -42,11 +44,11 @@ class InitTest(unittest.TestCase):
         # ledger check; running it again the same day starts from scratch.
         result = init_investigation.init("Acme-Search", today=TODAY)
         path = os.path.join(self.folder, "Acme-Search_26-10-05")
-        ledger = os.path.join(path, "ledgers.md")
+        ledger = os.path.join(path, "ledger.md")
         self.assertEqual({k: result[k] for k in ("investigation", "investigation_dir", "replaced")},
                          {"investigation": "Acme-Search_26-10-05", "investigation_dir": path,
                           "replaced": False})
-        self.assertEqual(os.listdir(path), ["ledgers.md"])
+        self.assertEqual(os.listdir(path), ["ledger.md"])
         self.assertEqual(check_report.check_ledger(Path(ledger)), ([], []))
         # The examples folder is there from the first run, empty.
         self.assertEqual(os.listdir(
@@ -62,26 +64,93 @@ class InitTest(unittest.TestCase):
         self.assertTrue(result["replaced"])
         self.assertTrue(os.path.isdir(os.path.join(
             self.folder, "Acme-Search_26-10-04")))
-        self.assertEqual(os.listdir(path), ["ledgers.md"])
+        self.assertEqual(os.listdir(path), ["ledger.md"])
         self.assertEqual(check_report.check_ledger(Path(ledger)), ([], []))
 
+    def sources(self, **enabled):
+        """Write the test's config with the given sources, {group: [names]}, enabled."""
+        path = config.CONFIG_PATH
+        with open(path, encoding="utf-8") as f:
+            settings = json.load(f)
+        settings["sources"] = {group: {name: {"enabled": True}
+                                       for name in names} for group, names in enabled.items()}
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(settings, f)
+
+    def test_first_actions_and_sources(self):
+        # One search of the topic per group with a usable source, in the
+        # sources' order of authority; an api or fs source of documentation or
+        # code, and any tracker but jira-api, isn't usable.
+        signed_in = mock.Mock(return_value=mock.Mock(returncode=0))
+        cases = [
+            ("every group", {"documentation": ["notion-mcp"], "workflow": ["jira-api"],
+                             "source_control": ["github-cli"], "local_vault": ["logseq-fs"]},
+             {"code": ["github-cli"], "tracker": ["jira-api"],
+                 "documentation": ["notion-mcp"]}, [],
+             [("Q01", "Search the code for Acme Search", "github-cli"),
+              ("Q02", "Search the tracker for Acme Search",
+               "jira-api (tickets.py search)"),
+              ("Q03", "Search the documentation for Acme Search", "notion-mcp")],
+             "Sources used: code: github-cli; tracker: jira-api; documentation: notion-mcp."),
+            ("no tracker", {"documentation": ["notion-fs"], "source_control": ["github-cli"]},
+             {"code": ["github-cli"], "tracker": [],
+                 "documentation": []}, ["tracker", "documentation"],
+             [("Q01", "Search the code for Acme Search", "github-cli")],
+             "Sources used: code: github-cli. No usable source for: tracker, documentation."),
+        ]
+        for name, enabled, sources, missing, actions, boundary in cases:
+            with self.subTest(name):
+                self.sources(**enabled)
+                result = init_investigation.init(
+                    "Acme-Search", today=TODAY, run=signed_in)
+                self.assertEqual(
+                    (result["sources"], result["missing"]), (sources, missing))
+                ledger = Path(result["investigation_dir"]) / "ledger.md"
+                body = ledger.read_text(encoding="utf-8")
+                rows = check_report.ledger_rows(body, "### Ready")
+                self.assertEqual([(row[0], row[2], row[3])
+                                 for row in rows], actions)
+                self.assertIn(
+                    f"## Boundary, method and access\n\n{boundary}\n", body)
+                self.assertEqual(check_report.check_ledger(ledger), ([], []))
+        signed_in.assert_called_with(
+            ["gh", "auth", "status"], capture_output=True, text=True, timeout=30)
+
+    def test_gh_must_be_usable_before_anything_is_created(self):
+        self.sources(source_control=["github-cli"])
+        cases = [("not signed in", mock.Mock(return_value=mock.Mock(returncode=1)), "gh isn't signed in"),
+                 ("not installed", mock.Mock(side_effect=FileNotFoundError), "gh can't be run")]
+        for name, run, expected in cases:
+            with self.subTest(name):
+                with self.assertRaisesRegex(SystemExit, expected):
+                    init_investigation.init(
+                        "Acme-Search", today=TODAY, run=run)
+                self.assertFalse(os.path.exists(self.folder))
+        # Without github-cli, gh isn't asked.
+        self.sources(source_control=["gitlab-cli"])
+        unused = mock.Mock()
+        init_investigation.init("Acme-Search", today=TODAY, run=unused)
+        unused.assert_not_called()
+
     def test_examples(self):
-        for name in ("Acme-Search_26-09-01", "2026-09-20--acme-search", "Acme-Search_26-08-01",
-                     "Other_26-09-02", "_examples/Acme-Search_26-09-01--exec-summary",
-                     "_examples/Acme-Search_26-09-01--exec-summary--2", "_examples/Other_26-09-02--long-analysis"):
+        # Every approved example, newest first by date then copy; other
+        # folders, in _examples or beside it, are not examples.
+        for name in ("Acme-Search_26-09-01", "2026-09-20--acme-search", "Other_26-09-02",
+                     "_examples/Acme-Search_26-09-01", "_examples/Acme-Search_26-09-01--2",
+                     "_examples/Other_26-08-02", "_examples/not-an-example"):
             os.makedirs(os.path.join(self.folder, name))
-        with open(os.path.join(self.folder, "_examples", "Acme-Search_26-09-01--exec-summary", "exec-summary.md"), "w",
-                  encoding="utf-8") as f:
+        example = os.path.join(self.folder, "_examples",
+                               "Acme-Search_26-09-01")
+        with open(os.path.join(example, "Acme-Search_Report.md"), "w", encoding="utf-8") as f:
             f.write("x")
-        with open(os.path.join(self.folder, "_examples", "Acme-Search_26-09-01--exec-summary", "description.md"), "w",
-                  encoding="utf-8") as f:
-            f.write(
-                "# Acme-Search_26-09-01--exec-summary\n\n**Why it's good:** Tight summary.\n")
-        result = init_investigation.init(
-            "Acme-Search", "exec-summary", today=TODAY)
+        with open(os.path.join(example, "description.md"), "w", encoding="utf-8") as f:
+            f.write("# Acme-Search_26-09-01\n\n**Why it's good:** Clear milestone.\n")
+        result = init_investigation.init("Acme-Search", today=TODAY)
         self.assertEqual([(os.path.basename(e["folder"]), e["documents"], e["note"]) for e in result["examples"]],
-                         [("Acme-Search_26-09-01--exec-summary--2", [], ""),
-                          ("Acme-Search_26-09-01--exec-summary", ["exec-summary.md"], "Tight summary.")])
+                         [("Acme-Search_26-09-01--2", [], ""),
+                          ("Acme-Search_26-09-01",
+                           ["Acme-Search_Report.md"], "Clear milestone."),
+                          ("Other_26-08-02", [], "")])
 
     def test_topic_names(self):
         for topic, ok in (("Payments-Retry-Service", True), ("QA-Tools", True), ("iOS-App", True),

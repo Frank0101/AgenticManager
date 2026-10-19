@@ -40,6 +40,10 @@ from agentic_manager.config import is_filled, load_config  # noqa: E402
 
 # Where skills write their files when the config sets no output root.
 TEMP_ROOT = os.path.join(tempfile.gettempdir(), "agentic-manager")
+# The file in an example's folder that says what the example is.
+EXAMPLE_DESCRIPTION = "description.md"
+# The name day_folder() gives, read back: its subject and its YY-MM-DD date.
+DAY_FOLDER = re.compile(r"(?P<subject>.+)_(?P<date>\d\d-\d\d-\d\d)")
 
 
 def output_folder(name):
@@ -76,12 +80,6 @@ def folder_name(value):
         raise argparse.ArgumentTypeError(
             f"{value!r} must be a single folder name, not a path")
     return name
-
-
-# The file in an example's folder that says what the example is.
-EXAMPLE_DESCRIPTION = "description.md"
-# The name day_folder() gives, read back: its subject and its YY-MM-DD date.
-DAY_FOLDER = re.compile(r"(?P<subject>.+)_(?P<date>\d\d-\d\d-\d\d)")
 
 
 def day_folder(subject, day):

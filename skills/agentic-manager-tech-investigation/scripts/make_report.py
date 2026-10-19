@@ -303,12 +303,9 @@ def sequence_of(content, stage, where):
     if not isinstance(lines, list) or not lines or not all(isinstance(line, str) for line in lines):
         content.errors.append(f"{at}: lines must be a list of Mermaid lines")
         return None
-    lines = [line.rstrip() for item in lines for line in item.splitlines()
+    lines = [semicolons_escaped(line.rstrip()) for item in lines for line in item.splitlines()
              if line.strip() and line.strip() not in ("sequenceDiagram", "autonumber")]
     for line in lines:
-        if ";" in re.sub(r"#\w+;", "", line):
-            content.errors.append(
-                f"{title}: raw semicolon in {line.strip()!r}; Mermaid reads it as a new statement")
         message = flow_components.MESSAGE.match(line)
         if message and re.match(r"\s*\d+[.)]\s", message[4]):
             content.errors.append(
@@ -318,6 +315,13 @@ def sequence_of(content, stage, where):
         content.errors.append(f"{title}: {label!r} is no component of the ledger; name it as in the "
                               "component inventory, or declare a person with actor")
     return sequence
+
+
+def semicolons_escaped(line):
+    """`line` with each raw semicolon written as #59;, since Mermaid would
+    read it as the end of a statement; an entity such as #quot; stays."""
+    return "".join(part if re.fullmatch(r"#\w+;", part) else part.replace(";", "#59;")
+                   for part in re.split(r"(#\w+;)", line))
 
 
 class Sequence:

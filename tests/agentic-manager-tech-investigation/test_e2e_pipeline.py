@@ -1,7 +1,6 @@
 """End-to-end test of the skill's scripts in the order the skill runs them:
 init_investigation.py, then the agent's content.json and ledger,
-make_report.py, check_report.py --handover, make_summary.py and
-save_example.py.
+make_report.py, check_report.py --handover and save_example.py.
 Run with: python3 tests/run.py agentic-manager-tech-investigation
 
 HOME points at a temporary folder holding the test's own config, and TMPDIR at
@@ -73,55 +72,42 @@ class PipelineTest(unittest.TestCase):
         self.run_script(os.path.join(LIB, "output_file.py"), "--name", "tech-investigations",
                         "--path", relative, stdin=text)
 
-    def test_prose_only_investigation_without_an_architect_summary(self):
-        started = self.run_script(os.path.join(
-            SCRIPTS, "init_investigation.py"), "--topic", "Acme-Search")
-        investigation = started["investigation"]
-        data = content()
-        data["skip"] = ["architecture"]
-        for key in ("architecture", "decisions_and_gaps"):
-            data.pop(key)
-        self.write(f"{investigation}/ledgers.md", LEDGER)
-        self.write(f"{investigation}/content.json", json.dumps(data))
-        result = self.run_script(os.path.join(
-            SCRIPTS, "make_report.py"), "--investigation", investigation)
-        self.assertTrue(result["ok"], result)
-        checked = self.run_script(os.path.join(SCRIPTS, "check_report.py"),
-                                  "--report", result["path"], "--handover")
-        self.assertTrue(checked["ok"], checked)
-        self.assertEqual(sorted(os.listdir(started["investigation_dir"])),
-                         ["Acme-Search_Report.md", "content.json", "ledgers.md"])
-
     def test_pipeline(self):
-        started = self.run_script(os.path.join(
-            SCRIPTS, "init_investigation.py"), "--topic", "Acme-Search")
-        investigation = started["investigation"]
-        self.assertTrue(investigation.startswith("Acme-Search_"))
-        data = content()
-        data["evidence_snapshot"] = "20" + investigation.split("_")[1]
-        self.write(f"{investigation}/ledgers.md", LEDGER)
-        self.write(f"{investigation}/content.json", json.dumps(data))
+        # name: (the dimensions content.json skips, whether the user keeps it
+        # as an example). A prose-only report leaves out the architect summary
+        # and the content that fills it.
+        cases = [("prose only, without an architect summary", ["architecture"], False),
+                 ("full", [], True)]
+        for name, skip, keep in cases:
+            with self.subTest(name):
+                started = self.run_script(os.path.join(
+                    SCRIPTS, "init_investigation.py"), "--topic", "Acme-Search")
+                investigation = started["investigation"]
+                self.assertTrue(investigation.startswith("Acme-Search_"))
+                data = content()
+                data["evidence_snapshot"] = "20" + investigation.split("_")[1]
+                if skip:
+                    data["skip"] = skip
+                    for key in ("architecture", "decisions_and_gaps"):
+                        data.pop(key)
+                self.write(f"{investigation}/ledger.md", LEDGER)
+                self.write(f"{investigation}/content.json", json.dumps(data))
 
-        report = self.run_script(os.path.join(
-            SCRIPTS, "make_report.py"), "--investigation", investigation)
-        self.assertTrue(report["ok"], report)
-        self.assertEqual(report["path"], os.path.join(
-            started["investigation_dir"], "Acme-Search_Report.md"))
-        checked = self.run_script(os.path.join(SCRIPTS, "check_report.py"), "--report", report["path"],
-                                  "--handover")
-        self.assertTrue(checked["ok"], checked)
-
-        self.write(f"{investigation}/exec-summary.json",
-                   json.dumps({"max_words": 100, "body": ["Search is merged [F01](ledger:F01)."]}))
-        summary = self.run_script(os.path.join(SCRIPTS, "make_summary.py"), "--investigation", investigation,
-                                  "--format", "exec-summary")
-        self.assertEqual(summary["words"], 4)
-
-        example = self.run_script(os.path.join(SCRIPTS, "save_example.py"), "--investigation", investigation,
-                                  "--file", "Acme-Search_Report.md", "--format", "long-analysis",
-                                  "--note", "Clear current milestone.")
-        self.assertEqual(sorted(os.listdir(example["example"])),
-                         ["Acme-Search_Report.md", "description.md", "ledgers.md"])
+                report = self.run_script(os.path.join(
+                    SCRIPTS, "make_report.py"), "--investigation", investigation)
+                self.assertTrue(report["ok"], report)
+                self.assertEqual(report["path"], os.path.join(
+                    started["investigation_dir"], "Acme-Search_Report.md"))
+                checked = self.run_script(os.path.join(SCRIPTS, "check_report.py"), "--report", report["path"],
+                                          "--handover")
+                self.assertTrue(checked["ok"], checked)
+                self.assertEqual(sorted(os.listdir(started["investigation_dir"])),
+                                 ["Acme-Search_Report.md", "content.json", "ledger.md"])
+                if keep:
+                    example = self.run_script(os.path.join(SCRIPTS, "save_example.py"),
+                                              "--investigation", investigation, "--note", "Clear current milestone.")
+                    self.assertEqual(sorted(os.listdir(example["example"])),
+                                     ["Acme-Search_Report.md", "description.md", "ledger.md"])
 
 
 if __name__ == "__main__":

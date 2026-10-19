@@ -46,10 +46,17 @@ def is_enabled(group, source):
     """Whether a source is enabled in the user's config, for a script that
     uses a source's tool, such as a CLI, only when the user enabled it. Exits
     if the config can't be read."""
+    return source in enabled_sources(group)
+
+
+def enabled_sources(group):
+    """The names of a group's enabled sources in the user's config, such as
+    ["github-cli"], for a script that picks which to use. Exits if the config
+    can't be read."""
     groups = load_config().get("sources")
     entries = groups.get(group) if isinstance(groups, dict) else None
-    settings = entries.get(source) if isinstance(entries, dict) else None
-    return isinstance(settings, dict) and settings.get("enabled") is True
+    return [name for name, settings in (entries.items() if isinstance(entries, dict) else ())
+            if isinstance(settings, dict) and settings.get("enabled") is True]
 
 
 def load_config():

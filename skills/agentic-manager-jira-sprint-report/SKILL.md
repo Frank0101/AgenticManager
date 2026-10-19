@@ -49,15 +49,13 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py <selector>
 
 If the user names no sprint, project or board, ask; don't guess. If they name only a sprint, run it alone first, and ask for the project or board only when the script says it couldn't find the sprint. If the script fails, report its message and follow any fix it gives; when it asks for another board, keep the sprint by passing its `--sprint-id` with the `--board`.
 
-Preparing a sprint again on the same day replaces that day's report folder for the sprint, including its `content.json` and completed report; reports from earlier days are kept.
-
 Read the `brief`: the sprint and its goal, the verdicts you can choose from, each epic's tickets with their commentary `group`, `carried_in` (still in the previous sprint when it closed), `scope` (`original` is the commitment, `extra` was added later), latest `points`, `status`, `flagged`, description and, for blocker candidates, their comments, and `report_facts`, the report's own figures in its exact wording.
 
 A description comes as its first chunk, with `description_chunks` when there are more; read another chunk only when it could change a sentence, with `python3 ${CLAUDE_SKILL_DIR}/scripts/read_description.py --report-dir <report_dir> --key KEY --chunk N`.
 
 ## 2. Write content.json
 
-Write it through the shared writer, with the `content_path` from step 1, and the same way for every revision; never with your own file tools. To fix one field, send exact replacements with the writer's `--patch` rather than the whole file, matching the file's text with its JSON escapes:
+Write it through the shared writer, with the `content_path` from step 1, and the same way for every revision; never with your own file tools. Its `--help` shows how to change part of it later. The first write, which shows the file's shape:
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py --name jira-sprint-reports --path '<content_path>' <<'END_OF_FILE'
@@ -88,9 +86,9 @@ Work out the goal themes first (they feed three fields), and write the verdict l
 
 **`blockers_risks`**: one paragraph of at most 80 words on the commitment still open: tickets with `scope` `original` in the `in_review` and `not_completed` groups. Group them by goal theme, then by epic, and say what the open work holds back. Give a reason only where a comment states one ("under discussion with Security"), and say when a ticket is flagged. If nothing from the commitment is open, say so.
 
-**`goal_verdict`**: one of the brief's `goal_verdicts`, word for word; if it offers only one, use it. A theme is met when none of its commitment tickets is open at the end (the `not_completed` outcome in `goal_tickets`, including work in review); extra work doesn't decide it, and descoped work doesn't count against it. Closed sprint: "Fully met" if every theme is met, "Not met" if none is, otherwise "Partially met". Running sprint, when the brief offers it: "At risk" if any theme has more than half its commitment pts open, otherwise "On track". If part of a theme maps to no ticket, judge by the tickets that do.
-
 **`retro_notes`**: 1 to 5 notes for the team's retro, each a fact followed by a question ending with "?". Look across `report_facts` and the brief, including `carried_in` tickets that are still open, for what most departed from the plan and what the team can learn from it: patterns between epics, the timeline commentary and the goal, not only the largest figure. Quote figures word for word from `report_facts`, and name tickets as `KEY (N pts)` with the brief's `points`; don't derive new figures. Frame causes as questions, never as findings the data can't show.
+
+**`goal_verdict`**: one of the brief's `goal_verdicts`, word for word; if it offers only one, use it. A theme is met when none of its commitment tickets is open at the end (the `not_completed` outcome in `goal_tickets`, including work in review); extra work doesn't decide it, and descoped work doesn't count against it. Closed sprint: "Fully met" if every theme is met, "Not met" if none is, otherwise "Partially met". Running sprint, when the brief offers it: "At risk" if any theme has more than half its commitment pts open, otherwise "On track". If part of a theme maps to no ticket, judge by the tickets that do.
 
 Rules for all of it. `finish_report.py` rejects text that breaks the wording and format rules, naming the field; it can't check the content rules, so you are the only guard for them:
 
@@ -108,4 +106,4 @@ It draws the charts, writes the report and checks it, printing only what failed.
 
 ## 4. Tell the user
 
-Say that the report is ready, with a Markdown link to its full path, which the script prints. Don't recap anything the report already shows. Add only what it doesn't: a doubt about your own judgment, such as a goal theme that maps to no ticket, and, if `temporary` is `true`, that the folder is temporary and setting `output.root` in the config keeps reports.
+Say that the report is ready, with a Markdown link to its full path, which the script prints. Don't recap anything the report already shows. Add only what it doesn't: a doubt about your own judgment, such as a goal theme that maps to no ticket, and, if step 1's `temporary` is `true`, that the folder is temporary and setting `output.root` in the config keeps reports.

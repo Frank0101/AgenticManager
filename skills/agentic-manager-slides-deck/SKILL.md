@@ -160,7 +160,7 @@ End with one question, the first that applies, so it isn't lost among the rest:
 
 ## 6. Iterate
 
-The user gives feedback and refreshes the browser. Change only what they asked: for a few fields, send exact replacements with the writer's `--patch` rather than the whole file, matching the file's text with its JSON escapes. Build again, and confirm what changed in one line.
+The user gives feedback and refreshes the browser. Change only what they asked, through the writer as its `--help` shows, not by rewriting the whole file. Build again, and confirm what changed in one line.
 
 ## 7. Swap the stand-ins for real images (optional)
 

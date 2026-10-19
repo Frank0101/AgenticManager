@@ -79,17 +79,17 @@ class ConfigTest(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIs(config.is_text_list(value), ok)
 
-    def test_is_enabled(self):
-        for name, written, enabled in [("enabled", self.jira(), True),
-                                       ("disabled", self.jira(
-                                           enabled=False), False),
-                                       ("not a boolean", self.jira(
-                                           enabled="true"), False),
-                                       ("left out", {}, False)]:
-            with self.subTest(name):
-                self.write(written)
-                self.assertIs(config.is_enabled(
-                    "workflow", "jira-api"), enabled)
+    def test_enabled_sources(self):
+        # Only sources whose enabled is true; a group left out has none.
+        self.write({"sources": {"workflow": {"jira-api": {"enabled": True}, "azure-devops-cli": {"enabled": False},
+                                             "linear-mcp": {"enabled": "true"}}}})
+        for group, expected in [("workflow", ["jira-api"]), ("documentation", [])]:
+            with self.subTest(group):
+                self.assertEqual(config.enabled_sources(group), expected)
+        for group, source, enabled in [("workflow", "jira-api", True), ("workflow", "azure-devops-cli", False),
+                                       ("workflow", "linear-mcp", False), ("documentation", "notion-mcp", False)]:
+            with self.subTest(source):
+                self.assertIs(config.is_enabled(group, source), enabled)
 
     def test_read_source(self):
         # Only the settings asked for, trimmed.

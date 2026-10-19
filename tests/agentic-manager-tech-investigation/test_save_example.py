@@ -21,106 +21,72 @@ sys.path.insert(0, TEST_DIR)
 from investigation_fixture import temp_output  # noqa: E402
 
 TODAY = date(2026, 10, 5)
+INVESTIGATION = "Acme-Search_26-10-05"
+REPORT = "Acme-Search_Report.md"
 
 
 class SaveExampleTest(unittest.TestCase):
     def setUp(self):
         self.folder = temp_output(self)
         init_investigation.init("Acme-Search", today=TODAY)
-        self.source = os.path.join(self.folder, "Acme-Search_26-10-05")
-        files = {"Acme-Search_Report.md": "![Picture](picture.svg)\n[Ledger](ledgers.md#f01)\n"
-                                          "[Web](https://example.com) [Missing](gone.md)\n",
-                 "picture.svg": "<svg/>", "notes.md": "unlinked",
-                 "exec-summary.md": "Summary. [Full report](Acme-Search_Report.md)\n"}
-        for name, text in files.items():
-            with open(os.path.join(self.source, name), "w", encoding="utf-8") as f:
-                f.write(text)
+        self.source = Path(self.folder) / INVESTIGATION
 
-    def test_copies_linked_files_with_a_description(self):
-        first = save_example.save(
-            "Acme-Search_26-10-05", "Acme-Search_Report.md", "long-analysis", "Clear roadmap.")
+    def write(self, files):
+        for name, text in files.items():
+            (self.source / name).write_text(text, encoding="utf-8")
+
+    def test_copies_the_report_and_what_it_links_with_a_description(self):
+        self.write({REPORT: "![Picture](picture.svg)\n[Ledger](ledger.md#f01)\n"
+                            "[Web](https://example.com) [Missing](gone.md)\n",
+                    "picture.svg": "<svg/>", "notes.md": "unlinked"})
+        first = save_example.save(INVESTIGATION, "Clear roadmap.")
         self.assertEqual(sorted(first["files"]), [
-                         "Acme-Search_Report.md", "ledgers.md", "picture.svg"])
-        second = save_example.save(
-            "Acme-Search_26-10-05", "exec-summary.md", "exec-summary", "Tight summary.")
-        self.assertEqual(sorted(second["files"]), ["Acme-Search_Report.md", "exec-summary.md",
-                                                   "ledgers.md", "picture.svg"])
-        third = save_example.save(
-            "Acme-Search_26-10-05", "exec-summary.md", "exec-summary", "Revised.")
-        self.assertTrue(third["example"].endswith(
-            "Acme-Search_26-10-05--exec-summary--2"))
-        with open(os.path.join(third["example"], "description.md"), encoding="utf-8") as f:
-            self.assertEqual(f.read(), "# Acme-Search_26-10-05--exec-summary--2\n\n**Why it's good:** Revised.\n\n"
-                             "The approved document: [exec-summary.md](exec-summary.md).\n")
+                         REPORT, "ledger.md", "picture.svg"])
+        # A second one of the same day never overwrites the first.
+        second = save_example.save(INVESTIGATION, "Revised.")
+        self.assertTrue(second["example"].endswith(f"{INVESTIGATION}--2"))
+        with open(os.path.join(second["example"], "description.md"), encoding="utf-8") as f:
+            self.assertEqual(f.read(), f"# {INVESTIGATION}--2\n\n**Why it's good:** Revised.\n\n"
+                             f"The approved report: [{REPORT}]({REPORT}).\n")
         # The examples list reads each one's note from its description.
-        listed = init_investigation.init(
-            "Other", "exec-summary", today=TODAY)["examples"]
+        listed = init_investigation.init("Other", today=TODAY)["examples"]
         self.assertEqual([(os.path.basename(e["folder"]), e["note"]) for e in listed],
-                         [("Acme-Search_26-10-05--exec-summary--2", "Revised."),
-                          ("Acme-Search_26-10-05--exec-summary", "Tight summary.")])
+                         [(f"{INVESTIGATION}--2", "Revised."), (INVESTIGATION, "Clear roadmap.")])
 
     def test_reference_links_and_fenced_examples(self):
         # Preserve all Markdown link forms and recursively linked documents,
         # while ignoring illustrative links inside code fences.
-        forms = ["[Asset](asset.svg)", "[Asset][proof]",
-                 "[proof][]", "[proof]"]
-        for form in forms:
+        for form in ["[Asset](asset.svg)", "[Asset][proof]", "[proof][]", "[proof]"]:
             with self.subTest(form=form):
-                files = {"approved.md": "[Details](details.md)\n```text\n[Ignored](ignored.svg)\n```",
+                files = {REPORT: "[Details](details.md)\n```text\n[Ignored](ignored.svg)\n```",
                          "details.md": form + "\n\n[proof]: asset.svg\n",
                          "asset.svg": "<svg/>", "ignored.svg": "<svg/>"}
-                for name, text in files.items():
-                    with open(os.path.join(self.source, name), "w", encoding="utf-8") as f:
-                        f.write(text)
-                result = save_example.save("Acme-Search_26-10-05", "approved.md",
-                                           "exec-summary", "Clear summary.")
-                self.assertEqual(sorted(result["files"]),
-                                 ["approved.md", "asset.svg", "details.md"])
+                self.write(files)
+                result = save_example.save(INVESTIGATION, "Clear report.")
+                self.assertEqual(sorted(result["files"]), [
+                                 REPORT, "asset.svg", "details.md"])
                 with open(os.path.join(result["example"], "details.md"), encoding="utf-8") as f:
                     self.assertEqual(f.read(), files["details.md"])
 
     def test_refusals(self):
-        cases = [("missing.md", "exec-summary", "Note."), ("exec-summary.md", "Exec Summary", "Note."),
-                 ("exec-summary.md", "exec-summary", " "), ("exec-summary.md", "exec-summary", "a\nb")]
-        for document, wanted, note in cases:
-            with self.subTest(document=document, wanted=wanted, note=note):
-                with self.assertRaises(SystemExit):
-                    save_example.save("Acme-Search_26-10-05",
-                                      document, wanted, note)
-
-    def test_document_must_be_relative_and_inside_investigation(self):
-        source = Path(self.source)
-        outside = source.parent / "outside.md"
-        outside.write_text("Invented external document.", encoding="utf-8")
-        archive = source.parent / "_examples"
-        before = {str(path.relative_to(archive)): path.read_bytes()
-                  for path in archive.rglob("*") if path.is_file()} if archive.exists() else {}
-        for document in (str(outside), "../outside.md"):
-            with self.subTest(document=document):
-                with self.assertRaisesRegex(SystemExit, "relative path inside"):
-                    save_example.save("Acme-Search_26-10-05", document,
-                                      "exec-summary", "Clear summary.")
-                self.assertEqual(before, {str(path.relative_to(archive)): path.read_bytes()
-                                          for path in archive.rglob("*") if path.is_file()}
-                                 if archive.exists() else {})
-        nested = source / "summaries" / "approved.md"
-        nested.parent.mkdir()
-        nested.write_text("Approved nested summary.", encoding="utf-8")
-        result = save_example.save("Acme-Search_26-10-05", "summaries/approved.md",
-                                   "exec-summary", "Clear summary.")
-        self.assertEqual(result["files"], ["summaries/approved.md"])
-        self.assertEqual((Path(result["example"]) / "summaries" / "approved.md").read_bytes(),
-                         nested.read_bytes())
+        # name: (note, whether the report exists, expected message)
+        cases = [("no report", "Note.", False, "has no Acme-Search_Report.md"),
+                 ("blank note", " ", True, "one line"), ("two-line note", "a\nb", True, "one line")]
+        for name, note, report, expected in cases:
+            with self.subTest(name):
+                if report:
+                    self.write({REPORT: "Report."})
+                with self.assertRaisesRegex(SystemExit, expected):
+                    save_example.save(INVESTIGATION, note)
 
     def test_linked_symlinks_must_stay_inside_investigation(self):
-        source = Path(self.source)
-        outside = source.parent / "external"
+        outside = self.source.parent / "external"
         outside.mkdir()
         (outside / "details.md").write_text("Invented external document.", encoding="utf-8")
         (outside / "asset.svg").write_text("<svg/>", encoding="utf-8")
-        inside = source / "details.md"
+        inside = self.source / "details.md"
         inside.write_text("Invented investigation document.", encoding="utf-8")
-        archive = source.parent / "_examples"
+        archive = self.source.parent / "_examples"
         cases = [("document", outside / "details.md", "linked.md", "linked.md", False),
                  ("file", outside / "asset.svg", "linked.svg", "linked.svg", False),
                  ("directory", outside, "linked-dir",
@@ -128,28 +94,24 @@ class SaveExampleTest(unittest.TestCase):
                  ("inside", inside, "linked.md", "linked.md", True)]
         for name, destination, link_name, reference, valid in cases:
             with self.subTest(name=name):
-                symlink = source / link_name
+                symlink = self.source / link_name
                 symlink.symlink_to(
                     destination, target_is_directory=destination.is_dir())
-                approved = source / "approved.md"
-                approved.write_text(
-                    f"[Details]({reference})", encoding="utf-8")
+                self.write({REPORT: f"[Details]({reference})"})
                 before = {str(path.relative_to(archive)): path.read_bytes()
                           for path in archive.rglob("*") if path.is_file()}
                 folders = sorted(str(path.relative_to(archive))
                                  for path in archive.rglob("*"))
                 try:
                     if valid:
-                        result = save_example.save("Acme-Search_26-10-05", "approved.md",
-                                                   "exec-summary", "Clear summary.")
-                        self.assertEqual(result["files"], [
-                                         "approved.md", reference])
+                        result = save_example.save(
+                            INVESTIGATION, "Clear report.")
+                        self.assertEqual(result["files"], [REPORT, reference])
                         self.assertEqual((Path(result["example"]) / reference).read_bytes(),
                                          inside.read_bytes())
                     else:
                         with self.assertRaisesRegex(SystemExit, "leads outside"):
-                            save_example.save("Acme-Search_26-10-05", "approved.md",
-                                              "exec-summary", "Clear summary.")
+                            save_example.save(INVESTIGATION, "Clear report.")
                         self.assertEqual(folders, sorted(str(path.relative_to(archive))
                                                          for path in archive.rglob("*")))
                         self.assertEqual(before, {str(path.relative_to(archive)): path.read_bytes()

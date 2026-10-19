@@ -1,7 +1,7 @@
 ---
 name: agentic-manager-tech-investigation
-description: Investigates a technical system, proposal, capability or engineering problem by triangulating the team's documentation (the vision), work tracker (the delivery) and source control (the implementation), and iterates until it converges on an evidence-backed account of the current state, the current milestone and the directional target architecture, with a fixed executive/product layer and architect layer, one Mermaid sequence for each architect section with the design of the components it crosses, and a detailed research queue and evidence ledger. Also produces short outputs, such as an exec summary, from the same full investigation. Use when the user asks to investigate, map or explain a system or proposal, asks what exists today versus what is planned, or asks for its architecture, current milestone, first iteration or target state.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_investigation.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/ledger.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/save_example.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/output_diagram.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/tickets.py *)
+description: Investigates a technical system, proposal, capability or engineering problem by triangulating the team's documentation (the vision), work tracker (the delivery) and source control (the implementation), and iterates until it converges on an evidence-backed account of the current state, the current milestone and the directional target architecture, with a fixed executive/product layer and architect layer, one Mermaid sequence for each architect section with the design of the components it crosses, and a detailed research queue and evidence ledger. Use when the user asks to investigate, map or explain a system or proposal, asks what exists today versus what is planned, or asks for its architecture, current milestone, first iteration or target state.
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_investigation.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/ledger.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/save_example.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/output_diagram.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/tickets.py *)
 ---
 
 # Tech Investigation
@@ -21,17 +21,15 @@ The investigation's folder holds only these files, and the handover check fails 
 
 ```text
 tech-investigations/
-├── _examples/                             save_example.py writes, the documents the user approved
-│   └── Payments-Retry-Service_26-10-05--long-analysis/
+├── _examples/                             save_example.py writes, the reports the user approved
+│   └── Payments-Retry-Service_26-10-05/
 │       ├── description.md                 what makes it good
 │       ├── Payments-Retry-Service_Report.md
-│       └── ledgers.md
+│       └── ledger.md
 └── Payments-Retry-Service_26-10-05/
-    ├── ledgers.md                         init_investigation.py and ledger.py write
+    ├── ledger.md                          init_investigation.py and ledger.py write
     ├── content.json                       you write
-    ├── Payments-Retry-Service_Report.md   make_report.py writes
-    ├── exec-summary.json                  you write, only for a short output
-    └── exec-summary.md                    make_summary.py writes, only for a short output
+    └── Payments-Retry-Service_Report.md   make_report.py writes
 ```
 
 The work has five phases: [Define](#1-define), [Research](#2-research), [Write](#3-write), [Review](#4-review) and [Hand over](#5-hand-over). `ledger.py status` ends with a `next:` line naming the phase you are in and what to do; check it whenever you're unsure, and follow it.
@@ -48,21 +46,21 @@ This skill needs sources of three groups, each the evidence for one side of the 
 | `workflow`       | the tracker       | The delivery       | Scope, acceptance criteria, owners, progress, dependencies, blockers.             |
 | `source_control` | the code          | The implementation | Code, configuration, infrastructure, tests, workflows, pull requests, releases.   |
 
-The tracker is Jira, through the `jira-api` source, which this skill's `tickets.py` reads. For the documentation and the code, use every enabled source of their groups whose channel is `mcp` or `cli`; one reached through `api` or `fs` needs a script this skill doesn't have, so tell the user it isn't used. If no group has a usable source, stop and show `jira-api` and each other group's `mcp` and `cli` sources with their `setup` and the config `path`. If one or two have none, say which, with the same details, and ask whether to go on without them; if the user agrees, those groups are unavailable (see [Unavailable sources](#unavailable-sources)).
+The tracker is Jira, through the `jira-api` source, which this skill's `tickets.py` reads; the documentation and the code come through any enabled source of their groups whose channel is `mcp` or `cli`.
 
 It also needs Node.js 22.13 or newer, to draw and check the diagrams: `init_investigation.py` stops with a message if it is missing.
 
 ## Working with the scripts
 
-`<scripts>` is `${CLAUDE_SKILL_DIR}/scripts` and `<lib>` is `${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager`: call them by exactly these paths, so they run without a permission prompt. Each prints one line of JSON (`ledger.py`'s `status`, `find`, `show`, `brief` and `help` commands, `tickets.py` and `extract_saved.py` print plain text), or what's wrong on standard error with a non-zero exit. `<investigation>` is the folder name `init_investigation.py` prints. A script's `--help` gives its commands and arguments. When a tool's result is too large and saved to a file, list what you need from it with `<lib>/extract_saved.py`, rather than reading it whole or writing code to read it.
+`<scripts>` is `${CLAUDE_SKILL_DIR}/scripts` and `<lib>` is `${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager`: call them by exactly these paths, so they run without a permission prompt. Each prints one line of JSON (`ledger.py`'s `status`, `find`, `show`, `brief` and `help` commands, `tickets.py` and `extract_saved.py` print plain text), or, when it refuses its input, what's wrong on standard error with a non-zero exit. `<investigation>` is the folder name `init_investigation.py` prints. A script's `--help` gives its commands and arguments. When a tool's result is too large and saved to a file, list what you need from it with `<lib>/extract_saved.py`, rather than reading it whole or writing code to read it.
 
-Write the ledger only through `ledger.py`, and `content.json` and a short output's `<format>.json` only with `<lib>/output_file.py --name tech-investigations --path '<investigation>/<file>'`, the file's whole content on standard input; never with your own file tools. Never edit the report: change `content.json` and run `make_report.py` again. Working files, such as a diagram being tried or a row written to a file, go in your own scratch folder.
+Write the ledger only through `ledger.py`, and `content.json` only with `<lib>/output_file.py --name tech-investigations --path '<investigation>/content.json'`, whose `--help` shows how to write the whole file and how to change part of it; never with your own file tools. Never edit the report: change `content.json` and run `make_report.py` again. Working files, such as a diagram being tried or a row written to a file, go in your own scratch folder.
 
 ## Rules that hold throughout
 
 ### Code is the source of truth
 
-Read the code: entrypoints, routes, handlers, configuration. A README, a file listing or a search hit says what someone meant, not what the code does. A component is 🟩 or 🟨 only once its code is read, and `ledger.py` refuses those statuses until file coverage at depth `full` or `entrypoints and routes` exists under its path. Merged code establishes implementation; deployment is a separate claim that needs configuration or deployment evidence for a named environment and revision. An open pull request is a candidate, not the merged state.
+Read the code: entrypoints, routes, handlers, configuration. A README, a file listing or a search hit says what someone meant, not what the code does. A component is 🟩 or 🟨 only once its code is read, and `ledger.py` refuses those statuses until file coverage at depth `full` or `entrypoints and routes` exists of its linked path, a file under it or a folder above it. Merged code establishes implementation; deployment is a separate claim that needs configuration or deployment evidence for a named environment and revision. An open pull request is a candidate, not the merged state.
 
 ### Evidence authority
 
@@ -80,11 +78,9 @@ One chain of authority holds for every claim: **code → tracker → documentati
 
 Investigate what the user asked, with common sense about what it includes. When you find a connection to something outside it and can't tell whether it belongs (a sibling project, a shared platform, an older product with the same name), ask the user: "I see a link to X; do you want it in the investigation?" Record the answer in the ledger's `## Boundary, method and access`. If no answer comes, leave the topic unresearched, as a gap blocked by "Asked the user, no answer" naming the question, and carry on with the rest. Never include or leave out a topic on your own, and never present a general instruction as the user's answer to a specific question.
 
-A request for a short output (an exec summary, "100 words") is about the format, never the scope or rigor: do the full investigation, then compress it.
-
 ### Read as deep as the claims need
 
-How deep to read is your judgment, never a question for the user: they asked for the investigation because they don't know these details. Read whatever could change a claim, status, decision or gap in the report. Leave a file, pull request, ticket or document unread, or read it only in part, when nothing resting on it could change, and record what you left and why, in its file coverage row or in the outcome of the action that closes it, citing the findings that rest on it. Ask the user only about scope ([Stay on the topic you were asked](#stay-on-the-topic-you-were-asked)).
+How deep to read is your judgment, never a question for the user: they asked for the investigation because they don't know these details. Read whatever could change a claim, status, decision or gap in the report. Leave a file, pull request, ticket or document unread, or read it only in part, when nothing resting on it could change, and record what you left and why, in its file coverage row or in the outcome of the action that closes it, citing the findings that rest on it. `status` and the brief list the findings resting on a partial read: for each, read the rest, or say in the finding why the rest can't change it. Ask the user only about scope ([Stay on the topic you were asked](#stay-on-the-topic-you-were-asked)).
 
 ### Data and secrets
 
@@ -102,25 +98,22 @@ A source is unavailable when its group has none usable, a call errors, it comes 
 
 ### 1. Define
 
-Infer the topic, starting questions, provisional boundary and a destination page if named; ask only when ambiguity materially changes the investigation. Choose a short `<Topic>`, capitalised words joined by hyphens (honour a name the user gives), and run `<scripts>/init_investigation.py --topic <Topic> --format <format>`, where `<format>` is `long-analysis` or the short format asked for. Every run starts from scratch: never read or reuse what an earlier run left, on this or another day. Skim an approved example of that format for tone only, never for facts.
-
-Run `ledger.py help` ([The ledger](#the-ledger)), then write the boundary and the first queue actions in the ledger before any substantive research.
+Choose a short `<Topic>`, capitalised words joined by hyphens (honour a name the user gives), and run `<scripts>/init_investigation.py --topic <Topic>`. It creates the ledger with the sources it found and the first actions, one search of the topic per group with a source, in the order code, tracker, documentation, and lists the approved examples. It prints the sources under `sources`, and the groups with none under `missing`, by the names in the Prerequisite table's Called here column. If every group is missing, stop and show `jira-api` and each other group's `mcp` and `cli` sources with their `setup` and the config `path`. If one or two are, say which, with the same details, and ask whether to go on without them; if the user agrees, those groups are unavailable (see [Unavailable sources](#unavailable-sources)). Every run starts from scratch: never read or reuse what an earlier run left, on this or another day. Skim an approved example for tone only, never for facts. Then start the research: questions of scope are asked as connections come up ([Stay on the topic you were asked](#stay-on-the-topic-you-were-asked)).
 
 ### 2. Research
 
 Repeat this loop for each action, or a small coherent batch, while the evidence is in front of you:
 
-1. **Pick** the ready action whose answer could most change the architecture, the milestone or a conclusion; `status` shows which evidence areas each group hasn't covered yet. Run `find --text <source or term>` first and use what the ledger already holds.
+1. **Pick** the ready action whose answer could most change the architecture, the milestone or a conclusion, and move it to in-progress; `status` shows which evidence areas each group hasn't covered yet. Run `find --text <source or term>` first and use what the ledger already holds.
 2. **Read, then record the source at once**, with its exact reference, revision, what you read at what depth, and its areas. For code, add a file coverage row per file or folder read. Coverage rebuilt from memory afterwards is a guess.
 3. **Write the findings**, one claim each, citing the source IDs, and update the component rows.
-4. **Queue the follow-ups**: every new question, clue, contradiction or dependency that could change the report ([Read as deep as the claims need](#read-as-deep-as-the-claims-need)) is its own action, split by component, entry path or delivery question, never an umbrella like "read repositories". Then close the action with the findings, decision or gap that answer it.
-5. **Refresh** `## Resume here` after a material discovery and before switching repository or source group.
+4. **Queue the follow-ups**: every new question, clue, contradiction or dependency that could change the report ([Read as deep as the claims need](#read-as-deep-as-the-claims-need)) is its own action, split by component, entry path or delivery question, never an umbrella like "read repositories". Then close the action with the findings, decision or gap that answer it, and update any record its output lists under `update_if_needed` that the answer changes. A question answered by records already in the ledger is written straight as a completed action citing them.
 
 What to read:
 
-- **Documentation:** current and older designs, proposals, decision records, meeting notes, security analyses, runbooks. Note for each whether it describes the current or target state, its last edit, and whether newer evidence supersedes it.
+- **Documentation:** current and older designs, proposals, decision records, meeting notes, security analyses, runbooks. Note for each whether it describes the current or target state, its last edit, and whether newer evidence supersedes it. A documentation search can also return messages, such as Slack or email: leave them out.
 - **Tracker:** the epics, stories, spikes and bugs on the topic and the identifiers documents name, in full: description, status, acceptance criteria, dependencies, decision comments, links. Read them only with `<scripts>/tickets.py`: `show` for the tickets, several in one call, `pr` for the pull requests from its output whose discussion could change a claim, and `search` to find tickets by JQL. A ticket a document names that doesn't exist is a finding. Projects get renamed and tickets moved, and a search on an old project key then returns nothing without an error: before concluding a project or ticket has nothing, `show` one of its tickets, which resolves to its current key. Search under the current key from then on, and record the move as a finding.
-- **Code:** confirm the CLI is signed in, then search and read code, configuration, infrastructure, secrets wiring, CI/CD, manifests and tests, pinned to a commit. Clone each repository you read beyond a few files into your scratch folder, blobless (`git clone --filter=blob:none`), check out the pinned commit and read it there, as should any subagent you delegate to; use the CLI for pull requests, workflow runs, releases and a few files of a repository you only touch. Use the owner the documents and tickets point to, or ask. Before concluding something doesn't exist, check active branches, open and recently merged pull requests (following stacked bases), and history for experiments merged and later removed. Record release, development baseline and open candidates separately.
+- **Code:** search and read code, configuration, infrastructure, secrets wiring, CI/CD, manifests and tests, pinned to a commit. Clone each repository you read beyond a few files into your scratch folder, blobless (`git clone --filter=blob:none`), check out the pinned commit and read it there, as should any subagent you delegate to; use the CLI for pull requests, workflow runs, releases and a few files of a repository you only touch. Use the owner the documents and tickets point to, or ask. Before concluding something doesn't exist, check active branches, open and recently merged pull requests (following stacked bases), and history for experiments merged and later removed; in a blobless clone, search history within a path, since a search of all of it fetches every file's versions. Record release, development baseline and open candidates separately.
 
 Build the **component inventory** as you go: every deployable or runnable unit and every library that talks outside its process, plus components documents or tickets name even without code. For each material one, read the code needed to establish what it does, who calls it, what it calls (HTTP, queues, SDKs, files), its configuration, network policies and credentials.
 
@@ -129,11 +122,11 @@ Build the **component inventory** as you go: every deployable or runnable unit a
 - Units of a shared repository unrelated to the topic are excluded with a reason, not read.
 - If you delegate reading to a subagent, ask for exact revisions, coverage and connections, returned as the input of `<scripts>/ledger.py batch` (its `help --table batch` shows the shape): source rows, file coverage rows and draft findings. Check that the coverage supports its claims and correct what doesn't before writing them with `batch`.
 
-Research is finished when nothing is left ready: every material component and connection is supported at the level its status claims, or has a gap blocked by something you can't do yourself (`ledger.py help --table gaps` lists the accepted blockers).
+Research is finished when nothing is left ready or in progress: every material component and connection is supported at the level its status claims, or has a gap blocked by something you can't do yourself (`ledger.py help --table gaps` lists the accepted blockers).
 
 ### 3. Write
 
-1. **Read the brief once, in full:** `<scripts>/ledger.py brief --investigation <investigation>` prints everything the report rests on from the ledger as it stands, without the queue and research notes. Write from it, not from memory or what earlier commands printed.
+1. **Read the brief in full, and again whenever the ledger has changed since:** `<scripts>/ledger.py brief --investigation <investigation>` prints everything the report rests on from the ledger as it stands, without the queue and research notes. Write from it, not from memory or what earlier commands printed.
 2. **Write `content.json`** ([The report](#the-report)) and run `<scripts>/make_report.py --investigation <investigation>`. It writes nothing until `content.json` is valid, and lists every problem.
 3. **Read the generated report start to end, as each of its readers would:** an architect (are the boundaries right?), an engineer (can the code be found?), a delivery lead (does it match the tickets?), an SRE (are execution, identity and credentials concrete?), a security reviewer (are data and trust boundaries visible?), a product owner (is the milestone deliberate?), a new reader (can the flow be followed alone?). Every question this raises is a queue action: answer it from the sources, update the ledger and every part of the report it touches, and regenerate. When an explanation needs repeated qualification, fix the model (a box with two responsibilities, one name for several things) rather than adding prose.
 
@@ -149,30 +142,28 @@ Once they're done, run another round with the same brief, until one raises no ac
 
 Write `## Reflection` (`ledger.py text --section Reflection`): what changed between the first and final drafts, which assumptions were disproved, which conclusions depend on unavailable evidence, which decisions need a human owner, and why another round is unlikely to help. Run `<scripts>/check_report.py --report '<absolute report path>' --handover` and fix every error. Then:
 
-- Link `ledgers.md` and the report by their full absolute paths. Don't recap the report; name every unavailable source and what it leaves unverified, and add any doubt about your own judgment the report doesn't show.
+- Link `ledger.md` and the report by their full absolute paths. Don't recap the report; name every unavailable source and what it leaves unverified, and add any doubt about your own judgment the report doesn't show.
 - List your depth calls in a few lines: each source a report claim rests on that you left unread or read only in part, and why the claim doesn't depend on the rest, so the user can ask for more.
-- For a short format, compress the finished report, adding nothing it doesn't say: write `<investigation>/<format>.json` and run `<scripts>/make_summary.py --investigation <investigation> --format <format>`, then show the result and link the full report. Its shape is `{"title": "Optional heading", "max_words": 100, "body": ["Markdown blocks"]}`; set `max_words` only to a limit the user gave.
-- For a destination page in an enabled `documentation` source, show what you'll write and publish only after the user approves.
-- If the folder is `temporary`, say so, offer to copy the document, and mention that setting `output.root` keeps investigations and examples.
+- If the user asked for the result on a page of an enabled `documentation` source, show what you'll write there and publish only after they approve.
+- If the folder is `temporary`, say so, offer to copy the report and the ledger, and mention that setting `output.root` keeps investigations and examples.
 
-End by offering to keep the document as an example for future investigations. When the user says they're happy with it, keep it: `<scripts>/save_example.py --investigation <investigation> --file <document> --format <format> --note '<one line on what makes it good>'`.
+End by offering to keep the report as an example for future investigations. When the user says they're happy with it, keep it: `<scripts>/save_example.py --investigation <investigation> --note '<one line on what makes it good>'`.
 
 ## The ledger
 
-`ledgers.md` is the research record behind the report, with far more detail than the report, kept while you research. Use stable IDs: `Q` actions, `S` sources, `F` findings, `C` components, `D` decisions, `G` gaps.
+`ledger.md` is the research record behind the report, with far more detail than the report, kept while you research. Use stable IDs: `Q` actions, `S` sources, `F` findings, `C` components, `D` decisions, `G` gaps.
 
-**`ledger.py help`** prints every command with its input and a command to copy, and for each table its columns, the values each column accepts and a worked row. Read `ledger.py help --table <name>` before writing one for the first time, and copy its command. `ledger.py` refuses a row that breaks a rule the handover check applies, and warns when a row cites an ID not recorded yet or a finding's claim runs far past its length.
+**`ledger.py help`** prints every command with its input and a command to copy, and for each table its columns, the values each column accepts and a worked row. Read `ledger.py help --table <name>` before writing one for the first time, and copy its command. `ledger.py` refuses a row that breaks a rule the handover check applies, or cites a record the ledger doesn't hold, so write records that cite each other in one `batch`; it warns when a finding's claim runs far past its length.
 
-Never open the ledger while you research: `status`, `find --text`, `show --id` and `next-id --kind` answer what you need. The ledger stores IDs and links rewritten, so to edit a finding, a row or a section, read it as written with `show --raw`, change it and write it back: what you didn't change stays the same.
+Never open the ledger: `status`, `find --text`, `show --id` and `next-id --kind` answer what you need, and every change is one call, as `ledger.py help` shows.
 
-Links: write `[text](url)` anywhere, and ticket keys, pull requests (`owner/repo#123`) and IDs plainly: `ledger.py` links them for you, a ticket or pull request once the ledger links any ticket of its project or page of its code host, such as in a source row. Put anything else in backticks only inside a link to its pinned revision; otherwise write it as plain words. Link everything a claim rests on, so any claim can be followed to its source, and the source to its exact reference.
+Links: `ledger.py help` says how to write them, and `ledger.py` links them for you. Write a reference to code (a file, a function, a setting) in backticks only inside a link to its pinned revision; otherwise write it as plain words. Link everything a claim rests on, so any claim can be followed to its source, and the source to its exact reference.
 
 What each part is for:
 
-- **Resume here:** scope and phase, decisive findings, the next actions and why, blockers, review state. Read it first when resuming.
-- **Research action queue:** Priority Critical for a wrong current-state claim, High for an unsupported claim or wrong boundary, Medium for incomplete validation, Low for presentation. A blocked action names its gap or decision; a completed one, the findings, decision or gap that answer it, or the user's choice not to pursue it, written only after they said so.
+- **Research action queue:** ready, in progress, blocked or completed. Priority Critical for a wrong current-state claim, High for an unsupported claim or wrong boundary, Medium for incomplete validation, Low for presentation. A blocked action names its gap or decision; a completed one, the findings, decision or gap that answer it, or the user's choice not to pursue it, written only after they said so.
 - **Boundary, method and access:** the topic's boundary, the user's answers on scope, sources used and not used, skipped report sections and why.
-- **Source register and file coverage:** every source with an exact reference: a link pinned to a commit for code, a search's exact query in backticks. File coverage, each file or folder read and how deeply, is what makes a component's status believable.
+- **Source register and file coverage:** every source with an exact reference: a link pinned to a commit for code, a search's exact query. File coverage, each file or folder read and how deeply, is what makes a component's status believable.
 - **Findings:** one claim each, about 80 words: a topic with ten facts is ten findings. Its Kind is observed implementation, configured/deployed state, delivery context, documented vision, inference or proposal; its Evidence, source IDs plus a precise location where the register isn't enough; its Validation and limits, the deepest level reached and what stays uncertain.
 - **Component inventory:** every material component, with deployment recorded separately from implementation.
 - **Open decisions:** choices that wait on a person.
@@ -248,7 +239,7 @@ The fields:
 - **`decisions_and_gaps`:** the open technical choices and evidence gaps that matter to the next steps. Look for vision with no ticket, a ticket with no code, code the design doesn't mention, statuses that disagree with code, and missing deployment evidence. Don't invent alternatives.
 - **`references`:** every material code reference, ticket, document and pull request, with superseded ones marked `historical`.
 
-**Sections that don't apply:** list `architecture` in `skip` when the subject isn't a system of components (a practice, a team choice), and `evolution` when the sources establish that nothing is changing it, not when they are silent. Skipping shapes the output, never the research. Record each skip and its evidence in the boundary section.
+**Sections that don't apply:** list `architecture` in `skip` when the subject isn't a system of components (a practice, a team choice), and `evolution` (then leave out `next_steps` and `architecture.next`) when the sources establish that nothing is changing it, not when they are silent. Skipping shapes the output, never the research. Record each skip and its evidence in the boundary section.
 
 ## Diagrams
 

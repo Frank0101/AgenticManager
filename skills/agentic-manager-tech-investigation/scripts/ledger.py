@@ -24,13 +24,17 @@ change is stored unchanged.
 
 The allowed values (areas, statuses, depths, blockers) and the rules for a row
 live in common.py and are checked as a row is written; check_report.py applies
-the same rules to the whole ledger. A rule about another row, which may come
-later, such as a cited ID not recorded yet, is a warning here. `help` prints
-each command's input and a command to copy, and each table's columns, values
-and a worked row: the script is their one source, so SKILL.md doesn't repeat
-them. Ticket keys and owner/repo#123 are linked on write, from the links
-already defined, so none needs a separate step; a ticket of a project nothing
-links yet is written as code.
+the same rules to the whole ledger. A cited ID the ledger doesn't hold is
+refused too, once every record of the call is written, so records that cite
+each other go in one batch and nothing ever points at a record that isn't
+there; for the same reason a record still cited elsewhere can't be removed.
+
+`help` prints each command's input and a command to copy, and each table's
+columns, values and a worked row: the script is their one source, so SKILL.md
+doesn't repeat them. Ticket keys and owner/repo#123 are linked on write, so
+none needs a separate step: a key to the Jira site the ledger's links give its
+project, else to the site that has the project; anything else key-shaped is
+written as code.
 """
 import argparse
 import glob
@@ -39,23 +43,23 @@ import os
 import re
 import sys
 
-from common import (AREAS, BLOCKERS, CODE_STATUSES, claim_length_warning, COMPONENT_HEADER, DECISION_HEADER, DEFINITION, DEPTHS, FILE_HEADER,
-                    FINDING_FIELDS, FINDING_OPTIONAL, FINDING_START, FOLDER_NAME, GAP_FIX, GAP_HEADER, GROUPS, QUEUE_TABLES,
-                    ID_ANCHOR, INLINE_LINK, LEDGER, LEDGER_SECTIONS, QUEUE_HEADER, READ_DEPTHS, REFERENCE_LINK, REJECTED, REPORT_SUFFIX, REVIEW_BACKSTOP, REVIEW_NONE,
-                    REVIEW_QUESTION, REVIEW_STOPPED, ROW_START, SOURCE_FINDINGS, SOURCE_HEADER, SOURCE_LINK_FIX, STATUSES,
-                    TABLE_HEADINGS, anchor_tag, anchored, autolink, backtick_error, cited_sources, free_name,
-                    coverage_material_missing, depth_problem, finding_blocks, gap_problem, id_order,
-                    investigation_dir, last_review, ledger_rows, link_definitions, link_text, linked_ids, outcome_problem,
-                    recorded_ids, review_rounds, reviewed, section_span, slug, source_reference_missing, status_problem, strip_anchors,
-                    table_cells, table_row, ticket_sites, unlinked_backticks, unread_components, unread_message,
-                    unrecorded_citations, unresolved_message, upgraded_tickets, write_output_file)
+from common import (ID, JiraClient, is_enabled, AREAS, BLOCKERS, BOUNDARY, CODE_STATUSES, claim_length_warning,
+                    COMPONENT_HEADER, DECISION_HEADER, DEFINITION, DEPTHS, EVIDENCE_LINE, FILE_HEADER, FINDINGS,
+                    FINDING_FIELDS, FINDING_OPTIONAL, FINDING_START, FOLDER_NAME, GAP_FIX, GAP_HEADER, GROUPS, ID_ANCHOR,
+                    INLINE_LINK, LEDGER, LINKS, QUEUE_HEADER, QUEUE_TABLES, READ_DEPTHS, REFERENCE_LINK, REFLECTION,
+                    REJECTED, REPORT_SUFFIX, REVIEW_BACKSTOP, REVIEW_NONE, REVIEW_QUESTION, REVIEW_STOPPED, ROW_START,
+                    SOURCE_FINDINGS, SOURCE_HEADER, SOURCE_LINK_FIX, STATUSES, TABLE_HEADINGS, anchor_tag, anchored,
+                    areas_of, areas_problem, autolink, backtick_error, cited_sources, free_name, coverage_material_missing,
+                    depth_problem, finding_blocks, gap_problem, id_order, investigation_dir, last_review, ledger_rows,
+                    link_definitions, link_text, linked_ids, outcome_problem, read_in_full, recorded_ids,
+                    review_rounds, reviewed, h2_span, section_span, slug, source_reference_missing, status_problem,
+                    strip_anchors, table_cells, table_row, ticket_sites, unlinked_backticks, unread_components,
+                    unread_message, unrecorded_citations, unresolved_message, upgraded_tickets, write_output_file)
 
 # table name: (heading it sits under, default header, ID letters, or None when
 # rows have no ID and append)
 TABLES = {
-    "queue-ready": (TABLE_HEADINGS["queue-ready"], QUEUE_HEADER, "Q"),
-    "queue-blocked": (TABLE_HEADINGS["queue-blocked"], QUEUE_HEADER, "Q"),
-    "queue-completed": (TABLE_HEADINGS["queue-completed"], QUEUE_HEADER, "Q"),
+    **{table: (TABLE_HEADINGS[table], QUEUE_HEADER, "Q") for table in QUEUE_TABLES},
     "sources": (TABLE_HEADINGS["sources"], SOURCE_HEADER, "S"),
     "file-coverage": (TABLE_HEADINGS["file-coverage"], FILE_HEADER, None),
     "decisions": (TABLE_HEADINGS["decisions"], DECISION_HEADER, "D"),
@@ -68,6 +72,8 @@ SHA = "<sha>"
 ROW_EXAMPLES = {
     "queue-ready": ["S03 names a deploy job", "Is the deploy job live?", "Workflow runs at a pinned commit",
                     "None", "High", ""],
+    "queue-in-progress": ["S03 names a deploy job", "Is the deploy job live?", "Workflow runs at a pinned commit",
+                          "None", "High", ""],
     "queue-blocked": ["F04", "Is the cluster config deployed?", "Cluster read access", "G01", "High", ""],
     "queue-completed": ["Request", "Which service serves search?", "Routes at a pinned commit", "None", "High",
                         "F02, F03"],
@@ -87,7 +93,9 @@ ROW_EXAMPLES = {
 }
 # The allowed values of a table's cells, by column.
 ALLOWED = {
-    "sources": {"Areas": "comma separated, from: " + ", ".join(AREAS)},
+    "sources": {"Exact reference": 'a link at the pinned revision, or for a search {"query": "<the exact query>"}, '
+                                   "which is written as the query between backticks",
+                "Areas": "comma separated, from: " + ", ".join(AREAS)},
     "gaps": {"Areas": "comma separated, from: " + ", ".join(AREAS),
              "Blocked by": "starts with one of: " + "; ".join(BLOCKERS)
              + " (a gap nothing blocks is a ready action instead)"},
@@ -97,15 +105,36 @@ ALLOWED = {
                    "its shape",
                    "Status": "starts with one of: " + "; ".join(f"{label} ({meaning})" for label, meaning in STATUSES)
                    + f". {' and '.join(CODE_STATUSES)} need file coverage at depth {' or '.join(READ_DEPTHS)} "
-                   "under the linked path"},
+                   "of the linked path, a file under it or a folder above it"},
     "queue-blocked": {"Depends on": "the gap or decision that blocks it, such as G01 or D01"},
     "queue-completed": {"Outcome / finding IDs": f"names F, D or G IDs, or starts '{REJECTED} <what they said>'; "
                         "the review's own row, written by `review`, names the actions it raised"},
 }
 PLACEHOLDERS = {"None yet.", "None."}
-LINKS_HEADING = f"## {LEDGER_SECTIONS[-1]}"
-FINDINGS_HEADING = f"## {LEDGER_SECTIONS[4]}"
-TEXT_SECTIONS = ["Resume here", "Boundary, method and access", "Reflection"]
+LINKS_HEADING = f"## {LINKS}"
+FINDINGS_HEADING = f"## {FINDINGS}"
+TEXT_SECTIONS = [BOUNDARY, REFLECTION]
+# How every help entry calls the script: the path the skill pre-approves.
+CALL = "<scripts>/ledger.py"
+# How text names what it rests on, which every writing command reads the same way.
+LINKING = ("links: write a link as [text](url), a ticket key plainly (PROJ-123), a pull request as owner/repo#123, "
+           "never a bare #123, and a recorded ID plainly (F03): the script links each one")
+FINDING_EXAMPLE = {"title": "Search API serves queries from the index",
+                   "Claim": "The search API answers /search from the index, never the primary database.",
+                   "Kind": "observed implementation", "Evidence": "S04",
+                   "Validation and limits": "Routes read in full at the pinned commit; deployment not read.",
+                   "Supersedes or contradicted by": "Contradicts the design note in S02"}
+# A file or folder path in a finding's evidence, such as app/server.ts.
+PATH = re.compile(
+    r"(?<![\w/.-])[\w.-]+(?:/[\w.-]+)*\.[A-Za-z]\w*\b|(?<![\w/.-])[\w.-]+(?:/[\w.-]+)+")
+# The Jira site of each project looked up in this call, or None: a key-shaped
+# word such as SHA-256 is no ticket, so a key is linked only when the site has
+# its project, and each project is asked about once.
+SITES = {}
+# A recorded ID's citation as stored: a link to its anchor.
+ID_CITATION = re.compile(r"\[([A-Z]\d+)\]\(#[a-z]\d+\)")
+# How a review round is recorded, as next_step tells it.
+RECORD_ROUND = "ledger.py review --raised <the ready actions its real issues became, or none>"
 
 
 def heredoc(command, body):
@@ -114,9 +143,79 @@ def heredoc(command, body):
     return "\n".join([f"  {CALL} {command} <<'EOF'", *(f"  {line}" for line in body.split("\n")), "  EOF"])
 
 
+# The commands other than `row`: their input and a command to copy. A command
+# whose input is long or holds links reads it from a here-document.
+COMMAND_HELP = {
+    "findings": "\n".join([
+        "finding: a JSON object on standard input; leave --id out to add the next one, or give it to replace one",
+        f"  fields, each text: title, {', '.join(FINDING_FIELDS)}; optional: {', '.join(FINDING_OPTIONAL)}",
+        heredoc("finding --investigation <investigation>",
+                json.dumps(FINDING_EXAMPLE, ensure_ascii=False, indent=2)),
+        f'  to change fields of a finding already written: {CALL} finding --investigation <investigation> --id F07 '
+        '--set "Validation and limits=<new value>" (repeat --set for more)']),
+    "batch": "\n".join([
+        "batch: writes many rows and findings in one call, from a JSON list on standard input, in order; "
+        "each row as `row` takes it, each finding as `finding` does, with the same checks. If one item "
+        "can't be written, nothing is",
+        "  a row: {\"table\": ..., \"id\": ..., \"match\": ..., \"cells\": [...]}, leaving out an id or match "
+        "it doesn't take; a finding: {\"finding\": {...}, \"id\": ...}, leaving out id to add the next one",
+        heredoc("batch --investigation <investigation>", json.dumps([
+            {"table": "sources", "id": "S04",
+                "cells": ROW_EXAMPLES["sources"]},
+            {"table": "file-coverage", "cells": ROW_EXAMPLES["file-coverage"]},
+            {"finding": {k: v for k, v in FINDING_EXAMPLE.items() if k != "Supersedes or contradicted by"}}],
+            ensure_ascii=False, indent=2))]),
+    "show": "\n".join([
+        "show: prints a finding or a row by --id, a table by --table, or a text section by --section; "
+        "with --raw, a finding or row is printed as the input its writing command reads, and a section "
+        "is always printed so: IDs plain and links inline, so an edit is read, change, write back",
+        f"  {CALL} show --investigation <investigation> --raw --id F07",
+        f'  {CALL} show --investigation <investigation> --section Reflection']),
+    "brief": "\n".join([
+        "brief: prints what writing the report reads, from the ledger as it stands: the boundary, "
+        "each source's exact reference with its limits, every finding, and the components, decisions and gaps; not the queue, "
+        "the coverage or the research notes",
+        f"  {CALL} brief --investigation <investigation>"]),
+    "text": "\n".join([
+        f"text: replaces a section's text, read as Markdown from standard input; --section is "
+        f"{', '.join(TEXT_SECTIONS)}",
+        heredoc('text --investigation <investigation> --section Reflection',
+                "The first draft assumed ...; the code showed ..."),
+        "  to change part of it, --replace the exact text, as show --section prints it, and its replacement:",
+        f'  {CALL} text --investigation <investigation> --section Reflection --replace "old text" "new text"']),
+    "move": "\n".join([
+        'move: moves an action to ready, in-progress, blocked or completed; each --set "Column=value" sets a cell',
+        f'  {CALL} move --investigation <investigation> --id Q05 --to in-progress',
+        f'  {CALL} move --investigation <investigation> --id Q05 --to completed --set "Outcome / finding IDs=F03, G01"']),
+    "review": "\n".join([
+        "review: records an independent review round, with the ready actions its real issues became, or none",
+        f"  {CALL} review --investigation <investigation> --raised Q08,Q09",
+        f"  {CALL} review --investigation <investigation> --raised none",
+        "  after the user, asked whether to go on, chose to stop the review:",
+        f"  {CALL} review --investigation <investigation> --stopped '<what they said>'"]),
+    "link": "\n".join([
+        f"link and unlink: add or remove a link definition under ## {LINKS}",
+        f"  {CALL} link --investigation <investigation> --key api-server --url https://github.com/acme/api/blob/<sha>/server.py",
+        f"  {CALL} unlink --investigation <investigation> --key api-server"]),
+    "next-id": "\n".join([
+        "next-id: prints the next free ID of a kind, S, Q, F, C, D or G, for a row you are about to write",
+        f"  {CALL} next-id --investigation <investigation> --kind S"]),
+    "sync-sources": "\n".join([
+        "sync-sources: rewrites each source's Findings from the findings' Evidence lines; row and finding keep "
+        "them in step, so it is needed only after the ledger was edited without the script",
+        f"  {CALL} sync-sources --investigation <investigation>"]),
+    "remove": "\n".join([
+        "remove: deletes a row by --id, a finding by --id, or a file coverage row by text it contains; "
+        "refused while another record cites it",
+        f"  {CALL} remove --investigation <investigation> --table gaps --id G02",
+        f"  {CALL} remove --investigation <investigation> --table findings --id F07",
+        f"  {CALL} remove --investigation <investigation> --table file-coverage --match server.py"]),
+}
+
+
 def full_help():
-    """Every table's entry, then every other command's."""
-    return "\n\n".join([*(table_help(name) for name in TABLES), *COMMAND_HELP.values()])
+    """How text names what it rests on, then every table's entry, then every other command's."""
+    return "\n\n".join([LINKING, *(table_help(name) for name in TABLES), *COMMAND_HELP.values()])
 
 
 def table_help(name):
@@ -136,24 +235,24 @@ def table_help(name):
     if not letters:
         out.append(
             "  to replace a row, add --match <text only it contains>, such as its file's name")
-    out.append(f"  to edit a row, read it as written with: {CALL} show --investigation <investigation> --raw "
-               + (f"--id {letters}01" if letters else f"--table {name}"))
+    target = f"--id {letters}01" if letters else "--match <text only it contains>"
+    out.append(f'  to change cells of a row already written: {CALL} row --investigation <investigation> --table {name} '
+               f'{target} --set "{header[-1]}=<new value>" (repeat --set for more)')
     return "\n".join(out)
 
 
 def brief(lines):
-    """What writing the report reads, from the ledger as it stands: the boundary
-    and Resume here, each source's exact reference with its limits, every finding, and the
+    """What writing the report reads, from the ledger as it stands: the
+    boundary, each source's exact reference with its limits, every finding, and the
     components, decisions and gaps. Links show their text, IDs are plain, and a
     source's reference keeps its URL for the report's references."""
     def plain(text):
         return link_text(strip_anchors(text))
 
     out = []
-    for name in ("Boundary, method and access", "Resume here"):
-        start, end = text_span(lines, name)
-        out += [f"## {name}", "",
-                plain("\n".join(lines[start + 1:end]).strip()), ""]
+    start, end = text_span(lines, BOUNDARY)
+    out += [f"## {BOUNDARY}", "",
+            plain("\n".join(lines[start + 1:end]).strip()), ""]
     out += ["## Sources: exact references", ""]
     # A source's limits or what supersedes it decides a historical reference.
     out += [f"{row[0]}: {as_written(lines, row[2])}" + ("" if row[5].strip() in ("", "None") else
@@ -169,46 +268,8 @@ def brief(lines):
         out += ([" | ".join(header_of(lines, name))] + [plain(" | ".join(row)) for row in rows]
                 if rows else ["None."])
         out.append("")
+    out += partial_lines(lines)
     return "\n".join(out).rstrip() + "\n"
-
-
-def show_raw(lines, ident, name, heading):
-    """A section, a finding, a row or a table's rows as the input their writing
-    command reads."""
-    if heading:
-        start, end = text_span(lines, heading)
-        return as_written(lines, "\n".join(lines[start + 1:end]).strip())
-    if name:
-        if name == "findings":
-            raise SystemExit("show --raw takes a finding by --id")
-        return "\n".join(json.dumps([as_written(lines, c) for c in row[1 if TABLES[name][2] else 0:]],
-                                    ensure_ascii=False) for row in table_rows(lines, name)) or "None."
-    _, found = record(lines, ident)
-    if isinstance(found, list):
-        return json.dumps([as_written(lines, c) for c in found[1:]], ensure_ascii=False)
-    head, *body = found.split("\n")
-    fields = {"title": head.split(" — ", 1)[1]}
-    for line in body:
-        if field := re.match(r"- \*\*(.+?):\*\* (.*)", line):
-            fields[field[1]] = field[2]
-    return json.dumps({k: as_written(lines, v) for k, v in fields.items()}, ensure_ascii=False, indent=2)
-
-
-def record(lines, ident):
-    """("findings", the finding's block) or (table, row) of the record
-    `ident`; exits if the ledger has none."""
-    if re.fullmatch(r"F\d+", ident):
-        blocks, _, _ = findings_of(lines)
-        if ident not in blocks:
-            raise SystemExit(f"no finding {ident}")
-        return "findings", blocks[ident]
-    for table in TABLES:
-        if TABLES[table][2] is None:
-            continue
-        for row in table_rows(lines, table):
-            if row[0].casefold() == ident.casefold():
-                return table, row
-    raise SystemExit(f"no record {ident}")
 
 
 def as_written(lines, text):
@@ -237,13 +298,26 @@ def show(lines, ident, name):
                                                 zip(header_of(lines, table)[1:], found[1:])])
 
 
+def record(lines, ident):
+    """("findings", the finding's block) or (table, row) of the record
+    `ident`; exits if the ledger has none."""
+    if re.fullmatch(r"F\d+", ident):
+        blocks, _, _ = findings_of(lines)
+        if ident not in blocks:
+            raise SystemExit(f"no finding {ident}")
+        return "findings", blocks[ident]
+    for table in TABLES:
+        if TABLES[table][2] is None:
+            continue
+        for row in table_rows(lines, table):
+            if row[0].casefold() == ident.casefold():
+                return table, row
+    raise SystemExit(f"no record {ident}")
+
+
 def table_markdown(lines, name):
     span = table_span(lines, TABLES[name][0])
     return lines[span[0]:span[1]] if span else []
-
-
-# How every help entry calls the script: the path the skill pre-approves.
-CALL = "<scripts>/ledger.py"
 
 
 def find(lines, text):
@@ -276,82 +350,13 @@ def snippet(text, needle, width=110):
     return ("..." if start else "") + text[start:start + width].replace("\n", " ")
 
 
-FINDING_EXAMPLE = {"title": "Search API serves queries from the index",
-                   "Claim": "The search API answers /search from the index, never the primary database.",
-                   "Kind": "observed implementation", "Evidence": "S04",
-                   "Validation and limits": "Routes read in full at the pinned commit; deployment not read.",
-                   "Supersedes or contradicted by": "Contradicts the design note in S02"}
-# The commands other than `row`: their input and a command to copy. A command
-# whose input is long or holds links reads it from a here-document.
-COMMAND_HELP = {
-    "findings": "\n".join([
-        "finding: a JSON object on standard input; leave --id out to add the next one, or give it to replace one",
-        f"  fields, each text: title, {', '.join(FINDING_FIELDS)}; optional: {', '.join(FINDING_OPTIONAL)}",
-        heredoc("finding --investigation <investigation>",
-                json.dumps(FINDING_EXAMPLE, ensure_ascii=False, indent=2)),
-        f"  to edit one, read it as written: {CALL} show --investigation <investigation> --raw --id F07"]),
-    "batch": "\n".join([
-        "batch: writes many rows and findings in one call, from a JSON list on standard input, in order; "
-        "each row as `row` takes it, each finding as `finding` does, with the same checks. If one item "
-        "can't be written, nothing is",
-        "  a row: {\"table\": ..., \"id\": ..., \"match\": ..., \"cells\": [...]}, leaving out an id or match "
-        "it doesn't take; a finding: {\"finding\": {...}, \"id\": ...}, leaving out id to add the next one",
-        heredoc("batch --investigation <investigation>", json.dumps([
-            {"table": "sources", "id": "S04",
-                "cells": ROW_EXAMPLES["sources"]},
-            {"table": "file-coverage", "cells": ROW_EXAMPLES["file-coverage"]},
-            {"finding": {k: v for k, v in FINDING_EXAMPLE.items() if k != "Supersedes or contradicted by"}}],
-            ensure_ascii=False, indent=2))]),
-    "show": "\n".join([
-        "show: prints a finding or a row by --id, a table by --table, or a text section by --section; "
-        "with --raw, a finding or row is printed as the input its writing command reads, and a section "
-        "is always printed so: IDs plain and links inline, so an edit is read, change, write back",
-        f"  {CALL} show --investigation <investigation> --raw --id F07",
-        f'  {CALL} show --investigation <investigation> --section "Resume here"']),
-    "brief": "\n".join([
-        "brief: prints what writing the report reads, from the ledger as it stands: the boundary, Resume here, "
-        "each source's exact reference with its limits, every finding, and the components, decisions and gaps; not the queue, "
-        "the coverage or the research notes",
-        f"  {CALL} brief --investigation <investigation>"]),
-    "text": "\n".join([
-        f"text: replaces a section's text, read as Markdown from standard input; --section is "
-        f"{', '.join(TEXT_SECTIONS)}; read it as written first with show --section",
-        heredoc('text --investigation <investigation> --section "Resume here"',
-                "Phase: research. Decisive so far: ... Next: ...")]),
-    "move": "\n".join([
-        'move: moves an action to ready, blocked or completed; each --set "Column=value" sets a cell',
-        f'  {CALL} move --investigation <investigation> --id Q05 --to completed --set "Outcome / finding IDs=F03, G01"']),
-    "review": "\n".join([
-        "review: records an independent review round, with the ready actions its real issues became, or none",
-        f"  {CALL} review --investigation <investigation> --raised Q08,Q09",
-        f"  {CALL} review --investigation <investigation> --raised none",
-        "  after the user, asked whether to go on, chose to stop the review:",
-        f"  {CALL} review --investigation <investigation> --stopped '<what they said>'"]),
-    "link": "\n".join([
-        "link and unlink: add or remove a link definition under ## Links",
-        f"  {CALL} link --investigation <investigation> --key api-server --url https://github.com/acme/api/blob/<sha>/server.py",
-        f"  {CALL} unlink --investigation <investigation> --key api-server"]),
-    "next-id": "\n".join([
-        "next-id: prints the next free ID of a kind, S, Q, F, C, D or G, for a row you are about to write",
-        f"  {CALL} next-id --investigation <investigation> --kind S"]),
-    "sync-sources": "\n".join([
-        "sync-sources: rewrites each source's Findings from the findings' Evidence lines; row and finding keep "
-        "them in step, so it is needed only after the ledger was edited without the script",
-        f"  {CALL} sync-sources --investigation <investigation>"]),
-    "remove": "\n".join([
-        "remove: deletes a row by --id, a finding by --id, or a file coverage row by text it contains",
-        f"  {CALL} remove --investigation <investigation> --table gaps --id G02",
-        f"  {CALL} remove --investigation <investigation> --table findings --id F07",
-        f"  {CALL} remove --investigation <investigation> --table file-coverage --match server.py"]),
-}
-
-
 def status(lines, report=False):
     out = []
     queue = {table: table_rows(lines, table) for table in QUEUE_TABLES}
     out.append(
-        "queue: " + ", ".join(f"{len(queue[t])} {t.split('-')[1]}" for t in QUEUE_TABLES))
-    for label, table in (("ready", "queue-ready"), ("blocked", "queue-blocked")):
+        "queue: " + ", ".join(f"{len(queue[t])} {t.removeprefix('queue-')}" for t in QUEUE_TABLES))
+    for label, table in (("in progress", "queue-in-progress"), ("ready", "queue-ready"),
+                         ("blocked", "queue-blocked")):
         for row in queue[table]:
             out.append(f"  {label} {row[0]} [{row[5]}] {row[2][:100]}")
     blocks, _, _ = findings_of(lines)
@@ -361,9 +366,10 @@ def status(lines, report=False):
     out.append("counts: " + ", ".join(f"{n} {name}" for name, n in totals))
     out += coverage(lines)
     unstarted = []
-    for i, line in enumerate(lines):
+    for line in lines:
         if line.startswith("## "):
-            body = [x for x in lines[i + 1:h2_end(lines, i)] if x.strip()]
+            start, end = h2_section(lines, line[3:].strip())
+            body = [x for x in lines[start + 1:end] if x.strip()]
             if body in (["None yet."], []):
                 unstarted.append(line[3:])
     out.append("not started: " +
@@ -373,8 +379,37 @@ def status(lines, report=False):
     if unread:
         out.append("components claiming code with no code read: " +
                    ", ".join(unread))
-    out.append("next: " + next_step(queue, "Reflection" in unstarted, report))
+    out += partial_lines(lines)
+    out.append("next: " + next_step(queue, REFLECTION in unstarted, report))
     return "\n".join(out)
+
+
+def partial_lines(lines):
+    """The lines naming the findings that rest on a partial read, or []."""
+    found = partial_reads(lines)
+    return (["findings resting on a partial read (read the rest, or say in the finding why it can't change it):"]
+            + [f"  {ident}: {material} ({depth})" for ident, material, depth in found]) if found else []
+
+
+def partial_reads(lines):
+    """[(finding, material, depth)] of the findings whose Evidence names a
+    file that a coverage row of the same source read below READ_DEPTHS: a
+    claim, a negative one above all, may rest on the part left unread."""
+    blocks, _, _ = findings_of(lines)
+    shallow = [row for row in table_rows(lines, "file-coverage")
+               if not read_in_full(row[2])]
+    found = []
+    for ident, block in sorted(blocks.items(), key=lambda kv: id_order(kv[0])):
+        evidence = EVIDENCE_LINE.search(as_written(lines, block))
+        if not evidence:
+            continue
+        paths = PATH.findall(evidence[1])
+        for row in shallow:
+            material = as_written(lines, row[1])
+            source = ID.search(row[0])
+            if source and re.search(rf"\b{source[0]}\b", evidence[1]) and any(p in material for p in paths):
+                found.append((ident, link_text(strip_anchors(row[1])), row[2]))
+    return found
 
 
 def coverage(lines):
@@ -391,11 +426,12 @@ def coverage(lines):
         for area in tagged:
             if group:
                 tally[area][group] += 1
-    out = ["coverage (sources per area: " + " / ".join(GROUPS) + "; gaps):"]
+    out = ["coverage (sources per area: " +
+           " / ".join(GROUPS.values()) + "; gaps):"]
     for area in AREAS:
         open_gaps = sum(area in areas_of(g) for g in gaps)
         counts = " / ".join(str(tally[area][g]) for g in GROUPS)
-        thin = [g for g in GROUPS if not tally[area][g]]
+        thin = [GROUPS[g] for g in GROUPS if not tally[area][g]]
         out.append(f"  {area}: {counts}, {open_gaps} gaps" +
                    (f"  (none from {', '.join(thin)})" if thin else ""))
     if untagged:
@@ -407,8 +443,13 @@ def next_step(queue, reflection_missing, report):
     """The phase the investigation is in, from the queue, the report and the
     reflection: each phase opens only when the one before is finished, so the
     independent review sees the whole investigation."""
+    if not any(queue.values()):
+        return "research: the queue holds no action: add the first ones, a search of the topic per source group"
+    if queue["queue-in-progress"]:
+        return (f"research: finish the actions in progress before starting a ready one: "
+                f"{', '.join(row[0] for row in queue['queue-in-progress'])}")
     if queue["queue-ready"]:
-        return (f"research: work the ready actions, starting with {queue['queue-ready'][0][0]}. "
+        return (f"research: move a ready action to in-progress and work it, such as {queue['queue-ready'][0][0]}. "
                 "Ask the user before adding or leaving out a topic outside the one asked")
     if not report:
         return "write: read ledger.py brief in full, write content.json, run make_report.py"
@@ -437,18 +478,21 @@ def section(lines, heading):
     return span
 
 
-def h2_end(lines, start):
-    """Index of the next ## heading after `start`, or the end."""
-    return next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
-
-
 def text_span(lines, name):
     """(index of its heading, index of the next ## heading or the end) of the
     text section `name`; exits if it isn't one."""
     if name not in TEXT_SECTIONS:
         raise SystemExit("--section is one of: " + ", ".join(TEXT_SECTIONS))
-    start, _ = section(lines, f"## {name}")
-    return start, h2_end(lines, start)
+    return h2_section(lines, name)
+
+
+def h2_section(lines, title):
+    """(index of its heading, index of the next ## heading or the end) of the
+    ## section `title`; exits if the ledger has none."""
+    span = h2_span(lines, title)
+    if span is None:
+        raise SystemExit(f"the ledger has no '## {title}' section")
+    return span
 
 
 def table_rows(lines, name):
@@ -476,8 +520,7 @@ def header_of(lines, name):
 
 def findings_of(lines):
     """({ID: block text}, start, end) of the findings section."""
-    start, _ = section(lines, FINDINGS_HEADING)
-    end = h2_end(lines, start)
+    start, end = h2_section(lines, FINDINGS)
     return finding_blocks("\n".join(lines[start + 1:end])), start, end
 
 
@@ -535,12 +578,29 @@ def put_row(lines, name, row_id, match, cells):
         raise SystemExit(f"{name} rows are replaced by --id, not --match")
     if row_id and row_id[0] not in letters:
         raise SystemExit(f"{name} IDs start with {' or '.join(letters)}")
+    if name == "sources" and isinstance(cells, list) and len(cells) > 1 and isinstance(cells[1], dict):
+        cells = [cells[0], search_reference(cells[1]), *cells[2:]]
     if not isinstance(cells, list) or not all(isinstance(c, str) for c in cells):
         raise SystemExit(
             "the input must be a JSON list of strings, the row's cells:\n" + table_help(name))
     written = linked(lines, [c.replace("\n", " ") for c in cells])
     set_row(lines, name, row_id, written, match)
+    # An action is in one part of the queue: writing it in one takes it out of the others.
+    for other in QUEUE_TABLES if name in QUEUE_TABLES else ():
+        if other != name and any(row[0] == row_id for row in table_rows(lines, other)):
+            write_rows(lines, other, [row for row in table_rows(lines, other) if row[0] != row_id],
+                       header_of(lines, other))
     return written
+
+
+def search_reference(given):
+    """A search's Exact reference: its query between backticks, as the source
+    rule reads it, from {"query": ...}, so no backtick is ever typed in a shell."""
+    query = given.get("query") if set(given) == {"query"} else None
+    if not isinstance(query, str) or not query.strip() or "`" in query or "\n" in query:
+        raise SystemExit('a search\'s Exact reference is {"query": "<the exact query>"}, on one line, '
+                         "without backticks")
+    return f"`{query.strip()}`"
 
 
 def put_finding(lines, ident, fields, warnings):
@@ -610,7 +670,7 @@ def linked(lines, values):
     out, unresolved = [], []
     for value in values:
         definitions = links_section(lines)
-        value, missing = autolink(value, definitions)
+        value, missing = autolink(value, definitions, jira_site)
         # A key the agent wrote as code, of a project the ledger links, is linked too.
         sites = ticket_sites(definitions.values())
         value = "\n".join(upgraded_tickets(line, sites)
@@ -620,6 +680,21 @@ def linked(lines, values):
     if unresolved:
         raise SystemExit("couldn't link " + unresolved_message(unresolved))
     return out
+
+
+def jira_site(project):
+    """The Jira site that has `project`, or None: without jira-api, or when
+    the site has no such project, or it is one the user excludes."""
+    if project not in SITES:
+        SITES[project] = None
+        if is_enabled("workflow", "jira-api"):
+            try:
+                client = JiraClient()
+                client.project(project)
+                SITES[project] = client.base_url
+            except SystemExit:
+                pass
+    return SITES[project]
 
 
 def reference_links(lines, text):
@@ -667,16 +742,89 @@ def sync_sources(lines):
 def move_row(lines, row_id, target, sets):
     source, row = find_row(lines, row_id)
     header = header_of(lines, source)
-    for assignment in sets:
-        column, _, value = assignment.partition("=")
-        names = [h.casefold() for h in header]
-        if column.casefold() not in names:
-            raise SystemExit(
-                f"no column {column!r}; the queue's are: " + " | ".join(header))
-        row[names.index(column.casefold())] = value
+    row = with_sets(header, row, sets)
     write_rows(lines, source, [r for r in table_rows(
         lines, source) if r[0] != row_id], header)
     set_row(lines, target, row[0], row[1:])
+
+
+def with_sets(names, values, sets):
+    """`values`, a row's cells or a finding's fields in the order of `names`,
+    with each "Name=value" of `sets` applied; exits on a name it doesn't have.
+    The name is matched in any case, so one call changes one cell."""
+    values = list(values)
+    folded = [name.casefold() for name in names]
+    for assignment in sets:
+        name, _, value = assignment.partition("=")
+        if name.strip().casefold() not in folded:
+            raise SystemExit(
+                f"no {name.strip()!r} to set; the names are: " + " | ".join(names))
+        values[folded.index(name.strip().casefold())] = value
+    return values
+
+
+def row_with_sets(lines, name, row_id, match, sets):
+    """The cells after the ID of a row already written, as written, with
+    `sets` applied: the input `put_row` takes to change those cells only."""
+    header = header_of(lines, name)
+    rows = table_rows(lines, name)
+    if row_id:
+        found = [r for r in rows if r[0] == row_id]
+        if not found:
+            raise SystemExit(
+                f"no {name} row {row_id} to --set: write it whole first")
+        row = found[0]
+    elif match:
+        row = rows[matching_row(rows, name, match)]
+    else:
+        raise SystemExit(
+            "--set needs the row's --id, or --match for a file-coverage row")
+    row = with_sets(header, [as_written(lines, c) for c in row], sets)
+    return row[1:] if TABLES[name][2] else row
+
+
+def finding_with_sets(lines, ident, sets):
+    """A finding already written, as written, with `sets` applied: the input
+    `put_finding` takes to change those fields only."""
+    if not ident:
+        raise SystemExit("--set needs the finding's --id")
+    fields = json.loads(show_raw(lines, ident, None, None))
+    names = ["title", *FINDING_FIELDS, *FINDING_OPTIONAL]
+    values = with_sets(names, [fields.get(n, "") for n in names], sets)
+    return {n: v for n, v in zip(names, values) if v or n in fields}
+
+
+def show_raw(lines, ident, name, heading):
+    """A section, a finding, a row or a table's rows as the input their writing
+    command reads."""
+    if heading:
+        start, end = text_span(lines, heading)
+        return as_written(lines, "\n".join(lines[start + 1:end]).strip())
+    if name:
+        if name == "findings":
+            raise SystemExit("show --raw takes a finding by --id")
+        return "\n".join(json.dumps([as_written(lines, c) for c in row[1 if TABLES[name][2] else 0:]],
+                                    ensure_ascii=False) for row in table_rows(lines, name)) or "None."
+    _, found = record(lines, ident)
+    if isinstance(found, list):
+        return json.dumps([as_written(lines, c) for c in found[1:]], ensure_ascii=False)
+    head, *body = found.split("\n")
+    fields = {"title": head.split(" — ", 1)[1]}
+    for line in body:
+        if field := re.match(r"- \*\*(.+?):\*\* (.*)", line):
+            fields[field[1]] = field[2]
+    return json.dumps({k: as_written(lines, v) for k, v in fields.items()}, ensure_ascii=False, indent=2)
+
+
+def replaced_text(lines, section_name, old, new):
+    """A text section, as written, with its one `old` replaced by `new`; exits
+    unless `old` is in it exactly once."""
+    current = show_raw(lines, None, None, section_name)
+    count = current.count(old)
+    if count != 1:
+        raise SystemExit(f"--replace: {old!r} is in {section_name} {count} times, not once; "
+                         "copy it from show --section, with enough of the text to be unique")
+    return current.replace(old, new)
 
 
 def find_row(lines, row_id):
@@ -693,7 +841,6 @@ def set_row(lines, name, row_id, cells, match=None):
     if len(row) != len(header):
         raise SystemExit(f"{name} has {len(header)} columns, counting the ID if it has one; got {len(row)}.\n"
                          + table_help(name))
-    check_areas(name, header, row)
     check_cells(lines, name, row)
     rows = table_rows(lines, name)
     if row_id:
@@ -704,21 +851,6 @@ def set_row(lines, name, row_id, cells, match=None):
     else:
         rows.append(row)
     write_rows(lines, name, rows, header)
-
-
-def check_areas(name, header, cells):
-    """The Areas cell of a source or a gap names evidence areas, comma separated."""
-    if header[-1] != "Areas" or not cells:
-        return
-    wrong = [a for a in areas_of(cells) if a not in AREAS]
-    if wrong:
-        raise SystemExit(f"{name} Areas must be some of: " +
-                         ", ".join(AREAS) + "; not " + ", ".join(wrong))
-
-
-def areas_of(row):
-    """The evidence areas a source or gap row names in its last cell, Areas."""
-    return [a for a in (x.strip() for x in row[-1].split(",")) if a]
 
 
 def check_cells(lines, name, row):
@@ -732,19 +864,19 @@ def check_cells(lines, name, row):
     elif name == "queue-completed":
         problem = outcome_problem(row[0], row[-1], row[2])
     elif name == "gaps":
-        problem = (blocked := gap_problem(row)) and f"{blocked}. {GAP_FIX}"
-    elif name == "sources" and source_reference_missing(row):
-        problem = f"{row[0]}: {SOURCE_LINK_FIX}"
+        problem = areas_problem(row) or (
+            (blocked := gap_problem(row)) and f"{blocked}. {GAP_FIX}")
+    elif name == "sources":
+        problem = areas_problem(row) or (
+            source_reference_missing(row) and f"{row[0]}: {SOURCE_LINK_FIX}")
     if problem:
         raise SystemExit(f"{name} {problem}")
-    if name == "components" and unread_components([row], table_rows(lines, "file-coverage"), links_section(lines)):
-        raise SystemExit(unread_message([row[0]]))
+    if unread := name == "components" and unread_components([row], table_rows(lines, "file-coverage"),
+                                                            links_section(lines)):
+        raise SystemExit(unread_message(unread))
     # A search's query is the one backticked text allowed outside a link.
     check_backticks(lines, [c for i, c in enumerate(
         row) if not (name == "sources" and i == 2)], name)
-
-
-ID_CITATION = re.compile(r"\[([A-Z]\d+)\]\(#[a-z]\d+\)")
 
 
 def check_backticks(lines, values, where):
@@ -807,11 +939,15 @@ def render(cells, anchor=False):
 
 
 def remove_finding(lines, ident):
+    """Delete the finding `ident` and the sources' mentions of it; exits,
+    writing nothing, while another record cites it."""
     blocks, start, end = findings_of(lines)
     if ident not in blocks:
         raise SystemExit(f"no finding {ident}")
     del blocks[ident]
     write_findings(lines, blocks, start, end)
+    sync_sources(lines)
+    refuse_cited(lines, ident)
 
 
 def write_findings(lines, blocks, start, end):
@@ -820,18 +956,31 @@ def write_findings(lines, blocks, start, end):
     lines[start + 1:end] = ["", *body.split("\n"), ""]
 
 
-def still_cited(lines, ident):
-    """Where `ident` is still written: a table row's ID, else a line number. Run
-    after a finding is removed, so nothing cites a finding that is gone unseen."""
-    found = []
-    for i, line in enumerate(lines):
-        if re.search(rf"\b{ident}\b", line):
-            found.append(table_cells(line)[0] if line.startswith(
-                "|") else f"line {i + 1}")
-    return found
+def refuse_cited(lines, ident):
+    """Exit, writing nothing, while another record cites `ident`: removing it
+    would leave a citation of a record that isn't there."""
+    if cited := mentions(lines, ident):
+        raise SystemExit(f"{ident} is still cited by {', '.join(cited)}: change those first. "
+                         "Nothing was written")
+
+
+def mentions(lines, ident):
+    """The records, other than `ident`'s own, whose text names `ident`: when
+    an action closes, what they say while it was open, such as "not
+    established yet: see Q06", may need its answer; while any does, `ident`
+    can't be removed."""
+    found = [table_row_id for table in TABLES if TABLES[table][2]
+             for table_row_id in (row[0] for row in table_rows(lines, table)
+                                  if row[0] != ident and re.search(rf"\b{ident}\b", " | ".join(row[1:])))]
+    blocks, _, _ = findings_of(lines)
+    found += [key for key, block in blocks.items()
+              if key != ident and re.search(rf"\b{ident}\b", block)]
+    return sorted(set(found), key=id_order)
 
 
 def remove_row(lines, name, row_id, match):
+    """Delete a row by its ID, or a file coverage row by `match`; exits,
+    writing nothing, while another record cites the row's ID."""
     rows = table_rows(lines, name)
     if row_id:
         kept = [r for r in rows if r[0] != row_id]
@@ -841,10 +990,8 @@ def remove_row(lines, name, row_id, match):
         index = matching_row(rows, name, match)
         kept = rows[:index] + rows[index + 1:]
     write_rows(lines, name, kept, header_of(lines, name))
-
-
-# How a review round is recorded, as next_step tells it.
-RECORD_ROUND = "ledger.py review --raised <the ready actions its real issues became, or none>"
+    if row_id:
+        refuse_cited(lines, row_id)
 
 
 def remove_link(lines, key):
@@ -956,7 +1103,7 @@ def main(argv=None):
         "next-id": "print the next free ID of a kind",
         "row": "write a table's row, its cells on standard input",
         "batch": "write many rows and findings in one call, all or nothing",
-        "move": "move an action between ready, blocked and completed",
+        "move": "move an action between ready, in progress, blocked and completed",
         "remove": "delete a row or a finding",
         "finding": "add or replace a finding, read from standard input",
         "link": "add a link definition under Links",
@@ -970,8 +1117,14 @@ def main(argv=None):
         "help": "print each table's columns and values, and each writing command's input, with a command to copy",
         "review": "record an independent review round",
     }
+    # The commands that read their input from standard input, and the `help`
+    # entry that shows its shape.
+    shapes = {"row": "<table>", "batch": "batch",
+              "finding": "findings", "text": "text"}
     for name, about in names.items():
-        sub = commands.add_parser(name, help=about, description=about)
+        description = about + (f". `{CALL} help --table {shapes[name]}` shows the input and a command to copy"
+                               if name in shapes else "")
+        sub = commands.add_parser(name, help=about, description=description)
         if name == "help":
             sub.add_argument("--table", choices=list(TABLES) + list(COMMAND_HELP),
                              help="a table, or one of the other commands: " + ", ".join(COMMAND_HELP) + "; leave out for all")
@@ -1001,10 +1154,14 @@ def main(argv=None):
         if name == "finding":
             sub.add_argument(
                 "--id", help="the finding to replace; leave out to add the next one")
+        if name in ("row", "finding"):
+            sub.add_argument("--set", action="append", default=[],
+                             help='"Name=value": change one cell or field of a row or finding already written, '
+                             "instead of reading the whole input; repeat for more")
         if name == "move":
             sub.add_argument("--id", required=True, help="the action's ID")
             sub.add_argument("--to", required=True,
-                             choices=["ready", "blocked", "completed"], help="where it goes")
+                             choices=[table.removeprefix("queue-") for table in QUEUE_TABLES], help="where it goes")
             sub.add_argument("--set", action="append",
                              default=[], help='"Column=value"')
         if name in ("link", "unlink"):
@@ -1027,6 +1184,8 @@ def main(argv=None):
         if name == "text":
             sub.add_argument("--section", required=True,
                              help=" or ".join(TEXT_SECTIONS))
+            sub.add_argument("--replace", nargs=2, metavar=("OLD", "NEW"),
+                             help="replace one exact text of the section, instead of reading the whole of it")
     args = parser.parse_args(argv)
     if args.command == "help":
         if not args.table:
@@ -1038,7 +1197,7 @@ def main(argv=None):
     text = load(args.investigation)
     lines = text.split("\n")
     result, warnings = {}, []
-    written = []
+    written, read_batch = [], []
     if args.command == "brief":
         print(brief(lines))
         return
@@ -1059,13 +1218,14 @@ def main(argv=None):
         print(json.dumps({"id": next_id(text, args.kind)}))
         return
     if args.command == "row":
-        written = put_row(lines, args.table, args.id,
-                          args.match, read_input(args, as_json=True))
+        cells = (row_with_sets(lines, args.table, args.id, args.match, args.set) if args.set
+                 else read_input(args, as_json=True))
+        written = put_row(lines, args.table, args.id, args.match, cells)
         if args.table == "sources":
             sync_sources(lines)
     elif args.command == "batch":
-        written, result["written"] = put_batch(
-            lines, read_input(args, as_json=True), warnings)
+        read_batch = read_input(args, as_json=True)
+        written, result["written"] = put_batch(lines, read_batch, warnings)
     elif args.command == "move":
         columns = [s.partition("=")[0] for s in args.set]
         values = written = linked(
@@ -1077,10 +1237,6 @@ def main(argv=None):
             if not args.id:
                 raise SystemExit("findings need --id")
             remove_finding(lines, args.id)
-            sync_sources(lines)
-            cited = still_cited(lines, args.id)
-            if cited:
-                result["still_cited"] = cited
         else:
             _, _, letters = TABLES[args.table]
             if bool(letters) == bool(args.match) or (letters and not args.id):
@@ -1088,8 +1244,9 @@ def main(argv=None):
                     f"{args.table} " + ("takes --id" if letters else "has no IDs: use --match"))
             remove_row(lines, args.table, args.id, args.match)
     elif args.command == "finding":
-        result["id"], written = put_finding(
-            lines, args.id, read_input(args, as_json=True), warnings)
+        fields = finding_with_sets(
+            lines, args.id, args.set) if args.set else read_input(args, as_json=True)
+        result["id"], written = put_finding(lines, args.id, fields, warnings)
         sync_sources(lines)
     elif args.command == "link":
         if not re.fullmatch(r"[A-Za-z0-9._-]+", args.key) or not re.match(r"https?://", args.url):
@@ -1104,17 +1261,27 @@ def main(argv=None):
     elif args.command == "sync-sources":
         sync_sources(lines)
     elif args.command == "text":
-        written = linked(lines, [read_input(args)])
+        text = replaced_text(lines, args.section, *
+                             args.replace) if args.replace else read_input(args)
+        written = linked(lines, [text])
         check_backticks(lines, written, args.section)
         set_text(lines, args.section, written[0])
+    # An action closed by this call: the records naming it may need its answer.
+    closed = ([args.id] if (args.command == "move" and args.to == "completed")
+              or (args.command == "row" and args.table == "queue-completed") else
+              [item["id"] for item in read_batch if isinstance(
+                  item, dict) and item.get("table") == "queue-completed"]
+              if args.command == "batch" else [])
+    if named := {ident: found for ident in closed if (found := mentions(lines, ident))}:
+        result["update_if_needed"] = named
     upgrade_tickets(lines)
     link_ids(lines)
-    # Another row may be written later, so an ID it cites that isn't recorded
-    # yet is a warning here; the handover check makes it an error.
-    pending = unrecorded_citations(written, "\n".join(lines))
-    if pending:
-        warnings.append(
-            f"cites {', '.join(pending)}, not recorded yet: record each before handover")
+    # Checked once every record of the call is written, so a batch can hold
+    # records that cite each other.
+    missing = unrecorded_citations(written, "\n".join(lines))
+    if missing:
+        raise SystemExit(f"cites {', '.join(missing)}, which the ledger doesn't hold: write each in the same "
+                         "call, such as one batch, or before it. Nothing was written")
     if warnings:
         result["warnings"] = warnings
     print(json.dumps({"path": save(args.investigation, lines), **result}))

@@ -70,7 +70,7 @@ class OutputScriptsTest(unittest.TestCase):
         # As a skill uses them: output_folder.py prints and creates the folder,
         # output_file.py writes a file in it, then patches it, and refuses the
         # same patch again, as its old text is gone.
-        relative = "Payments-Retry_26-03-29/ledgers.md"
+        relative = "Payments-Retry_26-03-29/ledger.md"
         patch = json.dumps(
             [{"old": "# Payments retry", "new": "# Updated report"}])
         for name, output, folder, temporary in self.folders:

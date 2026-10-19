@@ -60,6 +60,9 @@ ORDER_BY = re.compile(r"\border\s+by\b", re.I)
 # a skill builds on when it needs the key's parts or its own context around it.
 PROJECT_KEY = r"[A-Z][A-Z0-9]+"
 ISSUE_KEY = re.compile(rf"\b{PROJECT_KEY}-\d+\b")
+# Atlassian Document Format nodes that end a line of text.
+ADF_BLOCKS = {"paragraph", "heading", "listItem", "codeBlock",
+              "blockquote", "tableRow", "rule", "mediaGroup"}
 
 
 class JiraClient:
@@ -270,6 +273,13 @@ class JiraClient:
             return stat["fieldId"]
         return None
 
+    def project(self, key):
+        """A project by its key, with its name; NotFound when the site has
+        none the account can see, which tells a ticket key from a word of the
+        same shape, such as SHA-256."""
+        self._refuse_excluded(key)
+        return self._get(f"/rest/api/3/project/{key}")
+
     def issue(self, key, fields):
         """One issue by key, with `fields`. A key of a ticket moved to another
         project still finds it, under its current key."""
@@ -283,9 +293,9 @@ class JiraClient:
         """Every issue a JQL query matches, with `fields`, excluded projects
         left out. Paging is token-based and ends only when `nextPageToken` is
         absent."""
-        out, token = [], None
+        out, token, jql = [], None, self._not_excluded(jql)
         while True:
-            params = {"jql": self._not_excluded(jql), "maxResults": PAGE_SIZE,
+            params = {"jql": jql, "maxResults": PAGE_SIZE,
                       "fields": ",".join(fields)}
             if token:
                 params["nextPageToken"] = token
@@ -451,11 +461,6 @@ def value_at(changes, field, instant, current):
     if after:
         return after[0]["from"], after[0]["fromString"]
     return current
-
-
-# Atlassian Document Format nodes that end a line of text.
-ADF_BLOCKS = {"paragraph", "heading", "listItem", "codeBlock",
-              "blockquote", "tableRow", "rule", "mediaGroup"}
 
 
 def plain_text(value, links=False):

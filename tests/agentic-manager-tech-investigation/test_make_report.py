@@ -27,7 +27,7 @@ class MakeReportTest(unittest.TestCase):
     def setUp(self):
         self.folder = os.path.join(temp_output(self), INVESTIGATION)
         os.makedirs(self.folder)
-        self.write("ledgers.md", LEDGER)
+        self.write("ledger.md", LEDGER)
 
     def write(self, name, text):
         with open(os.path.join(self.folder, name), "w", encoding="utf-8") as f:
@@ -71,21 +71,21 @@ class MakeReportTest(unittest.TestCase):
             "## Architect summary\n\n### Current status\n\n",
             # The flow's components, drawn from the sequence, then the sequence.
             "\n\n#### Search API — query\n\nThe components this flow crosses, coloured by their status in the "
-            "[component inventory](ledgers.md#component-inventory-and-evolution): 🟦 In development, "
+            "[component inventory](ledger.md#component-inventory-and-evolution): 🟦 In development, "
             "⬜ Unverified. A person is drawn rounded. Arrows are its requests; the sequence below shows "
             "them in order.\n\n```mermaid\n%%{init: ",
             "```\n\n```mermaid\nsequenceDiagram\n    autonumber\n    actor U as Client / operator\n",
             "### Next steps and evolution\n\n",
             "\n\n#### Publish job — publication\n\nThe components this flow crosses",
-            "[code](ledgers.md#f01--search-api-is-merged)",
-            "[gap](ledgers.md#evidence-gaps)",
+            "[code](ledger.md#f01--search-api-is-merged)",
+            "[gap](ledger.md#evidence-gaps)",
             "### Key decisions and gaps\n\nThe table records source-backed decisions and evidence gaps. It does "
             "not select an option.\n\n| Decision or gap | Why it matters | Established position | Evidence |\n"
-            "| --- | --- | --- | --- |\n| Index | Sets the cost | Unresolved | [gap](ledgers.md#evidence-gaps) |",
+            "| --- | --- | --- | --- |\n| Index | Sets the cost | Unresolved | [gap](ledger.md#evidence-gaps) |",
             "\n\n## References\n\n**Implementation and configuration**",
             "**Delivery**\n\n- [PROJ-1](https://example.com/PROJ-1) (historical)",
             "**Vision, rationale and reported operational gaps**\n\nNone in the inspected sources.",
-            "The [research ledger](ledgers.md) holds the full validation trail",
+            "The [research ledger](ledger.md) holds the full validation trail",
         ]:
             with self.subTest(expected=expected[:40]):
                 self.assertIn(expected, text)
@@ -124,8 +124,6 @@ class MakeReportTest(unittest.TestCase):
                 evidence_snapshot="5/10/2026"), "evidence_snapshot"),
             ("summary without a ledger link", lambda d: stage(d).update(summary=["No trace."]),
              "architecture.current.summary paragraph 1: needs a ledger link"),
-            ("semicolon", lambda d: stage(d)["sequence"]["lines"].append("A->>D: read; write"),
-             "raw semicolon"),
             ("manual number", lambda d: stage(d)["sequence"]["lines"].append("A->>D: 5. Read"),
              "numbers its step"),
             # Every participant but a person is a component of the ledger.
@@ -156,9 +154,9 @@ class MakeReportTest(unittest.TestCase):
         # The ledger links one ticket of the project and one page of the host;
         # content.json may then name others plainly. A ticket of a project the
         # ledger doesn't link is written as code.
-        self.write("ledgers.md", LEDGER.replace("## Links\n\nNone yet.",
-                                                "## Links\n\n[proj-1]: https://acme.example/browse/PROJ-1\n"
-                                                "[code]: https://git.example/acme/api/blob/abc/x.py"))
+        self.write("ledger.md", LEDGER.replace("## Links\n\nNone yet.",
+                                               "## Links\n\n[proj-1]: https://acme.example/browse/PROJ-1\n"
+                                               "[code]: https://git.example/acme/api/blob/abc/x.py"))
         data = content()
         data["current_status"][0] += " PROJ-7 tracks acme/api#12, OPS-3 does not."
         self.make(data)
@@ -172,10 +170,10 @@ class MakeReportTest(unittest.TestCase):
     def test_ledger_links_reach_a_row_by_its_anchor(self):
         # A row written by ledger.py carries an anchor, so the report links to the
         # row itself, not only to its section.
-        self.write("ledgers.md", LEDGER.replace("- **G01** Deployment unverified.",
-                                                '| ID | Gap |\n| --- | --- |\n| <a id="g01"></a>G01 | Deployment unverified |'))
+        self.write("ledger.md", LEDGER.replace("- **G01** Deployment unverified.",
+                                               '| ID | Gap |\n| --- | --- |\n| <a id="g01"></a>G01 | Deployment unverified |'))
         self.assertTrue(self.make(content())["ok"])
-        self.assertIn("[gap](ledgers.md#g01)", self.report())
+        self.assertIn("[gap](ledger.md#g01)", self.report())
 
     def test_multiline_sequence_statements_are_all_checked(self):
         data = content()
@@ -184,14 +182,26 @@ class MakeReportTest(unittest.TestCase):
         self.assertTrue(self.make(data)["ok"])
         self.assertIn("U->>A: Query\n    A->>D: Read rows", self.report())
         original = self.report()
-        for name, extra, expected in (("manual number", "A-->>U: 5. Results", "numbers its step"),
-                                      ("semicolon", "A->>U: One; two", "raw semicolon")):
-            with self.subTest(name=name):
-                data["architecture"]["current"]["sequence"]["lines"] = [
-                    "\n".join(QUERY["lines"]) + "\n" + extra]
-                with self.assertRaisesRegex(SystemExit, expected):
-                    self.make(data)
-                self.assertEqual(self.report(), original)
+        data["architecture"]["current"]["sequence"]["lines"] = [
+            "\n".join(QUERY["lines"]) + "\nA-->>U: 5. Results"]
+        with self.assertRaisesRegex(SystemExit, "numbers its step"):
+            self.make(data)
+        self.assertEqual(self.report(), original)
+
+    def test_semicolons_are_escaped(self):
+        # Mermaid reads a raw semicolon as the end of a statement, so the
+        # script writes it as #59;, leaving entities such as #quot; whole.
+        cases = [("A->>U: One; two", "A->>U: One#59; two"), ("A->>U: #quot;x#quot;; y", "A->>U: #quot;x#quot;#59; y"),
+                 ("A->>U: plain", "A->>U: plain")]
+        for line, expected in cases:
+            with self.subTest(line):
+                self.assertEqual(
+                    make_report.semicolons_escaped(line), expected)
+        data = content()
+        data["architecture"]["current"]["sequence"]["lines"] = QUERY["lines"] + \
+            ["A-->>U: One; two"]
+        self.assertTrue(self.make(data)["ok"])
+        self.assertIn("A-->>U: One#59; two", self.report())
 
     def test_ledger_definitions_exclude_fences(self):
         for definition in ("| G99 | Evidence |", "- **G99** Evidence."):
@@ -202,9 +212,9 @@ class MakeReportTest(unittest.TestCase):
                                 + definition + "\n" + closing + "\n")
                         if genuine:
                             text += "\n### Actual gap\n\n" + definition + "\n"
-                        self.write("ledgers.md", text)
+                        self.write("ledger.md", text)
                         ledger = make_report.Ledger(
-                            os.path.join(self.folder, "ledgers.md"))
+                            os.path.join(self.folder, "ledger.md"))
                         self.assertEqual(ledger.anchor("G99"),
                                          "actual-gap" if genuine else None)
 

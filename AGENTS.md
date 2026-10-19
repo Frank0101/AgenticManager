@@ -151,7 +151,7 @@ What a skill's instructions and scripts must do, on top of the rules that always
 
 #### Checks and AI-written text
 
-- A rule the final check applies is also applied when the data is written, wherever the script that writes it can: one function in the skill's shared module, called by both, so the two can't differ. The final check keeps it, since a file can be written without the script. A rule about another record, which may be written later, such as an ID cited before it is recorded, is a warning on write and an error in the final check.
+- A rule the final check applies is also applied when the data is written, wherever the script that writes it can: one function in the skill's shared module, called by both, so the two can't differ. The final check keeps it, since a file can be written without the script. A record that cites another must cite one that exists: the script checks once every record of the write is written, so records that cite each other are written together, and nothing ever points at a record that isn't there.
 - When changing a report rule, update its generator, checker and relevant tests together.
 - A length given for AI-written text is room to articulate, never a quota. State it as an approximate target or an "at most", tell the agent to write fewer words when the point is simple or the evidence thin, and have a check flag only excess or a stub (far below the target, such as under a third), never brevity. A check that pushes the agent up to a minimum produces padding.
 - A SKILL.md runs in the order the agent works: the prerequisite, then the steps as they run, with reference material, such as rules and schemas, after the steps or where it is first needed. Sections every SKILL.md has come in the same order in each.

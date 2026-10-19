@@ -37,6 +37,8 @@ NAME = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 # A date as a report shows it, such as 05/03/2026.
 DISPLAY_DATE = "%d/%m/%Y"
+# A Markdown heading: its # marks and its title.
+HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$", re.M)
 
 
 def word_count(text):
@@ -110,10 +112,6 @@ def headings(text):
         found.append((len(match[1]), match[2],
                      base if count == 0 else f"{base}-{count}"))
     return found
-
-
-# A Markdown heading: its # marks and its title.
-HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$", re.M)
 
 
 def heading_anchor(heading):

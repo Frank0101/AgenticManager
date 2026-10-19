@@ -429,14 +429,18 @@ class ClientTest(unittest.TestCase):
                                      [{"issueId": "1001", "applicationType": host, "dataType": kind}
                                       for host in hosts])
 
+    def test_project(self):
+        FakeJira.routes["/rest/api/3/project/PROJ"] = {
+            "key": "PROJ", "name": "Project"}
+        self.assertEqual(self.client.project("PROJ")["name"], "Project")
+        with self.assertRaises(jira.NotFound):
+            self.client.project("SHA")
+
     def test_remote_links(self):
         FakeJira.routes["/rest/api/3/issue/PROJ-1/remotelink"] = [
             {"object": {"title": "Design", "url": "https://acme.test/d"}}]
         self.assertEqual(self.client.remote_links("PROJ-1")
                          [0]["object"]["title"], "Design")
-        client = self.make_client(self.base_url, excluded=["SEC"])
-        self.assert_exits("SEC-1 is of a project excluded",
-                          lambda: client.remote_links("SEC-1"))
 
     def test_sprint_field(self):
         # A site can have other fields named Sprint; the one of its type is it.
@@ -494,6 +498,8 @@ class ClientTest(unittest.TestCase):
             self.assertEqual(client.issues_by_keys(["SEC-1"], ["summary"]), [])
         for name, call in [("changelog", lambda: client.field_changes("SEC-1", {})),
                            ("comments", lambda: client.comments("SEC-1")),
+                           ("remote links", lambda: client.remote_links("SEC-1")),
+                           ("project", lambda: client.project("SEC")),
                            ("boards", lambda: client.boards_for_project("SEC")),
                            ("a sprint by project", lambda: client.find_sprint(project="SEC"))]:
             with self.subTest(name):

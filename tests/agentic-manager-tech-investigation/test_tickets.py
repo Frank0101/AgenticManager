@@ -5,11 +5,14 @@ The ticket is read from a fake client and gh answers from a fake runner, so
 nothing reaches Jira or GitHub.
 """
 
+import contextlib
+import io
 import json
 import os
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
@@ -41,6 +44,9 @@ class FakeClient:
     def issue(self, key, fields):
         if key == "PROJ-404":
             raise NotFound("/rest/api/3/issue/PROJ-404")
+        if key == "EXCL-1":
+            raise SystemExit(
+                "EXCL-1 is of a project excluded by `excluded-projects`: it is never read")
         description = {"type": "doc", "content": [{"type": "paragraph", "content": [
             {"type": "text", "text": "See the design",
              "marks": [{"type": "link", "attrs": {"href": "https://acme.test/design"}}]}]}]}
@@ -211,8 +217,42 @@ class TicketTest(unittest.TestCase):
                 self.assertIn("Sprints (0):", text)
                 if not available:
                     self.assertEqual(run.calls, [])
-        self.assertEqual(tickets.ticket(FakeClient(), "PROJ-404", NO_FIELDS, [], False),
-                         "PROJ-404: Jira has no such ticket, or this account can't see it")
+        # A ticket Jira won't give is said so, and the other keys still print.
+        refused = [("PROJ-404", "PROJ-404: Jira has no such ticket, or this account can't see it"),
+                   ("EXCL-1", "EXCL-1 is of a project excluded by `excluded-projects`: it is never read")]
+        for key, expected in refused:
+            with self.subTest(key):
+                self.assertEqual(tickets.ticket(
+                    FakeClient(), key, NO_FIELDS, [], False), expected)
+
+    def test_command_line(self):
+        # Each command reaches its function with the arguments given.
+        # name: (arguments, the calls of ticket, pr_discussion and the client's search)
+        client = mock.Mock(search=mock.Mock(return_value=[issue("PROJ-2")]))
+        cases = [
+            ("show", ["show", "PROJ-1", "PROJ-2"],
+             [mock.call(client, "PROJ-1", SITE, [], True), mock.call(client, "PROJ-2", SITE, [], True)], [], []),
+            ("show --owner", ["show", "PROJ-1", "--owner", "acme", "--owner", "acme-labs"],
+             [mock.call(client, "PROJ-1", SITE, ["acme", "acme-labs"], True)], [], []),
+            ("pr", ["pr", PR.format(41), PR.format(47)], [],
+             [mock.call(PR.format(41)), mock.call(PR.format(47))], []),
+            ("search", ["search", "parent = PROJ-1"], [], [],
+             [mock.call("parent = PROJ-1", tickets.LINE_FIELDS)]),
+        ]
+        for name, argv, shown, discussed, searched in cases:
+            with self.subTest(name):
+                client.search.reset_mock()
+                with mock.patch.object(tickets, "JiraClient", return_value=client), \
+                        mock.patch.object(tickets, "site_fields", return_value=SITE), \
+                        mock.patch.object(tickets, "gh_available", return_value=True), \
+                        mock.patch.object(tickets, "ticket", return_value="ticket") as ticket, \
+                        mock.patch.object(tickets, "pr_discussion", return_value="discussion") as discussion, \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    tickets.main(argv)
+                self.assertCountEqual(ticket.call_args_list, shown)
+                self.assertCountEqual(
+                    discussion.call_args_list, discussed)
+                self.assertCountEqual(client.search.call_args_list, searched)
 
     def test_pr_discussion(self):
         run = gh({"pr view": {PR.format(41): {

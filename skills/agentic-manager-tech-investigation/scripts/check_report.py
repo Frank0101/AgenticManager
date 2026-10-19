@@ -14,13 +14,14 @@ import os
 from pathlib import Path
 import re
 
-from common import (CELL_PIPE, DEFINITION, claim_length_warning, FINDING_FIELDS, FINDING_HEADING, GAP_FIX, HEADING, HEADINGS, LEDGER, LEDGER_SECTIONS, QUERY,
-                    QUEUE_SUBSECTIONS, QUEUE_TABLES, REFERENCE_LINK, SOURCE_FINDINGS, SOURCE_LINK_FIX, TABLE_HEADINGS, anchor_ids,
-                    backtick_error, cited_sources, component_rows, coverage_material_missing, depth_problem, expected_files,
-                    gap_problem, headings, id_order, ledger_rows, link_definitions, link_text, links, listed, local_link, markdown,
-                    outcome_problem, read_skip, report_headings, review_problem, section_span, short_formats,
-                    source_reference_missing, status_problem, strip_anchors, table_cells, unlinked_backticks,
-                    unlinked_references, unread_components, unread_message, unrecorded_ids)
+from common import (CELL_PIPE, DEFINITION, claim_length_warning, FINDING_FIELDS, FINDING_HEADING, FINDINGS, GAP_FIX, HEADING,
+                    HEADINGS, LEDGER, LEDGER_SECTIONS, LINKS, QUERY, QUEUE, QUEUE_SUBSECTIONS, QUEUE_TABLES, REFERENCE_LINK,
+                    REFLECTION, SOURCE_FINDINGS, SOURCE_LINK_FIX, TABLE_HEADINGS, anchor_ids, areas_problem, backtick_error,
+                    cited_sources, component_rows, coverage_material_missing, depth_problem, expected_files,
+                    finding_blocks, gap_problem, h2_span, headings, id_order, ledger_rows, link_definitions, link_text, links,
+                    listed, local_link, markdown, outcome_problem, read_skip, report_headings, review_problem,
+                    section_span, source_reference_missing, status_problem, strip_anchors, table_cells,
+                    unlinked_backticks, unlinked_references, unread_components, unread_message, unrecorded_ids)
 
 GAP = re.compile(
     r"\b(evidence gap|not established|unavailable|unverified|insufficient evidence|no evidence)\b", re.I)
@@ -127,8 +128,7 @@ def check_report(report, handover=False):
                     f"Architect summary, {title}: add the text before the sequence.")
     if handover:
         extra = sorted(name for name in os.listdir(report.parent)
-                       if not name.startswith(".") and name not in expected_files(
-                           report.name, short_formats(report.parent)))
+                       if not name.startswith(".") and name not in expected_files(report.name))
         if extra:
             errors.append("Unexpected files in the investigation folder: " + ", ".join(extra)
                           + ". It holds only the skill's files; keep working files in your own scratch folder.")
@@ -141,17 +141,6 @@ def check_report(report, handover=False):
         spans = unlinked_backticks(prose, ledger_text)
         if spans:
             errors.append(backtick_error(report.name, spans))
-        # Short outputs carry their links like the report.
-        for wanted in sorted(short_formats(report.parent)):
-            summary = report.parent / f"{wanted}.md"
-            try:
-                body = markdown(summary.read_text(encoding="utf-8"))[0]
-            except (OSError, UnicodeError):
-                errors.append(
-                    f"{summary.name}: cannot read it as UTF-8 Markdown.")
-                continue
-            if unlinked := unlinked_references(body):
-                errors.append(reference_error(summary.name, unlinked))
     if unlinked := unlinked_references(prose):
         errors.append(reference_error(report.name, unlinked))
     result["ok"] = not errors
@@ -162,8 +151,8 @@ def check_ledger(path, handover=False):
     """(errors, warnings) of the ledger's structure: its sections and the
     queue's in order, one heading per finding with its fields, every ticket and
     pull request linked, and, at handover, a queue that holds actions with
-    nothing left ready, the review recorded, completed actions answered,
-    allowed statuses and depths, code read for every component claiming it,
+    nothing left ready or in progress, the review recorded, completed actions answered,
+    allowed statuses, depths and areas, code read for every component claiming it,
     linked sources and a recorded reflection. An investigation always raises
     questions as it reads, so a queue with no action at all shows the ledger
     was written afterwards."""
@@ -172,7 +161,7 @@ def check_ledger(path, handover=False):
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeError):
         errors.append(
-            "ledgers.md: cannot read research ledger as UTF-8 Markdown.")
+            f"{LEDGER}: cannot read research ledger as UTF-8 Markdown.")
         return errors, warnings
     body, _, _ = markdown(text)
     found = [(level, title)
@@ -180,91 +169,97 @@ def check_ledger(path, handover=False):
     sections = [title for level, title in found if level == 2]
     if sections != LEDGER_SECTIONS:
         errors.append(
-            "ledgers.md: ## sections must be exactly, in order: " + " → ".join(LEDGER_SECTIONS))
+            f"{LEDGER}: ## sections must be exactly, in order: " + " → ".join(LEDGER_SECTIONS))
     queue = []
-    if "Research action queue" in sections:
-        start = found.index((2, "Research action queue")) + 1
+    if QUEUE in sections:
+        start = found.index((2, QUEUE)) + 1
         for level, title in found[start:]:
             if level == 2:
                 break
             queue.append(title)
     if queue != QUEUE_SUBSECTIONS:
-        errors.append("ledgers.md: the queue needs exactly these ### subsections, in order: "
+        errors.append(f"{LEDGER}: the queue needs exactly these ### subsections, in order: "
                       + " → ".join(QUEUE_SUBSECTIONS))
     findings = FINDING_HEADING.findall(body)
     duplicates = sorted({f for f in findings if findings.count(f) > 1})
     if duplicates:
-        errors.append("ledgers.md: duplicate findings: " +
+        errors.append(f"{LEDGER}: duplicate findings: " +
                       ", ".join(duplicates))
-    for match in FINDING_HEADING.finditer(body):
-        end = re.compile(r"^#{1,3}\s", re.M).search(body, match.end())
-        entry = body[match.end():end.start() if end else len(body)]
+    for ident, entry in finding_blocks(h2_text(body, FINDINGS) or "").items():
         missing = [f for f in FINDING_FIELDS if not re.search(
             rf"\*\*{re.escape(f)}\b[^*]*:?\*\*", entry)]
         if missing:
             warnings.append(
-                f"ledgers.md: {match[1]} lacks " + ", ".join(missing))
+                f"{LEDGER}: {ident} lacks " + ", ".join(missing))
         claim = re.search(
             r"\*\*Claim:?\*\*:?(.*?)(?=\n- \*\*|\Z)", entry, re.S)
-        too_long = claim_length_warning(match[1], claim[1] if claim else "")
+        too_long = claim_length_warning(ident, claim[1] if claim else "")
         if too_long:
-            warnings.append(f"ledgers.md: {too_long}")
+            warnings.append(f"{LEDGER}: {too_long}")
     cited = set(re.findall(r"\bF\d+\b", re.sub(FINDING_HEADING, "", body)))
     undefined = sorted(cited - set(findings), key=id_order)
     if undefined:
         errors.append(
-            "ledgers.md: findings cited but never written: " + ", ".join(undefined))
+            f"{LEDGER}: findings cited but never written: " + ", ".join(undefined))
     missing_keys, unused_keys = reference_problems(body)
     if missing_keys:
         errors.append(
-            "ledgers.md: reference links without a definition in ## Links: " + ", ".join(missing_keys))
+            f"{LEDGER}: reference links without a definition in ## {LINKS}: " + ", ".join(missing_keys))
     if unused_keys:
         warnings.append(
-            "ledgers.md: definitions in ## Links never used: " + ", ".join(unused_keys))
+            f"{LEDGER}: definitions in ## {LINKS} never used: " + ", ".join(unused_keys))
     if unlinked := unlinked_references(without_queries(body)):
-        errors.append(reference_error("ledgers.md", unlinked))
+        errors.append(reference_error(LEDGER, unlinked))
     if handover:
-        errors += [f"ledgers.md: {p}" for p in closing_problems(body)]
+        errors += [f"{LEDGER}: {p}" for p in closing_problems(body)]
         unrecorded = unrecorded_ids(body)
         if unrecorded:
             errors.append(
-                "ledgers.md: IDs cited but never recorded: " + ", ".join(unrecorded))
+                f"{LEDGER}: IDs cited but never recorded: " + ", ".join(unrecorded))
         if not any(row[0].startswith("Q") for table in QUEUE_TABLES
                    for row in ledger_rows(body, TABLE_HEADINGS[table])):
-            errors.append("ledgers.md: the research action queue holds no action; record each question or "
+            errors.append(f"{LEDGER}: the research action queue holds no action; record each question or "
                           "follow-up as an action while researching, and move it to Completed with its findings")
         blocked = gap_problems(body)
         if blocked:
-            errors.append("ledgers.md: " + "; ".join(blocked) +
+            errors.append(f"{LEDGER}: " + "; ".join(blocked) +
                           ". A gap's " + GAP_FIX)
-        if any(row[0].startswith("Q") for row in ledger_rows(body, TABLE_HEADINGS["queue-ready"])):
+        if any(row[0].startswith("Q") for table in ("queue-ready", "queue-in-progress")
+               for row in ledger_rows(body, TABLE_HEADINGS[table])):
             errors.append(
-                "ledgers.md: actions are still ready or in progress; finish, block or reject them before handover")
+                f"{LEDGER}: actions are still ready or in progress; finish, block or reject them before handover")
         # The trail from a claim to its source ends in a link, or, for a search, which has
         # no URL to pin, in its exact query between backticks.
         register = failing_rows(body, TABLE_HEADINGS["sources"], 2,
                                 source_reference_missing)
         if register:
-            errors.append("ledgers.md: source register rows without a link to their exact reference: "
+            errors.append(f"{LEDGER}: source register rows without a link to their exact reference: "
                           + ", ".join(register) + "; " + SOURCE_LINK_FIX)
         coverage = failing_rows(
             body, TABLE_HEADINGS["file-coverage"], 1, coverage_material_missing)
         if coverage:
-            errors.append("ledgers.md: File reading coverage rows without a link to the material read: "
+            errors.append(f"{LEDGER}: File reading coverage rows without a link to the material read: "
                           + ", ".join(sorted(set(coverage))))
         mismatched = source_finding_problems(body)
         if mismatched:
-            errors.append("ledgers.md: a source's Findings differ from the findings whose Evidence names it ("
+            errors.append(f"{LEDGER}: a source's Findings differ from the findings whose Evidence names it ("
                           + "; ".join(mismatched) + "). Run ledger.py sync-sources")
         spans = unlinked_backticks(without_queries(body))
         if spans:
-            errors.append(backtick_error("ledgers.md", spans))
-        reflection = re.search(
-            r"^## Reflection\s*\n(.*?)(?=^## |\Z)", body, re.M | re.S)
-        if not reflection or reflection[1].strip() in ("", "None yet."):
+            errors.append(backtick_error(LEDGER, spans))
+        reflection = h2_text(body, REFLECTION)
+        if not reflection or reflection.strip() in ("", "None yet."):
             errors.append(
-                "ledgers.md: write the ## Reflection section before handover")
+                f"{LEDGER}: write the ## {REFLECTION} section before handover")
     return errors, warnings
+
+
+def h2_text(body, title):
+    """The text of the ledger's ## `title` section, up to the next ## heading,
+    or None without one."""
+    lines = body.split("\n")
+    span = h2_span(lines, title)
+    return "\n".join(lines[span[0] + 1:span[1]]) if span else None
 
 
 def table_rows(prose):
@@ -350,8 +345,8 @@ def reference_error(where, found):
 
 def closing_problems(body):
     """The independent review not yet finished, completed actions with no
-    answer, coverage depths and component statuses that are not allowed ones,
-    and components claiming code nobody read."""
+    answer, coverage depths, component statuses and source or gap areas that
+    are not allowed ones, and components claiming code nobody read."""
     problems = []
     completed = ledger_rows(body, TABLE_HEADINGS["queue-completed"])
     problems.append(review_problem(completed))
@@ -364,6 +359,8 @@ def closing_problems(body):
     problems += [depth_problem(row[2]) for row in coverage]
     components = component_rows(body)
     problems += [status_problem(row[0], row[4]) for row in components]
+    problems += [areas_problem(row) for table in ("sources", "gaps")
+                 for row in ledger_rows(body, TABLE_HEADINGS[table]) if re.fullmatch(r"[SG]\d+", row[0])]
     definitions = link_definitions(body)
     unread = unread_components(components, coverage, definitions)
     if unread:
@@ -385,7 +382,8 @@ def failing_rows(body, heading, width, failing):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="Check a report's structure and local files; --handover adds the handover checks.")
     parser.add_argument("--report", required=True,
                         help="Absolute path of the Markdown report.")
     parser.add_argument("--handover", action="store_true",
