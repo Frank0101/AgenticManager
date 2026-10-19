@@ -19,7 +19,7 @@ from common import (CELL_PIPE, DEFINITION, claim_length_warning, FINDING_FIELDS,
                     REFLECTION, SOURCE_FINDINGS, SOURCE_LINK_FIX, TABLE_HEADINGS, anchor_ids, areas_problem, backtick_error,
                     cited_sources, component_rows, coverage_material_missing, depth_problem, expected_files,
                     finding_blocks, gap_problem, h2_span, headings, id_order, ledger_rows, link_definitions, link_text, links,
-                    listed, local_link, markdown, outcome_problem, read_skip, report_headings, review_problem,
+                    listed, local_link, markdown, outcome_problem, read_skip, reference_key, report_headings, review_problem,
                     section_span, source_reference_missing, status_problem, strip_anchors, table_cells,
                     unlinked_backticks, unlinked_references, unread_components, unread_message, unrecorded_ids)
 
@@ -294,8 +294,8 @@ def anchors(path):
 def reference_problems(body):
     """(keys used but not defined, keys defined but never used) of the reference links in `body`."""
     defined = set(link_definitions(body))
-    used = {(key or text).casefold()
-            for _, text, key in REFERENCE_LINK.findall(re.sub(DEFINITION, " ", body))}
+    used = {reference_key(match) for match in REFERENCE_LINK.finditer(
+        DEFINITION.sub(" ", body))}
     return sorted(used - defined), sorted(defined - used)
 
 

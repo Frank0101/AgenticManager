@@ -11,8 +11,8 @@ Its `excluded-projects` lists the projects the user's organisation doesn't
 allow AI agents to read. The client enforces it, so no skill has to: it
 refuses a request for an excluded project or ticket, leaves excluded projects
 out of every search (those the account can see: JQL refuses a project it
-can't, whose tickets no search returns anyway), and drops them from the parent, links and sub-tasks of
-the issues it returns, as if they didn't exist.
+can't, whose tickets no search returns anyway), and drops them from the
+parent, links and sub-tasks of the issues it returns, as if they didn't exist.
 
 The greenhopper endpoints (board estimation field, sprint report) are internal,
 not part of Atlassian's documented API, so they could change without notice. The
@@ -496,13 +496,13 @@ def plain_text(value, links=False):
                     str(attrs.get("text") or attrs.get("shortName") or ""))
             elif kind in ("inlineCard", "blockCard", "embedCard"):
                 parts.append(str(attrs.get("url") or ""))
-            cells = node.get("content") or []
+            children = node.get("content") or []
             if kind == "tableRow":
-                for index, cell in enumerate(cells):
+                for index, cell in enumerate(children):
                     parts.append(" | " if index else "")
                     walk(cell, in_cell=True)
             else:
-                for child in cells:
+                for child in children:
                     walk(child, in_cell)
             if kind in ADF_BLOCKS:
                 parts.append(" " if in_cell else "\n")

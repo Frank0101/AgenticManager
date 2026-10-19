@@ -60,7 +60,7 @@ class MainTest(unittest.TestCase):
 
         def run(script, *args):
             runs.append((script, *args))
-            return {"fetch_sprint.py": "progress line\n" + json.dumps(FETCHED) + "\n",
+            return {"fetch_sprint.py": json.dumps(FETCHED) + "\n",
                     "build_sprint_data.py": "wrote data.json\n"}.get(script, "")
         out, err = io.StringIO(), io.StringIO()
         with mock.patch.object(prepare_report, "run", side_effect=run), \

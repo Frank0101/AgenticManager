@@ -19,8 +19,8 @@ edit changed is rejected rather than merged.
 
 With --set, each "field=text" sets one text field of an existing JSON file,
 the field named by its path, keys and list positions joined by dots, such as
-architecture.current.summary.0, with no JSON escaping to get right. The parent must exist; a key may be new, a list
-position must be there.
+architecture.current.summary.0, with no JSON escaping to get right. The parent
+must exist; a key may be new, a list position must be there.
 
 It never writes outside the skill's output folder: an absolute path, a ".."
 step or a symbolic link leading out of it is refused. Only output.root is read

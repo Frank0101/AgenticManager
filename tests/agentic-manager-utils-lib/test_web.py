@@ -9,10 +9,11 @@ import tempfile
 import unittest
 from unittest import mock
 
+# tests/<skill>/ mirrors skills/<skill>/.
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(
-    REPO_ROOT, "skills", "agentic-manager-utils-lib"))
+    REPO_ROOT, "skills", os.path.basename(TEST_DIR)))
 from agentic_manager import web  # noqa: E402
 
 

@@ -39,6 +39,9 @@ SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 DISPLAY_DATE = "%d/%m/%Y"
 # A Markdown heading: its # marks and its title.
 HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$", re.M)
+# A line that opens or closes fenced code: its marker, three or more backticks
+# or tildes, and what follows it, such as the language.
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)", re.M)
 
 
 def word_count(text):
@@ -81,11 +84,16 @@ def links(prose, definitions):
     for match in INLINE_LINK.finditer(prose):
         yield match.start(), match.end(), bool(match[1]), match[3].strip("<>")
     for match in REFERENCE_LINK.finditer(prose):
-        key = (match[3] or match[2]).casefold()
-        yield match.start(), match.end(), bool(match[1]), definitions.get(key)
+        yield match.start(), match.end(), bool(match[1]), definitions.get(reference_key(match))
     for match in SHORTCUT_LINK.finditer(prose):
         if match[2].casefold() in definitions:
             yield match.start(), match.end(), bool(match[1]), definitions[match[2].casefold()]
+
+
+def reference_key(match):
+    """The key a REFERENCE_LINK match names, in lower case as link_definitions()
+    stores it: its own, or its text for a collapsed reference, [text][]."""
+    return (match[3] or match[2]).casefold()
 
 
 def local_link(document, target):
@@ -129,7 +137,7 @@ def markdown(text):
     offset = 0
     for line in text.splitlines(keepends=True):
         content = line.rstrip("\n")
-        match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)", content)
+        match = FENCE.match(content)
         blank = " " * len(content) + line[len(content):]
         if opened is None and match:
             opened = (match[1], match[2].strip(), offset, [])

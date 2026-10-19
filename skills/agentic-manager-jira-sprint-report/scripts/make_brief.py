@@ -34,7 +34,7 @@ costs tokens and invites slips.
 import argparse
 import os
 
-from common import (epic_title, BRIEF_FILE, COMMENTS_DIR, DATA_FILE, RAW_DIR, SCOPE_GROUPS, allowed_verdicts, chunks, display_date,
+from common import (epic_title, BRIEF_FILE, DISPLAY_DATE, COMMENTS_DIR, DATA_FILE, RAW_DIR, SCOPE_GROUPS, allowed_verdicts, chunks, display_date,
                     read_json, parse_ts, plain_text, report_timezone, spell_epic, write_json, link_text)
 from make_report import Report
 
@@ -81,7 +81,7 @@ def comments(raw_dir, key, zone):
     path = os.path.join(raw_dir, COMMENTS_DIR, f"{key}.json")
     if not os.path.exists(path):
         return []
-    return [{"date": display_date(parse_ts(c["created"]).astimezone(zone).date().isoformat()) if c.get("created") else None,
+    return [{"date": parse_ts(c["created"]).astimezone(zone).strftime(DISPLAY_DATE) if c.get("created") else None,
              "text": text}
             for c in read_json(path) if (text := plain_text(c.get("body"))).strip()]
 
@@ -96,9 +96,8 @@ def first_chunk(description):
 def report_facts(data):
     """The generated report's figures and sentences, word for word."""
     report = Report(data, {})
-    facts = [
-        f"Sprint target completion: {link_text(report.target_completion_value())}"]
-    facts.append(link_text(report.commentary()))
+    facts = [f"Sprint target completion: {link_text(report.target_completion_value())}",
+             link_text(report.commentary())]
     for epic in data["epics"]:
         name = epic_title(epic)
         for scope, words in (("original", "of its commitment"), ("extra", "of its extra work")):

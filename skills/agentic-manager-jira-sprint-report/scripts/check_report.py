@@ -84,6 +84,11 @@ def strip_tags(text):
     return re.sub(r"<[^>]+>", " ", text).strip()
 
 
+# The event kinds of a spell.
+EVENT_KINDS = {"committed", "joined", "completed",
+               "reopened", "reestimated", "removed"}
+
+
 def check_model(c, data):
     """Each spell's events are well formed, and its outcome, latest estimate
     and whether it's counted are what its events give; the charts' breakdown,
@@ -409,11 +414,6 @@ def check_timeline(c, table, data):
         expected_end = " ".join(parts) or "–"
         c.check(day["end"] == expected_end, "timeline",
                 f"{label} end of day is {expected_end!r}")
-
-
-# The event kinds of a spell.
-EVENT_KINDS = {"committed", "joined", "completed",
-               "reopened", "reestimated", "removed"}
 
 
 def timeline_days(table):

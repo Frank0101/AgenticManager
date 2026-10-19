@@ -195,6 +195,12 @@ def detail_lines(detail, gh):
     return [head + f" · files changed ({shown}): " + (", ".join(files) or "none")]
 
 
+def sprint_lines(sprints):
+    """Each sprint the ticket was in: name, state and goal, on one line."""
+    return [f"  {s.get('name', '?')} · {s.get('state', '?')} · goal: {' '.join((s.get('goal') or 'none').split())}"
+            for s in sprints or []]
+
+
 def history_lines(changes):
     """Each status or sprint change, dated, in time order."""
     return [f"  {day(c['created'])} · {c['field']}: {c.get('fromString') or 'none'} → "
@@ -326,12 +332,6 @@ def commit_line(repository, commit):
     message = (commit.get("message") or "").split("\n")[0]
     return (f"  {repository.get('name', '?')} {commit.get('displayId', '?')} · "
             f"{day(commit.get('authorTimestamp'))} · {message} · {commit.get('url', '?')}")
-
-
-def sprint_lines(sprints):
-    """Each sprint the ticket was in: name, state and goal, on one line."""
-    return [f"  {s.get('name', '?')} · {s.get('state', '?')} · goal: {' '.join((s.get('goal') or 'none').split())}"
-            for s in sprints or []]
 
 
 def gh_available():

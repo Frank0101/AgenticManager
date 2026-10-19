@@ -5,7 +5,7 @@ A library of reusable Agent Skills that work with both Claude Code and Codex, me
 ## Requirements
 
 - **Python 3.14+**, available as `python3` where the agent runs.
-- **Node.js 22.20+**, to install, for `npx` and the `skills` CLI.
+- **Node.js 22.20+**, for `npx` and the `skills` CLI that install the skills.
 
 Individual skills may have additional dependencies, listed in [Available skills](#available-skills).
 

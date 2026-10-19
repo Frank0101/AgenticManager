@@ -51,7 +51,7 @@ from common import (ID, JiraClient, is_enabled, AREAS, BLOCKERS, BOUNDARY, CODE_
                     SOURCE_FINDINGS, SOURCE_HEADER, SOURCE_LINK_FIX, STATUSES, TABLE_HEADINGS, anchor_tag, anchored,
                     areas_of, areas_problem, autolink, backtick_error, cited_sources, free_name, coverage_material_missing,
                     depth_problem, finding_blocks, gap_problem, id_order, investigation_dir, last_review, ledger_rows,
-                    link_definitions, link_text, linked_ids, outcome_problem, read_in_full, recorded_ids,
+                    link_definitions, link_text, linked_ids, outcome_problem, read_in_full, recorded_ids, reference_key,
                     review_rounds, reviewed, h2_span, section_span, slug, source_reference_missing, status_problem,
                     strip_anchors, table_cells, table_row, ticket_sites, unlinked_backticks, unread_components,
                     unread_message, unrecorded_citations, unresolved_message, upgraded_tickets, write_output_file)
@@ -279,7 +279,7 @@ def as_written(lines, text):
     definitions = links_section(lines)
 
     def inline(match):
-        url = definitions.get((match[3] or match[2]).casefold())
+        url = definitions.get(reference_key(match))
         return f"{match[1]}[{match[2]}]({url})" if url else match[0]
     return REFERENCE_LINK.sub(inline, ID_CITATION.sub(r"\1", strip_anchors(text)))
 

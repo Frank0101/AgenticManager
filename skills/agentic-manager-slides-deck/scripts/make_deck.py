@@ -13,17 +13,17 @@ and rings. Its fields are in SKILL.md.
 A slide's HTML can't load anything (no script, style, link or frame, and no
 remote image) and must close every tag it opens, since one unclosed tag would
 swallow every slide after it. A chart is Chart.js, drawn in the browser from
-its data, without animation so a PDF never catches it half drawn. Its
-settings are data, never code: how its values read ("£3.5m") is a `format`,
-which the page's script turns into the label functions Chart.js needs. A ring is a
-donut or pie of equal or weighted segments with gaps between them, drawn here
-as SVG, since its geometry is arithmetic. A diagram is inline SVG in the
-deck's own look, never Mermaid, whose look a deck can't match and which would
-load another library. An image is {{asset:<name>}}, linked
-to the file in _assets, which must be there: an image from anywhere else, a
-path or a URL, would show only on one machine or online; a downloaded image's
-credit is added to every slide that shows it, so no slide can drop it.
-{{page}} is the slide's number, counted here, so no number is kept by hand.
+its data, without animation so a PDF never catches it half drawn. Its settings
+are data, never code: how its values read ("£3.5m") is a `format`, which the
+page's script turns into the label functions Chart.js needs. A ring is a donut
+or pie of equal or weighted segments with gaps between them, drawn here as SVG,
+since its geometry is arithmetic. A diagram is inline SVG in the deck's own
+look, never Mermaid, whose look a deck can't match and which would load another
+library. An image is {{asset:<name>}}, linked to the file in _assets, which
+must be there: an image from anywhere else, a path or a URL, would show only on
+one machine or online; a downloaded image's credit is added to every slide that
+shows it, so no slide can drop it. {{page}} is the slide's number, counted
+here, so no number is kept by hand.
 
 With --open, a deck that passes the check opens in the user's default
 browser, their own window rather than one a tool drives, so they review it
@@ -68,6 +68,10 @@ FORBIDDEN = {"script", "style", "link", "meta", "base", "iframe", "object", "emb
 # CSS that loads a remote file.
 REMOTE_CSS = re.compile(
     r"url\(\s*['\"]?\s*" + REMOTE.pattern + "|@import", re.I)
+# An image token as the whole value of an attribute that links an image: the
+# one place the page's links, and so the check, can see it.
+PLACED_ASSET = re.compile(
+    rf"""\b(?:{"|".join(URL_ATTRIBUTES)})\s*=\s*(["'])\{{\{{asset:[^{{}}]*\}}\}}\1""", re.I)
 
 
 def make_deck(deck, open_page=False):
@@ -94,8 +98,8 @@ def make_deck(deck, open_page=False):
 
 
 def problems(content, assets=frozenset()):
-    """(errors, slides' HTML) of slides.json's content, `assets` being the images in _assets; errors name
-    the field to fix."""
+    """(errors, slides' HTML) of slides.json's content, `assets` being the
+    images in _assets; errors name the field to fix."""
     errors, texts = [], []
     if not isinstance(content, dict):
         return ["slides.json: must be a JSON object"], texts
@@ -155,7 +159,7 @@ def problems(content, assets=frozenset()):
         for match in TOKEN.finditer(PLACED_ASSET.sub("", text)):
             if match[1] == "asset":
                 errors.append(f"{where}.html: {match[0]} goes only in an image's link, as "
-                              f"<img src=\"{match[0]}\">")
+                              f"<img src='{match[0]}'>")
         bare = TOKEN.sub("", text).replace(PAGE, "")
         if "{{" in bare:
             errors.append(
@@ -169,12 +173,6 @@ def problems(content, assets=frozenset()):
             errors.append(f"{kind}s.{ident}: must be placed exactly once, as {{{{{kind}:{ident}}}}} "
                           f"in a slide's html, not {count} times")
     return errors, texts
-
-
-# An image token as the whole value of an attribute that links an image: the
-# one place the page's links, and so the check, can see it.
-PLACED_ASSET = re.compile(
-    rf"""\b(?:{"|".join(URL_ATTRIBUTES)})\s*=\s*(["'])\{{\{{asset:[^{{}}]*\}}\}}\1""", re.I)
 
 
 def unknown(item, allowed, where, errors):
@@ -344,9 +342,9 @@ class SlideParser(HTMLParser):
 
 def build(content, texts, image_credits, depth=1):
     """The deck's HTML page from valid content and the slides' HTML problems()
-    returned for it, crediting each downloaded image in
-    `image_credits` on every slide that shows it, `depth` folders below the
-    skill's output folder."""
+    returned for it, crediting each downloaded image in `image_credits` on
+    every slide that shows it, `depth` folders below the skill's output
+    folder."""
     charts, rings = content.get("charts", {}), content.get("rings", {})
     style = "\n".join(content.get("style", []))
     slides = []

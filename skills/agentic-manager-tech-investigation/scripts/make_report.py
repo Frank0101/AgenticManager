@@ -30,7 +30,7 @@ import json
 import os
 import re
 
-from common import (CONTENT, FOLDER_NAME, HEADINGS, INVENTORY, LEDGER, RECORD_DEFINITION, REPORT_SUFFIX, SKIPS, anchor_tag, component_rows,
+from common import (CONTENT, FENCE, FOLDER_NAME, HEADING, HEADINGS, INVENTORY, LEDGER, RECORD_DEFINITION, REPORT_SUFFIX, SKIPS, anchor_tag, component_rows,
                     autolink, headings, investigation_dir, link_definitions, markdown, read_json, heading_anchor, table,
                     topic_of, unresolved_message, word_count, write_output_file)
 import check_report
@@ -43,6 +43,10 @@ TARGETS = {"problem": 150, "current_status": 200,
            "next_steps": 200, "summary": 300}
 
 LEDGER_LINK = re.compile(r"\]\(ledger:([A-Za-z]+\d+)?\)")
+# A decisions table's fields in content.json, and its columns after the first,
+# which names the decision.
+DECISION_FIELDS = ("decision", "why", "position", "evidence")
+DECISION_COLUMNS = ["Why it matters", "Established position", "Evidence"]
 # Each of the template's headings as written, by its id.
 HEADING_LINE = {ident: "#" * level + " " +
                 title for level, title, ident in HEADINGS}
@@ -85,10 +89,10 @@ class Content:
         if trace and not any(match[1] for match in LEDGER_LINK.finditer(value)):
             self.errors.append(
                 f"{where}: needs a ledger link such as [F03](ledger:F03), so the claim traces to the ledger and its sources")
-        if re.search(r"^ {0,3}#{1,3}\s", value, re.M):
+        if any(len(heading[1]) <= 3 for heading in HEADING.finditer(value)):
             self.errors.append(
                 f"{where}: no # to ### headings; the template sets them (#### is fine)")
-        if re.search(r"<div\b|^ {0,3}(```|~~~)", value, re.M | re.I):
+        if FENCE.search(value) or re.search(r"<div\b", value, re.I):
             self.errors.append(
                 f"{where}: no code fences or <div> wrappers; a sequence goes in \"sequence\"")
         if inline and "\n" in value.strip():
@@ -360,10 +364,6 @@ def render_check(content, flows):
         which = "the components diagram" if index % 2 == 0 else "the sequence"
         content.errors.append(
             f"{flows[index // 2].title}: {which} doesn't render: {message or error}")
-
-
-DECISION_FIELDS = ("decision", "why", "position", "evidence")
-DECISION_COLUMNS = ["Why it matters", "Established position", "Evidence"]
 
 
 def snapshot(content, value):

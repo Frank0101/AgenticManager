@@ -13,9 +13,10 @@ browser, never while the deck is built, so nothing the skill runs depends on
 it. It is pinned, so a deck draws the same way every time it is opened.
 Diagrams are inline SVG, drawn in the deck's own look.
 
-Images (logos, screenshots, photos) live once in _assets, next to the decks, and every deck links to them there rather than holding a copy, so
-the HTML stays small; a deck shared on its own is exported to PDF, which
-carries its images. Each image is a folder of its own, like an example: the
+Images (logos, screenshots, photos) live once in _assets, next to the decks,
+and every deck links to them there rather than holding a copy, so the HTML
+stays small; a deck shared on its own is exported to PDF, which carries its
+images. Each image is a folder of its own, like an example: the
 image, image.<type>, and a description.md saying what it shows, so a later
 deck can find and reuse it, and adding or deleting an image is adding or
 deleting its folder. A downloaded image's description also holds its credit,
@@ -98,19 +99,6 @@ def deck_file(deck):
     return match["subject"] + DECK_SUFFIX
 
 
-# The examples, each a folder of its own: the skill's, real slides each kept as
-# a description and a layout-only wireframe, and the user's, slides of their
-# decks kept in _examples beside the decks as a description, the slide's
-# slides.json and its page. Their list is read from the descriptions each
-# time, so it can't go stale as examples are added or removed; a name that
-# starts with _ is a note, not an example.
-EXAMPLES_DIR = os.path.join(os.path.dirname(
-    os.path.realpath(__file__)), "..", "examples")
-USER_EXAMPLES = "_examples"
-WIREFRAME, EXAMPLE_PAGE = "wireframe.svg", "slide.html"
-USE_FOR = "Use for"
-
-
 def deck_dir(deck):
     """The absolute path of the deck folder `deck` inside the skill's output
     folder. Exits if `deck` isn't a deck folder name, would lead outside it or
@@ -122,6 +110,19 @@ def deck_dir(deck):
         raise SystemExit(
             f"{deck} doesn't exist in {folder}: run init_deck.py first")
     return path
+
+
+# The examples, each a folder of its own: the skill's, real slides each kept as
+# a description and a layout-only wireframe, and the user's, slides of their
+# decks kept in _examples beside the decks as a description, the slide's
+# slides.json and its page. Their list is read from the descriptions each
+# time, so it can't go stale as examples are added or removed; a name that
+# starts with _ is a note, not an example.
+EXAMPLES_DIR = os.path.join(os.path.dirname(
+    os.path.realpath(__file__)), "..", "examples")
+USER_EXAMPLES = "_examples"
+WIREFRAME, EXAMPLE_PAGE = "wireframe.svg", "slide.html"
+USE_FOR = "Use for"
 
 
 def examples():

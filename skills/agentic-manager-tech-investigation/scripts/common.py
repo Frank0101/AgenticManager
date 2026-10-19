@@ -20,7 +20,7 @@ from agentic_manager.jira import ISSUE_KEY, PROJECT_KEY, JiraClient, NotFound, b
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, clear_folder, day_folder, output_folder  # noqa: E402,F401
-from agentic_manager.text import DEFINITION, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, free_name, heading_anchor, headings, link_definitions, link_text, links, local_link, markdown, slug, word_count  # noqa: E402,F401
+from agentic_manager.text import DEFINITION, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, free_name, heading_anchor, headings, link_definitions, link_text, links, local_link, markdown, reference_key, slug, word_count  # noqa: E402,F401
 
 FOLDER_NAME = "tech-investigations"
 EXAMPLES = "_examples"
@@ -284,7 +284,7 @@ def unlinked_references(text):
 
 def _skipped(line):
     """Headings, whose anchor a link would change, and link definitions."""
-    return re.match(r"^ {0,3}(#{1,6}(\s|$)|\[[^\]]+\]:)", line) is not None
+    return bool(HEADING.match(line) or DEFINITION.match(line))
 
 
 def _map_open(line, transform):

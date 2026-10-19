@@ -32,12 +32,11 @@ Prints one line of JSON: the image's `asset` name, its `path` and whether it
 import argparse
 import json
 import os
-import shutil
 import urllib.request
 from urllib.parse import unquote, urlparse
 
-from common import (ASSETS, EXAMPLE_DESCRIPTION, FOLDER_NAME, SLUG, asset_image, assets_dir, describe_asset,
-                    read_asset, slug, ssl_context, write_output_file)
+from common import (ASSETS, EXAMPLE_DESCRIPTION, FOLDER_NAME, SLUG, asset_image, assets_dir, clear_folder,
+                    describe_asset, read_asset, slug, ssl_context, write_output_file)
 
 # Image hosts often refuse requests without one.
 USER_AGENT = "AgenticManager-slides-deck/1.0 (an image for a slide deck)"
@@ -111,9 +110,7 @@ def describe(title, shows, credit=None):
 
 def save(name, data, kind, description):
     folder = os.path.join(assets_dir(), name)
-    replaced = os.path.isdir(folder)
-    if replaced:
-        shutil.rmtree(folder)
+    replaced = clear_folder(folder)
     # The description goes through the shared writer; the image, not text, is
     # written beside it, in the folder the writer has just checked and made.
     write_description(name, description)

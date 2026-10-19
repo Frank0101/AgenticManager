@@ -1,10 +1,10 @@
 """The user's AgenticManager config (~/.config/agentic-manager/config.json):
 where it lives, how it's loaded and when a setting counts as filled in.
 
-check_config.py validates the whole config with these rules,
-but never returns setting values, which can be secrets such as tokens. A script
-that needs a source's settings reads them with read_source(), so the values
-never reach the agent or the chat. The folder a skill writes its files to is in
+check_config.py validates the whole config with these rules, but never returns
+setting values, which can be secrets such as tokens. A script that needs a
+source's settings reads them with read_source(), so the values never reach the
+agent or the chat. The folder a skill writes its files to is in
 output_folder.py.
 """
 import json
