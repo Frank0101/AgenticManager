@@ -146,7 +146,7 @@ class BriefTest(unittest.TestCase):
             facts[0], "Sprint target completion: 60%, 3/5 tickets (6/10 pts) completed")
         self.assertTrue(facts[1].startswith("Of the 5 tickets"), facts[1])
         self.assertNotIn("](", facts[1])
-        self.assertEqual(facts[2:], ["PROJ-100: Login <beta> completed 3/5 tickets (6/10 pts) of its commitment",
+        self.assertEqual(facts[2:], ["PROJ-100: Login <beta> completed 60%, 3/5 tickets (6/10 pts) of its commitment",
                                      "PROJ-100: Login <beta> completed 0/1 ticket (0/2 pts) of its extra work",
                                      "(no epic) completed 1/1 ticket (1/1 pts) of its extra work"])
 

@@ -184,13 +184,13 @@ def check_model(c, data):
 
 
 HEADER_START = "| Field | Detail |\n|---|---|\n"
-HEADER_LABELS = ["Dates", "Goal", ai(
-    "Goal outcome"), "Sprint target completion"]
+HEADER_LABELS = ["Dates", "Goal", ai("Goal outcome"), ai("Key Achievements"),
+                 ai("Blockers & Risks"), "Sprint target completion"]
 
 
 def check_header(c, md, data):
     rows = header_rows(md)
-    if not c.check(rows is not None, "header", "table above the charts found") or rows is None:
+    if not c.check(rows is not None, "header", "table at the top found") or rows is None:
         return
     labels = [label for label, _ in rows]
     if not c.check(labels == HEADER_LABELS, "header", f"rows are exactly {HEADER_LABELS} (got {labels})"):
@@ -222,18 +222,21 @@ def check_header(c, md, data):
         + f" completed{so_far}")
     c.check(values["Sprint target completion"] == target,
             "header", f"Sprint target completion is {target!r}")
+    c.check(f"## Sprint Metrics\n\n{HEADER_START}| Sprint target completion |" in md,
+            "header", "Sprint target completion is a table of its own under Sprint Metrics")
 
 
 def header_rows(md):
-    """[(label, value)] of the table above the charts, or None if it's missing."""
+    """[(label, value)] of the report's tables of fields, the one at the top
+    and the one under Sprint Metrics, in order, or None if there are none."""
     if HEADER_START not in md:
         return None
-    body = md.split(HEADER_START, 1)[1].split("\n\n", 1)[0]
     rows = []
-    for line in body.splitlines():
-        cells = re.fullmatch(r"\| (.+?) \| (.*) \|", line)
-        rows.append((cells.group(1), cells.group(2))
-                    if cells else (line, None))
+    for table in md.split(HEADER_START)[1:]:
+        for line in table.split("\n\n", 1)[0].splitlines():
+            cells = re.fullmatch(r"\| (.+?) \| (.*) \|", line)
+            rows.append((cells.group(1), cells.group(2))
+                        if cells else (line, None))
     return rows
 
 
@@ -350,9 +353,13 @@ def check_images(c, md, report_dir):
     for src in embedded:
         c.check(os.path.exists(os.path.join(report_dir, src)),
                 "images", f"{src} exists")
-    section = md.split("## Scope Timeline", 1)
-    c.check(len(section) == 2 and CHART_FILES["burndown"] in re.split(r"^## ", section[1], maxsplit=1, flags=re.M)[0],
-            "images", "burndown sits under the Scope Timeline heading")
+    for heading, charts in (("Sprint Metrics", ("outcome_tickets", "outcome_pts")), ("Scope Timeline", ("burndown",))):
+        section = md.split(f"## {heading}", 1)
+        under = re.split(r"^## ", section[1], maxsplit=1, flags=re.M)[0] if len(
+            section) == 2 else ""
+        for chart in charts:
+            c.check(CHART_FILES[chart] in under, "images",
+                    f"{CHART_FILES[chart]} sits under the {heading} heading")
 
 
 def check_files(c, report_dir, data):
@@ -455,7 +462,8 @@ def check_epics(c, table, data):
         for kind in ("original", "extra"):
             done, total, done_pts, total_pts = figures.get(
                 epic["key"], {}).get(kind, [0] * 4)
-            expected.append(ratio(done, total, done_pts,
+            share = f"{whole_percentage(done, total)}, " if kind == "original" else ""
+            expected.append(share + ratio(done, total, done_pts,
                             total_pts) if total else "–")
         c.check(cells == expected, "epics",
                 f"{epic['key']} shows {' '.join(expected)} (got {' '.join(cells)})")
@@ -480,8 +488,8 @@ def epic_figures(data):
 
 
 def check_epic_commentary(c, epic, cell, status):
-    """The labels of the groups the epic has tickets to describe in, in order;
-    "–" if there are none. The sentences are the agent's, checked when the
+    """The labels of the groups the epic has tickets to describe in, in order
+    and a blank line apart; "–" if there are none. The sentences are the agent's, checked when the
     report is written."""
     labels = [scope_group_label(g, status) for g in epic_groups(epic)]
     if not labels:
@@ -489,7 +497,7 @@ def check_epic_commentary(c, epic, cell, status):
                 f"{epic['key']} has no scope to describe, so its commentary is –")
         return
     lines = [re.match(r"<b>([^<]+):</b> (.+)", line.strip())
-             for line in cell.split("<br>")]
+             for line in cell.split("<br><br>")]
     found = [m.group(1) if m else None for m in lines]
     c.check(found == labels, "epics",
             f"{epic['key']} commentary has {', '.join(labels)} (got {found})")

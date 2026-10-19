@@ -1,6 +1,6 @@
 ---
 name: agentic-manager-jira-sprint-report
-description: Writes a short, exec-ready report of one Jira sprint, closed or still running - goal outcome, carry-over from the previous sprint, key achievements, blockers and risks, a dated scope timeline (added, descoped, completed) with its commentary, a burndown, delivery by epic and notes for the retro - as Markdown with SVG charts, built from the Jira REST API. Use when the user asks for a sprint report, summary or review, or "how did the sprint go" / "how is the sprint going", for a project, board or sprint.
+description: Writes a short, exec-ready report of one Jira sprint, closed or still running - goal outcome, key achievements, blockers and risks, delivery by epic, target completion and carry-over from the previous sprint, a burndown, a dated scope timeline (added, descoped, completed) with its commentary and notes for the retro - as Markdown with SVG charts, built from the Jira REST API. Use when the user asks for a sprint report, summary or review, or "how did the sprint go" / "how is the sprint going", for a project, board or sprint.
 allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_description.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *)
 ---
 
@@ -82,9 +82,9 @@ Work out the goal themes first (they feed three fields), and write the verdict l
 
 **`epic_commentary`**: for every epic in the brief, one sentence per `group` it has tickets in. Say what changed for users or the system ("Staff can now sign in with their work account"), using the epic's description for context and each ticket's summary and description. Merge small items. At most 60 words in total per epic. Describe a ticket with no description from its summary alone; if a whole group has only bare summaries, add that "the tickets carry no detail".
 
-**`key_achievements`**: one paragraph of at most 80 words on what the sprint achieved, a step above the epic commentary: the `completed` tickets, by goal theme in the goal's order, then the other epics in the brief's order.
+**`key_achievements`**: one paragraph of at most 100 words on what the sprint achieved, a step above the epic commentary: the `completed` tickets, by goal theme in the goal's order, then the other epics in the brief's order.
 
-**`blockers_risks`**: one paragraph of at most 80 words on the commitment still open: tickets with `scope` `original` in the `in_review` and `not_completed` groups. Group them by goal theme, then by epic, and say what the open work holds back. Give a reason only where a comment states one ("under discussion with Security"), and say when a ticket is flagged. If nothing from the commitment is open, say so.
+**`blockers_risks`**: one paragraph of at most 100 words on the commitment still open: tickets with `scope` `original` in the `in_review` and `not_completed` groups. Group them by goal theme, then by epic, and say what the open work holds back. Give a reason only where a comment states one ("under discussion with Security"), and say when a ticket is flagged. If nothing from the commitment is open, say so.
 
 **`retro_notes`**: 1 to 5 notes for the team's retro, each a fact followed by a question ending with "?". Look across `report_facts` and the brief, including `carried_in` tickets that are still open, for what most departed from the plan and what the team can learn from it: patterns between epics, the timeline commentary and the goal, not only the largest figure. Quote figures word for word from `report_facts`, and name tickets as `KEY (N pts)` with the brief's `points`; don't derive new figures. Frame causes as questions, never as findings the data can't show.
 

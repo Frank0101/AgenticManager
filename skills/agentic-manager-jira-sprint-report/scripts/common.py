@@ -537,7 +537,7 @@ def chunks(text, size=DESCRIPTION_CHUNK_CHARS):
 # Words are counted as the library's word_count counts them.
 COMMENTARY_WORDS = 100
 EPIC_COMMENTARY_WORDS = 60
-SUMMARY_WORDS = 80
+SUMMARY_WORDS = 100
 RETRO_NOTES = 5
 
 # Marks the parts of the report the agent writes, on their heading or label;

@@ -83,13 +83,16 @@ class HelpersTest(unittest.TestCase):
 
 class HeaderTest(unittest.TestCase):
     def test_header_table(self):
-        # Always these 4 rows in this order, so readers find the same figure in
-        # every report. The fixture has a previous sprint, yet no carry-over
-        # row: the outcome charts show the carry-over.
+        # Always these rows in this order, so readers find the same part in
+        # every report, and the target completion in its own table above the
+        # charts. The fixture has a previous sprint, yet no carry-over row: the
+        # outcome charts show the carry-over.
         def table(dates, goal, target):
             return ("| Field | Detail |\n|---|---|\n"
                     f"| Dates | {dates} |\n| Goal | {goal} |\n| Goal outcome{AI} | Partially met |\n"
-                    f"| Sprint target completion | {target} |")
+                    f"| Key Achievements{AI} | {CONTENT['key_achievements']} |\n"
+                    f"| Blockers & Risks{AI} | {CONTENT['blockers_risks']} |",
+                    f"| Field | Detail |\n|---|---|\n| Sprint target completion | {target} |")
         cases = [
             ("closed on its end date", {},
              table("02/03/2026–13/03/2026", "Ship login", "60%, 3/5 tickets (6/10 pts) completed")),
@@ -119,7 +122,9 @@ class HeaderTest(unittest.TestCase):
         ]
         for name, changes, expected in cases:
             with self.subTest(name):
-                self.assertEqual(report(**changes).header_table(), expected)
+                r = report(**changes)
+                self.assertEqual(
+                    (r.header_table(), r.metrics_table()), expected)
 
 
 class TablesTest(unittest.TestCase):
@@ -174,14 +179,14 @@ class TablesTest(unittest.TestCase):
                       f'<th style="width:52%">Commentary{AI}</th>', table)
         # The epic's name is Jira text, so it is escaped.
         self.assertIn(f'<td><a href="{BASE}/browse/PROJ-100">PROJ-100: Login &lt;beta&gt;</a></td>'
-                      "<td>3/5 tickets (6/10 pts)</td><td>0/1 ticket (0/2 pts)</td>", table)
+                      "<td>60%, 3/5 tickets (6/10 pts)</td><td>0/1 ticket (0/2 pts)</td>", table)
         # No epic has no Jira page to link; no commitment reads "–", not 0/0.
         self.assertIn(
             "<td>(no epic)</td><td>–</td><td>1/1 ticket (1/1 pts)</td>", table)
 
     def test_epic_commentary(self):
-        # A labelled sentence per group with tickets to describe, in order and
-        # escaped; "Open" for not completed work while the sprint runs; "–"
+        # A labelled sentence per group with tickets to describe, in order,
+        # a blank line apart and escaped; "Open" for not completed work while the sprint runs; "–"
         # for an epic with nothing to describe.
         in_review = sprint_data()
         in_review["spells"][2]["status"] = "In Review"  # PROJ-2's extra spell
@@ -193,8 +198,8 @@ class TablesTest(unittest.TestCase):
                                "spells"] if s["key"] in ("PROJ-4", "PROJ-5")])
         cases = [
             ("closed", sprint_data(), CONTENT,
-             "<td><b>Completed:</b> Staff can sign in with a password.<br>"
-             "<b>Not completed:</b> Remembering the last sign-in method is still in progress.<br>"
+             "<td><b>Completed:</b> Staff can sign in with a password.<br><br>"
+             "<b>Not completed:</b> Remembering the last sign-in method is still in progress.<br><br>"
              "<b>Descoped:</b> Sign-in audit logging &amp; the admin screen were dropped.</td>"),
             ("no epic", sprint_data(), CONTENT,
              "<td><b>Completed:</b> The export now handles empty files.</td>"),
@@ -386,8 +391,7 @@ class BuildTest(unittest.TestCase):
     def test_sections_in_order(self):
         md = report().build()
         headings = [line for line in md.splitlines() if line.startswith("#")]
-        self.assertEqual(headings, ["# Sprint Summary: Sprint 7", "## Scope Timeline", "## Delivery by Epic",
-                                    f"## Key Achievements{AI}", f"## Blockers & Risks{AI}",
+        self.assertEqual(headings, ["# Sprint Summary: Sprint 7", "## Delivery by Epic", "## Sprint Metrics", "## Scope Timeline",
                                     f"## Notes for Sprint Retro{AI}"])
         # The outcome charts sit above the timeline, the burndown under its heading.
         self.assertEqual([m[3] for m in INLINE_LINK.finditer(md) if m[1]],
@@ -397,7 +401,7 @@ class BuildTest(unittest.TestCase):
         self.assertIn(
             "</table>\n\nOf the 5 tickets (9 pts) in the commitment,", md)
         self.assertIn(
-            f"## Key Achievements{AI}\n\nLogin shipped: staff can sign in", md)
+            f"| Key Achievements{AI} | Login shipped: staff can sign in", md)
         # The agent's retro notes may name tickets; they are linked here.
         self.assertIn(
             f"## Notes for Sprint Retro{AI}\n\n- [PROJ-1]({BASE}/browse/PROJ-1) (3 pts) grew", md)
@@ -459,8 +463,8 @@ class ValidateContentTest(unittest.TestCase):
                                   "PROJ-100": {**commentary["PROJ-100"], "descoped": " "}}}),
             # The text: word limits, no ticket keys (describe the work), one
             # paragraph, and the report's vocabulary.
-            ("key_achievements: 81 words, at most 80",
-             {"key_achievements": "word " * 81}),
+            ("key_achievements: 101 words, at most 100",
+             {"key_achievements": "word " * 101}),
             ("blockers_risks: names tickets ['PROJ-2']",
              {"blockers_risks": "PROJ-2 is open."}),
             ("blockers_risks: must be a single paragraph",

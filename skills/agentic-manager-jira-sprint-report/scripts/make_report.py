@@ -219,15 +219,17 @@ class Report:
         return "\n".join(lines)
 
     def epic_commentary(self, epic):
-        """One labelled sentence per group the epic has tickets in, or "–"."""
+        """One labelled sentence per group the epic has tickets in, a blank
+        line apart so each group stands out, or "–"."""
         text = self.content["epic_commentary"].get(epic["key"]) or {}
         lines = [f"<b>{scope_group_label(g, self.data['sprint_status'])}:</b> {html.escape(text[g])}"
                  for g in epic_groups(epic)]
-        return "<br>".join(lines) or "–"
+        return "<br><br>".join(lines) or "–"
 
     def epic_table(self):
         """Per epic, the commitment's and the extra work's tickets completed,
-        out of all of them: "N/M tickets (N/M pts)", and the scope it covers."""
+        out of all of them: "N/M tickets (N/M pts)", the commitment's led by
+        its target completion like the sprint's, and the scope it covers."""
         lines = ['<table>', '<tr>', '<th style="width:20%">Epic</th>', '<th style="width:14%">Commitment</th>',
                  '<th style="width:14%">Extra</th>', f'<th style="width:52%">{ai("Commentary")}</th>', '</tr>']
         for epic in self.data["epics"]:
@@ -243,15 +245,17 @@ class Report:
     @staticmethod
     def epic_done(epic, scope):
         """An epic's work of a scope, original or extra, completed out of all
-        of it: "N/M tickets (N/M pts)", or "–" when it has none."""
-        if not epic[f"{scope}_stories_total"]:
+        of it: "N/M tickets (N/M pts)", or "–" when it has none. The
+        commitment's leads with its target completion: "60%, 3/5 tickets"."""
+        done, total = epic[f"{scope}_stories_done"], epic[f"{scope}_stories_total"]
+        if not total:
             return "–"
-        return ratio(epic[f"{scope}_stories_done"], epic[f"{scope}_stories_total"],
-                     epic[f"{scope}_points_done"], epic[f"{scope}_points_total"])
+        share = f"{whole_percentage(done, total)}, " if scope == "original" else ""
+        return share + ratio(done, total, epic[f"{scope}_points_done"], epic[f"{scope}_points_total"])
 
     def header_table(self):
-        """The table above the charts: always these rows, in this order, so
-        readers find each figure in the same place."""
+        """The table at the top: always these rows, in this order, so readers
+        find each part in the same place."""
         d = self.data
         dates = f"{display_date(d['sprint_start'])}–{display_date(d['sprint_end'])}"
         if d["sprint_complete_date"] and d["sprint_complete_date"] != d["sprint_end"]:
@@ -263,8 +267,15 @@ class Report:
         rows = [("Dates", dates), ("Goal", goal),
                 (ai("Goal outcome"), self.table_text(
                     self.content["goal_verdict"])),
-                ("Sprint target completion", self.target_completion_value())]
-        return "| Field | Detail |\n|---|---|\n" + "\n".join(f"| {label} | {value} |" for label, value in rows)
+                (ai("Key Achievements"), self.table_text(
+                    self.content["key_achievements"])),
+                (ai("Blockers & Risks"), self.table_text(
+                    self.content["blockers_risks"]))]
+        return field_table(rows)
+
+    def metrics_table(self):
+        """The table above the outcome charts, with the figure they break down."""
+        return field_table([("Sprint target completion", self.target_completion_value())])
 
     def target_completion_value(self):
         """The original commitment's spells completed: their whole percentage,
@@ -449,24 +460,25 @@ class Report:
                          f"{self.days_left()}. \"Open\" means not completed yet.")
         parts += [
             self.header_table(),
+            "## Delivery by Epic",
+            self.epic_table(),
+            "## Sprint Metrics",
+            self.metrics_table(),
             f"![Sprint outcome in tickets]({CHART_FILES['outcome_tickets']})",
             f"![Sprint outcome in pts]({CHART_FILES['outcome_pts']})",
             "## Scope Timeline",
             f"![Sprint burndown]({CHART_FILES['burndown']})",
             self.timeline_table(),
             self.commentary(),
-        ]
-        parts += [
-            "## Delivery by Epic",
-            self.epic_table(),
-            f"## {ai('Key Achievements')}",
-            self.linkify(c["key_achievements"]),
-            f"## {ai('Blockers & Risks')}",
-            self.linkify(c["blockers_risks"]),
             self.bullets(
                 f"## {ai('Notes for Sprint Retro')}", c["retro_notes"]),
         ]
         return "\n\n".join(parts).rstrip() + "\n"
+
+
+def field_table(rows):
+    """The report's two-column table of (label, value) rows."""
+    return "| Field | Detail |\n|---|---|\n" + "\n".join(f"| {label} | {value} |" for label, value in rows)
 
 
 # Phrases of the commentary, each with the shorter form used when the text is
