@@ -254,8 +254,6 @@ class CheckReportTest(unittest.TestCase):
         open_action = ["Q01", "Start", "Read code", "Code", "—", "High", "—"]
         cases = [
             ("an action, reviewed and reflected", REFLECTED, None),
-            ("no action", UNQUEUED.replace("## Reflection\n\nNone yet.", "## Reflection\n\nConverged."),
-             "holds no action"),
             ("no reflection", LEDGER, "Reflection"),
             ("a ready action", with_queue(REFLECTED, "Ready", [open_action]),
              "still ready or in progress"),

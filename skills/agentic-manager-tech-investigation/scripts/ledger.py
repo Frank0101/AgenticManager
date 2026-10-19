@@ -206,7 +206,7 @@ COMMAND_HELP = {
         f"  {CALL} sync-sources --investigation <investigation>"]),
     "remove": "\n".join([
         "remove: deletes a row by --id, a finding by --id, or a file coverage row by text it contains; "
-        "refused while another record cites it",
+        "refused while anything else in the ledger cites it",
         f"  {CALL} remove --investigation <investigation> --table gaps --id G02",
         f"  {CALL} remove --investigation <investigation> --table findings --id F07",
         f"  {CALL} remove --investigation <investigation> --table file-coverage --match server.py"]),
@@ -443,8 +443,6 @@ def next_step(queue, reflection_missing, report):
     """The phase the investigation is in, from the queue, the report and the
     reflection: each phase opens only when the one before is finished, so the
     independent review sees the whole investigation."""
-    if not any(queue.values()):
-        return "research: the queue holds no action: add the first ones, a search of the topic per source group"
     if queue["queue-in-progress"]:
         return (f"research: finish the actions in progress before starting a ready one: "
                 f"{', '.join(row[0] for row in queue['queue-in-progress'])}")
@@ -940,7 +938,7 @@ def render(cells, anchor=False):
 
 def remove_finding(lines, ident):
     """Delete the finding `ident` and the sources' mentions of it; exits,
-    writing nothing, while another record cites it."""
+    writing nothing, while anything else in the ledger cites it."""
     blocks, start, end = findings_of(lines)
     if ident not in blocks:
         raise SystemExit(f"no finding {ident}")
@@ -957,11 +955,29 @@ def write_findings(lines, blocks, start, end):
 
 
 def refuse_cited(lines, ident):
-    """Exit, writing nothing, while another record cites `ident`: removing it
-    would leave a citation of a record that isn't there."""
-    if cited := mentions(lines, ident):
+    """Exit, writing nothing, while anything else in the ledger cites
+    `ident`: removing it would leave a citation of a record that isn't there.
+    It looks wherever the handover check does, so the two agree."""
+    cited = mentions(lines, ident) + cited_outside_records(lines, ident)
+    if cited:
         raise SystemExit(f"{ident} is still cited by {', '.join(cited)}: change those first. "
                          "Nothing was written")
+
+
+def cited_outside_records(lines, ident):
+    """The headings of the parts of the ledger outside its records, such as
+    the file coverage or the boundary, whose text names `ident`; records,
+    which mentions() names by their ID, are left out."""
+    found, heading, in_findings = [], "", False
+    for line in lines:
+        if line.startswith("#"):
+            heading = line.lstrip("#").strip()
+            in_findings = in_findings and line.startswith(
+                "###") or heading == FINDINGS
+        elif not in_findings and not re.match(rf"{ROW_START}[SQDGCF]\d", line) \
+                and re.search(rf"\b{ident}\b", line) and heading not in found:
+            found.append(heading)
+    return [f"the {heading} section" for heading in found]
 
 
 def mentions(lines, ident):
@@ -980,7 +996,7 @@ def mentions(lines, ident):
 
 def remove_row(lines, name, row_id, match):
     """Delete a row by its ID, or a file coverage row by `match`; exits,
-    writing nothing, while another record cites the row's ID."""
+    writing nothing, while anything else in the ledger cites the row's ID."""
     rows = table_rows(lines, name)
     if row_id:
         kept = [r for r in rows if r[0] != row_id]

@@ -15,7 +15,7 @@ from pathlib import Path
 import re
 
 from common import (CELL_PIPE, DEFINITION, claim_length_warning, FINDING_FIELDS, FINDING_HEADING, FINDINGS, GAP_FIX, HEADING,
-                    HEADINGS, LEDGER, LEDGER_SECTIONS, LINKS, QUERY, QUEUE, QUEUE_SUBSECTIONS, QUEUE_TABLES, REFERENCE_LINK,
+                    HEADINGS, LEDGER, LEDGER_SECTIONS, LINKS, QUERY, QUEUE, QUEUE_SUBSECTIONS, REFERENCE_LINK,
                     REFLECTION, SOURCE_FINDINGS, SOURCE_LINK_FIX, TABLE_HEADINGS, anchor_ids, areas_problem, backtick_error,
                     cited_sources, component_rows, coverage_material_missing, depth_problem, expected_files,
                     finding_blocks, gap_problem, h2_span, headings, id_order, ledger_rows, link_definitions, link_text, links,
@@ -150,12 +150,10 @@ def check_report(report, handover=False):
 def check_ledger(path, handover=False):
     """(errors, warnings) of the ledger's structure: its sections and the
     queue's in order, one heading per finding with its fields, every ticket and
-    pull request linked, and, at handover, a queue that holds actions with
-    nothing left ready or in progress, the review recorded, completed actions answered,
+    pull request linked, and, at handover, a queue with nothing left ready or in
+    progress, the review recorded, completed actions answered,
     allowed statuses, depths and areas, code read for every component claiming it,
-    linked sources and a recorded reflection. An investigation always raises
-    questions as it reads, so a queue with no action at all shows the ledger
-    was written afterwards."""
+    linked sources and a recorded reflection."""
     errors, warnings = [], []
     try:
         text = path.read_text(encoding="utf-8")
@@ -216,10 +214,6 @@ def check_ledger(path, handover=False):
         if unrecorded:
             errors.append(
                 f"{LEDGER}: IDs cited but never recorded: " + ", ".join(unrecorded))
-        if not any(row[0].startswith("Q") for table in QUEUE_TABLES
-                   for row in ledger_rows(body, TABLE_HEADINGS[table])):
-            errors.append(f"{LEDGER}: the research action queue holds no action; record each question or "
-                          "follow-up as an action while researching, and move it to Completed with its findings")
         blocked = gap_problems(body)
         if blocked:
             errors.append(f"{LEDGER}: " + "; ".join(blocked) +

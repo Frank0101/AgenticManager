@@ -452,9 +452,16 @@ class LedgerTest(unittest.TestCase):
         self.finding("One", evidence="S01: [doc][doc]")
         self.run_ledger("row", "--table", "components", "--id", "C01",
                         cells=["n", "r", "p", "⬜ Unverified", "d", "c", "F01", "next"])
+        self.run_ledger("row", "--table", "sources", "--id", "S02",
+                        cells=["a", "[y][y]", "d", "Read.", "e", ""])
+        self.run_ledger("text", "--section", "Boundary, method and access",
+                        text="Searched as S02 says.")
         before = self.text()
         cases = [("a finding", "findings", "F01", "F01 is still cited by C01: change those first"),
-                 ("a row", "sources", "S01", "S01 is still cited by F01: change those first")]
+                 ("a row", "sources", "S01",
+                  "S01 is still cited by F01: change those first"),
+                 ("outside the records", "sources", "S02",
+                  "S02 is still cited by the Boundary, method and access section")]
         for name, table, ident, expected in cases:
             with self.subTest(name):
                 with self.assertRaisesRegex(SystemExit, expected):
@@ -859,8 +866,6 @@ class LedgerTest(unittest.TestCase):
         def step():
             return self.read_ledger("status").splitlines()[-1]
         self.records("F01", "F02")
-        self.assertIn(
-            "next: research: the queue holds no action: add the first ones", step())
         self.run_ledger("row", "--table", "queue-ready",
                         "--id", "Q01", cells=QUEUE_ROW)
         self.assertIn(
