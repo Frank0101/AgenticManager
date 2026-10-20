@@ -189,8 +189,8 @@ COMMENTS = {"PROJ-7": [{"id": "1", "body": "Waiting on a dependency."}]}
 PR = "https://github.com/acme/api/pull/{}"
 PULL_REQUESTS = {
     "github_read": True,
-    "tickets": {"PROJ-1": [{"url": PR.format(42), "state": "OPEN", "found": "panel", "via": "PROJ-1"},
-                           {"url": PR.format(41), "state": "MERGED", "found": "panel", "via": "PROJ-9"}]},
+    "tickets": {"PROJ-1": [{"url": PR.format(42), "state": "OPEN", "via": "PROJ-1"},
+                           {"url": PR.format(41), "state": "MERGED", "via": "PROJ-9"}]},
     "events": {PR.format(41): {"url": PR.format(41), "state": "MERGED", "createdAt": "2026-03-05T10:00:00Z",
                                "mergedAt": "2026-03-06T09:00:00Z"},
                PR.format(42): {"url": PR.format(42), "state": "OPEN", "createdAt": "2026-03-14T10:00:00Z",

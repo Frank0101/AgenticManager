@@ -594,10 +594,10 @@ class FetchTest(unittest.TestCase):
         # requests, GitHub's times, the skipped), or for a failure, what
         # stderr says
         cases = [("without gh", False, answered, [], {}, []),
-                 ("with gh", True, answered, [(pr.format(41), "panel", "PROJ-1"), (pr.format(43), "panel", "PROJ-9")],
+                 ("with gh", True, answered, [(pr.format(41), "PROJ-1"), (pr.format(43), "PROJ-9")],
                   {pr.format(n): times[n] for n in (41, 43)}, []),
                  ("a pull request GitHub can't find", True, {f"pr view {pr.format(41)}": times[41]},
-                  [(pr.format(41), "panel", "PROJ-1")
+                  [(pr.format(41), "PROJ-1")
                    ], {pr.format(41): times[41]},
                   [{"url": pr.format(43), "via": ["PROJ-9"], "message": gone}]),
                  ("gh fails", True, {**answered, "api graphql": {"fails": refused}},
@@ -641,7 +641,7 @@ class FetchTest(unittest.TestCase):
                                  for jql in FakeJira.queries), github)
                 pulls = self.raw(json.loads(proc.stdout), "pull_requests.json")
                 self.assertEqual(pulls["github_read"], github)
-                self.assertEqual([(p["url"], p["found"], p["via"]) for key in ("PROJ-1", "PROJ-2")
+                self.assertEqual([(p["url"], p["via"]) for key in ("PROJ-1", "PROJ-2")
                                   for p in pulls["tickets"].get(key, [])], expected)
                 self.assertEqual(pulls["events"], events)
                 self.assertEqual(pulls["skipped"], skipped)

@@ -18,8 +18,7 @@ state of the code comes from the repository itself.
 pulls_by_ticket() takes `read`, whether to read them at all: a skill reads
 them only on request, or only when GitHub can be read, as the panel alone
 gives no dates or changes, and otherwise asks nothing of Jira. Each pull
-request is a dict with the panel's fields, state, updatedAt, `found` (PANEL)
-and `via`. read_events() then reads when each was opened and merged, many in one
+request is a dict with the panel's fields, state, updatedAt and `via`. read_events() then reads when each was opened and merged, many in one
 GraphQL call; as failures.py sets out, one GitHub says doesn't exist is
 returned with why, and any other gh failure raises GhError.
 """
@@ -32,9 +31,6 @@ from agentic_manager.json_path import nested
 
 # Jira's condition for the issue types that are sub-tasks.
 SUB_TASKS = "issuetype in subTaskIssueTypes()"
-
-# How each pull request was found: through a Development panel.
-PANEL = "panel"
 
 
 def pulls_by_ticket(client, issues, read):
@@ -75,9 +71,8 @@ def sub_tasks(client, keys):
 def panel_pulls(panel):
     """The pull requests of a ticket's Development panel, as
     JiraClient.pull_requests() returns them, each with the panel's fields
-    and its state (the panel's status, or ? without one), updatedAt and
-    `found`."""
-    return [{**pr, "state": pr.get("status") or "?", "updatedAt": pr.get("lastUpdate"), "found": PANEL}
+    and its state (the panel's status, or ? without one) and updatedAt."""
+    return [{**pr, "state": pr.get("status") or "?", "updatedAt": pr.get("lastUpdate")}
             for pr in panel]
 
 

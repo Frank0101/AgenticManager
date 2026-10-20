@@ -286,7 +286,7 @@ class PullRequestsTest(unittest.TestCase):
                                   for key, prs in found["tickets"].items()}, expected)
                 # Each found through the panel of its own ticket, as there
                 # are no sub-tasks.
-                self.assertTrue(all((pr["found"], pr["via"]) == ("panel", key)
+                self.assertTrue(all(pr["via"] == key
                                     for key, prs in found["tickets"].items() for pr in prs))
                 self.assertEqual({r[1] for r in client.read if r[0] == "pulls"}, {
                                  "1", "2", "3"})

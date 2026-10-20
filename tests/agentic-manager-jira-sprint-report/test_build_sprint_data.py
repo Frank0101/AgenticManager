@@ -859,7 +859,7 @@ class MainTest(unittest.TestCase):
         # it, data.json is the same, its ticket events Jira's alone.
         url = "https://github.com/acme/api/pull/41"
         read = {"github_read": True, "skipped": [],
-                "tickets": {"PROJ-1": [{"url": url, "state": "MERGED", "found": "panel", "via": "PROJ-1"}]},
+                "tickets": {"PROJ-1": [{"url": url, "state": "MERGED", "via": "PROJ-1"}]},
                 "events": {url: {"url": url, "state": "MERGED", "createdAt": at("03-03"),
                                  "mergedAt": at("03-04")}}}
         # name: the raw pull request data, or None for no file

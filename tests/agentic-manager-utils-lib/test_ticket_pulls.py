@@ -16,7 +16,6 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(
     REPO_ROOT, "skills", os.path.basename(TEST_DIR)))
 from agentic_manager import ticket_pulls  # noqa: E402
-from agentic_manager.ticket_pulls import PANEL  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from gh_fake import graphql_answer  # noqa: E402
 
@@ -64,8 +63,8 @@ class TicketPullsTest(unittest.TestCase):
                  {"url": "https://bitbucket.org/acme/api/pull-requests/3"}]
         self.assertEqual(ticket_pulls.panel_pulls(panel), [
             {**panel[0], "state": "MERGED",
-                "updatedAt": "2026-10-10T08:00:00.000+0000", "found": PANEL},
-            {**panel[1], "state": "?", "updatedAt": None, "found": PANEL}])
+                "updatedAt": "2026-10-10T08:00:00.000+0000"},
+            {**panel[1], "state": "?", "updatedAt": None}])
 
     def test_pulls_by_ticket(self):
         # A ticket's pull requests are those of its panel and its
@@ -98,8 +97,6 @@ class TicketPullsTest(unittest.TestCase):
                 self.assertEqual({key: [(int(pr["url"].rsplit("/", 1)[1]), pr["via"]) for pr in prs]
                                   for key, prs in found.items()}, expected)
                 self.assertEqual(list(found), ["PROJ-1", "PROJ-2", "PROJ-3"])
-                self.assertTrue(
-                    all(pr["found"] == PANEL for prs in found.values() for pr in prs))
                 # One search for every ticket's sub-tasks, and every panel of
                 # a ticket and its sub-tasks read.
                 self.assertEqual([r for r in client.read if r[0] == "search"],

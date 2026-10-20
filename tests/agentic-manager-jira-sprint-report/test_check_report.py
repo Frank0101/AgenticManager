@@ -438,7 +438,7 @@ class ChecksTest(unittest.TestCase):
             # The build leaves the pull request data out, so a GitHub event is unknown.
             ("a pull request event", lambda d: d["ticket_events"]["PROJ-1"].append(
                 event_at("2026-03-04T09:00:00Z", source="github", type="last_pr_merged",
-                         url="https://github.com/acme/api/pull/41", found="panel", via="PROJ-1")),
+                         url="https://github.com/acme/api/pull/41", via="PROJ-1")),
              "model: PROJ-1's ticket events are well formed"),
             ("events of a ticket without a spell", lambda d: d["ticket_events"].update(
                 {"PROJ-9": d["ticket_events"]["PROJ-3"]}),
