@@ -260,7 +260,6 @@ class BuildTest(ReportTest):
         self.assertEqual(set(data["ticket_events"]), {
                          s["key"] for s in data["spells"]})
         self.assertNotIn("PROJ-9", data["ticket_events"])
-        self.assertNotIn("pull_request_events_read", data)
         self.assertEqual([(e["source"], e["type"], e["date"]) for e in data["ticket_events"]["PROJ-1"]], [
             ("jira", "created", "2026-03-01"), ("jira",
                                                 "sprint_changed", "2026-03-04"),

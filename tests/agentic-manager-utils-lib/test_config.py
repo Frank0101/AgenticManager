@@ -91,6 +91,14 @@ class ConfigTest(unittest.TestCase):
             with self.subTest(source):
                 self.assertIs(config.is_enabled(group, source), enabled)
 
+    def test_tool_channel(self):
+        # A tool's name may hold hyphens; the channel is the last word.
+        cases = [("jira-api", ("jira", "api")), ("notion-mcp", ("notion", "mcp")),
+                 ("azure-devops-cli", ("azure-devops", "cli"))]
+        for name, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(config.tool_channel(name), expected)
+
     def test_read_source(self):
         # Only the settings asked for, trimmed.
         self.write(

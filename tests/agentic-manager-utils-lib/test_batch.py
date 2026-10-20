@@ -46,8 +46,8 @@ class GatherTest(unittest.TestCase):
     def test_gather(self):
         # The answers in the order of the items, whatever order the calls end
         # in; the first call to fail stops the rest, its error raised, and
-        # with one worker no call starts after it. A SystemExit, as the Jira
-        # client raises, stops it the same way.
+        # with one worker no call starts after it. Any exception, even a
+        # SystemExit, stops it the same way.
         def call(item):
             if item == "fail":
                 raise Failed(item)
@@ -65,7 +65,7 @@ class GatherTest(unittest.TestCase):
                  ("a failure", 4, ["a", "fail", "c"], Failed, None),
                  ("no call after a failure", 1, [
                   "a", "fail", "c", "d"], Failed, ["a", "fail"]),
-                 ("Jira's exit", 1, ["a", "exit", "c"], SystemExit, ["a", "exit"])]
+                 ("an exit", 1, ["a", "exit", "c"], SystemExit, ["a", "exit"])]
         for name, workers, items, expected, made in cases:
             with self.subTest(name):
                 calls = []

@@ -37,9 +37,10 @@ import os
 import re
 import subprocess
 
-from common import (BOUNDARY, EXAMPLE_DESCRIPTION, EXAMPLES, GROUPS, QUEUE, REGISTER, WHY_GOOD, TABLE_HEADINGS, FOLDER_NAME,
-                    INVESTIGATION, LEDGER, LEDGER_SECTIONS, QUEUE_HEADER, QUEUE_SUBSECTIONS, SOURCE_HEADER, TOPIC,
-                    anchored, clear_folder, day_folder, enabled_sources, output_folder, table, write_output_file)
+from common import (BOUNDARY, EXAMPLE_DESCRIPTION, EXAMPLES, GITHUB_CLI, GROUPS, JIRA_API, JIRA_GROUP, QUEUE, REGISTER,
+                    WHY_GOOD, TABLE_HEADINGS, FOLDER_NAME, INVESTIGATION, LEDGER, LEDGER_SECTIONS, QUEUE_HEADER,
+                    QUEUE_SUBSECTIONS, SOURCE_HEADER, TOPIC, GhError, anchored, clear_folder, day_folder,
+                    enabled_sources, gh_signed_in, output_folder, table, tool_channel, write_output_file)
 import output_diagram
 
 # An example's folder: its investigation's, and --<n> for a later copy of the
@@ -72,22 +73,21 @@ def usable_sources():
     mcp or cli source for the documentation and the code, which the agent
     uses directly, and jira-api for the tracker, which tickets.py reads."""
     def usable(group, name):
-        return name == "jira-api" if group == "workflow" else name.rpartition("-")[2] in ("mcp", "cli")
+        return name == JIRA_API if group == JIRA_GROUP else tool_channel(name)[1] in ("mcp", "cli")
     return {group: [name for name in enabled_sources(group) if usable(group, name)] for group in GROUPS}
 
 
 def check_gh(sources, run=subprocess.run):
     """Exits, saying what to do, when the code comes through gh and gh can't
     be used: not installed, or not signed in."""
-    if "github-cli" not in sources["source_control"]:
+    if GITHUB_CLI not in sources["source_control"]:
         return
     try:
-        done = run(["gh", "auth", "status"],
-                   capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.TimeoutExpired):
+        signed_in = gh_signed_in(run)
+    except GhError:
         raise SystemExit("github-cli is enabled but gh can't be run: install it, then run init_investigation.py "
                          "again")
-    if done.returncode:
+    if not signed_in:
         raise SystemExit(
             "gh isn't signed in: run gh auth login, then run init_investigation.py again")
 
@@ -98,7 +98,7 @@ def first_actions(topic, sources):
     groups = [group for group, names in sources.items() if names]
     return [[f"Q{number:02d}", "Request", f"Search the {GROUPS[group]} for {topic.replace('-', ' ')}",
              ", ".join(
-                 sources[group]) + (" (tickets.py search)" if group == "workflow" else ""),
+                 sources[group]) + (" (tickets.py search)" if group == JIRA_GROUP else ""),
              "None", "High", ""] for number, group in enumerate(groups, 1)]
 
 

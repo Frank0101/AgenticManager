@@ -873,7 +873,6 @@ class MainTest(unittest.TestCase):
                 self.reset()
                 self.pulls = pulls
                 data = self.run_main()
-                self.assertNotIn("pull_request_events_read", data)
                 self.assertEqual({e["source"] for events in data["ticket_events"].values() for e in events},
                                  {"jira"})
                 found.append({k: v for k, v in data.items() if k != "label"})

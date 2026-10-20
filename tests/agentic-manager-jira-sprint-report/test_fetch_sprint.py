@@ -2,9 +2,9 @@
 Run with: python3 tests/run.py agentic-manager-jira-sprint-report
 
 They cover the script's own logic: its arguments, the report folder, the
-previous sprint, the changelogs it keeps and each ticket's pull requests. The Jira calls belong to the
-library's client, tested there; test_e2e_fetch.py runs the whole script
-against a fake Jira.
+previous sprint, the changelogs it keeps and each ticket's pull requests. The
+Jira calls belong to the library's client, tested there; test_e2e_fetch.py
+runs the whole script against a fake Jira.
 """
 
 import contextlib
@@ -205,16 +205,17 @@ PR = "https://github.com/acme/api/pull/{}"
 
 class Panel:
     """A Jira client whose Development panel lists, by issue id, `pulls`, and
-    whose search by parent finds `subtasks`, recording each issue whose panel
-    is read and each search. It has no other read, so the fetch can't look up
-    the panel's commits."""
+    whose search by parent finds no sub-tasks, recording each issue whose
+    panel is read and each search. It has no other read, so the fetch can't
+    look up the panel's commits. How sub-tasks' pull requests join their
+    ticket's is the library's ticket_pulls.py, tested there."""
 
-    def __init__(self, pulls, subtasks=()):
-        self.pulls, self.subtasks, self.read = pulls, subtasks, []
+    def __init__(self, pulls):
+        self.pulls, self.read = pulls, []
 
     def search(self, jql, fields):
         self.read.append(("search", jql))
-        return list(self.subtasks)
+        return []
 
     def pull_requests(self, issue_id):
         self.read.append(("pulls", issue_id))
@@ -251,10 +252,6 @@ class gh:
 
 
 LIMIT = "HTTP 403: API rate limit exceeded for user ID 1."
-
-
-def sub_task(key, parent):
-    return {"id": key, "key": key, "fields": {"parent": {"key": parent}}}
 
 
 class PullRequestsTest(unittest.TestCase):
@@ -302,52 +299,6 @@ class PullRequestsTest(unittest.TestCase):
                 # GitHub's times of every pull request found.
                 self.assertEqual(found["events"], {url: {"createdAt": "2026-03-05T10:00:00Z"}
                                                    for urls in expected.values() for url in urls})
-
-    def test_pull_requests_through_sub_tasks(self):
-        # A sub-task's pull requests are its parent's, each kept once with
-        # the ticket it came through, the ticket before its sub-tasks, and
-        # its sub-tasks in key order.
-        # PROJ-12 and PROJ-11 are sub-tasks of PROJ-1, PROJ-21 of PROJ-2 and
-        # PROJ-31 of PROJ-3, found by the search out of key order.
-        subtasks = [sub_task("PROJ-12", "PROJ-1"), sub_task("PROJ-31", "PROJ-3"),
-                    sub_task("PROJ-11", "PROJ-1"), sub_task("PROJ-21", "PROJ-2")]
-        times = {f"pr view {PR.format(n)}": {} for n in (41, 43, 44)}
-        # name: (the panel's pull requests by issue id, {key: [(number,
-        # via)]} of the tickets with any)
-        cases = [
-            ("a ticket with none of its own, all through its sub-tasks",
-             {"PROJ-21": [{"url": PR.format(43)}]},
-             {"PROJ-2": [(43, "PROJ-21")]}),
-            ("linked to the ticket and a sub-task: kept once, through the ticket",
-             {"1": [{"url": PR.format(41)}],
-              "PROJ-11": [{"url": PR.format(41)}, {"url": PR.format(44)}]},
-             {"PROJ-1": [(41, "PROJ-1"), (44, "PROJ-11")]}),
-            ("sub-tasks in key order",
-             {"PROJ-12": [{"url": PR.format(41)}],
-              "PROJ-11": [{"url": PR.format(41)}]},
-             {"PROJ-1": [(41, "PROJ-11")]}),
-        ]
-        for name, panel, expected in cases:
-            with self.subTest(name):
-                client = Panel(panel, subtasks)
-                run = gh(times)
-                found = fetch_sprint.pull_requests(
-                    client, self.ISSUES, True, run)
-                self.assertEqual({key: [(int(pr["url"].rsplit("/", 1)[1]), pr["via"]) for pr in prs]
-                                  for key, prs in found["tickets"].items() if prs}, expected)
-                self.assertTrue(all(pr["found"] == "panel" for prs in found["tickets"].values()
-                                    for pr in prs))
-                # Only tickets are keys, never a sub-task.
-                self.assertEqual(list(found["tickets"]), [
-                                 "PROJ-1", "PROJ-2", "PROJ-3"])
-                # One search for every ticket's sub-tasks, and every panel
-                # of a ticket and its sub-tasks read.
-                self.assertEqual([r for r in client.read if r[0] == "search"],
-                                 [("search", "parent in (PROJ-1,PROJ-2,PROJ-3) AND issuetype in subTaskIssueTypes()")])
-                self.assertEqual({r[1] for r in client.read if r[0] == "pulls"},
-                                 {"1", "2", "3", "PROJ-11", "PROJ-12", "PROJ-21", "PROJ-31"})
-                self.assertTrue(
-                    all(is_graphql(c.split()[1:]) for c in run.calls), run.calls)
 
     def test_without_gh_nothing_is_read(self):
         # The panel alone gives no events, so it isn't read either.

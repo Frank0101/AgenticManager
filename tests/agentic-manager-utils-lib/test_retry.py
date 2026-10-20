@@ -42,7 +42,6 @@ class RetriedTest(unittest.TestCase):
         ]
         for name, tries, expected, waits in cases:
             with self.subTest(name), mock.patch.object(retry.time, "sleep") as sleep, \
-                    mock.patch.object(retry, "RETRY_WAITS", (1, 3, 9)), \
                     contextlib.redirect_stderr(io.StringIO()) as said:
                 queue = list(tries)
 
@@ -66,6 +65,7 @@ class RetriedTest(unittest.TestCase):
                 # recovered still shows the service struggled.
                 self.assertEqual(said.getvalue(), "".join(
                     f"failed as passing, trying again in {wait} s\n" for wait in waits))
+        self.assertEqual(retry.RETRY_WAITS, (1, 3, 9))
 
 
 if __name__ == "__main__":

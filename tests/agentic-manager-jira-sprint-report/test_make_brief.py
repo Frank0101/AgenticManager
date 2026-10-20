@@ -110,7 +110,6 @@ class BriefTest(unittest.TestCase):
                          "PROJ-1", "PROJ-2", "PROJ-6", "PROJ-3"])
         self.assertEqual(self.brief["ticket_events"]["PROJ-1"], [
             {"date": "04/03/2026", "type": "status_changed", "from": "In Progress", "to": "Done"}])
-        self.assertNotIn("pull_request_events", self.brief)
 
     def test_epics_in_order_of_completed_pts(self):
         # Commitment and extra together: the order Key Achievements takes.

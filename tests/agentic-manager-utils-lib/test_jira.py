@@ -101,6 +101,14 @@ class HelpersTest(unittest.TestCase):
         self.assertEqual(sorted(keys, key=jira.key_order),
                          ["ABC-3", "PROJ-2", "PROJ-10", "PROJ-x"])
 
+    def test_project_of(self):
+        # Up to the last hyphen; a key without one, such as a project key,
+        # has none.
+        cases = [("PROJ-12", "PROJ"), ("ABC-DEF-12", "ABC-DEF"), ("PROJ", "")]
+        for key, expected in cases:
+            with self.subTest(key=key):
+                self.assertEqual(jira.project_of(key), expected)
+
     def test_issue_key(self):
         self.assertEqual(jira.ISSUE_KEY.findall("PROJ-1, A2B-30 and proj-4 or X-1a"),
                          ["PROJ-1", "A2B-30"])
@@ -279,7 +287,6 @@ class ClientTest(unittest.TestCase):
         cases = [
             ("busy, then fine", [busy, busy, ok], {
              "displayName": "Alex Example"}, [1, 3]),
-
             ("busy every time", [
              busy] * 4, "Jira returned 503 for /rest/api/3/myself.", [1, 3, 9]),
             ("a rate limit isn't tried again", [(429, {})],
@@ -289,7 +296,7 @@ class ClientTest(unittest.TestCase):
              (401, {})], "401 Unauthorized", []),
         ]
         for name, answers, expected, waits in cases:
-            with self.subTest(name), mock.patch.object(retry, "RETRY_WAITS", (1, 3, 9)):
+            with self.subTest(name):
                 self.reset_jira()
                 self.sleep.reset_mock()
                 queue = list(answers)
@@ -307,8 +314,7 @@ class ClientTest(unittest.TestCase):
         response = mock.MagicMock()
         response.__enter__.return_value = io.BytesIO(
             b'{"displayName": "Alex Example"}')
-        with mock.patch.object(jira, "urlopen", side_effect=[ConnectionResetError(), response]) as opened, \
-                mock.patch.object(retry, "RETRY_WAITS", (1, 3, 9)):
+        with mock.patch.object(jira, "urlopen", side_effect=[ConnectionResetError(), response]) as opened:
             self.assertEqual(self.client.whoami(), {
                              "displayName": "Alex Example"})
         self.assertEqual(opened.call_count, 2)
@@ -346,7 +352,6 @@ class ClientTest(unittest.TestCase):
                 response.__enter__.return_value = io.BytesIO(
                     b'{"issues": [], "isLast": true}')
                 with mock.patch.object(jira, "urlopen", side_effect=[error, response]), \
-                        mock.patch.object(retry, "RETRY_WAITS", (1, 3, 9)), \
                         mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
                     self.client.search(
                         f"project = PROJ AND summary ~ {TOKEN}", ["summary"])
@@ -623,7 +628,7 @@ class ClientTest(unittest.TestCase):
                   f"Jira returned 400 for {self.BATCH}.", [])]
         issues = [{"id": "1", "key": "PROJ-1"}]
         for name, answers, expected, waits in cases:
-            with self.subTest(name), mock.patch.object(retry, "RETRY_WAITS", (1, 3, 9)):
+            with self.subTest(name):
                 self.reset_jira()
                 self.sleep.reset_mock()
                 queue = list(answers)
@@ -717,25 +722,21 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(
             FakeJira.requests[0][1]["jql"], "parent = PROJ-1 ORDER BY key")
 
-    def test_development_panel(self):
-        # Every code host the panel's summary names is asked for one kind of
-        # data; none named, nothing more is asked.
+    def test_pull_requests(self):
+        # Every code host the panel's summary names is asked for its pull
+        # requests; none named, nothing more is asked.
         detail = "/rest/dev-status/latest/issue/detail"
-        # name: (call, the kind asked for, the key its items come under)
-        kinds = [("pull requests", self.client.pull_requests,
-                  "pullrequest", "pullRequests")]
-        for name, call, kind, items in kinds:
-            for hosts, expected in (({"host-a": {}}, [{"n": 1}, {"n": 2}]), ({}, [])):
-                with self.subTest(name, hosts=hosts):
-                    self.reset_jira()
-                    FakeJira.routes["/rest/dev-status/latest/issue/summary"] = {
-                        "summary": {kind: {"byInstanceType": hosts}}}
-                    FakeJira.routes[detail] = {"detail": [
-                        {items: [{"n": 1}]}, {items: [{"n": 2}]}]}
-                    self.assertEqual(call("1001"), expected)
-                    self.assertEqual([q for path, q in FakeJira.requests if path == detail],
-                                     [{"issueId": "1001", "applicationType": host, "dataType": kind}
-                                      for host in hosts])
+        for hosts, expected in (({"host-a": {}}, [{"n": 1}, {"n": 2}]), ({}, [])):
+            with self.subTest(hosts=hosts):
+                self.reset_jira()
+                FakeJira.routes["/rest/dev-status/latest/issue/summary"] = {
+                    "summary": {"pullrequest": {"byInstanceType": hosts}}}
+                FakeJira.routes[detail] = {"detail": [
+                    {"pullRequests": [{"n": 1}]}, {"pullRequests": [{"n": 2}]}]}
+                self.assertEqual(self.client.pull_requests("1001"), expected)
+                self.assertEqual([q for path, q in FakeJira.requests if path == detail],
+                                 [{"issueId": "1001", "applicationType": host, "dataType": "pullrequest"}
+                                  for host in hosts])
 
     def test_project(self):
         # None for a project the site doesn't have, or one excluded, unasked;

@@ -113,8 +113,8 @@ class InitTest(unittest.TestCase):
                 self.assertIn(
                     f"## Boundary, method and access\n\n{boundary}\n", body)
                 self.assertEqual(check_report.check_ledger(ledger), ([], []))
-        signed_in.assert_called_with(
-            ["gh", "auth", "status"], capture_output=True, text=True, timeout=30)
+        self.assertEqual(signed_in.call_args.args[0], [
+                         "gh", "auth", "status"])
 
     def test_gh_must_be_usable_before_anything_is_created(self):
         self.sources(source_control=["github-cli"])

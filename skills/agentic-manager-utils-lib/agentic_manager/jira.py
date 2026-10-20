@@ -123,7 +123,7 @@ class JiraClient:
 
     def is_excluded(self, key):
         """Whether issue `key`, or project `key`, is of an excluded project."""
-        return key.rpartition("-")[0] in self.excluded or key in self.excluded
+        return project_of(key) in self.excluded or key in self.excluded
 
     def _refuse_excluded(self, key):
         """Raises JiraError, unsent, for a request about `key` of an excluded project."""
@@ -359,20 +359,17 @@ class JiraClient:
         """The pull requests an issue's Development panel lists, from every
         code host connected to the site, as the panel describes them: name,
         url, status, source and destination branch, lastUpdate,
-        repositoryName; [] for none."""
-        return self._development(issue_id, "pullrequest", "pullRequests")
-
-    def _development(self, issue_id, data_type, items):
-        """The `items` of one kind of the Development panel, from every code
-        host its summary names."""
+        repositoryName; [] for none. Read from each code host the panel's
+        summary names."""
         summary = self._get(f"{DEV_STATUS}/summary", {"issueId": issue_id})
-        hosts = nested(summary, ["summary", data_type, "byInstanceType"], {})
+        hosts = nested(
+            summary, ["summary", "pullrequest", "byInstanceType"], {})
         out = []
         for host in hosts:
             detail = self._get(f"{DEV_STATUS}/detail", {"issueId": issue_id, "applicationType": host,
-                                                        "dataType": data_type})
-            out += [item for found in detail.get("detail", [])
-                    for item in found.get(items, [])]
+                                                        "dataType": "pullrequest"})
+            out += [pr for found in detail.get("detail", [])
+                    for pr in found.get("pullRequests", [])]
         return out
 
     def remote_links(self, key):
@@ -607,8 +604,14 @@ def browse_url(base, key):
 
 def key_order(key):
     """Sort key for Jira keys in number order: PROJ-2 before PROJ-10."""
-    project, _, number = key.rpartition("-")
-    return (project, int(number)) if number.isdigit() else (key, 0)
+    number = key.rpartition("-")[2]
+    return (project_of(key), int(number)) if number.isdigit() else (key, 0)
+
+
+def project_of(key):
+    """The project key of issue `key`, up to its last hyphen: PROJ for
+    PROJ-12; "" for a key without one, such as a project key."""
+    return key.rpartition("-")[0]
 
 
 def parse_ts(ts):

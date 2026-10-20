@@ -80,9 +80,8 @@ class FakeJira(BaseHTTPRequestHandler):
     `removed` what a search for the removed issues returns, `parents` what
     a search by id for past epics returns, `unknown` the ids of the issues a
     search by id for issues without changes doesn't find, `subtasks` what a
-    search by
-    parent returns and `panel` each issue's Development panel, so a test can
-    change them. `requests` records each path, `queries` each JQL,
+    search by parent returns and `panel` each issue's Development panel, so a
+    test can change them. `requests` records each path, `queries` each JQL,
     `data_types` each Development panel's data type read and `batches` each
     batched changelog request's body.
 
@@ -565,10 +564,9 @@ class FetchTest(unittest.TestCase):
         # read either, and the raw file says GitHub wasn't read; a pull
         # request GitHub says doesn't exist is skipped, said on stderr and
         # kept as skipped; any other gh failure stops the fetch with gh's
-        # message and what to do. With it, a
-        # ticket's pull requests are only those of the panels of it and its
-        # sub-tasks: the panel's commits aren't read, and GitHub is read only
-        # for the times, never searched.
+        # message and what to do. With it, a ticket's pull requests are only
+        # those of the panels of it and its sub-tasks: the panel's commits
+        # aren't read, and GitHub is read only for the times, never searched.
         pr = "https://github.com/acme/api/pull/{}"
         proj_1, proj_2 = fixture.CURRENT[0]["id"], fixture.CURRENT[1]["id"]
         # PROJ-9, a sub-task of PROJ-1, lists a pull request of its own.

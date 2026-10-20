@@ -45,7 +45,7 @@ import os
 import re
 import sys
 
-from common import (ID, JiraClient, is_enabled, stops_on_failure, AREAS, BLOCKERS, BOUNDARY, CODE_STATUSES, claim_length_warning,
+from common import (ID, JIRA_API, JIRA_GROUP, JiraClient, is_enabled, stops_on_failure, AREAS, BLOCKERS, BOUNDARY, CODE_STATUSES, claim_length_warning,
                     COMPONENT_HEADER, DECISION_HEADER, DEFINITION, DEPTHS, EVIDENCE_LINE, FILE_HEADER, FINDINGS,
                     FINDING_FIELDS, FINDING_OPTIONAL, FINDING_START, FOLDER_NAME, GAP_FIX, GAP_HEADER, GROUPS, ID_ANCHOR,
                     INLINE_LINK, LEDGER, LINKS, QUEUE_HEADER, QUEUE_TABLES, READ_DEPTHS, REFERENCE_LINK, REFLECTION,
@@ -688,7 +688,7 @@ def jira_site(project):
     one the user excludes. Raises JiraError when Jira fails."""
     if project not in SITES:
         SITES[project] = None
-        if is_enabled("workflow", "jira-api"):
+        if is_enabled(JIRA_GROUP, JIRA_API):
             try:
                 client = JiraClient()
             except SystemExit:

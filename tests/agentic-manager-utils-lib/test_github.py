@@ -24,10 +24,6 @@ from gh_fake import graphql_answer, is_graphql  # noqa: E402
 PR = "https://github.com/acme/api/pull/{}"
 
 
-# Retries wait for real; here they needn't.
-retry.RETRY_WAITS = (0, 0, 0)
-
-
 class Fails:
     """A case's expected failure: the message gh_json() raises GhError with."""
 
@@ -55,6 +51,12 @@ def answering(value):
 
 
 class GithubTest(unittest.TestCase):
+    def setUp(self):
+        # Retries wait for real; here each wait is skipped. A setUp, not a
+        # setUpModule: tests/run.py loads modules in a way unittest runs no
+        # module fixtures for.
+        self.enterContext(mock.patch.object(retry.time, "sleep"))
+
     def test_gh_json(self):
         # An answer, even an empty one, is returned; a failure raises with
         # gh's own message, so "gh failed" is never read as "nothing found".
@@ -231,10 +233,25 @@ class GithubTest(unittest.TestCase):
                     is_enabled.assert_called_once_with(
                         "source_control", "github-cli")
 
+    def test_gh_signed_in(self):
+        # name: (runner, expected: whether signed in, or the GhError's message)
+        cases = [("signed in", Runner(), True), ("not signed in", Runner(code=1), False),
+                 ("not installed", Runner(error=FileNotFoundError("gh")),
+                  Fails("gh auth status: couldn't run gh")),
+                 ("no answer", Runner(error=subprocess.TimeoutExpired("gh", 60)), Fails("no answer within"))]
+        for name, run, expected in cases:
+            with self.subTest(name):
+                if isinstance(expected, Fails):
+                    with self.assertRaisesRegex(github.GhError, expected.message):
+                        github.gh_signed_in(run)
+                else:
+                    self.assertIs(github.gh_signed_in(run), expected)
+                self.assertEqual(run.calls, [["gh", "auth", "status"]])
+
     def test_pull_url(self):
-        # url: (repository, owner, number), or None for a page that isn't a pull request
         # The one rule for a pull request's address: its parts by name;
         # None for anything else, an owner GitHub wouldn't allow included.
+        # url: (host, owner, name, number), or None
         cases = [(PR.format(41), ("github.com", "acme", "api", "41")),
                  ("https://github.com/acme/api/pull/41/files",
                   ("github.com", "acme", "api", "41")),

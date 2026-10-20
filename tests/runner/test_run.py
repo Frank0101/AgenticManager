@@ -48,6 +48,18 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(runner.load_suite("alpha").countTestCases(), 1)
         self.assertEqual(runner.load_suite("empty").countTestCases(), 0)
 
+    def test_module_fixtures_run(self):
+        # A test file's setUpModule runs, as under unittest's own loader: the
+        # test passes only if it did.
+        folder = self.root / "fixtures"
+        folder.mkdir()
+        (folder / "test_fixture.py").write_text(
+            "import unittest\nREADY = []\ndef setUpModule():\n    READY.append(True)\n"
+            "class Sample(unittest.TestCase):\n    def test_ready(self):\n        self.assertTrue(READY)\n",
+            encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertTrue(runner.run_skill("fixtures", verbose=False))
+
     def test_suite_outcomes(self):
         self.fixture("pass")
         self.fixture("fail", False)

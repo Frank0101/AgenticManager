@@ -91,6 +91,13 @@ def gh_available():
     return shutil.which("gh") is not None and is_enabled(GROUP, NAME)
 
 
+def gh_signed_in(run=subprocess.run):
+    """Whether gh is signed in, as `gh auth status` says, for a skill that
+    checks before any work that gh can be used. Raises GhError when gh can't
+    be run or doesn't answer in time."""
+    return _ran(["auth", "status"], ["auth", "status"], run).returncode == 0
+
+
 def pull_events(urls, run=subprocess.run):
     """(events, gone) of the pull requests at `urls`: events as {url: {url,
     state, createdAt, mergedAt}}, when each was opened and, if it was, merged

@@ -23,7 +23,7 @@ from agentic_manager.text import DISPLAY_DATE, INLINE_LINK, link_text, word_coun
 from agentic_manager.output_folder import clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order,  # noqa: E402,F401
-                                  parse_ts, plain_text, value_at)
+                                  parse_ts, plain_text, project_of, value_at)
 from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
 from agentic_manager.github import gh_available  # noqa: E402,F401
@@ -428,9 +428,9 @@ def text_rule_problems(text, latest=None):
     """[(rule, found)] for each rule of the report's vocabulary and formats
     that the text breaks: banned words first, as "no <rule>", then the formats.
     With `latest`, {key: latest estimate}, a ticket of the sprint must also
-    read KEY (N pts) at that estimate, outside a bracketed list of keys. One function for the agent's text when
-    it is written and the report's when it is checked, so the two can't
-    differ."""
+    read KEY (N pts) at that estimate, outside a bracketed list of keys. One
+    function for the agent's text when it is written and the report's when it
+    is checked, so the two can't differ."""
     found = [(f"no {rule}", words) for rule, words in banned_words(text)]
     bold = re.findall(r"\*\*(.+?)\*\*", text) + \
         re.findall(r"<b>(.+?)</b>", text)

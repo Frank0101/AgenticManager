@@ -6,7 +6,8 @@
 
 tests/<skill>/ mirrors skills/<skill>/. Skill names contain hyphens, so these folders
 can't be Python packages and `unittest discover` skips them. Instead, each
-tests/<skill>/test_*.py is loaded by file path.
+tests/<skill>/test_*.py is loaded by file path, and registered under its name,
+as an import would, so unittest finds its module fixtures (setUpModule).
 
 Each skill's tests run in their own Python process. Unit tests import a skill's
 modules by name (common, make_report...), and a process keeps one module per
@@ -38,6 +39,7 @@ def load_suite(skill):
         if spec is None or spec.loader is None:
             raise ImportError(f"can't load {path}")
         module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
         spec.loader.exec_module(module)
         suite.addTests(loader.loadTestsFromModule(module))
     return suite

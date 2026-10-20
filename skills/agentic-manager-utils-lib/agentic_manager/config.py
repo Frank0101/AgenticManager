@@ -59,6 +59,14 @@ def enabled_sources(group):
             if isinstance(settings, dict) and settings.get("enabled") is True]
 
 
+def tool_channel(name):
+    """(tool, channel) of a source named "<tool>-<channel>", such as
+    ("notion", "mcp") for "notion-mcp": the one place a source's name is
+    split, for a script that picks sources by channel."""
+    tool, _, channel = name.rpartition("-")
+    return tool, channel
+
+
 def load_config():
     """The user's config, for a script. Exits if it can't be read."""
     try:

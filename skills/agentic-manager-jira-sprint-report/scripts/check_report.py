@@ -33,7 +33,7 @@ from common import (INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expect
                     TICKET_EVENT_TYPES,
                     NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai, text_rule_problems,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty,
-                    ratio, report_file, report_timezone, scope_group_label, whole_percentage, word_count)
+                    ratio, report_file, report_timezone, scope_group_label, spell_epic, whole_percentage, word_count)
 
 
 def run_checks(md, data, report_dir):
@@ -215,7 +215,7 @@ def check_commentary_groups(c, data):
             group = "left_out"
         else:
             group = "completed"
-        epic = expected.setdefault(t["parentKey"] or NO_EPIC, {})
+        epic = expected.setdefault(spell_epic(t)[0], {})
         epic.setdefault(group, []).append(t["key"])
     for epic in data["epics"]:
         groups = {**epic["scope_groups"], "left_out": epic["left_out"]}
@@ -639,7 +639,7 @@ def epic_figures(data):
     agreeing with data.json's own epic figures."""
     figures = {}
     for spell in (s for s in data["spells"] if s["counted"]):
-        row = figures.setdefault(spell["parentKey"] or NO_EPIC, {
+        row = figures.setdefault(spell_epic(spell)[0], {
                                  "original": [0] * 4, "extra": [0] * 4})[spell["scope"]]
         points = spell["points"] or 0
         row[1] += 1
@@ -652,8 +652,8 @@ def epic_figures(data):
 
 def check_epic_commentary(c, epic, cell, status):
     """The labels of the groups the epic has tickets to describe in, in order
-    and a blank line apart; "–" if there are none. The sentences are the agent's, checked when the
-    report is written."""
+    and a blank line apart; "–" if there are none. The sentences are the
+    agent's, checked when the report is written."""
     labels = [scope_group_label(g, status) for g in epic_groups(epic)]
     if not labels:
         c.check(cell.strip() == "–", "epics",

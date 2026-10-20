@@ -46,7 +46,7 @@ This skill needs sources of three groups, each the evidence for one side of the 
 | `workflow`       | the tracker       | The delivery       | Scope, acceptance criteria, owners, progress, dependencies, blockers.             |
 | `source_control` | the code          | The implementation | Code, configuration, infrastructure, tests, workflows, pull requests, releases.   |
 
-The tracker is Jira, through the `jira-api` source, which this skill's `tickets.py` reads; the documentation and the code come through any enabled source of their groups whose channel is `mcp` or `cli`.
+The tracker is Jira, through the `jira-api` source, which this skill's `tickets.py` reads; the documentation and the code come through any enabled source of their groups whose channel is `mcp` or `cli`. `tickets.py` reads pull requests only through the `github-cli` source.
 
 It also needs Node.js 22.13 or newer, to draw and check the diagrams: `init_investigation.py` stops with a message if it is missing.
 

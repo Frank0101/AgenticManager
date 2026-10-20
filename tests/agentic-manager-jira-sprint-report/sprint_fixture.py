@@ -184,10 +184,8 @@ SPRINT_REPORT = {"contents": {
 COMMENTS = {"PROJ-7": [{"id": "1", "body": "Waiting on a dependency."}]}
 
 # The pull requests the fetch found, as fetch_sprint.py stores them, the
-# ticket's own before its sub-tasks': PROJ-1's own was opened after the close,
-# so the report, as at the close, leaves it out; the one found through its
-# sub-task PROJ-9 was opened on 05/03 and merged on 06/03 before it was
-# completed.
+# ticket's own before its sub-tasks': PROJ-1's own, opened after the close,
+# and one found through its sub-task PROJ-9. The build reads none of it.
 PR = "https://github.com/acme/api/pull/{}"
 PULL_REQUESTS = {
     "github_read": True,

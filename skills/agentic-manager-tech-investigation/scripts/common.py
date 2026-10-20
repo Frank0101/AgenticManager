@@ -16,10 +16,10 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.batch import gather  # noqa: E402,F401
-from agentic_manager.config import enabled_sources, is_enabled  # noqa: E402,F401
-from agentic_manager.github import GhError, gh_available, gh_found, pull_parts  # noqa: E402,F401
+from agentic_manager.config import enabled_sources, is_enabled, tool_channel  # noqa: E402,F401
+from agentic_manager.github import NAME as GITHUB_CLI, GhError, gh_available, gh_found, gh_signed_in, pull_parts  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
-from agentic_manager.jira import PROJECT_KEY, JiraClient, JiraError, browse_url, plain_text  # noqa: E402,F401
+from agentic_manager.jira import GROUP as JIRA_GROUP, NAME as JIRA_API, PROJECT_KEY, JiraClient, JiraError, browse_url, plain_text, project_of  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, clear_folder, day_folder, output_folder  # noqa: E402,F401
@@ -473,7 +473,7 @@ def unlinked_backticks(prose, linked_text=""):
     urls = [m[0] for m in TICKET_URL.finditer(prose + "\n" + linked_text)]
     projects = ticket_sites(urls)
     spans = [span[1:-1] for span in QUERY.findall(_strip_links(prose))]
-    return [s for s in spans if not (TICKET.fullmatch(s) and s.split("-")[0] not in projects)]
+    return [s for s in spans if not (TICKET.fullmatch(s) and project_of(s) not in projects)]
 
 
 def _strip_links(text):

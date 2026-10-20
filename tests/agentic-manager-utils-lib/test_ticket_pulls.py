@@ -1,12 +1,10 @@
 """Unit tests for skills/agentic-manager-utils-lib/agentic_manager/ticket_pulls.py.
 Run with: python3 tests/run.py agentic-manager-utils-lib
 
-gh answers from a fake runner, by the command after gh, so nothing reaches
-GitHub, and Jira from a fake client, its panels written as JiraClient
-returns them. A command the fake gh has no answer for fails.
+gh answers from a fake runner, so nothing reaches GitHub, and Jira from a
+fake client, its panels written as JiraClient returns them.
 """
 
-import json
 import os
 import subprocess
 import sys
@@ -19,42 +17,24 @@ sys.path.insert(0, os.path.join(
     REPO_ROOT, "skills", os.path.basename(TEST_DIR)))
 from agentic_manager import ticket_pulls  # noqa: E402
 from agentic_manager.ticket_pulls import PANEL  # noqa: E402
-from agentic_manager import retry  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from gh_fake import graphql_answer, is_graphql  # noqa: E402
-
-
-# Retries wait for real; here they needn't.
-retry.RETRY_WAITS = (0, 0, 0)
+from gh_fake import graphql_answer  # noqa: E402
 
 
 PR = "https://github.com/acme/api/pull/{}"
-REFUSED = "HTTP 401: Bad credentials"
 
 
 class gh:
-    """A runner that answers gh's commands from `answers`, by the words after
-    gh up to the first option, a GraphQL call by each pull request's
-    "pr view <url>", and records each command; a command it has no answer
-    for fails with REFUSED on stderr."""
+    """A runner that answers gh's GraphQL calls from `events`, each pull
+    request's by its URL, and records each command; GitHub can't resolve
+    one `events` hasn't."""
 
-    def __init__(self, answers):
-        self.answers, self.calls = answers, []
+    def __init__(self, events):
+        self.events, self.calls = events, []
 
     def __call__(self, command, **kwargs):
         self.calls.append(command)
-        if is_graphql(command[1:]):
-            return subprocess.CompletedProcess(command, *graphql_answer(
-                command[1:], lambda url: self.answers.get(f"pr view {url}")))
-        words = []
-        for word in command[1:]:
-            if word.startswith("--"):
-                break
-            words.append(word)
-        answer = self.answers.get(" ".join(words))
-        if answer is None:
-            return subprocess.CompletedProcess(command, 1, "", REFUSED)
-        return subprocess.CompletedProcess(command, 0, json.dumps(answer), "")
+        return subprocess.CompletedProcess(command, *graphql_answer(command[1:], self.events.get))
 
 
 class Panels:
@@ -147,7 +127,7 @@ class TicketPullsTest(unittest.TestCase):
     def test_read_events(self):
         events = {"url": PR.format(41), "state": "MERGED", "createdAt": "2026-10-01T08:00:00Z",
                   "mergedAt": "2026-10-10T08:00:00Z"}
-        run = gh({f"pr view {PR.format(41)}": events})
+        run = gh({PR.format(41): events})
         pulls = [{"url": PR.format(41)}, {"url": PR.format(41)},
                  {"url": "https://bitbucket.org/acme/api/pull-requests/3"}]
         # Each pull request on GitHub once, in one GraphQL call; one

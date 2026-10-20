@@ -15,12 +15,11 @@ titles found none, and GitHub's search allows about 30 requests a minute.
 Commits matter only as part of a pull request, what it changed; the current
 state of the code comes from the repository itself.
 
-pulls_by_ticket() takes whether to read pull requests at all, so a skill
-that reads them only on request, or only when GitHub can be read, as the
-panel alone gives no dates or changes, asks nothing of Jira otherwise; and
-every skill reads them the same way. Each pull request
-is a dict with the panel's fields, state, updatedAt, `found` (PANEL) and
-`via`. read_events() then reads when each was opened and merged, many in one
+pulls_by_ticket() takes `read`, whether to read them at all: a skill reads
+them only on request, or only when GitHub can be read, as the panel alone
+gives no dates or changes, and otherwise asks nothing of Jira. Each pull
+request is a dict with the panel's fields, state, updatedAt, `found` (PANEL)
+and `via`. read_events() then reads when each was opened and merged, many in one
 GraphQL call; as failures.py sets out, one GitHub says doesn't exist is
 returned with why, and any other gh failure raises GhError.
 """
@@ -75,8 +74,9 @@ def sub_tasks(client, keys):
 
 def panel_pulls(panel):
     """The pull requests of a ticket's Development panel, as
-    JiraClient.pull_requests() returns them, each as a found pull request
-    that keeps the panel's fields."""
+    JiraClient.pull_requests() returns them, each with the panel's fields
+    and its state (the panel's status, or ? without one), updatedAt and
+    `found`."""
     return [{**pr, "state": pr.get("status") or "?", "updatedAt": pr.get("lastUpdate"), "found": PANEL}
             for pr in panel]
 

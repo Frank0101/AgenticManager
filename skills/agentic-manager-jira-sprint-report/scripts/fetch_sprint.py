@@ -25,13 +25,13 @@ are fetched, not current values (see build_sprint_data.py). A ticket just read
 that Jira then says it has none of, such as one deleted meanwhile, is Jira's
 answer, as the library's failures.py sets out: said on stderr, and its
 changelog written empty, so its current values stand for its history, as
-for a ticket never changed. Nothing is computed
-here beyond choosing what to fetch: the previous sprint (for the carry-over),
-which comments and epics, and where to look for each ticket's pull requests;
-the raw files keep what was fetched, and build_sprint_data.py does the rest,
-such as leaving out the comments written after that moment. The tickets whose
-comments are fetched are the blocker candidates, worked out here from the
-changelogs (common.blocker_candidate_keys), as there are no events yet.
+for a ticket never changed. Nothing is computed here beyond choosing what to
+fetch: the previous sprint (for the carry-over), which comments and epics,
+and where to look for each ticket's pull requests; the raw files keep what
+was fetched, and build_sprint_data.py does the rest, such as leaving out the
+comments written after that moment. The tickets whose comments are fetched
+are the blocker candidates, worked out here from the changelogs
+(common.blocker_candidate_keys), as there are no events yet.
 
 Sub-tasks are left out of the report, as Jira's sprint report rolls their
 work into the parent, but their pull requests are the parent's: a ticket's
@@ -46,11 +46,10 @@ merge times, and the raw file records that GitHub wasn't read. With it, a
 pull request GitHub says doesn't exist, such as one deleted that Jira still
 links, is skipped: dropped from its tickets, said on stderr and kept in the
 raw file's `skipped` with GitHub's message, as there is nothing to read and
-nothing to fix. Any other
-gh failure, such as GitHub's rate limit, stops the fetch with gh's message
-and the library's advice: a pull request it couldn't read would otherwise be
-taken for work without times. A Jira or gh failure is raised to main, which
-stops with it (the library's failures.py).
+nothing to fix. Any other gh failure, such as GitHub's rate limit, stops the
+fetch with gh's message and the library's advice: a pull request it couldn't
+read would otherwise be taken for work without times. A Jira or gh failure
+is raised to main, which stops with it (the library's failures.py).
 """
 import argparse
 import json
@@ -63,7 +62,7 @@ from common import (CHANGELOGS_DIR, COMMENTS_DIR, META_FILE, PARENTS_FILE, PREVI
                     PUNTED_ISSUES_FILE, RAW_DIR, REPORTS_FOLDER, SPRINT_FILE, SPRINT_ISSUES_FILE,
                     SPRINT_REPORT_FILE, STATUSES_FILE, JiraClient, as_of, blocker_candidate_keys,
                     clear_folder, day_folder, gather, gh_available, history_fields, nested, output_folder, parse_ts,
-                    pulls_by_ticket, read_events, report_label, report_timezone,
+                    project_of, pulls_by_ticket, read_events, report_label, report_timezone,
                     standard_issues, status_categories, stops_on_failure, write_json)
 
 # Issue fields the report needs, besides the site's Flagged and story points fields.
@@ -129,7 +128,7 @@ def read_changelogs(client, issues, fields):
 def project_key_of(args, issues):
     if args.project:
         return args.project
-    return issues[0]["key"].rsplit("-", 1)[0] if issues else None
+    return project_of(issues[0]["key"]) if issues else None
 
 
 def pull_requests(client, issues, gh, run=subprocess.run):

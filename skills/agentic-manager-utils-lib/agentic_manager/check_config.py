@@ -30,7 +30,7 @@ makes it. The config is only ever written by --init, and never overwritten.
 "sources" lists every source of the template by group, enabled or not, so the
 calling skill decides what it needs. A source named "<tool>-<channel>" (e.g.
 "jira-api") comes already split into tool and channel, so skills never parse
-the name. A disabled source has "setup": how to enable it. Setting values are
+the name; a script splits it with config.tool_channel(). A disabled source has "setup": how to enable it. Setting values are
 never returned: they can hold secrets, which a script reads from the config
 itself.
 """
@@ -44,7 +44,7 @@ if not __package__:
     # Run as a script: import the package from the folder that holds it.
     sys.path.insert(0, os.path.dirname(
         os.path.dirname(os.path.realpath(__file__))))
-from agentic_manager.config import CONFIG_PATH, is_filled, is_text_list, load_json  # noqa: E402
+from agentic_manager.config import CONFIG_PATH, is_filled, is_text_list, load_json, tool_channel  # noqa: E402
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "config-template.json")
@@ -141,8 +141,7 @@ def _list_sources(config, template):
         sources[group] = {}
         for name, template_settings in template_sources.items():
             settings = config.get("sources", {}).get(group, {}).get(name, {})
-            # "notion-mcp" -> "notion", "mcp"
-            tool, _, channel = name.rpartition("-")
+            tool, channel = tool_channel(name)
             entry = {"tool": tool, "channel": channel,
                      "enabled": settings.get("enabled") is True}
             if not entry["enabled"]:

@@ -15,8 +15,7 @@ The spells are written by hand; every figure built from them (breakdown,
 epics, timeline, burndown) comes from build_sprint_data.py's own functions,
 which check_report.py verifies independently. Each ticket's events, which the
 model works its spells out from, are written to give those spells (see
-ticket_events), and PROJ-1's pull request was opened on 03/03 and merged on
-04/03.
+ticket_events).
 """
 import copy
 import os
