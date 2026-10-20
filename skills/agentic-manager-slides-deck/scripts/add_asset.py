@@ -121,6 +121,8 @@ def save(name, data, kind, description):
 
 
 def download(url):
+    # Tried once, not on the library's retry rule: it is one image, asked for
+    # by hand, and the agent runs the command again if it fails.
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(request, timeout=30, context=ssl_context()) as response:
