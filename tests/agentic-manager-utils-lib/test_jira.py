@@ -12,6 +12,7 @@ import re
 import sys
 import threading
 import unittest
+from email.message import Message
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 from urllib.parse import parse_qs, urlparse
@@ -312,6 +313,45 @@ class ClientTest(unittest.TestCase):
                              "displayName": "Alex Example"})
         self.assertEqual(opened.call_count, 2)
         self.assertEqual([c.args[0] for c in self.sleep.call_args_list], [1])
+
+    def test_retry_note(self):
+        # The line a retry prints names the request's path, never its
+        # query, which can hold JQL, and the kind of failure, from the
+        # error's type alone, never its text, which can echo the token.
+        # name: (the error a try raises, the line's start)
+        path = "/rest/api/3/search/jql"
+        unreachable = "Jira couldn't be reached"
+        cases = [
+            ("connection reset", ConnectionResetError(TOKEN),
+             f"{unreachable} (connection reset) on {path}"),
+            ("connection refused", ConnectionRefusedError(TOKEN),
+             f"{unreachable} (connection refused) on {path}"),
+            ("timed out", TimeoutError(TOKEN),
+             f"{unreachable} (timed out) on {path}"),
+            ("socket timeout", jira.socket.timeout(TOKEN),
+             f"{unreachable} (timed out) on {path}"),
+            ("name not resolved", jira.URLError(jira.socket.gaierror(8, TOKEN)),
+             f"{unreachable} (name not resolved) on {path}"),
+            ("wrapped reset", jira.URLError(ConnectionResetError(TOKEN)),
+             f"{unreachable} (connection reset) on {path}"),
+            ("text only", jira.URLError(TOKEN), f"{unreachable} on {path}"),
+            ("another error", ConnectionAbortedError(
+                TOKEN), f"{unreachable} on {path}"),
+            ("busy", jira.HTTPError(f"{self.base_url}{path}?jql={TOKEN}", 503, TOKEN, Message(), None),
+             f"Jira answered 503 on {path}"),
+        ]
+        for name, error, expected in cases:
+            with self.subTest(name):
+                response = mock.MagicMock()
+                response.__enter__.return_value = io.BytesIO(
+                    b'{"issues": [], "isLast": true}')
+                with mock.patch.object(jira, "urlopen", side_effect=[error, response]), \
+                        mock.patch.object(retry, "RETRY_WAITS", (1, 3, 9)), \
+                        mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                    self.client.search(
+                        f"project = PROJ AND summary ~ {TOKEN}", ["summary"])
+                self.assertEqual(stderr.getvalue(),
+                                 f"{expected}, trying again in 1 s\n")
 
     # --- queries and paging
 
@@ -682,8 +722,8 @@ class ClientTest(unittest.TestCase):
         # data; none named, nothing more is asked.
         detail = "/rest/dev-status/latest/issue/detail"
         # name: (call, the kind asked for, the key its items come under)
-        kinds = [("pull requests", self.client.pull_requests, "pullrequest", "pullRequests"),
-                 ("commits", self.client.commits, "repository", "repositories")]
+        kinds = [("pull requests", self.client.pull_requests,
+                  "pullrequest", "pullRequests")]
         for name, call, kind, items in kinds:
             for hosts, expected in (({"host-a": {}}, [{"n": 1}, {"n": 2}]), ({}, [])):
                 with self.subTest(name, hosts=hosts):

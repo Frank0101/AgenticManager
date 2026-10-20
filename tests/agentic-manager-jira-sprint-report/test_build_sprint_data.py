@@ -352,39 +352,6 @@ class TicketEventsTest(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(build.initial_sprints(changes, "7"), expected)
 
-    def test_github_events(self):
-        # The first pull request opened and the last merged, as at the
-        # close: later times are left out, and so are pull requests GitHub
-        # couldn't read.
-        def pr(number, via="PROJ-1"):
-            return {"url": f"https://github.com/acme/api/pull/{number}", "found": "panel", "via": via}
-
-        def times(number, opened, merged=None):
-            return {pr(number)["url"]: {"createdAt": opened, "mergedAt": merged}}
-        cases = [
-            # A sub-task's pull request is the ticket's, and says it came
-            # through the sub-task.
-            ("first opened and last merged of several", [pr(1), pr(2, via="PROJ-9")],
-             times(1, at("03-03"), at("03-08")) | times(
-                 2, at("03-02"), at("03-06")),
-             [("first_pr_opened", 2, at("03-02"), "panel", "PROJ-9"),
-              ("last_pr_merged", 1, at("03-08"), "panel", "PROJ-1")]),
-            ("opened, not merged", [pr(1)], times(1, at("03-03")),
-             [("first_pr_opened", 1, at("03-03"), "panel", "PROJ-1")]),
-            ("merged after the close", [pr(1)], times(1, at("03-03"), at("03-14")),
-             [("first_pr_opened", 1, at("03-03"), "panel", "PROJ-1")]),
-            ("opened after the close", [pr(1)], times(1, at("03-14")), []),
-            ("GitHub couldn't read it", [pr(1)], {pr(1)["url"]: None}, []),
-            ("not read", [pr(1)], {}, []),
-        ]
-        for name, pulls, read, expected in cases:
-            with self.subTest(name):
-                found = build.github_events(
-                    pulls, read, parse_ts(CLOSE), PLUS_ONE)
-                self.assertEqual([(e["type"], int(e["url"].rsplit("/", 1)[1]), e["at"], e["found"], e["via"])
-                                  for e in found], expected)
-                self.assertTrue(all(e["source"] == "github" for e in found))
-
     def test_spells_come_from_the_events_alone(self):
         # Hand-written events, with no changelog: committed at the start,
         # completed on 04/03.
@@ -392,9 +359,7 @@ class TicketEventsTest(unittest.TestCase):
             "sprint": ["7"], "status": "To Do", "statusCategory": "new", "resolution": None, "priority": "High",
             "parent": None, "parentId": None, "points": 3, "flagged": False}},
             {"at": at("03-04"), "date": "2026-03-04", "source": "jira", "type": "status_changed", "from": "To Do",
-             "to": "Done", "fromCategory": "new", "toCategory": "done"},
-            {"at": at("03-05"), "date": "2026-03-05", "source": "github", "type": "last_pr_merged",
-             "url": "https://github.com/acme/api/pull/1", "found": "panel", "via": "PROJ-1"}]
+             "to": "Done", "fromCategory": "new", "toCategory": "done"}]
         spell, = build.spells_from_events(
             raw("PROJ-1"), events, context(), CLOSE)
         self.assertEqual([(e["type"], e["done"], e["points"]) for e in spell["events"]],
@@ -794,6 +759,8 @@ class MainTest(unittest.TestCase):
         # {key: changes}; by default the current issues have none and the
         # removed ones a removal.
         self.changelogs = {}
+        # The raw pull request data, or None for no file: the build reads none.
+        self.pulls = None
 
     def write(self, name, payload):
         path = os.path.join(self.dir, common.RAW_DIR, name)
@@ -813,8 +780,8 @@ class MainTest(unittest.TestCase):
         self.write(common.SPRINT_REPORT_FILE, self.report)
         self.write(common.PREVIOUS_SPRINT_FILE, self.previous)
         self.write(common.PARENTS_FILE, [])
-        self.write(common.PULL_REQUESTS_FILE, {
-                   "github_read": False, "tickets": {}, "events": {}})
+        if self.pulls is not None:
+            self.write(common.PULL_REQUESTS_FILE, self.pulls)
         for issue in self.current + self.removed:
             default = [left(at("03-04"))] if issue in self.removed else []
             self.write(os.path.join(common.CHANGELOGS_DIR, f"{issue['key']}.json"),
@@ -886,7 +853,31 @@ class MainTest(unittest.TestCase):
         self.assertEqual(list(data["ticket_events"]), ["PROJ-1"])
         self.assertEqual([e["type"]
                          for e in data["ticket_events"]["PROJ-1"]], ["created"])
-        self.assertFalse(data["pull_request_events_read"])
+
+    def test_pull_request_data_is_left_out(self):
+        # The fetched pull request data is for a later use: with or without
+        # it, data.json is the same, its ticket events Jira's alone.
+        url = "https://github.com/acme/api/pull/41"
+        read = {"github_read": True, "skipped": [],
+                "tickets": {"PROJ-1": [{"url": url, "state": "MERGED", "found": "panel", "via": "PROJ-1"}]},
+                "events": {url: {"url": url, "state": "MERGED", "createdAt": at("03-03"),
+                                 "mergedAt": at("03-04")}}}
+        # name: the raw pull request data, or None for no file
+        cases = [("no file", None),
+                 ("GitHub not read", {"github_read": False,
+                  "tickets": {}, "events": {}, "skipped": []}),
+                 ("GitHub read", read)]
+        found = []
+        for name, pulls in cases:
+            with self.subTest(name):
+                self.reset()
+                self.pulls = pulls
+                data = self.run_main()
+                self.assertNotIn("pull_request_events_read", data)
+                self.assertEqual({e["source"] for events in data["ticket_events"].values() for e in events},
+                                 {"jira"})
+                found.append({k: v for k, v in data.items() if k != "label"})
+        self.assertEqual(found[1:], found[:1] * 2)
 
     def test_active_sprint_runs_to_the_fetch(self):
         # The fetch ends actuals both before and after the planned end.

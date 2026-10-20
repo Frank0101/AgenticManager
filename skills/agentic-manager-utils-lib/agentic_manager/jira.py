@@ -37,7 +37,9 @@ Jira drops connections and answers 5xx when a skill reads many issues at
 once: such a request is passing, tried again on retry.py's waits before the
 skill is stopped. A 429, too many requests, is a rate limit, final as every
 service's is, with the advice to wait a minute. A POST is tried again too: the
-only one, the batched changelog read, reads and changes nothing.
+only one, the batched changelog read, reads and changes nothing. The line
+each wait prints names the request's path, never its query, which can hold
+JQL, and the kind of failure by its error's type, never the error's text.
 
 Many issues' changelogs are read in batches, through Jira's "bulk fetch"
 endpoint: one request for each batch of issues (batch.py) rather than one per
@@ -52,6 +54,7 @@ that isn't there from one it read.
 import base64
 import json
 import re
+import socket
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from urllib.error import HTTPError, URLError
@@ -85,6 +88,11 @@ BATCH_CHANGELOG_PAGE = 10000
 NO_SUCH_TICKET = "Jira has no such ticket, or this account can't see it"
 # The answers that mean Jira is busy or briefly unwell, not that the request is wrong.
 TRANSIENT_CODES = {500, 502, 503, 504}
+# The kind of a connection that failed, for the line a retry prints, by the
+# type of its error, never its text, which can echo the request or a secret;
+# the first that matches, so a subclass comes before its base.
+FAILURE_KINDS = ((ConnectionResetError, "connection reset"), (ConnectionRefusedError, "connection refused"),
+                 (socket.gaierror, "name not resolved"), (TimeoutError, "timed out"))
 DEV_STATUS = "/rest/dev-status/latest/issue"
 # The type of Jira Software's Sprint field. A site can have other fields named
 # Sprint, so the field is found by its type.
@@ -354,12 +362,6 @@ class JiraClient:
         repositoryName; [] for none."""
         return self._development(issue_id, "pullrequest", "pullRequests")
 
-    def commits(self, issue_id):
-        """The repositories an issue's Development panel lists, each with the
-        commits that name the issue: name, url and commits (id, displayId,
-        message, authorTimestamp, url); [] for none."""
-        return self._development(issue_id, "repository", "repositories")
-
     def _development(self, issue_id, data_type, items):
         """The `items` of one kind of the Development panel, from every code
         host its summary names."""
@@ -477,7 +479,7 @@ class JiraClient:
             with urlopen(request, timeout=30, context=ssl_context()) as response:
                 return json.load(response)
         try:
-            return retried(attempt, passing, note)
+            return retried(attempt, passing, lambda error: note(error, path))
         except HTTPError as e:
             if e.code == 401:
                 raise JiraError(f"Jira returned 401 Unauthorized for {path}.",
@@ -558,12 +560,23 @@ def passing(error):
     return isinstance(error, (URLError, TimeoutError, ConnectionError))
 
 
-def note(error):
+def note(error, path):
     """What failed, for the line a retry prints: the status Jira answered,
-    never its body or the request, which a secret could be in."""
+    or the kind of failure when it gave none, and `path`, the request's path
+    without its query, which can hold JQL; never Jira's body or the error's
+    text, which a secret could be in."""
     if isinstance(error, HTTPError):
-        return f"Jira answered {error.code}"
-    return "Jira couldn't be reached"
+        return f"Jira answered {error.code} on {path}"
+    kind = failure_kind(error)
+    return f"Jira couldn't be reached{f' ({kind})' if kind else ''} on {path}"
+
+
+def failure_kind(error):
+    """The kind of a failed connection, such as "connection reset", from the
+    type of `error` or, for a URLError, of the error it wraps (its reason);
+    None for any other."""
+    reason = error.reason if isinstance(error, URLError) else error
+    return next((words for kind, words in FAILURE_KINDS if isinstance(reason, kind)), None)
 
 
 def excluded_reason(key):

@@ -37,21 +37,32 @@ def issue(key, kind="Story", status="To Do", summary="Something", **fields):
                                               "summary": summary, **fields}}
 
 
-def commit(sha, message):
-    return {"id": sha, "displayId": sha[:2], "message": message, "authorTimestamp": "2026-10-08T08:00:00.000+0000",
-            "url": f"https://github.com/acme/api/commit/{sha}"}
-
-
 # Why the client reads nothing for a key, as it answers: one Jira doesn't
 # have, and one of an excluded project.
 UNREAD = {"PROJ-404": "PROJ-404: Jira has no such ticket, or this account can't see it",
           "EXCL-1": "EXCL-1 is of a project excluded by `excluded-projects`: it is never read"}
 
 
+# The ticket's sub-task, as both the search for its children and that for
+# its sub-tasks find it.
+SUB_TASK = {**issue("PROJ-124", "Sub-task", "Done", "Add the retry worker",
+                    parent={"key": "PROJ-123"}), "id": "124"}
+# The sub-task's panel lists #41 again and #60, which only it links.
+PANELS = {"1": [{"url": PR.format(41), "status": "MERGED", "source": {"branch": "PROJ-123-retry"},
+                 "destination": {"branch": "main"}, "lastUpdate": "2026-10-10T08:00:00.000+0000"}],
+          "124": [{"url": PR.format(41), "status": "MERGED"},
+                  {"url": PR.format(60), "status": "OPEN", "source": {"branch": "PROJ-124-worker"},
+                   "destination": {"branch": "main"}, "lastUpdate": "2026-10-12T08:00:00.000+0000"}]}
+
+
 class FakeClient:
     """The client calls tickets.py makes, answering for ticket PROJ-123 (asked
-    as OLD-9, its key before it moved)."""
+    as OLD-9, its key before it moved), and recording each search and panel
+    read."""
     base_url = "https://acme.atlassian.net"
+
+    def __init__(self):
+        self.read = []
 
     def issue(self, key, fields):
         if key in UNREAD:
@@ -74,28 +85,18 @@ class FakeClient:
                                   "outwardIssue": issue("PROJ-130", summary="Switch the gateway")}]), None
 
     def search(self, jql, fields):
-        assert jql == "parent = PROJ-123 ORDER BY key", jql
-        return [issue("PROJ-124", "Sub-task", "Done", "Add the retry worker")]
+        assert jql in ("parent = PROJ-123 ORDER BY key",
+                       "parent in (PROJ-123) AND issuetype in subTaskIssueTypes()"), jql
+        self.read.append(("search", jql))
+        return [SUB_TASK]
 
     def comments(self, key):
         return [{"created": "2026-09-05T10:00:00.000+0100", "author": {"displayName": "Alex Example"},
                  "body": "Agreed: retry three times.\nThen dead-letter."}]
 
     def pull_requests(self, issue_id):
-        return [{"url": PR.format(41), "status": "MERGED", "source": {"branch": "PROJ-123-retry"},
-                 "destination": {"branch": "main"}, "lastUpdate": "2026-10-10T08:00:00.000+0000"}]
-
-    def commits(self, issue_id):
-        # c1 is in #41, c4 in #47, c2 in #60, which Jira doesn't link; c3
-        # reached main in no pull request; c5 is on no branch any more.
-        return [{"name": "acme/api", "commits": [commit("c1", "PROJ-123 Add the worker"),
-                                                 commit(
-                                                     "c2", "PROJ-123 Hotfix\n\nDetails."),
-                                                 commit(
-                                                     "c3", "PROJ-123 Tweak on main"),
-                                                 commit(
-                                                     "c4", "PROJ-123 Backoff"),
-                                                 commit("c5", "PROJ-123 Draft")]}]
+        self.read.append(("pulls", issue_id))
+        return PANELS.get(issue_id, [])
 
     def remote_links(self, key):
         return [{"object": {"title": "Retry design", "url": "https://acme.test/design"}}]
@@ -145,48 +146,42 @@ class failing_gh(gh):
         return subprocess.CompletedProcess(command, 1, "", self.message + "\n")
 
 
-# What gh says when GitHub has no such pull request, repository or commit,
-# and the line printed for it.
+# What gh says when GitHub has no such pull request, and the line printed
+# for it.
 NO_PULL = "GraphQL: Could not resolve to a PullRequest with the number of {}. (repository.pullRequest)"
-NOT_FOUND = "gh: Not Found (HTTP 404)"
-NO_COMMIT = "gh: No commit found for SHA: {} (HTTP 422)"
 
 
 def missing(thing, words):
     return f"GitHub has no such {thing}, or this account can't see it: {words}"
 
 
-DETAIL = {"mergeCommit": {"oid": "m41"}, "mergedAt": "2026-10-10T08:00:00Z", "baseRefName": "main",
-          "headRefName": "x", "changedFiles": 2, "files": [{"path": "worker.py"}, {"path": "queue.py"}],
-          "commits": [{"oid": "c1"}]}
-SEARCH = [{"url": PR.format(41), "state": "MERGED", "title": "PROJ-123 Retry", "body": ""},
-          {"url": PR.format(47), "state": "OPEN", "title": "PROJ-123: Backoff",
-           "body": "", "updatedAt": "2026-10-12T08:00:00Z"},
-          # Names the key only in its description: a mention, never listed.
-          {"url": PR.format(49), "state": "OPEN", "title": "Tune the backoff",
-           "body": "Follow-up to PROJ-123.", "updatedAt": "2026-10-13T08:00:00Z"},
-          {"url": PR.format(48), "state": "MERGED", "title": "[PROJ-123] Jitter", "body": "",
-           "updatedAt": "2026-10-11T08:00:00Z"},
-          {"url": PR.format(50), "state": "OPEN", "title": "PROJ-1234 Other", "body": ""}]
-GH = {"search prs": SEARCH,
-      "pr view": {PR.format(41): DETAIL,
-                  PR.format(47): {**DETAIL, "mergeCommit": None, "headRefName": "backoff", "commits": [{"oid": "c4"}]},
-                  PR.format(48): {**DETAIL, "mergeCommit": {"oid": "m48"}, "headRefName": "jitter", "commits": []},
-                  PR.format(60): {**DETAIL, "mergeCommit": {"oid": "m60"}, "headRefName": "hotfix",
-                                  "commits": [{"oid": "c2"}]}},
-      "api repos/acme/api/commits/c2/pulls": [{"url": PR.format(60), "state": "MERGED",
-                                               "updatedAt": "2026-10-09T08:00:00Z"}],
-      "api repos/acme/api/commits/c3/pulls": [], "api repos/acme/api/commits/c5/pulls": [],
-      "api repos/acme/api": {"branch": "main"},
-      "api repos/acme/api/compare/main...c3": {"status": "behind"},
-      "api repos/acme/api/compare/main...c5": {"status": "diverged"}}
+DETAIL = {"mergeCommit": {"oid": "m41"}, "mergedAt": "2026-10-10T08:00:00Z", "changedFiles": 2,
+          "files": [{"path": "worker.py"}, {"path": "queue.py"}],
+          "commits": [{"oid": "c1", "committedDate": "2026-10-08T08:00:00Z", "messageHeadline": "Add the worker"},
+                      {"oid": "c2", "committedDate": "2026-10-09T08:00:00Z", "messageHeadline": "Cap retries"}]}
+GH = {"pr view": {PR.format(41): DETAIL,
+                  PR.format(60): {**DETAIL, "mergeCommit": None, "changedFiles": 3, "commits": []}}}
+# The pull requests printed for PROJ-123: its own, then those only its
+# sub-task links, with the sub-task it came through.
+PULL_LINES = [
+    "Pull requests (2):",
+    "  acme/api#41 · MERGED · PROJ-123-retry → main · updated 2026-10-10 · " +
+    PR.format(41),
+    "      merge commit m41 on 2026-10-10 · files changed (2): worker.py, queue.py",
+    "      commits (2):",
+    "        c1 · 2026-10-08 · Add the worker",
+    "        c2 · 2026-10-09 · Cap retries",
+    "  acme/api#60 · OPEN · PROJ-124-worker → main · updated 2026-10-12 · " +
+    PR.format(60) + " · via PROJ-124",
+    # gh lists at most 100 files: the count says how many there are.
+    "      not merged · files changed (2 of 3): worker.py, queue.py",
+    "      commits (0):"]
 
 
 class TicketTest(unittest.TestCase):
     def test_ticket(self):
-        run = gh(GH)
-        text = tickets.ticket(FakeClient(), "OLD-9", SITE,
-                              ["acme-labs"], True, run)
+        run, client = gh(GH), FakeClient()
+        text = tickets.ticket(client, "OLD-9", SITE, True, True, run)
         self.assertEqual(text, "\n".join([
             "PROJ-123 · Story · In Progress · Retry failed payments · https://acme.atlassian.net/browse/PROJ-123",
             "Moved: OLD-9 is now PROJ-123",
@@ -204,48 +199,47 @@ class TicketTest(unittest.TestCase):
             "", "Children (1):", "  PROJ-124 · Sub-task · Done · Add the retry worker",
             "", "Links (1):", "  blocks PROJ-130 · Story · To Do · Switch the gateway",
             "", "Web links (1):", "  Retry design · https://acme.test/design",
-            "", "Pull requests (4):",
-            "  acme/api#41 · MERGED · PROJ-123-retry → main · updated 2026-10-10 · " +
-                PR.format(41),
-            "      merge commit m41 on 2026-10-10 · files changed (2): worker.py, queue.py",
-            # Found by gh; #50 names PROJ-1234, not PROJ-123, and #49 names
-            # it only in its description.
-            "  acme/api#47 · OPEN · backoff → main · updated 2026-10-12 · " +
-                PR.format(47)
-            + " · names the key in its title, not linked in Jira",
-            "      not merged · files changed (2): worker.py, queue.py",
-            # A key in brackets, as titles often carry it, still names it.
-            "  acme/api#48 · MERGED · jitter → main · updated 2026-10-11 · " +
-                PR.format(48)
-            + " · names the key in its title, not linked in Jira",
-            "      merge commit m48 on 2026-10-10 · files changed (2): worker.py, queue.py",
-            "  acme/api#60 · MERGED · hotfix → main · updated 2026-10-09 · " +
-                PR.format(60)
-            + " · holds commits that name the key, not linked in Jira",
-            "      merge commit m60 on 2026-10-10 · files changed (2): worker.py, queue.py",
-            "", "Commits on the default branch in no pull request (1):",
-            "  acme/api c3 · 2026-10-08 · PROJ-123 Tweak on main · https://github.com/acme/api/commit/c3",
-            "  1 more in no pull request and not on the default branch, such as work rebased away before a merge",
+            "", *PULL_LINES,
             "", "Comments (1):",
             "  2026-09-05 · Alex Example: Agreed: retry three times.\n    Then dead-letter.",
         ]))
-        # Searched in the owners given and those of the linked pull requests.
-        searches = [c for c in run.calls if c[1:3] == ["search", "prs"]]
-        self.assertEqual([c[c.index("--owner") + 1]
-                         for c in searches], ["acme", "acme-labs"])
-        self.assertNotIn(PR.format(49), text)
+        # The panels of the ticket and its sub-task, found by one search by
+        # parent; gh only views each pull request once: no search of
+        # titles, no commit's pull requests and no comparison.
+        self.assertEqual(
+            sorted(r[1] for r in client.read if r[0] == "pulls"), ["1", "124"])
+        self.assertIn(
+            ("search", "parent in (PROJ-123) AND issuetype in subTaskIssueTypes()"), client.read)
+        self.assertEqual(sorted(c[3] for c in run.calls), [
+                         PR.format(41), PR.format(60)])
+        self.assertTrue(all(c[1:3] == ["pr", "view"]
+                        for c in run.calls), run.calls)
 
-    def test_without_gh(self):
-        text = tickets.ticket(FakeClient(), "PROJ-123",
-                              NO_FIELDS, ["acme-labs"], False, gh({}))
-        for wanted in [
-                "  gh isn't available or github-cli isn't enabled: merge commits, files changed and pull requests "
-                "that name the key in their title without being linked in Jira weren't read",
-                "Commits, those in pull requests not told apart without gh (5):",
-                "  acme/api c2 · 2026-10-08 · PROJ-123 Hotfix · https://github.com/acme/api/commit/c2"]:
-            self.assertIn(wanted, text.split("\n"))
-        self.assertNotIn("Acceptance criteria:", text)
-        self.assertIn("Sprints (0):", text)
+    def test_pull_requests_only_when_asked(self):
+        # Without --prs, only the ticket is read from Jira: no panel, no
+        # search for sub-tasks, nothing of GitHub, and no pull request
+        # section. With --prs but without gh, no panel is read either, and
+        # the output says why in one line.
+        # name: (prs, gh, the lines from the web links to the comments)
+        web = [
+            "Web links (1):", "  Retry design · https://acme.test/design", ""]
+        cases = [("without --prs", False, True, web),
+                 ("without --prs or gh", False, False, web),
+                 ("--prs without gh", True, False,
+                  [*web, "Pull requests (not read):", f"  {tickets.NO_GH}", ""])]
+        for name, prs, with_gh, expected in cases:
+            with self.subTest(name):
+                run, client = gh(GH), FakeClient()
+                lines = tickets.ticket(
+                    client, "PROJ-123", NO_FIELDS, prs, with_gh, run).split("\n")
+                start = lines.index("Web links (1):")
+                self.assertEqual(
+                    lines[start:lines.index("Comments (1):")], expected)
+                self.assertEqual(
+                    client.read, [("search", "parent = PROJ-123 ORDER BY key")])
+                self.assertEqual(run.calls, [])
+                self.assertNotIn("Acceptance criteria:", lines)
+                self.assertIn("Sprints (0):", lines)
 
     def test_jira_answers(self):
         # A ticket Jira doesn't have, or of an excluded project, is Jira's
@@ -253,10 +247,10 @@ class TicketTest(unittest.TestCase):
         for key, expected in UNREAD.items():
             with self.subTest(key):
                 self.assertEqual(tickets.ticket(
-                    FakeClient(), key, NO_FIELDS, [], False), expected)
+                    FakeClient(), key, NO_FIELDS, True, False), expected)
         # Any other failure is raised, with Jira's message.
         with self.assertRaisesRegex(JiraError, "Jira returned 500"):
-            tickets.ticket(FakeClient(), "PROJ-500", NO_FIELDS, [], False)
+            tickets.ticket(FakeClient(), "PROJ-500", NO_FIELDS, True, False)
         # On the command line, the answers print with the other tickets, and
         # a failure stops it, printing nothing but Jira's message.
         # name: (keys, what is printed, the message it stops with or None)
@@ -281,78 +275,41 @@ class TicketTest(unittest.TestCase):
                         "PROJ-123 · Story"), blocks[1])
 
     def test_github_has_none(self):
-        # A pull request, commit or repository GitHub has none of is its
-        # answer: why is printed where it would have been, and the rest
+        # A pull request GitHub has none of is its answer: why is printed
+        # where what it changed would have been, asked once, and the rest
         # still prints.
-        c3 = "  acme/api c3 · 2026-10-08 · PROJ-123 Tweak on main · https://github.com/acme/api/commit/c3"
-        c5 = "  acme/api c5 · 2026-10-08 · PROJ-123 Draft · https://github.com/acme/api/commit/c5"
-        rebased = ("  1 more in no pull request and not on the default branch, such as work rebased away before "
-                   "a merge")
-        # name: (the gh command GitHub has nothing for, by its first words,
-        # gh's words, the lines expected in the output)
-        cases = [
-            ("a pull request", f"pr view {PR.format(48)}", NO_PULL.format(48), [
-                f"  acme/api#48 · MERGED · ? → ? · updated 2026-10-11 · {PR.format(48)} · names the key in its "
-                "title, not linked in Jira",
-                "      " + missing("pull request", NO_PULL.format(48)),
-                "  acme/api#60 · MERGED · hotfix → main · updated 2026-10-09 · " +
-                PR.format(60)
-                + " · holds commits that name the key, not linked in Jira"]),
-            ("a commit's pull requests", "api repos/acme/api/commits/c5/pulls", NO_COMMIT.format("c5"), [
-                "Commits on the default branch in no pull request (1):", c3,
-                "", "Commits GitHub didn't find (1):",
-                f"{c5} · {missing('commit', NO_COMMIT.format('c5'))}", "", "Comments (1):"]),
-            ("the repository", "api repos/acme/api", NOT_FOUND, [
-                "Commits on the default branch in no pull request (0):",
-                "", "Commits GitHub didn't find (2):",
-                f"{c3} · {missing('repository', NOT_FOUND)}",
-                f"{c5} · {missing('repository', NOT_FOUND)}", "", "Comments (1):"]),
-            ("a comparison", "api repos/acme/api/compare/main...c5", NOT_FOUND, [
-                "Commits on the default branch in no pull request (1):", c3,
-                "", "Commits GitHub didn't find (1):",
-                f"{c5} · {missing('commit', NOT_FOUND)}", "", "Comments (1):"]),
-        ]
-        for name, failing, message, expected in cases:
-            with self.subTest(name):
-                run = failing_gh(failing, message)
-                lines = tickets.ticket(FakeClient(), "PROJ-123", NO_FIELDS, [
-                                       "acme-labs"], True, run).split("\n")
-                start = lines.index(expected[0])
-                self.assertEqual(lines[start:start + len(expected)], expected)
-                self.assertEqual(rebased in lines, name == "a pull request")
-                # Asked once: an answer isn't tried again.
-                self.assertEqual(
-                    [" ".join(c[1:]).split(" --")[0] for c in run.calls].count(failing), 1)
+        failing = f"pr view {PR.format(60)}"
+        run = failing_gh(failing, NO_PULL.format(60))
+        lines = tickets.ticket(FakeClient(), "PROJ-123",
+                               NO_FIELDS, True, True, run).split("\n")
+        start = lines.index(PULL_LINES[0])
+        self.assertEqual(lines[start:start + len(PULL_LINES) - 1],
+                         [*PULL_LINES[:-2], "      " + missing("pull request", NO_PULL.format(60))])
+        self.assertIn("Comments (1):", lines)
+        self.assertEqual([" ".join(c[1:]).split(" --")[0]
+                         for c in run.calls].count(failing), 1)
 
     def test_a_gh_failure_stops(self):
+        # Never printed as a pull request with nothing to show: the failure
+        # is raised, and the command line stops with gh's words and the
+        # library's advice.
         ticket = tickets.ticket
-        # Never printed as a pull request, owner or commit with nothing to
-        # show: the failure is raised, wherever gh fails, and the command
-        # line stops with gh's words and the library's advice.
-        # name: (the gh command that fails, by its first words)
-        cases = [("a title search", "search prs PROJ-123"),
-                 ("a pull request's view", f"pr view {PR.format(47)}"),
-                 ("a commit's pull requests", "api repos/acme/api/commits/c3/pulls"),
-                 ("the default branch", "api repos/acme/api"),
-                 ("a comparison with it", "api repos/acme/api/compare/main...c5")]
-        for name, failing in cases:
-            with self.subTest(name):
-                run = failing_gh(failing)
-                with self.assertRaisesRegex(GhError, REFUSED):
-                    tickets.ticket(FakeClient(), "PROJ-123",
-                                   NO_FIELDS, ["acme-labs"], True, run)
-                with mock.patch.object(tickets, "JiraClient", return_value=FakeClient()), \
-                        mock.patch.object(tickets, "site_fields", return_value=NO_FIELDS), \
-                        mock.patch.object(tickets, "gh_available", return_value=True), \
-                        mock.patch.object(tickets, "ticket", side_effect=lambda client, key, site, owners, gh: ticket(
-                            client, key, site, owners, gh, run)), \
-                        contextlib.redirect_stdout(io.StringIO()) as printed, \
-                        self.assertRaises(SystemExit) as stopped:
-                    tickets.main(["show", "PROJ-123"])
-                self.assertEqual(printed.getvalue(), "")
-                self.assertRegex(str(stopped.exception.code), "^GitHub couldn't be read: gh .*: " + REFUSED +
-                                 r"\. Check that gh works \(gh auth status\) and run it again, or disable the "
-                                 "github-cli source to go on without GitHub\\.$")
+        run = failing_gh(f"pr view {PR.format(60)}")
+        with self.assertRaisesRegex(GhError, REFUSED):
+            tickets.ticket(FakeClient(), "PROJ-123",
+                           NO_FIELDS, True, True, run)
+        with mock.patch.object(tickets, "JiraClient", return_value=FakeClient()), \
+                mock.patch.object(tickets, "site_fields", return_value=NO_FIELDS), \
+                mock.patch.object(tickets, "gh_available", return_value=True), \
+                mock.patch.object(tickets, "ticket", side_effect=lambda client, key, site, prs, gh: ticket(
+                    client, key, site, prs, gh, run)), \
+                contextlib.redirect_stdout(io.StringIO()) as printed, \
+                self.assertRaises(SystemExit) as stopped:
+            tickets.main(["show", "PROJ-123", "--prs"])
+        self.assertEqual(printed.getvalue(), "")
+        self.assertRegex(str(stopped.exception.code), "^GitHub couldn't be read: gh .*: " + REFUSED +
+                         r"\. Check that gh works \(gh auth status\) and run it again, or disable the "
+                         "github-cli source to go on without GitHub\\.$")
 
     def test_command_line(self):
         # Each command reaches its function with the arguments given.
@@ -360,9 +317,11 @@ class TicketTest(unittest.TestCase):
         client = mock.Mock(search=mock.Mock(return_value=[issue("PROJ-2")]))
         cases = [
             ("show", ["show", "PROJ-1", "PROJ-2"],
-             [mock.call(client, "PROJ-1", SITE, [], True), mock.call(client, "PROJ-2", SITE, [], True)], [], []),
-            ("show --owner", ["show", "PROJ-1", "--owner", "acme", "--owner", "acme-labs"],
-             [mock.call(client, "PROJ-1", SITE, ["acme", "acme-labs"], True)], [], []),
+             [mock.call(client, "PROJ-1", SITE, False, True),
+              mock.call(client, "PROJ-2", SITE, False, True)],
+             [], []),
+            ("show --prs", ["show", "PROJ-1", "--prs"],
+             [mock.call(client, "PROJ-1", SITE, True, True)], [], []),
             ("pr", ["pr", PR.format(41), PR.format(47)], [],
              [mock.call(PR.format(41)), mock.call(PR.format(47))], []),
             ("search", ["search", "parent = PROJ-1"], [], [],
@@ -382,6 +341,10 @@ class TicketTest(unittest.TestCase):
                 self.assertCountEqual(
                     discussion.call_args_list, discussed)
                 self.assertCountEqual(client.search.call_args_list, searched)
+        # GitHub isn't searched by owner any more: --owner is refused.
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as refused:
+            tickets.main(["show", "PROJ-1", "--owner", "acme"])
+        self.assertEqual(refused.exception.code, 2)
 
     def test_pr_discussion(self):
         answers = {"pr view": {PR.format(41): {

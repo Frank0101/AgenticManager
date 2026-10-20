@@ -435,17 +435,11 @@ class ChecksTest(unittest.TestCase):
                     "from": "Medium", "to": "High"})), "model: PROJ-3's ticket events are well formed"),
             ("a second creation", lambda d: d["ticket_events"]["PROJ-3"].insert(
                 0, ticket_event(d, "PROJ-3", "created")), "model: PROJ-3's ticket events are well formed"),
-            ("a pull request found an unknown way", lambda d: ticket_event(d, "PROJ-1", "last_pr_merged").update(
-                found="guess"), "model: PROJ-1's ticket events are well formed"),
-            ("a pull request through no ticket", lambda d: ticket_event(d, "PROJ-1", "last_pr_merged").update(
-                via="guess"), "model: PROJ-1's ticket events are well formed"),
-            ("a merge before the first opening", lambda d: (
-                ticket_event(
-                    d, "PROJ-1", "first_pr_opened").update(at="2026-03-04T09:30:00Z", date="2026-03-04"),
-                d["ticket_events"]["PROJ-1"].sort(key=lambda e: parse_ts(e["at"]))),
-             "model: PROJ-1's first pull request was opened no later than its last was merged"),
-            ("pull request events GitHub wasn't read for", lambda d: d.update(pull_request_events_read=False),
-             "model: pull request events only when GitHub was read"),
+            # The build leaves the pull request data out, so a GitHub event is unknown.
+            ("a pull request event", lambda d: d["ticket_events"]["PROJ-1"].append(
+                event_at("2026-03-04T09:00:00Z", source="github", type="last_pr_merged",
+                         url="https://github.com/acme/api/pull/41", found="panel", via="PROJ-1")),
+             "model: PROJ-1's ticket events are well formed"),
             ("events of a ticket without a spell", lambda d: d["ticket_events"].update(
                 {"PROJ-9": d["ticket_events"]["PROJ-3"]}),
              "model: every ticket with a spell has its events, and no other ticket"),

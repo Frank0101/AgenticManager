@@ -17,14 +17,14 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.config import enabled_sources, is_enabled  # noqa: E402,F401
-from agentic_manager.github import PULL_URL, GhError, gh_available, gh_found  # noqa: E402,F401
+from agentic_manager.github import GhError, gh_available, gh_found, pull_parts  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
 from agentic_manager.jira import PROJECT_KEY, JiraClient, JiraError, browse_url, plain_text  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.text import DEFINITION, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, free_name, heading_anchor, headings, link_definitions, link_text, links, local_link, markdown, reference_key, slug, word_count  # noqa: E402,F401
-from agentic_manager.ticket_pulls import COMMITS, PANEL, SEARCH, first_found, holding_pulls, panel_commits, panel_pulls, search_pulls  # noqa: E402,F401
+from agentic_manager.ticket_pulls import pulls_by_ticket  # noqa: E402,F401
 
 FOLDER_NAME = "tech-investigations"
 EXAMPLES = "_examples"

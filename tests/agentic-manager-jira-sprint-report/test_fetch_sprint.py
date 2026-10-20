@@ -343,7 +343,7 @@ class PullRequestsTest(unittest.TestCase):
                 # One search for every ticket's sub-tasks, and every panel
                 # of a ticket and its sub-tasks read.
                 self.assertEqual([r for r in client.read if r[0] == "search"],
-                                 [("search", "parent in (PROJ-1,PROJ-2,PROJ-3)")])
+                                 [("search", "parent in (PROJ-1,PROJ-2,PROJ-3) AND issuetype in subTaskIssueTypes()")])
                 self.assertEqual({r[1] for r in client.read if r[0] == "pulls"},
                                  {"1", "2", "3", "PROJ-11", "PROJ-12", "PROJ-21", "PROJ-31"})
                 self.assertTrue(

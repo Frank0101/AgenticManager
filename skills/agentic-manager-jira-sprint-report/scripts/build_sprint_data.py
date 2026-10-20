@@ -10,12 +10,10 @@ same raw files always give the same figures and can be audited against them.
 One model for the whole report, built in two steps: each ticket's events from
 the raw files, then its spells from its events.
 
-  * A ticket's events (`ticket_events`) are its history from every source, in
-    time order: Jira's creation, with each tracked field's value then, and
-    every change of a tracked field; GitHub's first pull request opened and
-    last merged. They are kept per ticket, not per spell: a ticket has one
-    history however often it left and came back, and what another source
-    knows, such as its pull requests, belongs to the ticket.
+  * A ticket's events (`ticket_events`) are its history, in time order:
+    Jira's creation, with each tracked field's value then, and every change
+    of a tracked field. They are kept per ticket, not per spell: a ticket has
+    one history however often it left and came back.
   * Its time in the sprint is split into spells, each with its dated events
     (committed or joined, completed, reopened, reestimated, removed), worked
     out once from those events, never from the raw files again, so a ticket's
@@ -33,8 +31,8 @@ Decisions behind the model:
     running sprint), rebuilt from changelogs, never as Jira shows them today,
     so a report run later gives the same figures: later events are left out.
     Descriptions are the exception: Jira keeps no usable history of them.
-  * Pull requests give events only when GitHub was read (pull_requests.json's
-    github_read): Jira's Development panel alone has no open or merge times.
+  * The pull request data (_raw/pull_requests.json) is fetched for a later
+    use; the build leaves it out until then.
   * The commitment is what was in the sprint at its start instant, Done or not,
     as Jira's sprint report counts it.
   * A ticket that leaves ends its spell as descoped; one that joins later, even
@@ -77,7 +75,7 @@ import os
 from datetime import date, datetime, time, timedelta, tzinfo
 
 from common import (CHANGELOGS_DIR, COMMENTS_DIR, DATA_FILE, META_FILE, OUTCOME_ROWS, OUTCOMES, PARENTS_FILE,
-                    PREVIOUS_SPRINT_FILE, PULL_REQUESTS_FILE, PUNTED_ISSUES_FILE, RAW_DIR, SPRINT_FILE,
+                    PREVIOUS_SPRINT_FILE, PUNTED_ISSUES_FILE, RAW_DIR, SPRINT_FILE,
                     SPRINT_ISSUES_FILE, SPRINT_REPORT_FILE, STATUSES_FILE, SCOPE_GROUPS, add_and_remove_events, as_of,
                     in_sprint_at, history_fields, is_blocker_candidate, key_order, read_json, nested, outcome_total,
                     parse_ts, plain_text, points_value, report_timezone, spell_epic, split_ids, standard_issues,
@@ -154,11 +152,9 @@ def load_changelogs(changelog_dir, raw_issues):
     return changes
 
 
-def ticket_events(raw, changes, context, moment, pulls=(), read=None):
+def ticket_events(raw, changes, context, moment):
     """A ticket's events up to `moment`, in time order: its creation, with
-    each tracked field's value then, every change of a tracked field, and,
-    from its pull requests `pulls` and their times `read` (url: GitHub's
-    createdAt and mergedAt), when the first was opened and the last merged.
+    each tracked field's value then, and every change of a tracked field.
     Changes at one instant keep the changelog's order."""
     cutoff, zone = parse_ts(moment), context.reporting_zone
     tracked = {name for name, ident in history_fields(
@@ -169,7 +165,6 @@ def ticket_events(raw, changes, context, moment, pulls=(), read=None):
     events = [created_event(raw, mine, context, category)]
     events += [change_event(c, category, zone)
                for c in mine if parse_ts(c["created"]) <= cutoff]
-    events += github_events(pulls, read or {}, cutoff, zone)
     return sorted(events, key=lambda e: parse_ts(e["at"]))
 
 
@@ -247,26 +242,6 @@ def field_extra(field, side, ident, category):
     if field == "parent":
         return {f"{side}Id" if side else "parentId": str(ident) if ident else None}
     return {}
-
-
-def github_events(pulls, read, cutoff, zone):
-    """When the first of the ticket's pull requests was opened, and when the
-    last of those merged by the cutoff was merged, as at the cutoff, each with
-    its url, how it was found and the ticket it came through, the ticket or
-    one of its sub-tasks."""
-    opened, merged = [], []
-    for pr in pulls:
-        times = read.get(pr["url"]) or {}
-        for stamp, found in ((times.get("createdAt"), opened), (times.get("mergedAt"), merged)):
-            if stamp and parse_ts(stamp) <= cutoff:
-                found.append((parse_ts(stamp), stamp, pr))
-    events = []
-    for kind, found, pick in (("first_pr_opened", opened, min), ("last_pr_merged", merged, max)):
-        if found:
-            _, stamp, pr = pick(found, key=lambda f: f[0])
-            events.append(ticket_event(stamp, "github", kind, zone,
-                          url=pr["url"], found=pr["found"], via=pr["via"]))
-    return events
 
 
 def ticket_event(at, source, kind, zone, **extra):
@@ -722,9 +697,7 @@ def main():
                           for events in add_and_remove_events(changes[raw["key"]], sprint_id)
                           for ts in events if parse_ts(ts) > parse_ts(moment)},
                          key=key_order)
-    pulls = read_json(os.path.join(raw_dir, PULL_REQUESTS_FILE))
-    events_of = {raw["key"]: ticket_events(raw, changes[raw["key"]], context, moment,
-                                           pulls["tickets"].get(raw["key"], []), pulls["events"])
+    events_of = {raw["key"]: ticket_events(raw, changes[raw["key"]], context, moment)
                  for raw in all_raw}
     for raw in current_raw:
         moves = sprint_moves_of(events_of[raw["key"]], sprint_id)
@@ -783,9 +756,7 @@ def main():
             "complete_instant": previous["completeDate"],
             "complete_date": sprint_date(previous["completeDate"], zone)},
         "spells": spells,
-        # Each ticket's history, from every source, as at the end: the spells
-        # are worked out from it. Without GitHub, it holds Jira's alone.
-        "pull_request_events_read": pulls["github_read"],
+        # Each ticket's history as at the end: the spells are worked out from it.
         "ticket_events": {key: events_of[key] for key in sorted(with_spells, key=key_order)},
         # Issues that joined and left before the start: in no part of the report.
         "left_before_start_keys": sorted(left_before_start, key=key_order),
@@ -830,8 +801,6 @@ def main():
           (", ".join(uncounted) or "none"))
     print("left before the start, not reported: " +
           (", ".join(left_before_start) or "none"))
-    print("pull request events: " + ("read" if pulls["github_read"] else
-                                     "not read (gh isn't available or github-cli isn't enabled)"))
     print("wrote", out)
 
 

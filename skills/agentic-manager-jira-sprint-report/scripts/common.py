@@ -27,7 +27,7 @@ from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order, 
 from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
 from agentic_manager.github import gh_available  # noqa: E402,F401
-from agentic_manager.ticket_pulls import PANEL, first_found, panel_pulls, read_events  # noqa: E402,F401
+from agentic_manager.ticket_pulls import pulls_by_ticket, read_events  # noqa: E402,F401
 
 # The skill's output folder, which holds the report folders (see output_folder.py).
 REPORTS_FOLDER = "jira-sprint-reports"
@@ -254,13 +254,9 @@ def history_fields(flagged_field, points_field):
 
 
 # A ticket's event types (data.json's ticket_events), by source: Jira's
-# creation of the ticket and each change of a tracked field, and the first
-# pull request GitHub shows opened for it and the last merged.
-TICKET_EVENT_TYPES = {"jira": ("created", *(f"{field}_changed" for field in history_fields(None, None))),
-                      "github": ("first_pr_opened", "last_pr_merged")}
-# How a ticket's pull request was found: only through Jira's Development
-# panel (see fetch_sprint.py).
-PULL_FOUND = (PANEL,)
+# creation of the ticket and each change of a tracked field.
+TICKET_EVENT_TYPES = {"jira": (
+    "created", *(f"{field}_changed" for field in history_fields(None, None)))}
 
 
 def status_categories(statuses):

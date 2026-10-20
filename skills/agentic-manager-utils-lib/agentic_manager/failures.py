@@ -30,12 +30,12 @@ GITHUB_FAILED = "GitHub couldn't be read"
 @contextmanager
 def stops_on_failure(github_lead=GITHUB_FAILED):
     """Runs the block, and stops the program on a JiraError, with its
-    explanation, or a GhError, with `github_lead`, the gh command and its
-    explanation: both on stderr, with exit code 1, as SystemExit does."""
+    explanation, or a GhError, with `github_lead`, the gh command by its
+    first words and its explanation: both on stderr, with exit code 1, as SystemExit does."""
     try:
         yield
     except JiraError as failed:
         raise SystemExit(failed.explanation)
     except GhError as failed:
         raise SystemExit(
-            f"{github_lead}: gh {' '.join(failed.command)}: {failed.explanation}")
+            f"{github_lead}: {failed.name}: {failed.explanation}")

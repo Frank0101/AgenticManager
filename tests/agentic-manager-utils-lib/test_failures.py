@@ -28,8 +28,9 @@ class StopsOnFailureTest(unittest.TestCase):
              "Jira returned 401 Unauthorized for /rest/api/3/myself. Check your `api-token`."),
             ("Jira, without", JiraError("Jira returned 500 for /rest/api/3/myself."), None,
              "Jira returned 500 for /rest/api/3/myself."),
-            ("gh", GhError(["pr", "view", "PROJ-123"], "HTTP 401: Bad credentials"), None,
-             f"GitHub couldn't be read: gh pr view PROJ-123: HTTP 401: Bad credentials. {GH_BROKEN}"),
+            ("gh", GhError(["pr", "view", "https://github.com/acme/api/pull/1", "--json", "url"],
+                           "HTTP 401: Bad credentials"), None,
+             f"GitHub couldn't be read: gh pr view: HTTP 401: Bad credentials. {GH_BROKEN}"),
             ("gh, with a lead", GhError(["api", "graphql"], "API rate limit exceeded."),
              "GitHub couldn't be read, so no report was written",
              f"GitHub couldn't be read, so no report was written: gh api graphql: API rate limit exceeded. "

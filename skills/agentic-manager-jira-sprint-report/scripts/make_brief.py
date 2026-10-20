@@ -33,23 +33,18 @@ it never reads the raw files, so every fact it gives is the model's.
     exact wording, so the retro notes can quote them in a single pass, without
     first generating the report and reading it back.
   * ticket_events gives each ticket listed under epics, once however many
-    spells it has, its status changes and when its first pull request was
-    opened and its last merged: how the work moved, which the spells don't
-    show. Its other changes are left out: the spells and report_facts already
-    give its sprint moves and estimates, and the rest doesn't tell the agent
-    how the work went. When GitHub wasn't read, pull_request_events says so,
-    so the agent doesn't take the missing events for work without code.
+    spells it has, its status changes: how the work moved, which the spells
+    don't show. Its other changes are left out: the spells and report_facts
+    already give its sprint moves and estimates, and the rest doesn't tell
+    the agent how the work went. Pull request data is fetched for a later
+    use; data.json leaves it out until then, so the brief has none.
 """
 import argparse
 import os
 
-from common import (BRIEF_FILE, DATA_FILE, SCOPE_GROUPS, TICKET_EVENT_TYPES, allowed_verdicts, chunks, display_date,
+from common import (BRIEF_FILE, DATA_FILE, SCOPE_GROUPS, allowed_verdicts, chunks, display_date,
                     epic_title, link_text, read_json, spell_epic, write_json)
 from make_report import Report
-
-# Why a brief has no pull request events, when GitHub wasn't read.
-EVENTS_NOT_READ = ("not read: gh isn't available or the github-cli source isn't enabled, so ticket_events "
-                   "holds only status changes")
 
 
 def build_brief(data):
@@ -86,22 +81,14 @@ def build_brief(data):
         "report_facts": report_facts(data),
         "ticket_events": {key: brief_events(data["ticket_events"][key])
                           for key in dict.fromkeys(t["key"] for epic in epics for t in epic["tickets"])},
-        **({} if data["pull_request_events_read"] else {"pull_request_events": EVENTS_NOT_READ}),
     }
 
 
 def brief_events(events):
-    """A ticket's status changes and pull request events, in time order, dated
-    as the brief dates everything."""
-    out = []
-    for e in events:
-        if e["type"] == "status_changed":
-            out.append({"date": display_date(e["date"]), "type": e["type"],
-                       "from": e["from"], "to": e["to"]})
-        elif e["type"] in TICKET_EVENT_TYPES["github"]:
-            out.append({"date": display_date(
-                e["date"]), "type": e["type"], "url": e["url"]})
-    return out
+    """A ticket's status changes, in time order, dated as the brief dates
+    everything."""
+    return [{"date": display_date(e["date"]), "type": e["type"], "from": e["from"], "to": e["to"]}
+            for e in events if e["type"] == "status_changed"]
 
 
 def brief_comments(comments):

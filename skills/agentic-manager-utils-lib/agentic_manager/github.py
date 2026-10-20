@@ -1,7 +1,6 @@
 """GitHub through its CLI, gh, shared by every skill: whether it can be used,
-its JSON answers, the pull requests that hold a commit or name a text in
-their title, when pull requests were opened and merged, and what to do when
-gh fails.
+its JSON answers, when pull requests were opened and merged, and what to do
+when gh fails.
 
 gh is the user's `github-cli` source, so it is used only when enabled, and
 it signs in itself: no setting is read here. Every call takes `run`, which
@@ -15,9 +14,13 @@ gives the same for a private repository the account can't see, which the
 reason says. Any other call gh can't answer, whether it fails, times out or
 answers something other than JSON, raises GhError with gh's own message,
 never returns an empty answer: "gh failed" and "gh answered: nothing" stay
-apart, so a failure such as GitHub's rate limit is never taken for a commit
-in no pull request or a ticket nothing names. Nothing here knows about
-Jira: matching a pull request to a ticket is ticket_pulls.py's.
+apart, so a failure such as GitHub's rate limit is never taken for a pull
+request that doesn't exist. Nothing here knows about Jira: a ticket's pull
+requests are ticket_pulls.py's.
+
+A failure names gh's command by its first words only, such as "gh pr
+view" or "gh api graphql" (command_name()): its other arguments, a URL, a
+query or flags, are too long to show and can hold what was searched for.
 
 Before failing, a call is tried again as retry.py sets out: a timeout or a
 busy GitHub is passing, and a rate limit final, its advice to wait a minute
@@ -48,17 +51,22 @@ from agentic_manager.retry import RATE_LIMITED, retried
 
 GROUP, NAME = "source_control", "github-cli"
 TIMEOUT = 60
-# A pull request's page: its repository, owner/name, its owner and its number.
-PULL_URL = re.compile(r"^https?://[^/\s]+/(([\w.-]+)/[\w.-]+)/pull/(\d+)")
-# The same page, strictly, for the parts read through GraphQL: its host, owner,
-# name and number. An owner is letters, digits and hyphens on GitHub.
-PULL_PARTS = re.compile(
-    r"https?://([\w.-]+(?::\d+)?)/([A-Za-z0-9-]+)/([\w.-]+)/pull/(\d+)(?:[/?#].*)?")
+# A GitHub pull request's address, the one rule every skill reads one by: its
+# host (a GitHub Enterprise site may have a port), owner, repository name and
+# number, each named; anything after the number, such as /files, is allowed.
+# An owner is letters, digits and hyphens, as GitHub allows, so the parts are
+# safe to send in a query.
+PULL_URL = re.compile(
+    r"https?://(?P<host>[\w.-]+(?::\d+)?)/(?P<owner>[A-Za-z0-9-]+)/(?P<name>[\w.-]+)/pull/(?P<number>\d+)"
+    r"(?:[/?#].*)?")
 DEFAULT_HOST = "github.com"
-# The words of a GraphQL call, which its failures name: the query and its
-# variables are too long to show.
+# A GraphQL call's first words, before its query and variables.
 GRAPHQL = ["api", "graphql"]
-SEARCH_LIMIT = 50
+# A word of gh's command: gh's commands are a group and a command (pr view,
+# search prs) or api and its endpoint (api graphql), in lower-case words, so
+# at most COMMAND_WORDS of them name it.
+COMMAND_WORD = re.compile(r"[a-z]+(?:-[a-z]+)*")
+COMMAND_WORDS = 2
 # What a pull request's opening and merge are read with; GraphQL's state is
 # OPEN, CLOSED or MERGED, as gh pr view gives it.
 EVENT_FIELDS = "url state createdAt mergedAt"
@@ -70,10 +78,8 @@ PASSING_SIGNS = ("no answer within", "http 500", "http 502", "http 503", "http 5
 NOT_FOUND = "NOT_FOUND"
 # What gh says, in lower case, when GitHub has no such thing, or none the
 # account can see: GraphQL's "Could not resolve to a PullRequest with the
-# number of 9." (gh pr view), REST's "Not Found (HTTP 404)" (gh api), and
-# "No commit found for SHA: ..." (HTTP 422) for a commit's pull requests.
-NOT_FOUND_SIGNS = ("could not resolve to a ",
-                   "http 404", "no commit found for sha")
+# number of 9." (gh pr view) and REST's "Not Found (HTTP 404)" (gh api).
+NOT_FOUND_SIGNS = ("could not resolve to a ", "http 404")
 # What to do when gh fails for anything but a rate limit (retry.py's
 # RATE_LIMITED): gh's own setup, or the user goes on without GitHub.
 GH_BROKEN = ("Check that gh works (gh auth status) and run it again, or disable the github-cli source to go on "
@@ -83,27 +89,6 @@ GH_BROKEN = ("Check that gh works (gh auth status) and run it again, or disable 
 def gh_available():
     """Whether gh can be used: installed, and enabled as the user's github-cli source."""
     return shutil.which("gh") is not None and is_enabled(GROUP, NAME)
-
-
-def pulls_holding(repository, sha, run=subprocess.run):
-    """(pulls, why), as gh_found() gives them: the pull requests of a GitHub
-    repository, owner/name, that hold commit `sha`, as {url, state,
-    updatedAt} with state OPEN, CLOSED or MERGED, none when no pull request
-    holds it; or why GitHub has no such commit."""
-    return gh_found(["api", f"repos/{repository}/commits/{sha}/pulls", "--jq",
-                     "[.[] | {url: .html_url, state: (if .merged_at then \"MERGED\" else (.state | ascii_upcase) end), "
-                     "updatedAt: .updated_at}]"], "commit", run)
-
-
-def search_pull_titles(text, owner, run=subprocess.run):
-    """The pull requests in the repositories of `owner` whose title GitHub's
-    search matches `text` in, at most SEARCH_LIMIT, as {url, state, title,
-    updatedAt} with state in capitals. Raises GhError when gh can't tell.
-    GitHub's search matches words, so a caller checks the title for what it
-    needs."""
-    found = gh_json(["search", "prs", text, "--owner", owner, "--match", "title", "--limit", str(SEARCH_LIMIT),
-                     "--json", "url,state,title,updatedAt"], run)
-    return [{**pr, "state": (pr.get("state") or "?").upper()} for pr in found]
 
 
 def pull_events(urls, run=subprocess.run):
@@ -119,10 +104,10 @@ def pull_events(urls, run=subprocess.run):
     urls = list(dict.fromkeys(urls))
     hosts = {}
     for url in urls:
-        if not (parts := PULL_PARTS.fullmatch(url)):
+        if not (parts := pull_parts(url)):
             raise GhError(
                 GRAPHQL, f"{url}: not a pull request's address gh can be asked about")
-        hosts.setdefault(parts[1], []).append(url)
+        hosts.setdefault(parts["host"], []).append(url)
     calls = [(host, chunk) for host, found in hosts.items()
              for chunk in batches(found)]
     events, missing = {}, {}
@@ -136,6 +121,12 @@ def pull_events(urls, run=subprocess.run):
                 raise failed
             gone[url] = failed.message
     return events, gone
+
+
+def pull_parts(url):
+    """The parts of a GitHub pull request's address, host, owner, name and
+    number, by name; None when `url` isn't one."""
+    return PULL_URL.fullmatch(url or "")
 
 
 def batch_events(host, urls, run=subprocess.run):
@@ -166,15 +157,15 @@ def batch_events(host, urls, run=subprocess.run):
 def events_query(urls):
     """(query, gh's field arguments, {(repository alias, pull alias): url})
     that read the events of the pull requests at `urls`, grouped by
-    repository. Raises ValueError for a URL PULL_PARTS doesn't match, so
+    repository. Raises ValueError for a URL that isn't a pull request's, so
     nothing unchecked reaches the call."""
     repositories = {}
     for url in urls:
-        parts = PULL_PARTS.fullmatch(url)
+        parts = pull_parts(url)
         if not parts:
             raise ValueError(f"not a pull request's address: {url}")
         repositories.setdefault(
-            (parts[2], parts[3]), []).append((url, parts[4]))
+            (parts["owner"], parts["name"]), []).append((url, parts["number"]))
     declared, fields, lines, aliases = [], [], [], {}
     for i, ((owner, name), pulls) in enumerate(repositories.items()):
         declared += [f"$o{i}: String!", f"$n{i}: String!"]
@@ -269,7 +260,7 @@ def note(error):
     """What failed, for the line a retry prints: the gh command and the
     first line of gh's message."""
     first = (error.message.splitlines() or [""])[0].strip().rstrip(".")
-    return f"gh {' '.join(error.command[:2])}: {first}"
+    return f"{error.name}: {first}"
 
 
 class GhError(Exception):
@@ -278,8 +269,13 @@ class GhError(Exception):
     `not_found`, whether GitHub said what was asked for doesn't exist."""
 
     def __init__(self, command, message, not_found=False):
-        super().__init__(f"gh {' '.join(command)}: {message}")
         self.command, self.message, self.not_found = command, message, not_found
+        super().__init__(f"{self.name}: {message}")
+
+    @property
+    def name(self):
+        """The command as its failures name it, such as "gh pr view"."""
+        return command_name(self.command)
 
     @property
     def rate_limited(self):
@@ -298,3 +294,15 @@ class GhError(Exception):
         """gh's message on one line, then the advice: how a skill shows the
         failure to the user."""
         return f"{' '.join(self.message.split()).rstrip('.')}. {self.advice}"
+
+
+def command_name(command):
+    """gh's command `command`, the words after gh, by its first words, such
+    as "gh pr view": its leading lower-case words, at most COMMAND_WORDS,
+    up to the first that isn't one, such as a URL, a key, a path or a flag."""
+    words = []
+    for word in command[:COMMAND_WORDS]:
+        if not COMMAND_WORD.fullmatch(word):
+            break
+        words.append(word)
+    return " ".join(["gh", *words])

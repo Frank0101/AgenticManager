@@ -29,7 +29,7 @@ import sys
 from datetime import date, timedelta
 
 from common import (INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, ISSUE_KEY,
-                    BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, KEY_LIST, PULL_FOUND, TICKET_ESTIMATE,
+                    BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, KEY_LIST, TICKET_ESTIMATE,
                     TICKET_EVENT_TYPES,
                     NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai, text_rule_problems,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty,
@@ -227,15 +227,11 @@ def check_commentary_groups(c, data):
 
 def check_ticket_events(c, data):
     """Each ticket with a spell, and no other, has its events, well formed,
-    dated, as at the end and in time order; pull request events only when
-    GitHub was read, the first opened no later than the last merged; and its
-    spells' events are what its events give."""
+    dated, as at the end and in time order; and its spells' events are what
+    its events give."""
     tickets = data["ticket_events"]
     c.check(set(tickets) == {s["key"] for s in data["spells"]}, "model",
             "every ticket with a spell has its events, and no other ticket")
-    c.check(data["pull_request_events_read"] or not any(
-            e["source"] == "github" for events in tickets.values() for e in events), "model",
-            "pull request events only when GitHub was read")
     zone, cutoff = report_timezone(
         data["report_timezone"]), parse_ts(data["as_of_instant"])
     for key, events in tickets.items():
@@ -247,10 +243,6 @@ def check_ticket_events(c, data):
         instants = [parse_ts(e["at"]) for e in events]
         c.check(instants == sorted(instants), "model",
                 f"{key}'s ticket events are in time order")
-        pulls = {e["type"]: parse_ts(e["at"])
-                 for e in events if e["source"] == "github"}
-        c.check(pulls.get("first_pr_opened", cutoff) <= pulls.get("last_pr_merged", cutoff), "model",
-                f"{key}'s first pull request was opened no later than its last was merged")
     sprint_id = str(data["sprint_id"])
     for spell in data["spells"]:
         events = tickets.get(spell["key"])
@@ -263,8 +255,7 @@ def check_ticket_events(c, data):
 
 # What each kind of ticket event holds besides its instant, date, source and type.
 TICKET_EVENT_FIELDS = {"created": ("values",), "status_changed": ("from", "to", "fromCategory", "toCategory"),
-                       "parent_changed": ("from", "to", "fromId", "toId"),
-                       "first_pr_opened": ("url", "found", "via"), "last_pr_merged": ("url", "found", "via")}
+                       "parent_changed": ("from", "to", "fromId", "toId")}
 # The values a ticket's creation holds, one per tracked field and the status's
 # category and the parent's id.
 CREATED_VALUES = {"sprint", "status", "statusCategory", "resolution", "priority", "parent", "parentId", "points",
@@ -274,9 +265,8 @@ CREATED_VALUES = {"sprint", "status", "statusCategory", "resolution", "priority"
 def ticket_event_problems(events, zone, cutoff):
     """What is wrong with a ticket's events, as short descriptions: an
     unknown source or type, a missing field, a date that isn't its instant's
-    in the reporting timezone, an instant after the end, a pull request
-    found in an unknown way or through no ticket key, or not exactly one
-    creation and at most one of each pull request event."""
+    in the reporting timezone, an instant after the end, or not exactly one
+    creation."""
     problems = []
     for e in events:
         kind = e.get("type")
@@ -294,15 +284,9 @@ def ticket_event_problems(events, zone, cutoff):
             problems.append(f"{kind} after the end")
         elif kind == "created" and set(e["values"]) != CREATED_VALUES:
             problems.append("created without each tracked field's value")
-        elif e["source"] == "github" and e["found"] not in PULL_FOUND:
-            problems.append(f"{kind} found by {e['found']}")
-        elif e["source"] == "github" and not ISSUE_KEY.fullmatch(str(e["via"])):
-            problems.append(f"{kind} via {e['via']}")
     kinds = [e.get("type") for e in events]
     if kinds.count("created") != 1:
         problems.append(f"{kinds.count('created')} creations")
-    problems += [f"{kinds.count(kind)} {kind}" for kind in TICKET_EVENT_TYPES["github"]
-                 if kinds.count(kind) > 1]
     return problems
 
 

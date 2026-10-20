@@ -82,7 +82,7 @@ class GithubTest(unittest.TestCase):
                     self.assertEqual((raised.exception.command, raised.exception.message),
                                      (command, expected.message))
                     self.assertEqual(str(raised.exception),
-                                     f"gh pr view {PR.format(1)}: {expected.message}")
+                                     f"gh pr view: {expected.message}")
                 else:
                     self.assertEqual(github.gh_json(command, run), expected)
                 # A timeout is tried until the retries run out; anything
@@ -113,8 +113,6 @@ class GithubTest(unittest.TestCase):
              "repository", missing("repository", "gh: Not Found (HTTP 404)")),
             ("gh api, older wording", 1, "", "HTTP 404: Not Found (https://api.github.com/repos/acme/gone)\n",
              "repository", missing("repository", "HTTP 404: Not Found (https://api.github.com/repos/acme/gone)")),
-            ("no such commit", 1, "", "gh: No commit found for SHA: c9 (HTTP 422)\n", "commit",
-             missing("commit", "gh: No commit found for SHA: c9 (HTTP 422)")),
             ("rate limit", 1, "", "HTTP 403: API rate limit exceeded for user ID 1.", "commit",
              Fails("HTTP 403: API rate limit exceeded for user ID 1.")),
             ("bad login", 1, "", "HTTP 401: Bad credentials", "commit",
@@ -184,6 +182,35 @@ class GithubTest(unittest.TestCase):
                     github.GhError(["pr", "view"], message)), expected)
         self.assertIs(github.passing(ValueError("not gh's")), False)
 
+    def test_command_name(self):
+        # A failure names gh's command by its first words: its leading
+        # lower-case words, at most two, up to the first argument that isn't
+        # one, so no URL, query, path or flag is shown.
+        # name: (the words after gh, the name)
+        cases = [
+            ("pull request", ["pr", "view", PR.format(
+                1), "--json", "url"], "gh pr view"),
+            ("search", ["search", "prs", "PROJ-123",
+             "--json", "url"], "gh search prs"),
+            ("search for a word", ["search", "prs", "login"], "gh search prs"),
+            ("GraphQL", ["api", "graphql", "-f",
+             "query=query { viewer { login } }"], "gh api graphql"),
+            ("REST", [
+             "api", "repos/acme/api/pulls/1/comments?per_page=100", "--paginate"], "gh api"),
+            ("a flag first", ["--version"], "gh"),
+            ("a hyphenated command", ["run-thing",
+             "now", "later"], "gh run-thing now"),
+            ("nothing", [], "gh"),
+        ]
+        for name, command, expected in cases:
+            with self.subTest(name):
+                failed = github.GhError(
+                    command, "HTTP 503: Service Unavailable")
+                self.assertEqual((github.command_name(command), failed.name, str(failed),
+                                  github.note(failed)),
+                                 (expected, expected, f"{expected}: HTTP 503: Service Unavailable",
+                                  f"{expected}: HTTP 503: Service Unavailable"))
+
     def test_gh_json_tries_again(self):
         # A passing failure is tried again, and the answer returned.
         answers = [subprocess.CompletedProcess([], 1, "", "HTTP 503: Service Unavailable"),
@@ -204,42 +231,24 @@ class GithubTest(unittest.TestCase):
                     is_enabled.assert_called_once_with(
                         "source_control", "github-cli")
 
-    def test_reads(self):
-        # name: (call, gh's answer, expected, the command's start)
-        found = [{"url": PR.format(41), "state": "MERGED",
-                  "updatedAt": "2026-10-10T08:00:00Z"}]
-        searched = [{"url": PR.format(47), "state": "open", "title": "PROJ-123 Backoff"},
-                    {"url": PR.format(48), "title": "PROJ-123 Jitter"}]
-        cases = [
-            ("pulls holding", lambda run: github.pulls_holding("acme/api", "c1", run), found, (found, None),
-             ["gh", "api", "repos/acme/api/commits/c1/pulls"]),
-            # States in capitals, as the other reads give them.
-            ("search", lambda run: github.search_pull_titles("PROJ-123", "acme", run), searched,
-             [{**searched[0], "state": "OPEN"}, {**searched[1], "state": "?"}],
-             ["gh", "search", "prs", "PROJ-123", "--owner", "acme", "--match", "title"]),
-        ]
-        for name, call, answer, expected, command in cases:
-            with self.subTest(name):
-                run = answering(answer)
-                self.assertEqual(call(run), expected)
-                self.assertEqual(run.calls[0][:len(command)], command)
-            with self.subTest(name + ", gh fails"), self.assertRaises(github.GhError):
-                call(Runner(code=1))
-            with self.subTest(name + ", gh answers nothing"):
-                self.assertEqual(call(answering([])), ([], None)
-                                 if name == "pulls holding" else [])
-
     def test_pull_url(self):
         # url: (repository, owner, number), or None for a page that isn't a pull request
-        cases = [(PR.format(41), ("acme/api", "acme", "41")),
+        # The one rule for a pull request's address: its parts by name;
+        # None for anything else, an owner GitHub wouldn't allow included.
+        cases = [(PR.format(41), ("github.com", "acme", "api", "41")),
                  ("https://github.com/acme/api/pull/41/files",
-                  ("acme/api", "acme", "41")),
+                  ("github.com", "acme", "api", "41")),
+                 ("https://git.acme.test:8443/acme/api/pull/7",
+                  ("git.acme.test:8443", "acme", "api", "7")),
+                 ("https://github.com/acme_co/api/pull/41", None),
                  ("https://github.com/acme/api/issues/41", None),
-                 ("https://bitbucket.org/acme/api/pull-requests/3", None)]
+                 ("https://bitbucket.org/acme/api/pull-requests/3", None),
+                 (None, None)]
         for url, expected in cases:
             with self.subTest(url):
-                match = github.PULL_URL.match(url)
-                self.assertEqual(match and match.groups(), expected)
+                parts = github.pull_parts(url)
+                self.assertEqual(parts and (parts["host"], parts["owner"], parts["name"], parts["number"]),
+                                 expected)
 
     def test_pull_events(self):
         # Many pull requests in one GraphQL call, grouped by repository, each

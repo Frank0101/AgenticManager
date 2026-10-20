@@ -2,8 +2,8 @@
 Run with: python3 tests/run.py agentic-manager-utils-lib
 
 gh answers from a fake runner, by the command after gh, so nothing reaches
-GitHub; the panel's answers are written as JiraClient returns them. A
-command the fake has no answer for fails.
+GitHub, and Jira from a fake client, its panels written as JiraClient
+returns them. A command the fake gh has no answer for fails.
 """
 
 import json
@@ -18,8 +18,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(
     REPO_ROOT, "skills", os.path.basename(TEST_DIR)))
 from agentic_manager import ticket_pulls  # noqa: E402
-from agentic_manager.github import GhError  # noqa: E402
-from agentic_manager.ticket_pulls import COMMITS, PANEL, SEARCH  # noqa: E402
+from agentic_manager.ticket_pulls import PANEL  # noqa: E402
 from agentic_manager import retry  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from gh_fake import graphql_answer, is_graphql  # noqa: E402
@@ -58,9 +57,24 @@ class gh:
         return subprocess.CompletedProcess(command, 0, json.dumps(answer), "")
 
 
-def search_hit(number, title, body=""):
-    return {"url": PR.format(number), "state": "open", "title": title, "body": body,
-            "updatedAt": "2026-10-12T08:00:00Z"}
+class Panels:
+    """A Jira client whose Development panel lists, by issue id, `pulls`, and
+    whose search by parent finds `subtasks`, recording each read."""
+
+    def __init__(self, pulls, subtasks=()):
+        self.pulls, self.subtasks, self.read = pulls, subtasks, []
+
+    def search(self, jql, fields):
+        self.read.append(("search", jql))
+        return list(self.subtasks)
+
+    def pull_requests(self, issue_id):
+        self.read.append(("pulls", issue_id))
+        return self.pulls.get(issue_id, [])
+
+
+def sub_task(key, parent):
+    return {"id": key, "key": key, "fields": {"parent": {"key": parent}}}
 
 
 class TicketPullsTest(unittest.TestCase):
@@ -73,93 +87,62 @@ class TicketPullsTest(unittest.TestCase):
                 "updatedAt": "2026-10-10T08:00:00.000+0000", "found": PANEL},
             {**panel[1], "state": "?", "updatedAt": None, "found": PANEL}])
 
-    def test_panel_commits(self):
-        repositories = [{"name": "acme/api", "commits": [{"id": "c1"}, {"id": "c2"}]},
-                        {"name": "acme/web", "commits": None}, {"name": "acme/ops"}]
-        self.assertEqual(ticket_pulls.panel_commits(repositories),
-                         [(repositories[0], {"id": "c1"}), (repositories[0], {"id": "c2"})])
-
-    def test_holding_pulls(self):
-        api = {"name": "acme/api"}
-
-        class with_gone(gh):
-            def __call__(self, command, **kwargs):
-                if command[2] == "repos/acme/api/commits/c4/pulls":
-                    self.calls.append(command)
-                    return subprocess.CompletedProcess(command, 1, "", "gh: No commit found for SHA: c4 (HTTP 422)")
-                return super().__call__(command, **kwargs)
-        run = with_gone({"api repos/acme/api/commits/c1/pulls": [{"url": PR.format(41), "state": "MERGED"}],
-                         "api repos/acme/api/commits/c2/pulls": []})
-        c1, c2, c3, c4 = ((api, {"id": sha})
-                          for sha in ("c1", "c2", "c3", "c4"))
-        merged = [{"url": PR.format(41), "state": "MERGED", "found": COMMITS}]
-        gone = "GitHub has no such commit, or this account can't see it: gh: No commit found for SHA: c4 (HTTP 422)"
-        # In the order of the commits: found, in none, or GitHub has no such
-        # commit, with why; one gh can't tell about raises, never read as in
-        # no pull request.
-        self.assertEqual(ticket_pulls.holding_pulls([c1, c2, c4], run),
-                         [(c1, merged, None), (c2, [], None), (c4, [], gone)])
-        self.assertEqual(ticket_pulls.holding_pulls([], run), [])
-        self.assertEqual(ticket_pulls.holding_pull(c2, run), ([], None))
-        self.assertEqual(ticket_pulls.holding_pull(c4, run), ([], gone))
-        for name, call in [("holding_pulls", lambda: ticket_pulls.holding_pulls([c1, c3, c2], run)),
-                           ("holding_pull", lambda: ticket_pulls.holding_pull(c3, run))]:
-            with self.subTest(name), self.assertRaisesRegex(GhError, "Bad credentials"):
-                call()
-
-    def test_search_pulls(self):
-        # name: (gh's hits, the URLs found)
+    def test_pulls_by_ticket(self):
+        # A ticket's pull requests are those of its panel and its
+        # sub-tasks', each once, through the ticket before its sub-tasks,
+        # those in key order, with the issue it came through.
+        issues = [{"id": "1", "key": "PROJ-1"}, {"id": "2", "key": "PROJ-2"},
+                  {"id": "3", "key": "PROJ-3"}]
+        # PROJ-12 and PROJ-11 are sub-tasks of PROJ-1, PROJ-21 of PROJ-2,
+        # found by the search out of key order.
+        subtasks = [sub_task("PROJ-12", "PROJ-1"), sub_task("PROJ-21", "PROJ-2"),
+                    sub_task("PROJ-11", "PROJ-1")]
+        # name: (the panels' pull requests by issue id, {key: [(number, via)]})
         cases = [
-            ("title", [search_hit(47, "PROJ-123 Backoff")], [PR.format(47)]),
-            ("in brackets", [search_hit(48, "[PROJ-123] Jitter")],
-             [PR.format(48)]),
-            # A key only in the description is a mention, never a match.
-            ("body only", [search_hit(
-                49, "Tune the backoff", "Follow-up to PROJ-123.")], []),
-            ("longer key", [search_hit(50, "PROJ-1234 Other")], []),
-            ("no title", [{"url": PR.format(51), "state": "open"}], []),
+            ("none listed", {}, {"PROJ-1": [], "PROJ-2": [], "PROJ-3": []}),
+            ("the ticket's own", {"3": [{"url": PR.format(42)}, {"url": PR.format(44)}]},
+             {"PROJ-1": [], "PROJ-2": [], "PROJ-3": [(42, "PROJ-3"), (44, "PROJ-3")]}),
+            ("only through a sub-task", {"PROJ-21": [{"url": PR.format(43)}]},
+             {"PROJ-1": [], "PROJ-2": [(43, "PROJ-21")], "PROJ-3": []}),
+            ("on the ticket and a sub-task: kept once, through the ticket",
+             {"1": [{"url": PR.format(
+                 41)}], "PROJ-11": [{"url": PR.format(41)}, {"url": PR.format(44)}]},
+             {"PROJ-1": [(41, "PROJ-1"), (44, "PROJ-11")], "PROJ-2": [], "PROJ-3": []}),
+            ("sub-tasks in key order", {"PROJ-12": [{"url": PR.format(41)}], "PROJ-11": [{"url": PR.format(41)}]},
+             {"PROJ-1": [(41, "PROJ-11")], "PROJ-2": [], "PROJ-3": []}),
         ]
-        for name, hits, expected in cases:
+        for name, pulls, expected in cases:
             with self.subTest(name):
-                found = ticket_pulls.search_pulls(
-                    "PROJ-123", {"acme"}, gh({"search prs PROJ-123": hits}))
-                self.assertEqual([pr["url"] for pr in found], expected)
-                self.assertTrue(all(pr["found"] == SEARCH and pr["state"] == "OPEN"
-                                    for pr in found))
-        # Every owner is searched, in order, and a pull request found twice
-        # is listed once; gh answering no hit finds nothing, and an owner gh
-        # can't search raises, no owner searched after it.
-        run = gh({"search prs PROJ-123": [search_hit(47, "PROJ-123 Backoff")]})
-        found = ticket_pulls.search_pulls(
-            "PROJ-123", {"acme-labs", "acme"}, run)
-        self.assertEqual(len(found), 1)
-        self.assertEqual([c[c.index("--owner") + 1]
-                         for c in run.calls], ["acme", "acme-labs"])
-        self.assertEqual(ticket_pulls.search_pulls(
-            "PROJ-123", {"acme"}, gh({"search prs PROJ-123": []})), [])
-
-        class by_owner(gh):
-            def __call__(self, command, **kwargs):
-                self.calls.append(command)
-                answer = self.answers.get(
-                    command[command.index("--owner") + 1])
-                if answer is None:
-                    return subprocess.CompletedProcess(command, 1, "", REFUSED)
-                return subprocess.CompletedProcess(command, 0, json.dumps(answer), "")
-        run = by_owner({"acme-labs": [search_hit(47, "PROJ-123 Backoff")]})
-        with self.assertRaisesRegex(GhError, "Bad credentials"):
-            ticket_pulls.search_pulls("PROJ-123", {"acme", "acme-labs"}, run)
-        self.assertEqual([c[c.index("--owner") + 1]
-                         for c in run.calls], ["acme"])
+                client = Panels(pulls, subtasks)
+                found = ticket_pulls.pulls_by_ticket(client, issues, True)
+                self.assertEqual({key: [(int(pr["url"].rsplit("/", 1)[1]), pr["via"]) for pr in prs]
+                                  for key, prs in found.items()}, expected)
+                self.assertEqual(list(found), ["PROJ-1", "PROJ-2", "PROJ-3"])
+                self.assertTrue(
+                    all(pr["found"] == PANEL for prs in found.values() for pr in prs))
+                # One search for every ticket's sub-tasks, and every panel of
+                # a ticket and its sub-tasks read.
+                self.assertEqual([r for r in client.read if r[0] == "search"],
+                                 [("search", "parent in (PROJ-1,PROJ-2,PROJ-3) AND issuetype in subTaskIssueTypes()")])
+                self.assertEqual({r[1] for r in client.read if r[0] == "pulls"},
+                                 {"1", "2", "3", "PROJ-11", "PROJ-12", "PROJ-21"})
+        # Not read: nothing asked of Jira; no tickets: no search.
+        # name: (issues, read)
+        for name, given, read in [("not read", issues, False), ("no tickets", [], True)]:
+            with self.subTest(name):
+                client = Panels({"1": [{"url": PR.format(41)}]}, subtasks)
+                self.assertEqual(ticket_pulls.pulls_by_ticket(
+                    client, given, read), {})
+                self.assertEqual(client.read, [])
 
     def test_first_found(self):
-        panel = [{"url": PR.format(41), "found": PANEL}]
-        search = [{"url": PR.format(41), "found": SEARCH},
-                  {"url": PR.format(47), "found": SEARCH}]
-        commits = [{"url": PR.format(60), "found": COMMITS},
-                   {"url": PR.format(47), "found": COMMITS}]
-        self.assertEqual(ticket_pulls.first_found(panel, search, commits),
-                         [panel[0], search[1], commits[0]])
+        first = [{"url": PR.format(41), "via": "PROJ-1"}]
+        second = [{"url": PR.format(41), "via": "PROJ-11"},
+                  {"url": PR.format(47), "via": "PROJ-11"}]
+        third = [{"url": PR.format(60), "via": "PROJ-12"},
+                 {"url": PR.format(47), "via": "PROJ-12"}]
+        self.assertEqual(ticket_pulls.first_found(first, second, third),
+                         [first[0], second[1], third[0]])
 
     def test_read_events(self):
         events = {"url": PR.format(41), "state": "MERGED", "createdAt": "2026-10-01T08:00:00Z",

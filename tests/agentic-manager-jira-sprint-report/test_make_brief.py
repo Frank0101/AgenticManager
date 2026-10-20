@@ -105,20 +105,12 @@ class BriefTest(unittest.TestCase):
 
     def test_ticket_events_once_for_each_ticket_listed(self):
         # PROJ-2 is listed twice, its events once; PROJ-4 and PROJ-5 aren't
-        # listed. Status changes and pull request events only, in time order.
+        # listed. Status changes only, in time order.
         self.assertEqual(list(self.brief["ticket_events"]), [
                          "PROJ-1", "PROJ-2", "PROJ-6", "PROJ-3"])
         self.assertEqual(self.brief["ticket_events"]["PROJ-1"], [
-            {"date": "03/03/2026", "type": "first_pr_opened", "url": fixture.PULL},
-            {"date": "04/03/2026", "type": "last_pr_merged", "url": fixture.PULL},
             {"date": "04/03/2026", "type": "status_changed", "from": "In Progress", "to": "Done"}])
         self.assertNotIn("pull_request_events", self.brief)
-
-    def test_says_when_pull_request_events_were_not_read(self):
-        brief = make_brief.build_brief(fixture.sprint_data(
-            pull_request_events_read=False))
-        self.assertEqual(brief["pull_request_events"],
-                         make_brief.EVENTS_NOT_READ)
 
     def test_epics_in_order_of_completed_pts(self):
         # Commitment and extra together: the order Key Achievements takes.

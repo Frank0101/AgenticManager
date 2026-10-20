@@ -61,6 +61,13 @@ class TicketsCommandTest(unittest.TestCase):
         self.assertEqual(process.stdout,
                          f"{PR}: GitHub has no such pull request, or this account can't see it: {gone}\n")
 
+    def test_show_help(self):
+        # show reads pull requests only on request, and searches no owner.
+        process = self.run_tickets("", "show", "--help")
+        self.assertEqual(process.returncode, 0, process.stderr)
+        self.assertIn("--prs", process.stdout)
+        self.assertNotIn("--owner", process.stdout)
+
     def test_a_gh_failure_stops(self):
         # The command stops with a non-zero exit, gh's words and the
         # library's advice on stderr, and prints nothing: no partial output.
@@ -76,9 +83,7 @@ class TicketsCommandTest(unittest.TestCase):
                 self.assertEqual(process.returncode, 1, process.stderr)
                 self.assertEqual(process.stdout, "")
                 self.assertEqual(process.stderr.splitlines()[-1],
-                                 f"GitHub couldn't be read: gh pr view {PR} --json title,state,author,body,"
-                                 "reviews,comments,createdAt,mergedAt,baseRefName,headRefName,mergeCommit,url: "
-                                 f"{message.rstrip('.')}. {advice}")
+                                 f"GitHub couldn't be read: gh pr view: {message.rstrip('.')}. {advice}")
 
 
 if __name__ == "__main__":

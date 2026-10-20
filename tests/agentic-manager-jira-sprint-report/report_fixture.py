@@ -92,18 +92,13 @@ def with_flags(spells):
 
 # When every ticket was created, before the sprint started.
 CREATED = "2026-02-20T10:00:00.000+0000"
-PULL = "https://github.com/acme/api/pull/41"
-# PROJ-1's pull request: opened the day before it was completed, merged that morning.
-PULL_EVENTS = (("first_pr_opened", "2026-03-03T09:00:00Z"),
-               ("last_pr_merged", "2026-03-04T09:00:00Z"))
 
 
-def ticket_events(spells, sprint_id, zone, pulls_read=True):
+def ticket_events(spells, sprint_id, zone):
     """{key: its events} that give each ticket's spells, as
     build_sprint_data.py stores them: a creation before the start, in the
     sprint from then if its first spell is a commitment, then, at each later
-    event of its spells, the sprint, status and points changes that give it;
-    and PROJ-1's pull request events when GitHub was read."""
+    event of its spells, the sprint, status and points changes that give it."""
     by_key = {}
     for spell in spells:
         by_key.setdefault(spell["key"], []).append(spell)
@@ -128,9 +123,6 @@ def ticket_events(spells, sprint_id, zone, pulls_read=True):
                 joins = e["type"] == "joined"
                 events.append(change(e["at"], "sprint", zone, [] if joins else [sprint_id],
                                      [sprint_id] if joins else []))
-        if key == "PROJ-1" and pulls_read:
-            events += [event(at, kind, zone, source="github", url=PULL, found="panel", via="PROJ-1")
-                       for kind, at in PULL_EVENTS]
         tickets[key] = sorted(events, key=lambda e: parse_ts(e["at"]))
     return tickets
 
@@ -139,8 +131,8 @@ def change(at, field, zone, old, new, **extra):
     return {**event(at, f"{field}_changed", zone, **extra), "from": old, "to": new}
 
 
-def event(at, kind, zone, source="jira", **extra):
-    return {"at": at, "date": parse_ts(at).astimezone(zone).date().isoformat(), "source": source, "type": kind,
+def event(at, kind, zone, **extra):
+    return {"at": at, "date": parse_ts(at).astimezone(zone).date().isoformat(), "source": "jira", "type": kind,
             **extra}
 
 
@@ -174,7 +166,6 @@ def sprint_data(**changes):
         "blocker_candidate_keys": ["PROJ-2"],
         "blocker_comments": {"PROJ-2": [{"at": "2026-03-05T10:00:00.000+0000", "date": "2026-03-05",
                                          "text": "Waiting on Security."}]},
-        "pull_request_events_read": True,
     }
     data.update(changes)
     cutoff_day = data["today"] if data["sprint_status"] == "active" else (
@@ -184,7 +175,7 @@ def sprint_data(**changes):
     tickets = with_flags(data["spells"])
     if "ticket_events" not in changes:
         data["ticket_events"] = ticket_events(
-            tickets, str(data["sprint_id"]), ZoneInfo(data["report_timezone"]), data["pull_request_events_read"])
+            tickets, str(data["sprint_id"]), ZoneInfo(data["report_timezone"]))
     counts, points = build.outcome_breakdown(tickets)
     counted = [t for t in tickets if t["counted"]]
     original = [t for t in tickets if t["scope"] == "original"]

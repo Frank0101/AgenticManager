@@ -253,23 +253,18 @@ class BuildTest(ReportTest):
                 shutil.rmtree(os.path.join(self.dir, "_raw"))
 
     def test_ticket_events(self):
-        # Each ticket with a spell has its history, Jira's and GitHub's, as at
-        # the close: PROJ-1's own pull request, opened after it, is left out;
-        # the one found through its sub-task PROJ-9 is PROJ-1's, and the
-        # sub-task is no ticket of the report.
+        # Each ticket with a spell has its history as at the close, Jira's
+        # alone: the raw pull request data is left out, and the sub-task
+        # PROJ-9 is no ticket of the report.
         data = self.build()
         self.assertEqual(set(data["ticket_events"]), {
                          s["key"] for s in data["spells"]})
         self.assertNotIn("PROJ-9", data["ticket_events"])
-        self.assertTrue(data["pull_request_events_read"])
+        self.assertNotIn("pull_request_events_read", data)
         self.assertEqual([(e["source"], e["type"], e["date"]) for e in data["ticket_events"]["PROJ-1"]], [
             ("jira", "created", "2026-03-01"), ("jira",
                                                 "sprint_changed", "2026-03-04"),
-            ("github", "first_pr_opened", "2026-03-05"), ("github",
-                                                          "last_pr_merged", "2026-03-06"),
             ("jira", "status_changed", "2026-03-06")])
-        self.assertEqual({(e["url"], e["via"]) for e in data["ticket_events"]["PROJ-1"] if e["source"] == "github"},
-                         {(fixture.PR.format(41), "PROJ-9")})
 
 
 class BriefTest(ReportTest):

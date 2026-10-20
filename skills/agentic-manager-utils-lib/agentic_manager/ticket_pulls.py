@@ -1,36 +1,76 @@
-"""A Jira ticket's pull requests, found in three ways, shared by every skill
-that relates tickets to code: those its Development panel lists, those on
-GitHub that hold the commits the panel lists, and those on GitHub whose title
-names its key. Each found pull request is a dict with at least url, state
-(such as OPEN or MERGED), updatedAt and `found`, the way that found it
-(PANEL, COMMITS or SEARCH); one from the panel also keeps the panel's own
-fields, such as its source and destination branches. read_events() then
-reads when each was opened and merged, many in one GraphQL call.
+"""Jira tickets' pull requests, shared by every skill that relates tickets to
+code: those the Development panels of each ticket and of its sub-tasks list,
+and when GitHub says each was opened and merged.
 
-Which ways a skill uses, and in what order, is the skill's choice, so each
-way is a function of its own and first_found() keeps each pull request once,
-as the first way that found it; the panel and its commits come from
-jira.JiraClient's pull_requests() and commits(), which a skill calls itself,
-alongside its other reads of the ticket.
+A ticket's pull requests are those its panel lists and those its sub-tasks'
+panels list, all of them, found by one search by parent: a sub-task's work
+is its parent's, as Jira's sprint report rolls it in. Each is kept once,
+through the ticket before its sub-tasks, those in key order, and records the
+issue it came through (`via`). The panel is the link the team's integration
+made, a Jira call or two an issue. GitHub isn't searched for more: looking
+up the panels' commits cost a GitHub request per commit, a thousand for a
+sprint, which used up GitHub's hourly limit in a few runs, and found only
+pull requests of tickets the panel already listed some for; a search of
+titles found none, and GitHub's search allows about 30 requests a minute.
+Commits matter only as part of a pull request, what it changed; the current
+state of the code comes from the repository itself.
 
-A pull request names a key only in its title, never in its description: a
-key only in a description is a mention, such as "follow-up to PROJ-123",
-not the ticket's work; a long description makes a match likelier to be wrong;
-and Jira's GitHub integration doesn't link a pull request for it either. The
-key is matched whole, so PROJ-1234 doesn't name PROJ-123. As failures.py
-sets out, a commit GitHub doesn't have is returned with why, and a gh call
-that fails otherwise raises GhError and stops the rest, as batch.gather()
-does: a commit, owner or pull request gh couldn't answer for is never left
-out as if it held or named nothing.
+pulls_by_ticket() takes whether to read pull requests at all, so a skill
+that reads them only on request, or only when GitHub can be read, as the
+panel alone gives no dates or changes, asks nothing of Jira otherwise; and
+every skill reads them the same way. Each pull request
+is a dict with the panel's fields, state, updatedAt, `found` (PANEL) and
+`via`. read_events() then reads when each was opened and merged, many in one
+GraphQL call; as failures.py sets out, one GitHub says doesn't exist is
+returned with why, and any other gh failure raises GhError.
 """
 import subprocess
 
 from agentic_manager.batch import gather
-from agentic_manager.github import PULL_URL, pull_events, pulls_holding, search_pull_titles
-from agentic_manager.jira import ISSUE_KEY
+from agentic_manager.github import pull_events, pull_parts
+from agentic_manager.jira import key_order
+from agentic_manager.json_path import nested
 
-# How each pull request was found.
-PANEL, COMMITS, SEARCH = "panel", "commits", "search"
+# Jira's condition for the issue types that are sub-tasks.
+SUB_TASKS = "issuetype in subTaskIssueTypes()"
+
+# How each pull request was found: through a Development panel.
+PANEL = "panel"
+
+
+def pulls_by_ticket(client, issues, read):
+    """{key: its pull requests} of each of `issues` (Jira issues, with id and
+    key), in their order: those the Development panels of the ticket and of
+    its sub-tasks list, each once, through the ticket before its sub-tasks,
+    those in key order, with `via`, the key of the issue it came through.
+    With `read` false, {} and nothing asked of Jira. Raises JiraError when
+    Jira can't answer."""
+    if not read:
+        return {}
+    children = sub_tasks(client, [issue["key"] for issue in issues])
+    # Each ticket, then its sub-tasks: (the ticket's key, the issue looked at).
+    looked = [(issue["key"], seen) for issue in issues
+              for seen in (issue, *children.get(issue["key"], []))]
+    panels = gather(looked, lambda pair: panel_pulls(
+        client.pull_requests(pair[1]["id"])))
+    groups = {issue["key"]: [] for issue in issues}
+    for (key, seen), prs in zip(looked, panels):
+        groups[key].append([{**pr, "via": seen["key"]} for pr in prs])
+    return {key: first_found(*found) for key, found in groups.items()}
+
+
+def sub_tasks(client, keys):
+    """{key: its sub-tasks, in key order} of the tickets of `keys`, found by
+    one search by parent. Only sub-tasks: an epic is a parent too, but its
+    stories are tickets of their own, each with its own code, and an epic,
+    not added to sprints, holds none."""
+    found = client.search(
+        f"parent in ({','.join(keys)}) AND {SUB_TASKS}", ["parent"]) if keys else []
+    children = {}
+    for issue in sorted(found, key=lambda i: key_order(i["key"])):
+        children.setdefault(nested(issue.get("fields"), [
+                            "parent", "key"]), []).append(issue)
+    return children
 
 
 def panel_pulls(panel):
@@ -39,43 +79,6 @@ def panel_pulls(panel):
     that keeps the panel's fields."""
     return [{**pr, "state": pr.get("status") or "?", "updatedAt": pr.get("lastUpdate"), "found": PANEL}
             for pr in panel]
-
-
-def panel_commits(repositories):
-    """(repository, commit) of each commit of a ticket's Development panel,
-    as JiraClient.commits() returns its repositories."""
-    return [(repository, commit) for repository in repositories for commit in repository.get("commits") or []]
-
-
-def holding_pulls(commits, run=subprocess.run):
-    """[(pair, pulls, why)] for the (repository, commit) pairs of `commits`,
-    as panel_commits() gives them, in their order, each as holding_pull()
-    gives it. Raises GhError when gh can't tell for one."""
-    commits = list(commits)
-    return [(pair, *held) for pair, held in zip(commits, gather(commits, lambda pair: holding_pull(pair, run)))]
-
-
-def holding_pull(pair, run=subprocess.run):
-    """(pulls, why): the found pull requests of a (repository, commit) pair's
-    GitHub repository that hold the commit, none when no pull request does;
-    or none and why GitHub has no such commit. Raises GhError when gh can't
-    tell."""
-    repository, commit = pair
-    pulls, why = pulls_holding(repository.get(
-        "name", ""), commit.get("id", ""), run)
-    return [{**pr, "found": COMMITS} for pr in pulls or []], why
-
-
-def search_pulls(key, owners, run=subprocess.run):
-    """The found pull requests in the repositories of `owners` whose title
-    names `key`, each once. Owners are searched one at a time, in name
-    order, as GitHub's search allows few requests a minute. Raises GhError
-    when gh can't search one."""
-    searched = gather(sorted(owners), lambda owner: search_pull_titles(
-        key, owner, run), workers=1)
-    found = {pr["url"]: {**pr, "found": SEARCH} for hits in searched for pr in hits
-             if key in ISSUE_KEY.findall(pr.get("title") or "")}
-    return list(found.values())
 
 
 def first_found(*groups):
@@ -92,4 +95,4 @@ def read_events(pulls, run=subprocess.run):
     """(events, gone) of each pull request of `pulls` on GitHub, as
     github.pull_events() gives them: when each was opened and merged, and
     GitHub's words for those it says don't exist."""
-    return pull_events([pr["url"] for pr in pulls if PULL_URL.match(pr.get("url") or "")], run)
+    return pull_events([pr["url"] for pr in pulls if pull_parts(pr.get("url"))], run)

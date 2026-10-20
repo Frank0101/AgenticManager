@@ -35,25 +35,18 @@ changelogs (common.blocker_candidate_keys), as there are no events yet.
 
 Sub-tasks are left out of the report, as Jira's sprint report rolls their
 work into the parent, but their pull requests are the parent's: a ticket's
-pull requests are those the Jira Development panels of it and of each of its
-sub-tasks list, all of them, found by a search by parent, as a ticket removed
-from the sprint takes its sub-tasks with it. Each is kept once, through the
-ticket before its sub-tasks, those in key order: the link the team's
-integration made, a Jira call or two a ticket. GitHub isn't searched for
-more: looking up the panels' commits cost a GitHub request per commit, a
-thousand for a sprint, which used up GitHub's hourly limit in a few runs, and
-found only pull requests of tickets the panel already listed some for; a
-search of titles found none, and GitHub's search allows about 30 requests a
-minute.
-Each pull request records the ticket it came through (`via`). Then GitHub
-gives when each was opened and merged, many in one GraphQL call.
-gh (the github-cli source) is optional: without it neither the panel nor
-GitHub is read, as the panel alone gives no open or merge times, and the raw
-file records that GitHub wasn't read, so data.json has no pull request
-events. With it, a pull request GitHub says doesn't exist, such as one
-deleted that Jira still links, is skipped: dropped from its tickets, so it
-gives no events, said on stderr and kept in the raw file's `skipped` with
-GitHub's message, as there is nothing to read and nothing to fix. Any other
+pull requests are read as the library's ticket_pulls.py reads them, from the
+Development panels of it and of its sub-tasks, each with the ticket it came
+through (`via`), as a ticket removed from the sprint takes its sub-tasks with
+it. Then GitHub gives when each was opened and merged, many in one GraphQL
+call. The pull request data is fetched for a later use; build_sprint_data.py
+leaves it out until then. gh (the github-cli source) is optional: without it
+neither the panel nor GitHub is read, as the panel alone gives no open or
+merge times, and the raw file records that GitHub wasn't read. With it, a
+pull request GitHub says doesn't exist, such as one deleted that Jira still
+links, is skipped: dropped from its tickets, said on stderr and kept in the
+raw file's `skipped` with GitHub's message, as there is nothing to read and
+nothing to fix. Any other
 gh failure, such as GitHub's rate limit, stops the fetch with gh's message
 and the library's advice: a pull request it couldn't read would otherwise be
 taken for work without times. A Jira or gh failure is raised to main, which
@@ -69,8 +62,8 @@ from datetime import datetime, timezone
 from common import (CHANGELOGS_DIR, COMMENTS_DIR, META_FILE, PARENTS_FILE, PREVIOUS_SPRINT_FILE, PULL_REQUESTS_FILE,
                     PUNTED_ISSUES_FILE, RAW_DIR, REPORTS_FOLDER, SPRINT_FILE, SPRINT_ISSUES_FILE,
                     SPRINT_REPORT_FILE, STATUSES_FILE, JiraClient, as_of, blocker_candidate_keys,
-                    clear_folder, day_folder, first_found, gather, gh_available, history_fields, key_order, nested,
-                    output_folder, panel_pulls, parse_ts, read_events, report_label, report_timezone,
+                    clear_folder, day_folder, gather, gh_available, history_fields, nested, output_folder, parse_ts,
+                    pulls_by_ticket, read_events, report_label, report_timezone,
                     standard_issues, status_categories, stops_on_failure, write_json)
 
 # Issue fields the report needs, besides the site's Flagged and story points fields.
@@ -147,20 +140,10 @@ def pull_requests(client, issues, gh, run=subprocess.run):
     [the tickets it was found through], message}] of those GitHub says don't
     exist, left out of `tickets`}; with gh False, nothing is read and all
     are empty. Raises GhError when gh fails otherwise."""
+    found = pulls_by_ticket(client, issues, gh)
     if not gh:
         return {"github_read": False, "tickets": {}, "events": {}, "skipped": []}
-    keys = [issue["key"] for issue in issues]
-    children = sub_tasks(client, keys)
-    # Each ticket, then its sub-tasks: (the ticket's index, the issue read).
-    looked = [(index, read) for index, issue in enumerate(issues)
-              for read in (issue, *children.get(issue["key"], []))]
-    panels = gather(looked, lambda pair: panel_pulls(
-        client.pull_requests(pair[1]["id"])))
-    groups = [[] for _ in issues]
-    for (index, read), prs in zip(looked, panels):
-        groups[index].append([{**pr, "via": read["key"]} for pr in prs])
-    found = [first_found(*ticket_groups) for ticket_groups in groups]
-    every = [pr for prs in found for pr in prs]
+    every = [pr for prs in found.values() for pr in prs]
     events, gone = read_events(every, run)
     skipped = [{"url": url, "via": list(dict.fromkeys(pr["via"] for pr in every if pr["url"] == url)),
                 "message": message} for url, message in gone.items()]
@@ -168,19 +151,9 @@ def pull_requests(client, issues, gh, run=subprocess.run):
         log(f"skipped a pull request GitHub says doesn't exist, found through {', '.join(skip['via'])}: "
             f"{skip['message']}")
     gone = {skip["url"] for skip in skipped}
-    found = [[pr for pr in prs if pr["url"] not in gone] for prs in found]
-    return {"github_read": True, "tickets": dict(zip(keys, found)), "events": events, "skipped": skipped}
-
-
-def sub_tasks(client, keys):
-    """{key: its sub-tasks, in key order} of the tickets of `keys`."""
-    found = client.search(f"parent in ({','.join(keys)})", [
-                          "parent"]) if keys else []
-    children = {}
-    for issue in sorted(found, key=lambda i: key_order(i["key"])):
-        children.setdefault(nested(issue.get("fields"), [
-                            "parent", "key"]), []).append(issue)
-    return children
+    tickets = {key: [pr for pr in prs if pr["url"] not in gone]
+               for key, prs in found.items()}
+    return {"github_read": True, "tickets": tickets, "events": events, "skipped": skipped}
 
 
 def log(message):
