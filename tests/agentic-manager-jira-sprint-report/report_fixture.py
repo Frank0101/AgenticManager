@@ -13,12 +13,16 @@ events (see build_sprint_data.py for the model):
 
 The spells are written by hand; every figure built from them (breakdown,
 epics, timeline, burndown) comes from build_sprint_data.py's own functions,
-which check_report.py verifies independently.
+which check_report.py verifies independently. Each ticket's events, which the
+model works its spells out from, are written to give those spells (see
+ticket_events), and PROJ-1's pull request was opened on 03/03 and merged on
+04/03.
 """
 import copy
 import os
 import sys
 from datetime import timezone
+from zoneinfo import ZoneInfo
 
 # tests/<skill>/ mirrors skills/<skill>/.
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -26,7 +30,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import build_sprint_data as build  # noqa: E402
-from common import NO_EPIC  # noqa: E402
+from common import NO_EPIC, parse_ts  # noqa: E402
 
 BASE = "https://acme.test"
 START = "2026-03-02T09:00:00.000+0000"
@@ -86,6 +90,68 @@ def with_flags(spells):
     return spells
 
 
+# When every ticket was created, before the sprint started.
+CREATED = "2026-02-20T10:00:00.000+0000"
+PULL = "https://github.com/acme/api/pull/41"
+# PROJ-1's pull request: opened the day before it was completed, merged that morning.
+PULL_EVENTS = (("first_pr_opened", "2026-03-03T09:00:00Z"),
+               ("last_pr_merged", "2026-03-04T09:00:00Z"))
+
+
+def ticket_events(spells, sprint_id, zone, pulls_read=True):
+    """{key: its events} that give each ticket's spells, as
+    build_sprint_data.py stores them: a creation before the start, in the
+    sprint from then if its first spell is a commitment, then, at each later
+    event of its spells, the sprint, status and points changes that give it;
+    and PROJ-1's pull request events when GitHub was read."""
+    by_key = {}
+    for spell in spells:
+        by_key.setdefault(spell["key"], []).append(spell)
+    tickets = {}
+    for key, own in by_key.items():
+        first = own[0]["events"][0]
+        done, points = first["done"], first["points"]
+        events = [event(CREATED, "created", zone, values={
+            "sprint": [sprint_id] if first["type"] == "committed" else [], "status": status(done),
+            "statusCategory": category(done), "resolution": None, "priority": "Medium", "parent": None,
+            "parentId": None, "points": points, "flagged": False})]
+        for e in (e for spell in own for e in spell["events"]):
+            if e["points"] != points:
+                events.append(
+                    change(e["at"], "points", zone, points, e["points"]))
+                points = e["points"]
+            if e["done"] != done:
+                events.append(change(e["at"], "status", zone, status(done), status(e["done"]),
+                                     fromCategory=category(done), toCategory=category(e["done"])))
+                done = e["done"]
+            if e["type"] in ("joined", "removed"):
+                joins = e["type"] == "joined"
+                events.append(change(e["at"], "sprint", zone, [] if joins else [sprint_id],
+                                     [sprint_id] if joins else []))
+        if key == "PROJ-1" and pulls_read:
+            events += [event(at, kind, zone, source="github", url=PULL, found="panel", via="PROJ-1")
+                       for kind, at in PULL_EVENTS]
+        tickets[key] = sorted(events, key=lambda e: parse_ts(e["at"]))
+    return tickets
+
+
+def change(at, field, zone, old, new, **extra):
+    return {**event(at, f"{field}_changed", zone, **extra), "from": old, "to": new}
+
+
+def event(at, kind, zone, source="jira", **extra):
+    return {"at": at, "date": parse_ts(at).astimezone(zone).date().isoformat(), "source": source, "type": kind,
+            **extra}
+
+
+def status(done):
+    return "Done" if done else "In Progress"
+
+
+def category(done):
+    return "done" if done else "indeterminate"
+
+
 def caveat_data(kind, keys):
     """Sprint data whose `kind` caveat, membership or non_delivery, names `keys`."""
     if kind == "membership":
@@ -96,7 +162,8 @@ def caveat_data(kind, keys):
 
 def sprint_data(**changes):
     data = {
-        "report_timezone": "Europe/London", "base_url": BASE, "label": "PROJ_Sprint_7", "sprint_name": "Sprint 7",
+        "report_timezone": "Europe/London", "base_url": BASE, "label": "PROJ_Sprint_7", "sprint_id": 7,
+        "sprint_name": "Sprint 7",
         "sprint_status": "closed", "sprint_goal": "Ship login", "sprint_start": "2026-03-02",
         "sprint_end": "2026-03-13", "sprint_complete_date": "2026-03-13", "today": "2026-03-16",
         "as_of_instant": "2026-03-13T17:00:00.000+0000",
@@ -105,6 +172,9 @@ def sprint_data(**changes):
         "spells": copy.deepcopy(TICKETS),
         "membership_cross_check_excluded_keys": [],
         "blocker_candidate_keys": ["PROJ-2"],
+        "blocker_comments": {"PROJ-2": [{"at": "2026-03-05T10:00:00.000+0000", "date": "2026-03-05",
+                                         "text": "Waiting on Security."}]},
+        "pull_request_events_read": True,
     }
     data.update(changes)
     cutoff_day = data["today"] if data["sprint_status"] == "active" else (
@@ -112,6 +182,9 @@ def sprint_data(**changes):
     if "as_of_instant" not in changes:
         data["as_of_instant"] = f"{cutoff_day}T17:00:00.000+0000"
     tickets = with_flags(data["spells"])
+    if "ticket_events" not in changes:
+        data["ticket_events"] = ticket_events(
+            tickets, str(data["sprint_id"]), ZoneInfo(data["report_timezone"]), data["pull_request_events_read"])
     counts, points = build.outcome_breakdown(tickets)
     counted = [t for t in tickets if t["counted"]]
     original = [t for t in tickets if t["scope"] == "original"]

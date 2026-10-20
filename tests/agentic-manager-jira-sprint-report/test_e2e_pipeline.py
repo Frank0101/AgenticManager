@@ -252,6 +252,25 @@ class BuildTest(ReportTest):
                     os.path.join(self.dir, "data.json")))
                 shutil.rmtree(os.path.join(self.dir, "_raw"))
 
+    def test_ticket_events(self):
+        # Each ticket with a spell has its history, Jira's and GitHub's, as at
+        # the close: PROJ-1's own pull request, opened after it, is left out;
+        # the one found through its sub-task PROJ-9 is PROJ-1's, and the
+        # sub-task is no ticket of the report.
+        data = self.build()
+        self.assertEqual(set(data["ticket_events"]), {
+                         s["key"] for s in data["spells"]})
+        self.assertNotIn("PROJ-9", data["ticket_events"])
+        self.assertTrue(data["pull_request_events_read"])
+        self.assertEqual([(e["source"], e["type"], e["date"]) for e in data["ticket_events"]["PROJ-1"]], [
+            ("jira", "created", "2026-03-01"), ("jira",
+                                                "sprint_changed", "2026-03-04"),
+            ("github", "first_pr_opened", "2026-03-05"), ("github",
+                                                          "last_pr_merged", "2026-03-06"),
+            ("jira", "status_changed", "2026-03-06")])
+        self.assertEqual({(e["url"], e["via"]) for e in data["ticket_events"]["PROJ-1"] if e["source"] == "github"},
+                         {(fixture.PR.format(41), "PROJ-9")})
+
 
 class BriefTest(ReportTest):
     def test_goal_evidence_survives_the_build_and_brief_pipeline(self):
@@ -266,6 +285,19 @@ class BriefTest(ReportTest):
         self.assertIn("PROJ-10", [t["key"] for t in brief["goal_tickets"]])
         self.assertNotIn("PROJ-10", [t["key"]
                          for e in brief["epics"] for t in e["tickets"]])
+
+    def test_the_brief_reads_data_json_alone(self):
+        # A view of the model: with the raw files gone, the blocker
+        # candidate's comments still come from data.json.
+        data = self.build()
+        self.assertEqual(data["blocker_comments"], {
+                         "PROJ-7": [{"at": None, "date": None, "text": "Waiting on a dependency."}]})
+        shutil.rmtree(os.path.join(self.dir, "_raw"))
+        self.assert_runs("make_brief.py")
+        with open(os.path.join(self.dir, "brief.json"), encoding="utf-8") as f:
+            brief = json.load(f)
+        self.assertEqual([t["comments"] for e in brief["epics"] for t in e["tickets"] if t["key"] == "PROJ-7"],
+                         [[{"date": None, "text": "Waiting on a dependency."}]])
 
 
 class ReopenedAtTheStartTest(ReportTest):

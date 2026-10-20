@@ -1,14 +1,15 @@
 """
 Write <report_dir>/brief.json: everything the agent reads to write content.json,
-from data.json and the raw comments.
+from data.json alone.
 
 Usage:
     python3 make_brief.py --report-dir <report_dir>
 
 The agent writes only the parts marked [AI Gen.]. Gathering their material
 is bookkeeping, not judgment, so it happens here: the agent reads one file
-instead of joining data.json's spells, epics and the raw comment files, which
-costs tokens and invites slips.
+instead of joining data.json's spells, epics and comments, which costs tokens
+and invites slips. Like the report and the charts, it is a view of data.json:
+it never reads the raw files, so every fact it gives is the model's.
 
   * Tickets are grouped by epic, each with its commentary group, scope, latest
     estimate, flag and, for blocker candidates, the comments up to the end.
@@ -23,25 +24,36 @@ costs tokens and invites slips.
   * Descriptions come as their first chunk (common.chunks) with the chunk count
     when there are more: reading is bounded and nothing is lost, since
     read_description.py gives any other chunk.
-  * Comment authors are left out: AI text names teams, never colleagues.
+  * Comments are data.json's blocker_comments, which hold no authors: AI text
+    names teams, never colleagues.
   * goal_tickets separately includes every original commitment ticket, including
     work excluded from commentary, so goal themes have their full denominator.
     Its outcome distinguishes completed, not_completed and removed work.
   * report_facts are the generated report's own sentences and figures, in its
     exact wording, so the retro notes can quote them in a single pass, without
     first generating the report and reading it back.
+  * ticket_events gives each ticket listed under epics, once however many
+    spells it has, its status changes and when its first pull request was
+    opened and its last merged: how the work moved, which the spells don't
+    show. Its other changes are left out: the spells and report_facts already
+    give its sprint moves and estimates, and the rest doesn't tell the agent
+    how the work went. When GitHub wasn't read, pull_request_events says so,
+    so the agent doesn't take the missing events for work without code.
 """
+from make_report import Report
 import argparse
 import os
 
-from common import (epic_title, BRIEF_FILE, DISPLAY_DATE, COMMENTS_DIR, DATA_FILE, RAW_DIR, SCOPE_GROUPS, allowed_verdicts, chunks, display_date,
-                    read_json, parse_ts, plain_text, report_timezone, spell_epic, write_json, link_text)
-from make_report import Report
+from common import (epic_title, BRIEF_FILE, DATA_FILE, SCOPE_GROUPS, TICKET_EVENT_TYPES, allowed_verdicts, chunks,
+                    display_date, read_json, spell_epic, write_json, link_text)
+
+# Why a brief has no pull request events, when GitHub wasn't read.
+EVENTS_NOT_READ = ("not read: gh isn't available or the github-cli source isn't enabled, so ticket_events "
+                   "holds only status changes")
 
 
-def build_brief(data, raw_dir):
-    candidates = set(data["blocker_candidate_keys"])
-    zone = report_timezone(data["report_timezone"])
+def build_brief(data):
+    comments = data["blocker_comments"]
     epics = []
     for epic in data["epics"]:
         tickets = []
@@ -52,7 +64,7 @@ def build_brief(data, raw_dir):
                     "carried_in": ticket["carriedIn"],
                     **{k: ticket[k] for k in ("scope", "points", "status", "flagged", "summary")},
                     **first_chunk(ticket["description"]),
-                    **({"comments": comments(raw_dir, ticket["key"], zone)} if ticket["key"] in candidates else {}),
+                    **({"comments": brief_comments(comments[ticket["key"]])} if ticket["key"] in comments else {}),
                 })
         completed = epic["original_points_done"] + epic["extra_points_done"]
         epics.append({"key": epic["key"], "name": epic["name"], **first_chunk(epic["description"]),
@@ -72,18 +84,30 @@ def build_brief(data, raw_dir):
             **dict(zip(("epic_key", "epic_name"), spell_epic(spell))),
         } for spell in data["spells"] if spell["scope"] == "original"],
         "report_facts": report_facts(data),
+        "ticket_events": {key: brief_events(data["ticket_events"][key])
+                          for key in dict.fromkeys(t["key"] for epic in epics for t in epic["tickets"])},
+        **({} if data["pull_request_events_read"] else {"pull_request_events": EVENTS_NOT_READ}),
     }
 
 
-def comments(raw_dir, key, zone):
-    """A ticket's comments, dated in the reporting timezone like every other
-    date, and without their authors."""
-    path = os.path.join(raw_dir, COMMENTS_DIR, f"{key}.json")
-    if not os.path.exists(path):
-        return []
-    return [{"date": parse_ts(c["created"]).astimezone(zone).strftime(DISPLAY_DATE) if c.get("created") else None,
-             "text": text}
-            for c in read_json(path) if (text := plain_text(c.get("body"))).strip()]
+def brief_events(events):
+    """A ticket's status changes and pull request events, in time order, dated
+    as the brief dates everything."""
+    out = []
+    for e in events:
+        if e["type"] == "status_changed":
+            out.append({"date": display_date(e["date"]), "type": e["type"],
+                       "from": e["from"], "to": e["to"]})
+        elif e["type"] in TICKET_EVENT_TYPES["github"]:
+            out.append({"date": display_date(
+                e["date"]), "type": e["type"], "url": e["url"]})
+    return out
+
+
+def brief_comments(comments):
+    """A blocker candidate's comments, as data.json holds them, dated as
+    the brief dates everything."""
+    return [{"date": display_date(c["date"]) if c["date"] else None, "text": c["text"]} for c in comments]
 
 
 def first_chunk(description):
@@ -115,7 +139,7 @@ def main():
     args = parser.parse_args()
     data = read_json(os.path.join(args.report_dir, DATA_FILE))
     out = os.path.join(args.report_dir, BRIEF_FILE)
-    write_json(out, build_brief(data, os.path.join(args.report_dir, RAW_DIR)))
+    write_json(out, build_brief(data))
     print("wrote", out)
 
 

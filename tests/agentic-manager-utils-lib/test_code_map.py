@@ -61,7 +61,7 @@ class CodeMapTest(unittest.TestCase):
         self.assertEqual(next(iter(code_map.folders())),
                          "agentic-manager-utils-lib")
         self.assertTrue(code_map.code_map("agentic-manager-utils-lib").startswith(
-            "# agentic-manager-utils-lib\n\n## `check_config.py`"))
+            "# agentic-manager-utils-lib\n\n## `batch.py`"))
         with self.assertRaisesRegex(SystemExit, "no skill 'nope'"):
             code_map.code_map("nope")
 

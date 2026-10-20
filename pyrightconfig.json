@@ -6,6 +6,7 @@
       "root": "tests/agentic-manager-jira-sprint-report",
       "extraPaths": [
         "skills/agentic-manager-utils-lib",
+        "tests/agentic-manager-utils-lib",
         "skills/agentic-manager-jira-sprint-report/scripts"
       ]
     },
@@ -25,7 +26,10 @@
     },
     {
       "root": "tests/agentic-manager-utils-lib",
-      "extraPaths": ["skills/agentic-manager-utils-lib"]
+      "extraPaths": [
+        "skills/agentic-manager-utils-lib",
+        "tests/agentic-manager-utils-lib"
+      ]
     },
     {
       "root": "skills",

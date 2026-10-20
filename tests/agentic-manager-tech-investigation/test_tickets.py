@@ -20,6 +20,12 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import tickets  # noqa: E402
 from common import NotFound  # noqa: E402
+from agentic_manager import retry  # noqa: E402
+
+
+# Retries wait for real; here they needn't.
+retry.RETRY_WAITS = (0, 0, 0)
+
 
 PR = "https://github.com/acme/api/pull/{}"
 SITE = {"criteria": "customfield_9", "sprint": "customfield_7"}
@@ -99,9 +105,17 @@ class FakeClient:
                  "toString": "In Progress"}]
 
 
+# What the fake gh says for a command it has no answer for, and how
+# tickets.py prints it: gh's words and the library's advice.
+REFUSED = "HTTP 401: Bad credentials"
+FAILED = REFUSED + (". Check that gh works (gh auth status) and run it again, or disable the github-cli source "
+                    "to go on without GitHub.")
+
+
 class gh:
     """A runner that answers gh's commands from `answers`, by their first two
-    words (a pull request's view by its URL), and records each command."""
+    words (a pull request's view by its URL), and records each command; a
+    command it has no answer for fails as REFUSED says."""
 
     def __init__(self, answers):
         self.answers, self.calls = answers, []
@@ -111,16 +125,56 @@ class gh:
         answer = self.answers.get(" ".join(command[1:3]))
         if isinstance(answer, dict) and command[1:3] == ["pr", "view"]:
             answer = answer.get(command[3])
-        return subprocess.CompletedProcess(command, 0 if answer is not None else 1,
-                                           json.dumps(answer) if answer is not None else "")
+        if answer is None:
+            return subprocess.CompletedProcess(command, 1, "", REFUSED + "\n")
+        return subprocess.CompletedProcess(command, 0, json.dumps(answer), "")
+
+
+class by_owner(gh):
+    """The runner of `GH`, but a title search answers only for the owners
+    `hits` lists, with their hits."""
+
+    def __init__(self, hits):
+        super().__init__(GH)
+        self.hits = hits
+
+    def __call__(self, command, **kwargs):
+        if command[1:3] != ["search", "prs"]:
+            return super().__call__(command, **kwargs)
+        self.calls.append(command)
+        hits = self.hits.get(command[command.index("--owner") + 1])
+        if hits is None:
+            return subprocess.CompletedProcess(command, 1, "", REFUSED + "\n")
+        return subprocess.CompletedProcess(command, 0, json.dumps(hits), "")
+
+
+class gone(gh):
+    """The runner of `GH`, but GitHub says the pull request at `url` doesn't
+    exist, as gh pr view does for one deleted that Jira still links."""
+
+    def __init__(self, url):
+        super().__init__(GH)
+        self.url = url
+
+    def __call__(self, command, **kwargs):
+        if command[1:4] != ["pr", "view", self.url]:
+            return super().__call__(command, **kwargs)
+        self.calls.append(command)
+        return subprocess.CompletedProcess(command, 1, "", NOT_FOUND + "\n")
+
+
+NOT_FOUND = "GraphQL: Could not resolve to a PullRequest with the number of 41. (repository.pullRequest)"
 
 
 DETAIL = {"mergeCommit": {"oid": "m41"}, "mergedAt": "2026-10-10T08:00:00Z", "baseRefName": "main",
           "headRefName": "x", "changedFiles": 2, "files": [{"path": "worker.py"}, {"path": "queue.py"}],
           "commits": [{"oid": "c1"}]}
 SEARCH = [{"url": PR.format(41), "state": "MERGED", "title": "PROJ-123 Retry", "body": ""},
-          {"url": PR.format(47), "state": "OPEN", "title": "Backoff",
-           "body": "Part of PROJ-123.", "updatedAt": "2026-10-12T08:00:00Z"},
+          {"url": PR.format(47), "state": "OPEN", "title": "PROJ-123: Backoff",
+           "body": "", "updatedAt": "2026-10-12T08:00:00Z"},
+          # Names the key only in its description: a mention, never listed.
+          {"url": PR.format(49), "state": "OPEN", "title": "Tune the backoff",
+           "body": "Follow-up to PROJ-123.", "updatedAt": "2026-10-13T08:00:00Z"},
           {"url": PR.format(48), "state": "MERGED", "title": "[PROJ-123] Jitter", "body": "",
            "updatedAt": "2026-10-11T08:00:00Z"},
           {"url": PR.format(50), "state": "OPEN", "title": "PROJ-1234 Other", "body": ""}]
@@ -165,15 +219,16 @@ class TicketTest(unittest.TestCase):
             "  acme/api#41 · MERGED · PROJ-123-retry → main · updated 2026-10-10 · " +
                 PR.format(41),
             "      merge commit m41 on 2026-10-10 · files changed (2): worker.py, queue.py",
-            # Found by gh; #50 names PROJ-1234, not PROJ-123.
+            # Found by gh; #50 names PROJ-1234, not PROJ-123, and #49 names
+            # it only in its description.
             "  acme/api#47 · OPEN · backoff → main · updated 2026-10-12 · " +
                 PR.format(47)
-            + " · names the key, not linked in Jira",
+            + " · names the key in its title, not linked in Jira",
             "      not merged · files changed (2): worker.py, queue.py",
             # A key in brackets, as titles often carry it, still names it.
             "  acme/api#48 · MERGED · jitter → main · updated 2026-10-11 · " +
                 PR.format(48)
-            + " · names the key, not linked in Jira",
+            + " · names the key in its title, not linked in Jira",
             "      merge commit m48 on 2026-10-10 · files changed (2): worker.py, queue.py",
             "  acme/api#60 · MERGED · hotfix → main · updated 2026-10-09 · " +
                 PR.format(60)
@@ -184,33 +239,53 @@ class TicketTest(unittest.TestCase):
             "  1 more in no pull request and not on the default branch, such as work rebased away before a merge",
             # Never claimed on the default branch or off it.
             "", "Commits gh couldn't check (1):",
-            "  acme/api c6 · 2026-10-08 · PROJ-123 Unknown · https://github.com/acme/api/commit/c6",
+            "  acme/api c6 · 2026-10-08 · PROJ-123 Unknown · https://github.com/acme/api/commit/c6 · " + FAILED,
             "", "Comments (1):",
             "  2026-09-05 · Alex Example: Agreed: retry three times.\n    Then dead-letter.",
         ]))
         # Searched in the owners given and those of the linked pull requests.
-        owners = [c[c.index("--owner") + 1]
-                  for c in run.calls if c[1:3] == ["search", "prs"]]
-        self.assertEqual(owners, ["acme", "acme-labs"])
+        searches = [c for c in run.calls if c[1:3] == ["search", "prs"]]
+        self.assertEqual([c[c.index("--owner") + 1]
+                         for c in searches], ["acme", "acme-labs"])
+        self.assertNotIn(PR.format(49), text)
 
     def test_without_gh_and_failures(self):
         # name: (gh available, runner, expected lines)
         cases = [
             ("no gh", False, gh({}), [
                 "  gh isn't available or github-cli isn't enabled: merge commits, files changed and pull requests "
-                "that name the key without being linked in Jira weren't read",
+                "that name the key in their title without being linked in Jira weren't read",
                 "Commits, those in pull requests not told apart without gh (6):",
                 "  acme/api c2 · 2026-10-08 · PROJ-123 Hotfix · https://github.com/acme/api/commit/c2"]),
-            # A commit gh can't look up is never said to be in no pull request.
+            # Each failure is printed where its answer would be, with gh's
+            # words and what to do: a commit gh can't look up is never said
+            # to be in no pull request, nor an owner it can't search to have
+            # none.
             ("gh fails", True, gh({}), [
-                "      gh couldn't read it", "Commits on the default branch in no pull request (0):",
+                "      gh couldn't read it: " + FAILED,
+                "  gh couldn't search acme: " + FAILED,
+                "Commits on the default branch in no pull request (0):",
                 "Commits gh couldn't check (6):",
-                "  acme/api c1 · 2026-10-08 · PROJ-123 Add the worker · https://github.com/acme/api/commit/c1"]),
+                "  acme/api c1 · 2026-10-08 · PROJ-123 Add the worker · https://github.com/acme/api/commit/c1 · "
+                + FAILED]),
+            # One owner gh can't search is said so; the other's pull
+            # requests are still listed.
+            ("one owner fails", True, by_owner({"acme": SEARCH}), [
+                "  gh couldn't search acme-labs: " + FAILED,
+                "  acme/api#47 · OPEN · backoff → main · updated 2026-10-12 · " +
+                PR.format(47)
+                + " · names the key in its title, not linked in Jira"]),
+            # One GitHub says doesn't exist, such as one deleted that Jira
+            # still links, is shown as one gh couldn't read.
+            ("a pull request GitHub can't find", True, gone(PR.format(41)), [
+                "      gh couldn't read it: " + NOT_FOUND +
+                ". Check that gh works (gh auth status) and run it "
+                "again, or disable the github-cli source to go on without GitHub."]),
         ]
         for name, available, run, expected in cases:
             with self.subTest(name):
                 text = tickets.ticket(
-                    FakeClient(), "PROJ-123", NO_FIELDS, [], available, run)
+                    FakeClient(), "PROJ-123", NO_FIELDS, ["acme-labs"], available, run)
                 for wanted in expected:
                     self.assertIn(wanted, text.split("\n"))
                 self.assertNotIn("Acceptance criteria:", text)
@@ -281,7 +356,7 @@ class TicketTest(unittest.TestCase):
             "", "Comments (1):", "  2026-10-01 · bot: Checks passed"]))
         cases = [("https://bitbucket.org/acme/api/pull-requests/3", gh({}),
                   "https://bitbucket.org/acme/api/pull-requests/3: not a GitHub pull request"),
-                 (PR.format(41), gh({}), PR.format(41) + ": gh couldn't read it")]
+                 (PR.format(41), gh({}), PR.format(41) + ": gh couldn't read it: " + FAILED)]
         for url, failing, expected in cases:
             with self.subTest(expected):
                 self.assertEqual(tickets.pr_discussion(url, failing), expected)

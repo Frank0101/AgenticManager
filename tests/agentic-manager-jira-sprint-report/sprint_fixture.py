@@ -89,7 +89,7 @@ def issue(key, points, status, created, resolution=None, parent=None, priority="
         POINTS_FIELD: points,
         FLAGGED_FIELD: None,
     }
-    return {"key": key, "fields": fields}
+    return {"id": str(20000 + int(key.split("-")[1])), "key": key, "fields": fields}
 
 
 IMPORT = ("PROJ-100", "Import flow", "1100")
@@ -183,6 +183,22 @@ SPRINT_REPORT = {"contents": {
 
 COMMENTS = {"PROJ-7": [{"id": "1", "body": "Waiting on a dependency."}]}
 
+# The pull requests the fetch found, as fetch_sprint.py stores them, the
+# ticket's own before its sub-tasks': PROJ-1's own was opened after the close,
+# so the report, as at the close, leaves it out; the one found through its
+# sub-task PROJ-9 was opened on 05/03 and merged on 06/03 before it was
+# completed.
+PR = "https://github.com/acme/api/pull/{}"
+PULL_REQUESTS = {
+    "github_read": True,
+    "tickets": {"PROJ-1": [{"url": PR.format(42), "state": "OPEN", "found": "panel", "via": "PROJ-1"},
+                           {"url": PR.format(41), "state": "MERGED", "found": "panel", "via": "PROJ-9"}]},
+    "events": {PR.format(41): {"url": PR.format(41), "state": "MERGED", "createdAt": "2026-03-05T10:00:00Z",
+                               "mergedAt": "2026-03-06T09:00:00Z"},
+               PR.format(42): {"url": PR.format(42), "state": "OPEN", "createdAt": "2026-03-14T10:00:00Z",
+                               "mergedAt": None}},
+}
+
 # Judgment text the agent would write for this sprint.
 CONTENT = {
     "goal_verdict": "Partially met",
@@ -227,6 +243,7 @@ def raw_files():
         "parents.json": [{"id": id_, "key": key, "fields": {"summary": name, "description": {
             "type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"{name}."}]}]}}}
             for key, name, id_ in (IMPORT, EXPORT)],
+        "pull_requests.json": PULL_REQUESTS,
     }
     files.update({f"changelogs/{k}.json": v for k, v in CHANGELOGS.items()})
     files.update({f"comments/{k}.json": v for k, v in COMMENTS.items()})

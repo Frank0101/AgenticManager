@@ -4,12 +4,9 @@ Run with: python3 tests/run.py agentic-manager-jira-sprint-report
 """
 
 import copy
-import json
 import os
 import sys
-import tempfile
 import unittest
-from zoneinfo import ZoneInfo
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import report_fixture as fixture  # noqa: E402,F401  (puts the scripts on the path)
@@ -19,17 +16,8 @@ import common  # noqa: E402
 
 class BriefTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        os.makedirs(os.path.join(self.tmp.name, common.COMMENTS_DIR))
-        with open(os.path.join(self.tmp.name, common.COMMENTS_DIR, "PROJ-2.json"), "w", encoding="utf-8") as f:
-            json.dump([{"created": "2026-03-05T10:00:00.000+0000", "author": {"displayName": "Alex Example"},
-                        "body": "Waiting on Security."},
-                       {"created": "2026-03-06T10:00:00.000+0000", "body": ""}], f)
         self.data = fixture.sprint_data()
-        self.brief = make_brief.build_brief(self.data, self.tmp.name)
-
-    def tearDown(self):
-        self.tmp.cleanup()
+        self.brief = make_brief.build_brief(self.data)
 
     def tickets(self):
         return [t for e in self.brief["epics"] for t in e["tickets"]]
@@ -60,7 +48,7 @@ class BriefTest(unittest.TestCase):
         epic = data["epics"][0]
         epic["scope_groups"]["completed"][0]["description"] = long
         epic["description"] = long
-        brief = make_brief.build_brief(data, self.tmp.name)
+        brief = make_brief.build_brief(data)
         first = brief["epics"][0]["tickets"][0]
         pieces = common.chunks(long)
         self.assertGreater(len(pieces), 1)
@@ -93,7 +81,7 @@ class BriefTest(unittest.TestCase):
                         spell["summary"] = hidden_summary
                 data = fixture.sprint_data(spells=spells, sprint_status="active",
                                            sprint_goal="Search: ship search", today="2026-03-11")
-                brief = make_brief.build_brief(data, self.tmp.name)
+                brief = make_brief.build_brief(data)
                 theme = [t for t in brief["goal_tickets"]
                          if "Search" in t["summary"]]
                 total = sum(t["points"] for t in theme)
@@ -107,13 +95,30 @@ class BriefTest(unittest.TestCase):
         # Only goal_tickets tells these two sprints, with different verdicts, apart.
         self.assertEqual(briefs[0], briefs[1])
 
-    def test_comments_only_for_blocker_candidates_without_authors(self):
-        # AI text names teams, never colleagues, so authors stay out; an empty
-        # comment says nothing.
-        with_comments = {t["key"]: t["comments"]
-                         for t in self.tickets() if "comments" in t}
-        self.assertEqual(with_comments, {
-                         "PROJ-2": [{"date": "05/03/2026", "text": "Waiting on Security."}]})
+    def test_comments_only_for_blocker_candidates(self):
+        # data.json's comments, on each listing of a candidate: PROJ-2 has
+        # two spells.
+        with_comments = [(t["key"], t["comments"])
+                         for t in self.tickets() if "comments" in t]
+        self.assertEqual(with_comments, [
+                         ("PROJ-2", [{"date": "05/03/2026", "text": "Waiting on Security."}])] * 2)
+
+    def test_ticket_events_once_for_each_ticket_listed(self):
+        # PROJ-2 is listed twice, its events once; PROJ-4 and PROJ-5 aren't
+        # listed. Status changes and pull request events only, in time order.
+        self.assertEqual(list(self.brief["ticket_events"]), [
+                         "PROJ-1", "PROJ-2", "PROJ-6", "PROJ-3"])
+        self.assertEqual(self.brief["ticket_events"]["PROJ-1"], [
+            {"date": "03/03/2026", "type": "first_pr_opened", "url": fixture.PULL},
+            {"date": "04/03/2026", "type": "last_pr_merged", "url": fixture.PULL},
+            {"date": "04/03/2026", "type": "status_changed", "from": "In Progress", "to": "Done"}])
+        self.assertNotIn("pull_request_events", self.brief)
+
+    def test_says_when_pull_request_events_were_not_read(self):
+        brief = make_brief.build_brief(fixture.sprint_data(
+            pull_request_events_read=False))
+        self.assertEqual(brief["pull_request_events"],
+                         make_brief.EVENTS_NOT_READ)
 
     def test_epics_in_order_of_completed_pts(self):
         # Commitment and extra together: the order Key Achievements takes.
@@ -132,7 +137,7 @@ class BriefTest(unittest.TestCase):
     def test_goal_and_verdicts_of_a_running_sprint(self):
         # The goal as Jira holds it, one string whose lines are its themes.
         brief = make_brief.build_brief(fixture.sprint_data(
-            sprint_status="active", sprint_goal="Ship login\n\n  Fix export \n", today="2026-03-05"), self.tmp.name)
+            sprint_status="active", sprint_goal="Ship login\n\n  Fix export \n", today="2026-03-05"))
         self.assertEqual(brief["sprint"]["goal"],
                          "Ship login\n\n  Fix export \n")
         self.assertEqual(brief["sprint"]["goal_verdicts"], [
@@ -152,38 +157,19 @@ class BriefTest(unittest.TestCase):
 
 
 class HelpersTest(unittest.TestCase):
-    def test_comments(self):
-        # No file means no comments; a comment Jira gives no date keeps its
-        # text, and one with no text is dropped. Dates are in the reporting
-        # timezone, as every other date: 23:30 UTC is the next day in Rome.
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        os.makedirs(os.path.join(tmp.name, common.COMMENTS_DIR))
+    def test_brief_comments(self):
+        # Dated as the brief dates everything; a comment Jira gives no date
+        # keeps its text.
         cases = [
-            ("no file", None, []),
-            ("no date", [{"body": "Unblocked."}], [
-             {"date": None, "text": "Unblocked."}]),
-            ("blank text", [
-             {"created": "2026-03-05T10:00:00.000+0000", "body": "  "}], []),
-            ("late in the day", [{"created": "2026-03-05T23:30:00.000+0000", "body": "Blocked."}],
+            ("none", [], []),
+            ("dated", [{"at": "2026-03-05T23:30:00.000+0000", "date": "2026-03-06", "text": "Blocked."}],
              [{"date": "06/03/2026", "text": "Blocked."}]),
-            ("deadline in ADF", [{"created": "2026-03-05T10:00:00.000+0000", "body": {
-                "type": "paragraph", "content": [
-                    {"type": "text", "text": "Blocked until "},
-                    {"type": "date", "attrs": {"timestamp": "1772755200000"}},
-                    {"type": "text", "text": "."}]}}],
-             [{"date": "05/03/2026", "text": "Blocked until 06/03/2026."}]),
-            ("date-only ADF", [{"body": {"type": "date", "attrs": {"timestamp": "1772755200000"}}}],
-             [{"date": None, "text": "06/03/2026"}]),
+            ("no date", [{"at": None, "date": None, "text": "Unblocked."}],
+             [{"date": None, "text": "Unblocked."}]),
         ]
-        for number, (name, values, expected) in enumerate(cases, start=1):
+        for name, comments, expected in cases:
             with self.subTest(name):
-                key = f"PROJ-{number}"
-                if values is not None:
-                    with open(os.path.join(tmp.name, common.COMMENTS_DIR, f"{key}.json"), "w", encoding="utf-8") as f:
-                        json.dump(values, f)
-                self.assertEqual(make_brief.comments(
-                    tmp.name, key, ZoneInfo("Europe/Rome")), expected)
+                self.assertEqual(make_brief.brief_comments(comments), expected)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,15 @@ produced from data.json. It shares only the format helpers with make_report.py
 and recomputes every figure from the spells' events, so a generator bug can't
 pass by agreeing with itself. Every rule here exists because a table drifted
 when corrected by hand: prose guidance didn't stop it, a failing check does.
+
+The spells are worked out from each ticket's events, so the checker replays a
+ticket's events on their own, with its own membership and state rules, and
+fails a spell event they don't give: a commitment while the ticket was out of
+the sprint, a joining or removal with no sprint change at its instant, a
+completion or reopening with no status change, a re-estimate with no points
+change, or an estimate or Done flag the ticket didn't have then. A spell still
+running at the end must also match the ticket's state then, so an event
+missing from a spell fails too.
 """
 import argparse
 import html
@@ -20,7 +29,8 @@ import sys
 from datetime import date, timedelta
 
 from common import (INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, ISSUE_KEY,
-                    BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, KEY_LIST, TICKET_ESTIMATE,
+                    BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, KEY_LIST, PULL_FOUND, TICKET_ESTIMATE,
+                    TICKET_EVENT_TYPES,
                     NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai, text_rule_problems,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty,
                     ratio, report_file, report_timezone, scope_group_label, whole_percentage, word_count)
@@ -187,6 +197,7 @@ def check_model(c, data):
     c.check(logged == replayed, "model",
             "the timeline holds exactly the spells' events")
     check_commentary_groups(c, data)
+    check_ticket_events(c, data)
 
 
 def check_commentary_groups(c, data):
@@ -212,6 +223,148 @@ def check_commentary_groups(c, data):
                   for group, tickets in groups.items() if tickets}
         c.check(stored == expected.get(epic["key"], {}), "model",
                 f"{epic['key']}'s commentary groups hold the tickets their outcomes give")
+
+
+def check_ticket_events(c, data):
+    """Each ticket with a spell, and no other, has its events, well formed,
+    dated, as at the end and in time order; pull request events only when
+    GitHub was read, the first opened no later than the last merged; and its
+    spells' events are what its events give."""
+    tickets = data["ticket_events"]
+    c.check(set(tickets) == {s["key"] for s in data["spells"]}, "model",
+            "every ticket with a spell has its events, and no other ticket")
+    c.check(data["pull_request_events_read"] or not any(
+            e["source"] == "github" for events in tickets.values() for e in events), "model",
+            "pull request events only when GitHub was read")
+    zone, cutoff = report_timezone(
+        data["report_timezone"]), parse_ts(data["as_of_instant"])
+    for key, events in tickets.items():
+        problems = ticket_event_problems(events, zone, cutoff)
+        c.check(not problems, "model",
+                f"{key}'s ticket events are well formed, dated and as at the end {problems[:2] or ''}".strip())
+        if problems:
+            continue
+        instants = [parse_ts(e["at"]) for e in events]
+        c.check(instants == sorted(instants), "model",
+                f"{key}'s ticket events are in time order")
+        pulls = {e["type"]: parse_ts(e["at"])
+                 for e in events if e["source"] == "github"}
+        c.check(pulls.get("first_pr_opened", cutoff) <= pulls.get("last_pr_merged", cutoff), "model",
+                f"{key}'s first pull request was opened no later than its last was merged")
+    sprint_id = str(data["sprint_id"])
+    for spell in data["spells"]:
+        events = tickets.get(spell["key"])
+        if events is None or ticket_event_problems(events, zone, cutoff):
+            continue
+        wrong = spell_event_problems(spell, events, sprint_id, cutoff)
+        c.check(not wrong, "model",
+                f"{spell['key']}'s spell events are what its ticket events give {wrong[:2] or ''}".strip())
+
+
+# What each kind of ticket event holds besides its instant, date, source and type.
+TICKET_EVENT_FIELDS = {"created": ("values",), "status_changed": ("from", "to", "fromCategory", "toCategory"),
+                       "parent_changed": ("from", "to", "fromId", "toId"),
+                       "first_pr_opened": ("url", "found", "via"), "last_pr_merged": ("url", "found", "via")}
+# The values a ticket's creation holds, one per tracked field and the status's
+# category and the parent's id.
+CREATED_VALUES = {"sprint", "status", "statusCategory", "resolution", "priority", "parent", "parentId", "points",
+                  "flagged"}
+
+
+def ticket_event_problems(events, zone, cutoff):
+    """What is wrong with a ticket's events, as short descriptions: an
+    unknown source or type, a missing field, a date that isn't its instant's
+    in the reporting timezone, an instant after the end, a pull request
+    found in an unknown way or through no ticket key, or not exactly one
+    creation and at most one of each pull request event."""
+    problems = []
+    for e in events:
+        kind = e.get("type")
+        if kind not in TICKET_EVENT_TYPES.get(e.get("source"), ()):
+            problems.append(f"{e.get('source')} {kind}")
+            continue
+        fields = TICKET_EVENT_FIELDS.get(
+            kind, ("from", "to") if kind != "created" else ())
+        missing = [f for f in ("at", "date", *fields) if f not in e]
+        if missing:
+            problems.append(f"{kind} without {', '.join(missing)}")
+        elif parse_ts(e["at"]).astimezone(zone).date().isoformat() != e["date"]:
+            problems.append(f"{kind} at {e['at']} dated {e['date']}")
+        elif parse_ts(e["at"]) > cutoff:
+            problems.append(f"{kind} after the end")
+        elif kind == "created" and set(e["values"]) != CREATED_VALUES:
+            problems.append("created without each tracked field's value")
+        elif e["source"] == "github" and e["found"] not in PULL_FOUND:
+            problems.append(f"{kind} found by {e['found']}")
+        elif e["source"] == "github" and not ISSUE_KEY.fullmatch(str(e["via"])):
+            problems.append(f"{kind} via {e['via']}")
+    kinds = [e.get("type") for e in events]
+    if kinds.count("created") != 1:
+        problems.append(f"{kinds.count('created')} creations")
+    problems += [f"{kinds.count(kind)} {kind}" for kind in TICKET_EVENT_TYPES["github"]
+                 if kinds.count(kind) > 1]
+    return problems
+
+
+def spell_event_problems(spell, events, sprint_id, cutoff):
+    """The events of a spell its ticket's events don't give, as 'type at
+    instant', and 'end' if the spell, still in the sprint at the end, doesn't
+    end in the ticket's state then."""
+    wrong = []
+    for e in spell["events"]:
+        at = parse_ts(e["at"])
+        same = {t["type"] for t in events if parse_ts(t["at"]) == at}
+        moves = {move for when, move in sprint_changes(
+            events, sprint_id) if when == at}
+        given = {"committed": in_sprint(events, sprint_id, at),
+                 "joined": in_sprint(events, sprint_id, at) and (1 in moves or "created" in same),
+                 "removed": -1 in moves,
+                 "completed": "status_changed" in same,
+                 "reopened": "status_changed" in same,
+                 "reestimated": "points_changed" in same}.get(e["type"], False)
+        if not given or ticket_state(events, at) != (e["done"], e["points"]):
+            wrong.append(f"{e['type']} at {e['at']}")
+    last = spell["events"][-1]
+    if last["type"] != "removed" and (not in_sprint(events, sprint_id, cutoff)
+                                      or ticket_state(events, cutoff) != (last["done"], last["points"])):
+        wrong.append("end")
+    return wrong
+
+
+def sprint_changes(events, sprint_id):
+    """(instant, +1 or -1) of each change of the ticket's sprints that adds it
+    to the sprint or removes it, in time order, a removal first at one
+    instant."""
+    return sorted((parse_ts(e["at"]), 1 if sprint_id in e["to"] else -1) for e in events
+                  if e["type"] == "sprint_changed" and (sprint_id in e["to"]) != (sprint_id in e["from"]))
+
+
+def in_sprint(events, sprint_id, instant):
+    """Whether the ticket was in the sprint at `instant`: from its creation if
+    it was in it then, then as each sprint change up to the instant leaves it."""
+    created = next(e for e in events if e["type"] == "created")
+    inside = sprint_id in created["values"]["sprint"] and parse_ts(
+        created["at"]) <= instant
+    for when, move in sprint_changes(events, sprint_id):
+        if when > instant:
+            break
+        inside = move > 0
+    return inside
+
+
+def ticket_state(events, instant):
+    """(Done, estimate) of the ticket at `instant`: its creation's, then as
+    each status and points change up to the instant leaves them."""
+    created = next(e for e in events if e["type"] == "created")["values"]
+    done, points = created["statusCategory"] == "done", created["points"]
+    for e in events:
+        if parse_ts(e["at"]) > instant:
+            continue
+        if e["type"] == "status_changed":
+            done = e["toCategory"] == "done"
+        elif e["type"] == "points_changed":
+            points = e["to"]
+    return done, points
 
 
 HEADER_START = "| Field | Detail |\n|---|---|\n"

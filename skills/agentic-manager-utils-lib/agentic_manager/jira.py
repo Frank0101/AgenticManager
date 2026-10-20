@@ -23,17 +23,33 @@ changes, sprint_report() fails rather than return a sprint report with its
 removals missing. The dev-status endpoints, behind an issue's Development
 panel, are internal too: they are the only way to the pull requests a code
 host's integration links to an issue.
+
+Jira drops connections and answers 5xx when a skill reads many issues at
+once: such a request is passing, tried again on retry.py's waits before the
+skill is stopped. A 429, too many requests, is a rate limit, final as every
+service's is, with the advice to wait a minute. A POST is tried again too: the
+only one, the batched changelog read, reads and changes nothing.
+
+Many issues' changelogs are read in batches, through Jira's "bulk fetch"
+endpoint: one request for each batch of
+issues (batch.py) rather than one per issue, each answer in pages of the
+10000 change histories Jira allows. It is asked
+for every field, not only the tracked ones: a field logged without an id,
+such as IssueParentAssociation, can't be named in its `fieldIds`.
 """
 import base64
 import json
 import re
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from agentic_manager.batch import batches
 from agentic_manager.config import read_source
 from agentic_manager.json_path import nested
+from agentic_manager.retry import RETRY_WAITS, retried
 from agentic_manager.text import DISPLAY_DATE
 from agentic_manager.web import ssl_context
 
@@ -48,6 +64,12 @@ EXCLUDED = "excluded-projects"
 STORY_POINT_FIELD_NAMES = ("Story Points", "Story point estimate")
 
 PAGE_SIZE = 100
+BATCH_CHANGELOG = "/rest/api/3/changelog/bulkfetch"
+# Change histories a page of the batched changelog's answer holds: the most
+# Jira allows.
+BATCH_CHANGELOG_PAGE = 10000
+# The answers that mean Jira is busy or briefly unwell, not that the request is wrong.
+TRANSIENT_CODES = {500, 502, 503, 504}
 DEV_STATUS = "/rest/dev-status/latest/issue"
 # The type of Jira Software's Sprint field. A site can have other fields named
 # Sprint, so the field is found by its type.
@@ -356,21 +378,42 @@ class JiraClient:
         changelog, since the changes can sit past the first page; a truncated
         changelog would give a wrong history with no error anywhere."""
         self._refuse_excluded(issue_key)
-        names = {ident: name for name, ident in fields.items() if ident}
-        values = self._paginate(
-            f"/rest/api/3/issue/{issue_key}/changelog", {}, "values")
-        changes = []
-        for entry in values:
-            for item in entry.get("items", []):
-                name = names.get(item.get("fieldId")) or names.get(
-                    item.get("field"))
-                if name:
-                    changes.append({"created": entry.get("created"), "field": name,
-                                    **{k: item.get(k) for k in ("from", "to", "fromString", "toString")}})
-        # Sort on the parsed instant, not the string: offsets change with
-        # daylight saving, so a string sort misorders events across the switch.
-        changes.sort(key=lambda c: parse_ts(c["created"]))
-        return changes
+        return tracked_changes(self._paginate(
+            f"/rest/api/3/issue/{issue_key}/changelog", {}, "values"), fields)
+
+    def batched_field_changes(self, issues, fields):
+        """{key: field_changes(key, fields)} of each of `issues`, in their
+        order, each issue given with its "id" and "key", read with Jira's
+        batched changelog read: a batch of issues a request, every
+        page of each. The answer names issues by id, which `issues` turns
+        back into keys. An issue with no change can come back without an
+        entry or with an empty one: either gives []. So does one the account
+        can't see, which the endpoint is taken to leave out rather than
+        refuse: give only issues the account has just read. Refuses, before
+        any request, an issue of an excluded project. The batched read gives a
+        change's time in milliseconds, so it is written as the per-issue
+        changelog writes it, in the account's time zone, and the two give the
+        same changes."""
+        for issue in issues:
+            self._refuse_excluded(issue["key"])
+        zone = ZoneInfo(self.whoami().get("timeZone")
+                        or "UTC") if issues else None
+        keys = {str(issue["id"]): issue["key"] for issue in issues}
+        histories = {issue_id: [] for issue_id in keys}
+        for ids in batches(keys):
+            body = {"issueIdsOrKeys": ids,
+                    "maxResults": BATCH_CHANGELOG_PAGE}
+            while True:
+                page = self._post(BATCH_CHANGELOG, body)
+                for log in page.get("issueChangeLogs", []):
+                    histories[str(log["issueId"])].extend(
+                        {**history,
+                            "created": jira_stamp(history.get("created"), zone)}
+                        for history in log.get("changeHistories") or [])
+                if not (token := page.get("nextPageToken")):
+                    break
+                body = {**body, "nextPageToken": token}
+        return {key: tracked_changes(histories[issue_id], fields) for issue_id, key in keys.items()}
 
     def comments(self, issue_key):
         self._refuse_excluded(issue_key)
@@ -380,11 +423,25 @@ class JiraClient:
         url = f"{self.base_url}{path}"
         if params:
             url += "?" + urlencode(params)
-        request = Request(
-            url, headers={"Accept": "application/json", "Authorization": self._auth})
-        try:
+        return self._send(path, Request(url, headers=self._headers()))
+
+    def _post(self, path, body):
+        """Jira's answer to `body` sent as JSON to `path`."""
+        return self._send(path, Request(f"{self.base_url}{path}", data=json.dumps(body).encode(), method="POST",
+                                        headers={**self._headers(), "Content-Type": "application/json"}))
+
+    def _headers(self):
+        return {"Accept": "application/json", "Authorization": self._auth}
+
+    def _send(self, path, request):
+        """Jira's answer to `request`, to `path`, tried again while it fails
+        in passing; a failure exits with a message naming `path` and the
+        setting to check, never a secret."""
+        def attempt():
             with urlopen(request, timeout=30, context=ssl_context()) as response:
                 return json.load(response)
+        try:
+            return retried(attempt, passing, note)
         except HTTPError as e:
             if e.code == 401:
                 raise SystemExit(
@@ -395,10 +452,14 @@ class JiraClient:
                     f"Jira returned 403 Forbidden for {path}: the account lacks permission.")
             if e.code == 404:
                 raise NotFound(path)
+            if e.code == 429:
+                raise SystemExit(
+                    f"Jira returned 429 Too Many Requests for {path}. Wait a minute and run it again.")
             raise SystemExit(f"Jira returned {e.code} for {path}.")
-        except URLError:
+        except (URLError, TimeoutError, ConnectionError):
             raise SystemExit(
-                f"could not reach Jira. Check your `base-url` setting in {SOURCE} and the connection.")
+                f"could not reach Jira, after trying {len(RETRY_WAITS) + 1} times. Check your "
+                f"`base-url` setting in {SOURCE} and the connection.")
 
     def _paginate(self, path, params, items):
         """Every item of a paged list, under the page's `items` key. Paging ends
@@ -420,6 +481,53 @@ class JiraClient:
     def _issues_where(self, clause, values, fields):
         """Issues whose `clause` is one of `values`."""
         return self.search(f"{clause} in ({','.join(values)})", fields) if values else []
+
+
+def jira_stamp(created, zone):
+    """A change's time as Jira's per-issue changelog writes it, such as
+    2026-10-02T14:19:18.009+0100, from the milliseconds the batched read gives;
+    text already in that form is kept."""
+    if not isinstance(created, (int, float)):
+        return created
+    moment = datetime.fromtimestamp(created / 1000, zone)
+    return f"{moment:%Y-%m-%dT%H:%M:%S}.{int(created) % 1000:03d}{moment:%z}"
+
+
+def tracked_changes(histories, fields):
+    """The changes of `fields` (see JiraClient.field_changes) in an issue's
+    change histories, each {"created", "items"}, sorted by instant."""
+    names = {ident: name for name, ident in fields.items() if ident}
+    changes = []
+    for entry in histories:
+        for item in entry.get("items", []):
+            name = names.get(item.get("fieldId")) or names.get(
+                item.get("field"))
+            if name:
+                changes.append({"created": entry.get("created"), "field": name,
+                                **{k: item.get(k) for k in ("from", "to", "fromString", "toString")}})
+    # Sort on the parsed instant, not the string: offsets change with
+    # daylight saving, so a string sort misorders events across the switch.
+    # Changes of one instant go by field, as the per-issue and the batched
+    # changelog list them in different orders.
+    changes.sort(key=lambda c: (parse_ts(c["created"]), c["field"]))
+    return changes
+
+
+def passing(error):
+    """Whether a failed request is passing, to retry.retried(): a dropped
+    connection, a timeout or an answer of TRANSIENT_CODES; any other answer,
+    a 429 included, is final."""
+    if isinstance(error, HTTPError):
+        return error.code in TRANSIENT_CODES
+    return isinstance(error, (URLError, TimeoutError, ConnectionError))
+
+
+def note(error):
+    """What failed, for the line a retry prints: the status Jira answered,
+    never its body or the request, which a secret could be in."""
+    if isinstance(error, HTTPError):
+        return f"Jira answered {error.code}"
+    return "Jira couldn't be reached"
 
 
 class NotFound(SystemExit):

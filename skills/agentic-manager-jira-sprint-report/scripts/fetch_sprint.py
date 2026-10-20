@@ -1,5 +1,6 @@
 """
-Fetch everything a sprint report needs from Jira into a new report folder.
+Fetch everything a sprint report needs from Jira, and GitHub when it can be
+read, into a new report folder.
 
 Usage (exactly one sprint selector):
     python3 fetch_sprint.py --sprint-id 123 [--board 42]   (the board whose sprint report is read)
@@ -20,33 +21,61 @@ Only active and closed sprints can be reported; a future one fails before
 anything is deleted.
 
 The report is as at the close, or the fetch for an active sprint, so changelogs
-are fetched, not current values (see build_sprint_data.py). Comments created or
-edited after that moment are excluded because their earlier text isn't
-fetched. Nothing is computed here beyond choosing what to fetch: the previous
-sprint (for the carry-over), and which comments and epics; build_sprint_data.py
-does the rest.
+are fetched, not current values (see build_sprint_data.py). Nothing is computed
+here beyond choosing what to fetch: the previous sprint (for the carry-over),
+which comments and epics, and where to look for each ticket's pull requests;
+the raw files keep what was fetched, and build_sprint_data.py does the rest,
+such as leaving out the comments written after that moment. The tickets whose
+comments are fetched are the blocker candidates, worked out here from the
+changelogs (common.blocker_candidate_keys), as there are no events yet.
+
+Sub-tasks are left out of the report, as Jira's sprint report rolls their
+work into the parent, but their pull requests are the parent's: a ticket's
+pull requests are those the Jira Development panels of it and of each of its
+sub-tasks list, all of them, found by a search by parent, as a ticket removed
+from the sprint takes its sub-tasks with it. Each is kept once, through the
+ticket before its sub-tasks, those in key order: the link the team's
+integration made, a Jira call or two a ticket. GitHub isn't searched for more: looking up
+the panels' commits cost a GitHub request per commit, a thousand for a
+sprint, which used up GitHub's hourly limit in a few runs, and found only
+pull requests of tickets the panel already listed some for; a search of
+titles found none, and GitHub's search allows about 30 requests a minute.
+Each pull request records the ticket it came through (`via`). Then GitHub
+gives when each was opened and merged, many in one GraphQL call.
+gh (the github-cli source) is optional: without it neither the panel nor
+GitHub is read, as the panel alone gives no open or merge times, and the raw
+file records that GitHub wasn't read, so data.json has no pull request
+events. With it, a pull request GitHub says doesn't exist, such as one
+deleted that Jira still links, is skipped: dropped from its tickets, so it
+gives no events, said on stderr and kept in the raw file's `skipped` with
+GitHub's message, as there is nothing to read and nothing to fix. Any other
+gh failure, such as GitHub's rate limit, stops the fetch with gh's message
+and the library's advice: a pull request it couldn't read would otherwise be
+taken for work without times.
 """
 import argparse
 import json
 import os
+import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
-from common import (CHANGELOGS_DIR, COMMENTS_DIR, META_FILE, PARENTS_FILE, PREVIOUS_SPRINT_FILE, PUNTED_ISSUES_FILE,
-                    RAW_DIR, REPORTS_FOLDER, SPRINT_FILE, SPRINT_ISSUES_FILE, SPRINT_REPORT_FILE, STATUSES_FILE, JiraClient, as_of, blocker_candidate_keys, clear_folder, day_folder,
-                    history_fields, nested, output_folder, parse_ts, report_label, report_timezone, status_categories, write_json)
+from common import (CHANGELOGS_DIR, COMMENTS_DIR, META_FILE, PARENTS_FILE, PREVIOUS_SPRINT_FILE, PULL_REQUESTS_FILE,
+                    PUNTED_ISSUES_FILE, RAW_DIR, REPORTS_FOLDER, SPRINT_FILE, SPRINT_ISSUES_FILE,
+                    SPRINT_REPORT_FILE, STATUSES_FILE, JiraClient, as_of, blocker_candidate_keys, clear_folder,
+                    day_folder, first_found, gh_available, history_fields, key_order, nested, output_folder,
+                    panel_pulls, parse_ts, read_events, report_label, report_timezone,
+                    standard_issues, status_categories, write_json)
 
-MAX_WORKERS = 8
+# Parallel Jira reads: Jira's internal Development-panel endpoint drops
+# connections under more.
+MAX_WORKERS = 4
 # Issue fields the report needs, besides the site's Flagged and story points fields.
 BASE_FIELDS = [
     "summary", "status", "issuetype", "created", "resolution", "priority", "parent",
     "description",
 ]
-
-
-def log(message):
-    print(message, file=sys.stderr)
 
 
 def prepare_report_dir(report_dir, sprint_id, log):
@@ -96,12 +125,68 @@ def project_key_of(args, issues):
     return issues[0]["key"].rsplit("-", 1)[0] if issues else None
 
 
-def comments_as_of(comments, moment):
-    """Keep comments whose creation and latest edit do not follow the cutoff.
-    Without an updated timestamp, creation alone determines inclusion."""
-    return [c for c in comments
-            if all(not c.get(field) or parse_ts(c[field]) <= moment
-                   for field in ("created", "updated"))]
+def pull_requests(client, issues, gh, run=subprocess.run):
+    """What pull_requests.json holds: {github_read, tickets: {key: the
+    ticket's pull requests from the Development panels of it and its
+    sub-tasks, each with `via`, the ticket it was found through}, events:
+    {url: when GitHub says it was opened and merged}, skipped: [{url, via:
+    [the tickets it was found through], message}] of those GitHub says don't
+    exist, left out of `tickets`}; with gh False, nothing is read and all
+    are empty. Exits, through stop_on(), when gh fails otherwise."""
+    if not gh:
+        return {"github_read": False, "tickets": {}, "events": {}, "skipped": []}
+    keys = [issue["key"] for issue in issues]
+    children = sub_tasks(client, keys)
+    # Each ticket, then its sub-tasks: (the ticket's index, the issue read).
+    looked = [(index, read) for index, issue in enumerate(issues)
+              for read in (issue, *children.get(issue["key"], []))]
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        panels = list(pool.map(lambda pair: panel_pulls(
+            client.pull_requests(pair[1]["id"])), looked))
+    groups = [[] for _ in issues]
+    for (index, read), prs in zip(looked, panels):
+        groups[index].append([{**pr, "via": read["key"]} for pr in prs])
+    found = [first_found(*ticket_groups) for ticket_groups in groups]
+    every = [pr for prs in found for pr in prs]
+    events, failures = read_events(every, run)
+    stop_on([(url, failed)
+            for url, failed in failures if not failed.not_found])
+    skipped = [{"url": url, "via": list(dict.fromkeys(pr["via"] for pr in every if pr["url"] == url)),
+                "message": failed.message} for url, failed in failures if failed.not_found]
+    for skip in skipped:
+        log(f"skipped a pull request GitHub says doesn't exist, found through {', '.join(skip['via'])}: "
+            f"{skip['message']}")
+    gone = {skip["url"] for skip in skipped}
+    found = [[pr for pr in prs if pr["url"] not in gone] for prs in found]
+    return {"github_read": True, "tickets": dict(zip(keys, found)), "events": events, "skipped": skipped}
+
+
+def sub_tasks(client, keys):
+    """{key: its sub-tasks, in key order} of the tickets of `keys`."""
+    found = client.search(f"parent in ({','.join(keys)})", [
+                          "parent"]) if keys else []
+    children = {}
+    for issue in sorted(found, key=lambda i: key_order(i["key"])):
+        children.setdefault(nested(issue.get("fields"), [
+                            "parent", "key"]), []).append(issue)
+    return children
+
+
+def stop_on(failures):
+    """Exits, before the report folder is touched, if gh failed for any of
+    `failures`, [(subject, GhError)], with the first one's command, gh's
+    words and what to do."""
+    if not failures:
+        return
+    failed = failures[0][1]
+    more = f" ({len(failures)} gh calls failed, the first shown)" if len(
+        failures) > 1 else ""
+    raise SystemExit(f"GitHub couldn't be read, so no report was written{more}: gh {' '.join(failed.command)}: "
+                     f"{failed.explanation}")
+
+
+def log(message):
+    print(message, file=sys.stderr)
 
 
 def parse_args():
@@ -189,11 +274,9 @@ def main():
     moment = parse_ts(as_of(sprint, fetched_at))
     statuses = client.statuses()
     categories = status_categories(statuses)
-    tracked = history_fields(flagged_field, points_field)
-    all_keys = [i["key"] for i in sprint_issues + punted_issues]
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        changelogs = dict(zip(all_keys, pool.map(
-            lambda key: client.field_changes(key, tracked), all_keys)))
+    # Read in batches: a request for many issues, not one each.
+    changelogs = client.batched_field_changes(sprint_issues + punted_issues,
+                                              history_fields(flagged_field, points_field))
 
     # Every epic: the issues' current parents, whose descriptions their own
     # fields don't carry, and those they belonged to before a change of
@@ -204,15 +287,19 @@ def main():
                            if c["field"] == "parent" for side in ("from", "to") if c[side]})
     parents = client.issues_by_ids(parent_ids, ["summary", "description"])
 
-    # Comments are fetched only for blocker candidates, as they were at the
-    # moment the report describes.
+    # Comments are fetched only for the tickets that were blocker candidates
+    # at the moment the report describes.
     blocker_keys = blocker_candidate_keys(sprint_issues + punted_issues, changelogs, categories,
-                                          flagged_field, points_field, sprint_id, moment)
+                                          flagged_field, sprint_id, moment)
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         comments = dict(
             zip(blocker_keys, pool.map(client.comments, blocker_keys)))
-    comments = {key: comments_as_of(values, moment)
-                for key, values in comments.items()}
+
+    gh = gh_available()
+    pulls = pull_requests(client, standard_issues(
+        sprint_issues + punted_issues), gh)
+    log(f"{sum(map(len, pulls['tickets'].values()))} pull request(s) found" if gh
+        else "gh isn't available or github-cli isn't enabled, so pull requests weren't read")
 
     project_key = project_key_of(args, sprint_issues + punted_issues)
     label = report_label(project_key, sprint.get("name"))
@@ -228,6 +315,7 @@ def main():
     write_json(os.path.join(raw_dir, PUNTED_ISSUES_FILE), punted_issues)
     write_json(os.path.join(raw_dir, STATUSES_FILE), statuses)
     write_json(os.path.join(raw_dir, PARENTS_FILE), parents)
+    write_json(os.path.join(raw_dir, PULL_REQUESTS_FILE), pulls)
     for key, changes in changelogs.items():
         write_json(os.path.join(
             raw_dir, CHANGELOGS_DIR, f"{key}.json"), changes)

@@ -16,11 +16,13 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.config import enabled_sources, is_enabled  # noqa: E402,F401
+from agentic_manager.github import PULL_URL, GhError, gather, gh_available, gh_json  # noqa: E402,F401
 from agentic_manager.jira import ISSUE_KEY, PROJECT_KEY, JiraClient, NotFound, browse_url, plain_text  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.text import DEFINITION, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, free_name, heading_anchor, headings, link_definitions, link_text, links, local_link, markdown, reference_key, slug, word_count  # noqa: E402,F401
+from agentic_manager.ticket_pulls import COMMITS, PANEL, SEARCH, first_found, holding_pulls, panel_commits, panel_pulls, search_pulls  # noqa: E402,F401
 
 FOLDER_NAME = "tech-investigations"
 EXAMPLES = "_examples"
@@ -183,8 +185,6 @@ TICKET_URL = re.compile(
     rf"(https?://[^/\s()<>]+)/browse/({PROJECT_KEY})-\d+")
 REPO_URL = re.compile(
     r"^(https?://[^/\s]+)/([\w.-]+/[\w.-]+)/(?:pull|issues|blob|tree|commit|commits)\b")
-# A pull request's page: its repository, owner/name, and number.
-PULL_URL = re.compile(r"^https?://[^/\s]+/(([\w.-]+)/[\w.-]+)/pull/(\d+)")
 # What a reference inside them is already part of: code, links and bare URLs.
 PROTECTED = re.compile(
     r"`[^`\n]*`|!?\[[^\]\n]*\]\([^)\n]*\)|!?\[[^\]\n]+\]\[[^\]\n]*\]|https?://\S+")

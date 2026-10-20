@@ -12,6 +12,7 @@ import tempfile
 import unittest
 from datetime import timedelta, timezone
 from unittest import mock
+from zoneinfo import ZoneInfo
 
 # tests/<skill>/ mirrors skills/<skill>/.
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -86,6 +87,11 @@ def carried(created=PREVIOUS["completeDate"]):
             "fromString": None, "toString": None}
 
 
+def events(issue, changes):
+    """The ticket's events, from which the model works out its spells."""
+    return build.ticket_events(issue, changes, context(), CLOSE)
+
+
 def points(created, old, new):
     return changed(created, "points", old, new)
 
@@ -94,19 +100,17 @@ class DatesTest(unittest.TestCase):
     def test_sprint_date(self):
         cases = [
             ("converted to the site offset",
-             "2026-03-01T23:30:00.000Z", False, "2026-03-02"),
-            ("none", None, False, None),
-            # 00:00 on the 8th at +01:00: the sprint ran through the 7th.
-            ("an end on midnight names the last day worked",
-             "2026-03-07T23:00:00.000Z", True, "2026-03-07"),
-            ("an end during the day", "2026-03-07T16:00:00.000Z", True, "2026-03-07"),
-            ("an end just after midnight stays on that day",
-             "2026-03-07T23:00:00.500Z", True, "2026-03-08"),
+             "2026-03-01T23:30:00.000Z", "2026-03-02"),
+            ("none", None, None),
+            # 00:00 on the 8th at +01:00: the day Jira shows, the 8th, is the
+            # sprint's last day, included.
+            ("an end on midnight names the day Jira shows",
+             "2026-03-07T23:00:00.000Z", "2026-03-08"),
+            ("an end during the day", "2026-03-07T16:00:00.000Z", "2026-03-07"),
         ]
-        for name, ts, end_of_period, expected in cases:
+        for name, ts, expected in cases:
             with self.subTest(name):
-                self.assertEqual(build.sprint_date(
-                    ts, PLUS_ONE, end_of_period=end_of_period), expected)
+                self.assertEqual(build.sprint_date(ts, PLUS_ONE), expected)
 
 
 class FieldsTest(unittest.TestCase):
@@ -152,9 +156,9 @@ class CarryOverTest(unittest.TestCase):
         for name, changes, expected in cases:
             with self.subTest(name):
                 self.assertEqual(build.in_sprint_when_closed(
-                    issue, changes, PREVIOUS), expected)
+                    events(issue, changes), PREVIOUS), expected)
         self.assertFalse(build.in_sprint_when_closed(
-            issue, [carried()], None))
+            events(issue, [carried()]), None))
 
     def test_only_original_work_is_carried_over(self):
         # Carry-over describes the commitment: work that came from the previous
@@ -292,6 +296,124 @@ class SpellsTest(unittest.TestCase):
                 self.assertEqual(
                     (found["parentKey"], found["parentSummary"]), expected)
                 self.assertNotIn("parentId", found)
+
+
+class TicketEventsTest(unittest.TestCase):
+    """A ticket's events, which its spells are worked out from."""
+
+    def test_events(self):
+        # Each tracked field's value at creation is its first change's old
+        # value, else today's; a change after the close is left out of the
+        # events but still says what the value was at creation.
+        issue = done("PROJ-1", points=5, parent="PROJ-100")
+        changes = [joined(at("02-27")), points(at("03-03"), "2", "5"), moved(at("03-04"), "To Do", "Done"),
+                   changed(at("03-05"), "parent", "PROJ-90",
+                           "PROJ-100", "id-PROJ-90", "id-PROJ-100"),
+                   moved(at("03-14"), "Done", "In Progress")]
+        jira = {"source": "jira"}
+        self.assertEqual(build.ticket_events(issue, changes, context(), CLOSE), [
+            {"at": "2026-02-20T10:00:00.000+0100", "date": "2026-02-20", **jira, "type": "created", "values": {
+                "sprint": [], "status": "To Do", "statusCategory": "new", "resolution": "Done", "priority": "Medium",
+                "parent": "PROJ-90", "parentId": "id-PROJ-90", "points": 2, "flagged": False}},
+            {"at": at("02-27"), "date": "2026-02-27", **jira,
+             "type": "sprint_changed", "from": [], "to": ["7"]},
+            {"at": at("03-03"), "date": "2026-03-03", **jira,
+             "type": "points_changed", "from": 2, "to": 5},
+            {"at": at("03-04"), "date": "2026-03-04", **jira, "type": "status_changed", "from": "To Do", "to": "Done",
+             "fromCategory": "new", "toCategory": "done"},
+            {"at": at("03-05"), "date": "2026-03-05", **jira, "type": "parent_changed", "from": "PROJ-90",
+             "to": "PROJ-100", "fromId": "id-PROJ-90", "toId": "id-PROJ-100"}])
+
+    def test_initial_sprints(self):
+        # Jira logs no change for the sprints a ticket is created in: each
+        # sprint whose first move isn't an add, and the reported sprint when
+        # no change names it.
+        def change(created, old, new):
+            return {"created": created, "field": "sprint", "from": old, "to": new}
+        cases = [
+            ("no sprint change", [], ["7"]),
+            ("added later", [joined(at("02-27"))], []),
+            ("removed first", [left(at("02-27"))], ["7"]),
+            ("carried over from the previous sprint", [carried()], ["6"]),
+            ("removed and added at one instant", [
+             joined(at("02-27")), left(at("02-27"))], ["7"]),
+            ("a later sprint added after this one", [joined(at("02-27")),
+                                                     change(at("03-14"), "7", "7, 8")], []),
+            ("sorted as numbers", [
+             change(at("02-27"), "10", "")], ["7", "10"]),
+        ]
+        for name, changes, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(build.initial_sprints(changes, "7"), expected)
+
+    def test_github_events(self):
+        # The first pull request opened and the last merged, as at the
+        # close: later times are left out, and so are pull requests GitHub
+        # couldn't read.
+        def pr(number, via="PROJ-1"):
+            return {"url": f"https://github.com/acme/api/pull/{number}", "found": "panel", "via": via}
+
+        def times(number, opened, merged=None):
+            return {pr(number)["url"]: {"createdAt": opened, "mergedAt": merged}}
+        cases = [
+            # A sub-task's pull request is the ticket's, and says it came
+            # through the sub-task.
+            ("first opened and last merged of several", [pr(1), pr(2, via="PROJ-9")],
+             times(1, at("03-03"), at("03-08")) | times(
+                 2, at("03-02"), at("03-06")),
+             [("first_pr_opened", 2, at("03-02"), "panel", "PROJ-9"),
+              ("last_pr_merged", 1, at("03-08"), "panel", "PROJ-1")]),
+            ("opened, not merged", [pr(1)], times(1, at("03-03")),
+             [("first_pr_opened", 1, at("03-03"), "panel", "PROJ-1")]),
+            ("merged after the close", [pr(1)], times(1, at("03-03"), at("03-14")),
+             [("first_pr_opened", 1, at("03-03"), "panel", "PROJ-1")]),
+            ("opened after the close", [pr(1)], times(1, at("03-14")), []),
+            ("GitHub couldn't read it", [pr(1)], {pr(1)["url"]: None}, []),
+            ("not read", [pr(1)], {}, []),
+        ]
+        for name, pulls, read, expected in cases:
+            with self.subTest(name):
+                found = build.github_events(
+                    pulls, read, parse_ts(CLOSE), PLUS_ONE)
+                self.assertEqual([(e["type"], int(e["url"].rsplit("/", 1)[1]), e["at"], e["found"], e["via"])
+                                  for e in found], expected)
+                self.assertTrue(all(e["source"] == "github" for e in found))
+
+    def test_spells_come_from_the_events_alone(self):
+        # Hand-written events, with no changelog: committed at the start,
+        # completed on 04/03.
+        events = [{"at": at("02-20"), "date": "2026-02-20", "source": "jira", "type": "created", "values": {
+            "sprint": ["7"], "status": "To Do", "statusCategory": "new", "resolution": None, "priority": "High",
+            "parent": None, "parentId": None, "points": 3, "flagged": False}},
+            {"at": at("03-04"), "date": "2026-03-04", "source": "jira", "type": "status_changed", "from": "To Do",
+             "to": "Done", "fromCategory": "new", "toCategory": "done"},
+            {"at": at("03-05"), "date": "2026-03-05", "source": "github", "type": "last_pr_merged",
+             "url": "https://github.com/acme/api/pull/1", "found": "panel", "via": "PROJ-1"}]
+        spell, = build.spells_from_events(
+            raw("PROJ-1"), events, context(), CLOSE)
+        self.assertEqual([(e["type"], e["done"], e["points"]) for e in spell["events"]],
+                         [("committed", False, 3), ("completed", True, 3)])
+        self.assertEqual((spell["status"], spell["priority"], spell["outcome"]),
+                         ("Done", "High", "completed"))
+
+    def test_a_status_jira_no_longer_lists(self):
+        # Its category is unknown, which matters only when a spell reads it.
+        gone = changed(at("02-27"), "status", "Old", "To Do", "60", "1")
+        cases = [("left before the start", [gone], None),
+                 ("left during the sprint", [dict(gone, created=at("03-04"))],
+                  "PROJ-1: status 'Old' is not in Jira's list of statuses")]
+        for name, changes, failure in cases:
+            with self.subTest(name):
+                events = build.ticket_events(
+                    raw("PROJ-1"), changes, context(), CLOSE)
+                self.assertIsNone(events[0]["values"]["statusCategory"])
+                if failure:
+                    with self.assertRaisesRegex(SystemExit, failure):
+                        build.spells_from_events(
+                            raw("PROJ-1"), events, context(), CLOSE)
+                else:
+                    self.assertEqual(len(build.spells_from_events(
+                        raw("PROJ-1"), events, context(), CLOSE)), 1)
 
 
 class ReplayTest(unittest.TestCase):
@@ -522,14 +644,121 @@ class CrossCheckTest(unittest.TestCase):
 
 class MembershipSetsTest(unittest.TestCase):
     def test_membership_sets(self):
+        # From the events, as at the close: PROJ-5 was completed after it.
         issues = [raw("PROJ-1"), done("PROJ-2"), raw("PROJ-3"),
                   raw("PROJ-4"), done("PROJ-5")]
         changes = {"PROJ-1": [], "PROJ-2": [moved(at("03-04"), "To Do", "Done")],
                    "PROJ-3": [joined(at("03-03")), left(at("03-05"))],
                    "PROJ-4": [joined(at("02-27")), left(at("02-28"))],
                    "PROJ-5": [moved(at("03-14"), "To Do", "Done")]}
-        self.assertEqual(build.membership_sets(issues, changes, context(), CLOSE),
+        events_of = {i["key"]: events(i, changes[i["key"]]) for i in issues}
+        self.assertEqual(build.membership_sets(events_of, "7", CLOSE),
                          (["PROJ-1", "PROJ-2", "PROJ-5"], ["PROJ-2"], ["PROJ-3", "PROJ-4"]))
+
+
+def flag(created, on=True):
+    return changed(created, "flagged", None if on else "Impediment", "Impediment" if on else None,
+                   None if on else "[10000]", "[10000]" if on else None)
+
+
+class BlockerCandidatesTest(unittest.TestCase):
+    def test_blocker_candidates(self):
+        # A ticket in the sprint at the close that was flagged, blocked or
+        # high priority and not done then, from its events; the fetch picks
+        # the same tickets from the changelogs, by the same rule.
+        # name: (the ticket today, its changes, a candidate)
+        cases = [
+            ("flagged at the close", raw("PROJ-1"), [flag(at("03-04"))], True),
+            ("flag cleared before the close", raw("PROJ-1"),
+             [flag(at("03-04")), flag(at("03-06"), on=False)], False),
+            ("flagged after the close", raw("PROJ-1", customfield_flag=[{"value": "Impediment"}]),
+             [flag(at("03-14"))], False),
+            ("in a blocked status", raw("PROJ-1"),
+             [moved(at("03-04"), "To Do", "Blocked")], True),
+            ("unblocked before the close", raw("PROJ-1", status="In Progress"),
+             [moved(at("03-04"), "To Do", "Blocked"), moved(at("03-05"), "Blocked", "In Progress")], False),
+            ("high priority and open", raw("PROJ-1"),
+             [changed(at("03-04"), "priority", "Medium", "High")], True),
+            ("high priority but done", done("PROJ-1", priority={"name": "High"}),
+             [moved(at("03-04"), "To Do", "Done")], False),
+            ("high priority only after the close", raw("PROJ-1", priority={"name": "High"}),
+             [changed(at("03-14"), "priority", "Medium", "High")], False),
+            ("flagged but left before the close", raw("PROJ-1"),
+             [flag(at("03-04")), left(at("03-05"))], False),
+            ("flagged and done", done("PROJ-1"),
+             [flag(at("03-04")), moved(at("03-05"), "To Do", "Done")], True),
+        ]
+        for name, issue, changes, expected in cases:
+            with self.subTest(name):
+                found = build.blocker_candidates(
+                    {"PROJ-1": events(issue, changes)}, "7", CLOSE)
+                self.assertEqual(found, ["PROJ-1"] if expected else [])
+                self.assertEqual(common.blocker_candidate_keys([issue], {"PROJ-1": changes}, CATEGORIES,
+                                                               FIELDS[0], "7", parse_ts(CLOSE)), found)
+
+
+class BlockerCommentsTest(unittest.TestCase):
+    def test_blocker_comments(self):
+        # Each candidate's comments as at the close, as plain text, without
+        # their authors; a blank one says nothing, and one written or edited
+        # after the close is left out, as its text then isn't known. Dates
+        # are in the reporting timezone: 23:30 UTC is the next day in Rome.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        adf = {"type": "paragraph", "content": [
+            {"type": "text", "text": "Blocked until "},
+            {"type": "date", "attrs": {"timestamp": "1772755200000"}},
+            {"type": "text", "text": "."}]}
+        # name: (the fetched comments, or None for no file, the comments kept)
+        cases = [
+            ("no file", None, []),
+            ("text and author", [{"created": "2026-03-05T10:00:00.000+0000", "author": {"displayName": "Alex Example"},
+                                  "body": "Waiting on Security."}],
+             [{"at": "2026-03-05T10:00:00.000+0000", "date": "2026-03-05", "text": "Waiting on Security."}]),
+            ("no date", [{"body": "Unblocked."}], [
+             {"at": None, "date": None, "text": "Unblocked."}]),
+            ("blank text", [
+             {"created": "2026-03-05T10:00:00.000+0000", "body": "  "}], []),
+            ("late in the day", [{"created": "2026-03-05T23:30:00.000+0000", "body": "Blocked."}],
+             [{"at": "2026-03-05T23:30:00.000+0000", "date": "2026-03-06", "text": "Blocked."}]),
+            ("deadline in ADF", [{"created": "2026-03-05T10:00:00.000+0000", "body": adf}],
+             [{"at": "2026-03-05T10:00:00.000+0000", "date": "2026-03-05", "text": "Blocked until 06/03/2026."}]),
+            ("written after the close", [
+             {"created": "2026-03-14T10:00:00.000+0000", "body": "Unblocked."}], []),
+            ("edited after the close", [{"created": "2026-03-05T10:00:00.000+0000",
+                                         "updated": "2026-03-14T10:00:00.000+0000", "body": "Edited."}], []),
+        ]
+        for number, (name, values, expected) in enumerate(cases, start=1):
+            with self.subTest(name):
+                key = f"PROJ-{number}"
+                if values is not None:
+                    with open(os.path.join(tmp.name, f"{key}.json"), "w", encoding="utf-8") as f:
+                        json.dump(values, f)
+                self.assertEqual(build.blocker_comments(tmp.name, [key], CLOSE, ZoneInfo("Europe/Rome")),
+                                 {key: expected})
+
+    def test_comments_as_of(self):
+        before = "2026-03-13T15:59:59Z"
+        cutoff = "2026-03-13T16:00:00Z"
+        after = "2026-03-13T16:00:01Z"
+        cases = [
+            ({"created": before, "updated": before}, True),
+            ({"created": before, "updated": cutoff}, True),
+            ({"created": before, "updated": after}, False),
+            ({"created": cutoff, "updated": cutoff}, True),
+            ({"created": after, "updated": before}, False),
+            ({"created": before}, True),
+            ({"created": cutoff}, True),
+            ({"created": after}, False),
+            ({"created": before, "updated": None}, True),
+            ({"updated": after}, False),
+            ({}, True),
+        ]
+        for dates, included in cases:
+            with self.subTest(dates=dates):
+                comment = {**dates, "body": "Waiting on a dependency."}
+                self.assertEqual(build.comments_as_of(
+                    [comment], parse_ts(cutoff)), [comment] if included else [])
 
 
 class MainTest(unittest.TestCase):
@@ -578,6 +807,8 @@ class MainTest(unittest.TestCase):
         self.write(common.SPRINT_REPORT_FILE, self.report)
         self.write(common.PREVIOUS_SPRINT_FILE, self.previous)
         self.write(common.PARENTS_FILE, [])
+        self.write(common.PULL_REQUESTS_FILE, {
+                   "github_read": False, "tickets": {}, "events": {}})
         for issue in self.current + self.removed:
             default = [left(at("03-04"))] if issue in self.removed else []
             self.write(os.path.join(common.CHANGELOGS_DIR, f"{issue['key']}.json"),
@@ -639,6 +870,17 @@ class MainTest(unittest.TestCase):
         self.assertEqual(data["burndown_baseline"], 5)
         self.assertEqual([r["date"]
                          for r in data["burndown"]][-1], "2026-03-13")
+
+    def test_ticket_events_are_kept_for_the_tickets_with_spells(self):
+        # PROJ-2 joined and left before the start: no spell, so no events.
+        self.current, self.removed = [raw("PROJ-1")], [raw("PROJ-2")]
+        self.changelogs = {"PROJ-2": [joined(at("02-27")), left(at("02-28"))]}
+        self.report["contents"]["puntedIssues"] = [{"key": "PROJ-2"}]
+        data = self.run_main()
+        self.assertEqual(list(data["ticket_events"]), ["PROJ-1"])
+        self.assertEqual([e["type"]
+                         for e in data["ticket_events"]["PROJ-1"]], ["created"])
+        self.assertFalse(data["pull_request_events_read"])
 
     def test_active_sprint_runs_to_the_fetch(self):
         # The fetch ends actuals both before and after the planned end.

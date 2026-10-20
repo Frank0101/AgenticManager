@@ -19,7 +19,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_report  # noqa: E402
-from common import CHART_FILES, ai, expected_files  # noqa: E402
+from common import CHART_FILES, ai, expected_files, parse_ts  # noqa: E402
 from make_report import Report, tag  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
@@ -27,6 +27,23 @@ from report_fixture import BASE, CONTENT, TICKETS, caveat_data, ev, ticket, spri
 
 # The [AI Gen.] label as make_report renders it.
 AI = ai("")
+
+
+def ticket_event(data, key, kind):
+    """A ticket's first event of a kind, in data.json."""
+    return next(e for e in data["ticket_events"][key] if e["type"] == kind)
+
+
+def without(data, key, kind):
+    """Drops a ticket's events of a kind from data.json."""
+    data["ticket_events"][key] = [
+        e for e in data["ticket_events"][key] if e["type"] != kind]
+
+
+def event_at(at, **fields):
+    """A Jira event at an instant of March 2026 in UTC, dated as the
+    reporting timezone, London, dates it then."""
+    return {"at": at, "date": at[:10], "source": "jira", **fields}
 
 
 class HelpersTest(unittest.TestCase):
@@ -390,6 +407,50 @@ class ChecksTest(unittest.TestCase):
                 left_out=d["epics"][0]["left_out"] + [{"key": "PROJ-6"}],
                 scope_groups={**d["epics"][0]["scope_groups"], "descoped": [{"key": "PROJ-2"}]}),
              "model: PROJ-100's commentary groups hold the tickets their outcomes give"),
+            # The spells are worked out from each ticket's events, so the two
+            # must tell the same story.
+            ("a completion with no status change", lambda d: without(d, "PROJ-1", "status_changed"),
+             "model: PROJ-1's spell events are what its ticket events give"),
+            ("an estimate the ticket never had", lambda d: ticket_event(d, "PROJ-1", "points_changed").update(to=5),
+             "model: PROJ-1's spell events are what its ticket events give"),
+            ("a removal with no sprint change", lambda d: without(d, "PROJ-6", "sprint_changed"),
+             "model: PROJ-6's spell events are what its ticket events give"),
+            ("a commitment while out of the sprint",
+             lambda d: ticket_event(
+                 d, "PROJ-4", "created")["values"].update(sprint=[]),
+             "model: PROJ-4's spell events are what its ticket events give"),
+            ("a change a running spell misses", lambda d: d["ticket_events"]["PROJ-2"].append(
+                event_at("2026-03-06T10:00:00.000+0000", type="status_changed", **{
+                    "from": "In Progress", "to": "Done", "fromCategory": "indeterminate", "toCategory": "done"})),
+             "model: PROJ-2's spell events are what its ticket events give ['end']"),
+            ("ticket events out of time order", lambda d: d["ticket_events"]["PROJ-1"].reverse(),
+             "model: PROJ-1's ticket events are in time order"),
+            ("an unknown event type", lambda d: d["ticket_events"]["PROJ-3"].append(
+                event_at("2026-03-06T11:00:00.000+0000", type="assignee_changed")),
+             "model: PROJ-3's ticket events are well formed"),
+            ("a date that isn't its instant's", lambda d: ticket_event(d, "PROJ-3", "created").update(
+                date="2026-02-21"), "model: PROJ-3's ticket events are well formed"),
+            ("an event after the end", lambda d: d["ticket_events"]["PROJ-3"].append(
+                event_at("2026-03-14T10:00:00.000+0000", type="priority_changed", **{
+                    "from": "Medium", "to": "High"})), "model: PROJ-3's ticket events are well formed"),
+            ("a second creation", lambda d: d["ticket_events"]["PROJ-3"].insert(
+                0, ticket_event(d, "PROJ-3", "created")), "model: PROJ-3's ticket events are well formed"),
+            ("a pull request found an unknown way", lambda d: ticket_event(d, "PROJ-1", "last_pr_merged").update(
+                found="guess"), "model: PROJ-1's ticket events are well formed"),
+            ("a pull request through no ticket", lambda d: ticket_event(d, "PROJ-1", "last_pr_merged").update(
+                via="guess"), "model: PROJ-1's ticket events are well formed"),
+            ("a merge before the first opening", lambda d: (
+                ticket_event(
+                    d, "PROJ-1", "first_pr_opened").update(at="2026-03-04T09:30:00Z", date="2026-03-04"),
+                d["ticket_events"]["PROJ-1"].sort(key=lambda e: parse_ts(e["at"]))),
+             "model: PROJ-1's first pull request was opened no later than its last was merged"),
+            ("pull request events GitHub wasn't read for", lambda d: d.update(pull_request_events_read=False),
+             "model: pull request events only when GitHub was read"),
+            ("events of a ticket without a spell", lambda d: d["ticket_events"].update(
+                {"PROJ-9": d["ticket_events"]["PROJ-3"]}),
+             "model: every ticket with a spell has its events, and no other ticket"),
+            ("a ticket without its events", lambda d: d["ticket_events"].pop("PROJ-3"),
+             "model: every ticket with a spell has its events, and no other ticket"),
         ]
         for name, breakage, expected in cases:
             with self.subTest(name):

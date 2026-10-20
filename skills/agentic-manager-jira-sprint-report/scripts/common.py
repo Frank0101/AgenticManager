@@ -1,6 +1,7 @@
 """Helpers shared by the sprint-report scripts: file names, blocker candidates, an
-issue's moves into and out of the sprint, its state at a past moment, and the
-quantity formats every part of the report uses.
+issue's moves into and out of the sprint, its state at a past moment, the kinds
+of event a ticket's history holds, and the quantity formats every part of the
+report uses.
 
 It also puts the agentic-manager-utils-lib skill, installed next to this one, on
 sys.path and imports what the scripts need from it. The scripts import those
@@ -23,6 +24,8 @@ from agentic_manager.output_folder import clear_folder, day_folder, output_folde
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order,  # noqa: E402,F401
                                   parse_ts, plain_text, value_at)
+from agentic_manager.github import gh_available  # noqa: E402,F401
+from agentic_manager.ticket_pulls import PANEL, first_found, panel_pulls, read_events  # noqa: E402,F401
 
 # The skill's output folder, which holds the report folders (see output_folder.py).
 REPORTS_FOLDER = "jira-sprint-reports"
@@ -30,8 +33,12 @@ REPORTS_FOLDER = "jira-sprint-reports"
 # Files inside a report folder. fetch_sprint.py creates the folder; each later
 # step reads and writes here.
 RAW_DIR = "_raw"
-# The raw files inside RAW_DIR, as Jira returned them, and the fetch's own
-# facts (META_FILE). Changelogs and comments hold one <KEY>.json per issue.
+# The raw files inside RAW_DIR, as Jira and GitHub returned them, and the
+# fetch's own facts (META_FILE). Changelogs and comments hold one <KEY>.json
+# per issue; PULL_REQUESTS_FILE every ticket's pull requests, how each was
+# found and through which ticket, the ticket or a sub-task, when it was
+# opened and merged, those skipped as GitHub says they don't exist, and
+# whether GitHub was read.
 META_FILE = "_meta.json"
 SPRINT_FILE = "sprint.json"
 PREVIOUS_SPRINT_FILE = "previous_sprint.json"
@@ -40,6 +47,7 @@ SPRINT_REPORT_FILE = "sprint_report.json"
 PUNTED_ISSUES_FILE = "punted_issues.json"
 STATUSES_FILE = "statuses.json"
 PARENTS_FILE = "parents.json"
+PULL_REQUESTS_FILE = "pull_requests.json"
 CHANGELOGS_DIR = "changelogs"
 COMMENTS_DIR = "comments"
 DATA_FILE = "data.json"
@@ -89,17 +97,18 @@ BLOCKED_STATUSES = {"blocked", "impeded",
                     "on hold", "waiting", "waiting for support"}
 
 
-def blocker_candidate_keys(issues, changes, categories, flagged_field, points_field, sprint_id, moment):
+def blocker_candidate_keys(issues, changes, categories, flagged_field, sprint_id, moment):
     """The keys of the standard issues in the sprint at `moment` that were
-    flagged, blocked or high priority and not done then. One definition for
-    the tickets whose comments are fetched and those data.json names, so the
-    two are the same tickets."""
+    flagged, blocked or high priority and not done then, from their
+    changelogs: the tickets whose comments the fetch reads, before any events
+    exist. build_sprint_data.py works out data.json's from the events by the
+    same rule, is_blocker_candidate(), so the two are the same tickets."""
     keys = []
     for issue in standard_issues(issues):
         if not in_sprint_at(issue_moves(issue, changes[issue["key"]], sprint_id), moment):
             continue
         then = History(issue, changes[issue["key"]], categories,
-                       flagged_field, points_field).state_at(moment)
+                       flagged_field).state_at(moment)
         if is_blocker_candidate(then["flagged"], then["status"], then["statusCategory"], then["priority"]):
             keys.append(issue["key"])
     return keys
@@ -168,17 +177,17 @@ def sprint_moves(added, removed, created):
 
 
 class History:
-    """An issue's tracked fields used for figures and blocker classification,
-    rebuilt at a past moment from current values and changelog changes.
-    These fields use current values only when the changelog shows they held
-    then too, so past sprint figures stay the same when the report is rerun."""
+    """An issue's fields that make it a blocker candidate, rebuilt at a past
+    moment from current values and changelog changes, for the fetch, which
+    has no events yet. These fields use current values only when the
+    changelog shows they held then too, so a rerun picks the same tickets."""
 
-    def __init__(self, raw, changes, categories, flagged_field, points_field):
+    def __init__(self, raw, changes, categories, flagged_field):
         self.fields = raw.get("fields") or {}
         self.key = raw["key"]
         self.changes = changes
         self.categories = categories
-        self.flagged_field, self.points_field = flagged_field, points_field
+        self.flagged_field = flagged_field
 
     def _current(self, path):
         return nested(self.fields, path)
@@ -201,25 +210,14 @@ class History:
                                                        self._current(["status", "name"])))
         return name, self.category(status_id)
 
-    def done_at(self, instant):
-        return self.status_at(instant)[1] == "done"
-
     def state_at(self, instant):
-        """Tracked fields for figures and blocker classification at the instant."""
+        """{status, statusCategory, flagged, priority} at the instant."""
         status, category = self.status_at(instant)
-        _, resolution = self._at(
-            "resolution", instant, (None, self._current(["resolution", "name"])))
-        points = (points_value(self._at("points", instant, (None, self.fields.get(self.points_field)))[1])
-                  if self.points_field else None)
         flagged = (bool(self._at("flagged", instant, (None, self.fields.get(self.flagged_field)))[1])
                    if self.flagged_field else False)
         _, priority = self._at("priority", instant,
                                (None, self._current(["priority", "name"])))
-        parent_id, parent_key = self._at("parent", instant, (self._current(["parent", "id"]),
-                                                             self._current(["parent", "key"])))
-        return {"status": status, "statusCategory": category, "resolution": resolution or None,
-                "storyPoints": points, "flagged": flagged, "priority": priority or "",
-                "parentId": str(parent_id) if parent_id else None, "parentKey": parent_key or None}
+        return {"status": status, "statusCategory": category, "flagged": flagged, "priority": priority or ""}
 
 
 def points_value(value):
@@ -238,6 +236,16 @@ def history_fields(flagged_field, points_field):
     return {"sprint": "Sprint", "status": "status", "resolution": "resolution",
             "priority": "priority", "parent": "IssueParentAssociation",
             "points": points_field, "flagged": flagged_field}
+
+
+# A ticket's event types (data.json's ticket_events), by source: Jira's
+# creation of the ticket and each change of a tracked field, and the first
+# pull request GitHub shows opened for it and the last merged.
+TICKET_EVENT_TYPES = {"jira": ("created", *(f"{field}_changed" for field in history_fields(None, None))),
+                      "github": ("first_pr_opened", "last_pr_merged")}
+# How a ticket's pull request was found: only through Jira's Development
+# panel (see fetch_sprint.py).
+PULL_FOUND = (PANEL,)
 
 
 def status_categories(statuses):

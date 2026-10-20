@@ -8,7 +8,9 @@ runs the whole script against a fake Jira.
 
 import contextlib
 import io
+import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -21,8 +23,17 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import fetch_sprint  # noqa: E402
 from common import RAW_DIR, SPRINT_FILE  # noqa: E402
+from agentic_manager import retry  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from sprint_fixture import report_folder  # noqa: E402
+# The fake gh's GraphQL answers follow the library's query.
+sys.path.insert(0, os.path.join(os.path.dirname(
+    TEST_DIR), "agentic-manager-utils-lib"))
+from gh_fake import graphql_answer, is_graphql  # noqa: E402
+
+
+# Retries wait for real; here they needn't.
+retry.RETRY_WAITS = (0, 0, 0)
 
 
 class ArgsTest(unittest.TestCase):
@@ -188,30 +199,249 @@ class PreviousSprintTest(unittest.TestCase):
                 self.assertEqual(previous and previous["id"], expected)
 
 
-class HelpersTest(unittest.TestCase):
-    def test_comments_as_of(self):
-        before = "2026-03-13T15:59:59Z"
-        cutoff = "2026-03-13T16:00:00Z"
-        after = "2026-03-13T16:00:01Z"
-        cases = [
-            ({"created": before, "updated": before}, True),
-            ({"created": before, "updated": cutoff}, True),
-            ({"created": before, "updated": after}, False),
-            ({"created": cutoff, "updated": cutoff}, True),
-            ({"created": after, "updated": before}, False),
-            ({"created": before}, True),
-            ({"created": cutoff}, True),
-            ({"created": after}, False),
-            ({"created": before, "updated": None}, True),
-            ({"updated": after}, False),
-            ({}, True),
-        ]
-        for dates, included in cases:
-            with self.subTest(dates=dates):
-                comment = {**dates, "body": "Waiting on a dependency."}
-                self.assertEqual(fetch_sprint.comments_as_of(
-                    [comment], fetch_sprint.parse_ts(cutoff)), [comment] if included else [])
+PR = "https://github.com/acme/api/pull/{}"
 
+
+class Panel:
+    """A Jira client whose Development panel lists, by issue id, `pulls`, and
+    whose search by parent finds `subtasks`, recording each issue whose panel
+    is read and each search. It has no other read, so the fetch can't look up
+    the panel's commits."""
+
+    def __init__(self, pulls, subtasks=()):
+        self.pulls, self.subtasks, self.read = pulls, subtasks, []
+
+    def search(self, jql, fields):
+        self.read.append(("search", jql))
+        return list(self.subtasks)
+
+    def pull_requests(self, issue_id):
+        self.read.append(("pulls", issue_id))
+        return self.pulls.get(issue_id, [])
+
+
+class gh:
+    """A runner that answers gh's commands from `answers`, by the words after
+    gh up to the first option, a GraphQL call by each pull request's "pr view
+    <url>" and, when it holds "api graphql", as a whole by that; it records
+    each command. A command it has no answer for fails with GitHub's rate
+    limit message, as gh does, and a pull request GitHub can't resolve."""
+
+    def __init__(self, answers):
+        self.answers, self.calls = answers, []
+
+    def __call__(self, command, **kwargs):
+        self.calls.append(" ".join(command))
+        if is_graphql(command[1:]):
+            if "api graphql" not in self.answers:
+                return subprocess.CompletedProcess(command, *graphql_answer(
+                    command[1:], lambda url: self.answers.get(f"pr view {url}")))
+            answer = self.answers["api graphql"]
+        else:
+            words = []
+            for word in command[1:]:
+                if word.startswith("--"):
+                    break
+                words.append(word)
+            answer = self.answers.get(" ".join(words))
+        if answer is None:
+            return subprocess.CompletedProcess(command, 1, "", LIMIT + "\n")
+        return subprocess.CompletedProcess(command, 0, json.dumps(answer), "")
+
+
+LIMIT = "HTTP 403: API rate limit exceeded for user ID 1."
+
+
+def sub_task(key, parent):
+    return {"id": key, "key": key, "fields": {"parent": {"key": parent}}}
+
+
+class PullRequestsTest(unittest.TestCase):
+    ISSUES = [{"id": "1", "key": "PROJ-1"}, {"id": "2", "key": "PROJ-2"},
+              {"id": "3", "key": "PROJ-3"}]
+    PANEL = {"1": [{"url": PR.format(41), "status": "MERGED"}],
+             "2": [{"url": "https://github.com/acme-labs/web/pull/43", "status": "OPEN"}]}
+    # When GitHub says each was opened, by URL.
+    TIMES = {f"pr view {url}": {"createdAt": "2026-03-05T10:00:00Z"}
+             for url in (PR.format(41), PR.format(42), PR.format(44), "https://github.com/acme-labs/web/pull/43")}
+
+    def test_pull_requests(self):
+        # Only the panel's, each kept as found there; a ticket whose panel
+        # lists none has none, as GitHub isn't searched for more. GitHub is
+        # read only for the times, in GraphQL calls.
+        acme_labs = "https://github.com/acme-labs/web/pull/43"
+        # name: (the panel's pull requests by issue id, {key: [url]})
+        cases = [
+            ("the panel's", self.PANEL,
+             {"PROJ-1": [PR.format(41)], "PROJ-2": [acme_labs], "PROJ-3": []}),
+            ("several on one ticket", {"3": [{"url": PR.format(42)}, {"url": PR.format(44)}]},
+             {"PROJ-1": [], "PROJ-2": [], "PROJ-3": [PR.format(42), PR.format(44)]}),
+            ("none listed", {}, {"PROJ-1": [], "PROJ-2": [], "PROJ-3": []}),
+        ]
+        for name, panel, expected in cases:
+            with self.subTest(name):
+                client = Panel(panel)
+                run = gh(self.TIMES)
+                found = fetch_sprint.pull_requests(
+                    client, self.ISSUES, True, run)
+                self.assertEqual({key: [pr["url"] for pr in prs]
+                                  for key, prs in found["tickets"].items()}, expected)
+                # Each found through the panel of its own ticket, as there
+                # are no sub-tasks.
+                self.assertTrue(all((pr["found"], pr["via"]) == ("panel", key)
+                                    for key, prs in found["tickets"].items() for pr in prs))
+                self.assertEqual({r[1] for r in client.read if r[0] == "pulls"}, {
+                                 "1", "2", "3"})
+                # No gh call but the GraphQL reads of the times, none
+                # without a pull request.
+                self.assertTrue(
+                    all(is_graphql(c.split()[1:]) for c in run.calls), run.calls)
+                self.assertEqual(bool(run.calls), any(expected.values()))
+                self.assertTrue(found["github_read"])
+                # GitHub's times of every pull request found.
+                self.assertEqual(found["events"], {url: {"createdAt": "2026-03-05T10:00:00Z"}
+                                                   for urls in expected.values() for url in urls})
+
+    def test_pull_requests_through_sub_tasks(self):
+        # A sub-task's pull requests are its parent's, each kept once with
+        # the ticket it came through, the ticket before its sub-tasks, and
+        # its sub-tasks in key order.
+        # PROJ-12 and PROJ-11 are sub-tasks of PROJ-1, PROJ-21 of PROJ-2 and
+        # PROJ-31 of PROJ-3, found by the search out of key order.
+        subtasks = [sub_task("PROJ-12", "PROJ-1"), sub_task("PROJ-31", "PROJ-3"),
+                    sub_task("PROJ-11", "PROJ-1"), sub_task("PROJ-21", "PROJ-2")]
+        times = {f"pr view {PR.format(n)}": {} for n in (41, 43, 44)}
+        # name: (the panel's pull requests by issue id, {key: [(number,
+        # via)]} of the tickets with any)
+        cases = [
+            ("a ticket with none of its own, all through its sub-tasks",
+             {"PROJ-21": [{"url": PR.format(43)}]},
+             {"PROJ-2": [(43, "PROJ-21")]}),
+            ("linked to the ticket and a sub-task: kept once, through the ticket",
+             {"1": [{"url": PR.format(41)}],
+              "PROJ-11": [{"url": PR.format(41)}, {"url": PR.format(44)}]},
+             {"PROJ-1": [(41, "PROJ-1"), (44, "PROJ-11")]}),
+            ("sub-tasks in key order",
+             {"PROJ-12": [{"url": PR.format(41)}],
+              "PROJ-11": [{"url": PR.format(41)}]},
+             {"PROJ-1": [(41, "PROJ-11")]}),
+        ]
+        for name, panel, expected in cases:
+            with self.subTest(name):
+                client = Panel(panel, subtasks)
+                run = gh(times)
+                found = fetch_sprint.pull_requests(
+                    client, self.ISSUES, True, run)
+                self.assertEqual({key: [(int(pr["url"].rsplit("/", 1)[1]), pr["via"]) for pr in prs]
+                                  for key, prs in found["tickets"].items() if prs}, expected)
+                self.assertTrue(all(pr["found"] == "panel" for prs in found["tickets"].values()
+                                    for pr in prs))
+                # Only tickets are keys, never a sub-task.
+                self.assertEqual(list(found["tickets"]), [
+                                 "PROJ-1", "PROJ-2", "PROJ-3"])
+                # One search for every ticket's sub-tasks, and every panel
+                # of a ticket and its sub-tasks read.
+                self.assertEqual([r for r in client.read if r[0] == "search"],
+                                 [("search", "parent in (PROJ-1,PROJ-2,PROJ-3)")])
+                self.assertEqual({r[1] for r in client.read if r[0] == "pulls"},
+                                 {"1", "2", "3", "PROJ-11", "PROJ-12", "PROJ-21", "PROJ-31"})
+                self.assertTrue(
+                    all(is_graphql(c.split()[1:]) for c in run.calls), run.calls)
+
+    def test_without_gh_nothing_is_read(self):
+        # The panel alone gives no events, so it isn't read either.
+        client, run = Panel(self.PANEL), gh(self.TIMES)
+        self.assertEqual(fetch_sprint.pull_requests(client, self.ISSUES, False, run),
+                         {"github_read": False, "tickets": {}, "events": {}, "skipped": []})
+        self.assertEqual((client.read, run.calls), ([], []))
+
+    def test_a_pull_request_github_cant_find_is_skipped(self):
+        # One GitHub says doesn't exist, such as one deleted that Jira still
+        # links, is dropped from every ticket, so it gives no events, said
+        # on stderr with the tickets it came through and kept as skipped
+        # with GitHub's message; the others are kept, and the fetch goes on.
+        acme_labs = "https://github.com/acme-labs/web/pull/43"
+        gone = "{}: Could not resolve to a PullRequest with the number of {}."
+        # name: (the panel's pull requests by issue id, those GitHub can't
+        # find, {key: [url]} kept, the skipped as (url, via))
+        cases = [
+            ("one", self.PANEL, [acme_labs],
+             {"PROJ-1": [PR.format(41)], "PROJ-2": [], "PROJ-3": []}, [(acme_labs, ["PROJ-2"])]),
+            ("linked to two tickets", {**self.PANEL, "3": [{"url": PR.format(41)}, {"url": PR.format(44)}]},
+             [PR.format(41)], {
+                "PROJ-1": [], "PROJ-2": [acme_labs], "PROJ-3": [PR.format(44)]},
+             [(PR.format(41), ["PROJ-1", "PROJ-3"])]),
+            ("every one", self.PANEL, [PR.format(41), acme_labs], {"PROJ-1": [], "PROJ-2": [], "PROJ-3": []},
+             [(PR.format(41), ["PROJ-1"]), (acme_labs, ["PROJ-2"])]),
+        ]
+        for name, panel, missing, kept, skipped in cases:
+            with self.subTest(name), contextlib.redirect_stderr(io.StringIO()) as said:
+                run = gh({k: v for k, v in self.TIMES.items()
+                          if k.removeprefix("pr view ") not in missing})
+                found = fetch_sprint.pull_requests(
+                    Panel(panel), self.ISSUES, True, run)
+                self.assertEqual({key: [pr["url"] for pr in prs]
+                                  for key, prs in found["tickets"].items()}, kept)
+                self.assertEqual(found["events"], {url: {"createdAt": "2026-03-05T10:00:00Z"}
+                                                   for urls in kept.values() for url in urls})
+                messages = [gone.format(url, url.rsplit("/", 1)[1])
+                            for url, _ in skipped]
+                self.assertEqual(found["skipped"], [{"url": url, "via": via, "message": message}
+                                                    for (url, via), message in zip(skipped, messages)])
+                self.assertEqual(said.getvalue(), "".join(
+                    f"skipped a pull request GitHub says doesn't exist, found through {', '.join(via)}: "
+                    f"{message}\n" for (_, via), message in zip(skipped, messages)))
+
+    def test_a_gh_failure_stops(self):
+        # Never taken for a pull request with no times: the fetch stops
+        # instead, with the first failure's command, gh's words and the
+        # library's advice, and how many failed when several did. A pull
+        # request GitHub can't find beside it doesn't change that, and a
+        # rate limit stops at once, never tried again.
+        stopped = "GitHub couldn't be read, so no report was written"
+        limited = f": {LIMIT} Wait a minute and run it again."
+        refused = ("Resource not accessible. Check that gh works (gh auth status) and run it again, or disable "
+                   "the github-cli source to go on without GitHub.")
+        acme_labs = "https://github.com/acme-labs/web/pull/43"
+
+        def answer(*errors):
+            """GitHub's answer to the GraphQL call with PR 41 (r0, p0) and
+            acme_labs (r1, p1): each error a (pull, its type), the others read."""
+            failing = dict(errors)
+            return {"data": {"r0": {"p0": None if "p0" in failing else {}},
+                             "r1": {"p1": None if "p1" in failing else {}}},
+                    "errors": [{"type": kind, "path": [repository, pull], "message": "Resource not accessible"
+                                if kind == "FORBIDDEN" else "Could not resolve to a PullRequest."}
+                               for repository, pull, kind in (("r0", "p0", failing.get("p0")),
+                                                              ("r1", "p1", failing.get("p1"))) if kind]}
+        # name: (the gh answer to the GraphQL call, how the message starts,
+        # how it ends)
+        cases = [("a pull request gh can't read", answer(("p0", "FORBIDDEN")),
+                  f"{stopped}: gh api graphql: {PR.format(41)}: ", refused),
+                 ("beside one GitHub can't find", answer(("p0", "FORBIDDEN"), ("p1", "NOT_FOUND")),
+                  f"{stopped}: gh api graphql: {PR.format(41)}: ", refused),
+                 ("several", answer(("p0", "FORBIDDEN"), ("p1", "FORBIDDEN")),
+                  f"{stopped} (2 gh calls failed, the first shown): gh api graphql: {PR.format(41)}: ", refused),
+                 ("the GraphQL call rate limited", None,
+                  f"{stopped} (2 gh calls failed, the first shown): gh api graphql: ", limited)]
+        for name, graphql, start, end in cases:
+            run = gh({**self.TIMES, "api graphql": graphql})
+            with self.subTest(name), contextlib.redirect_stderr(io.StringIO()), \
+                    self.assertRaises(SystemExit) as raised:
+                fetch_sprint.pull_requests(
+                    Panel(self.PANEL), self.ISSUES, True, run)
+            message = str(raised.exception.code)
+            self.assertTrue(message.startswith(start), message)
+            self.assertTrue(message.endswith(end), message)
+            self.assertEqual(len(run.calls), 1, run.calls)
+
+    def test_parallelism(self):
+        # Four Jira reads at a time: its internal Development-panel endpoint
+        # drops connections under more.
+        self.assertEqual(fetch_sprint.MAX_WORKERS, 4)
+
+
+class HelpersTest(unittest.TestCase):
     def test_project_key_of(self):
         # --project wins; otherwise an issue key up to its last hyphen; with
         # neither, no key.

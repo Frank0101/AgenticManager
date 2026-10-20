@@ -171,8 +171,8 @@ class HistoryTest(unittest.TestCase):
     def at(self, day):
         return common.parse_ts(f"2026-03-{day:02d}T12:00:00.000+0100")
 
-    def history(self, raw, changes, flagged=None, points=None):
-        return common.History(raw, changes, self.CATEGORIES, flagged, points)
+    def history(self, raw, changes, flagged=None):
+        return common.History(raw, changes, self.CATEGORIES, flagged)
 
     def test_points_value(self):
         for value, expected in [(None, None), ("", None), (3.0, 3), ("2", 2), ("2.5", 2.5)]:
@@ -205,8 +205,6 @@ class HistoryTest(unittest.TestCase):
         for day, status in cases:
             with self.subTest(day=day):
                 self.assertEqual(history.status_at(self.at(day)), status)
-                self.assertEqual(history.done_at(
-                    self.at(day)), status[1] == "done")
 
     def test_state_at(self):
         raw = self.raw(customfield_points=8.0, customfield_flag=None,
@@ -226,21 +224,17 @@ class HistoryTest(unittest.TestCase):
             {"created": "2026-03-08T10:00:00.000+0100", "field": "parent",
              "from": "100", "fromString": "PROJ-100", "to": "200", "toString": "PROJ-200"},
         ]
-        history = self.history(
-            raw, changes, "customfield_flag", "customfield_points")
+        history = self.history(raw, changes, "customfield_flag")
+        # Only what makes a blocker candidate.
         self.assertEqual(history.state_at(self.at(5)), {
-            "status": "To Do", "statusCategory": "new", "resolution": None, "storyPoints": 3,
-            "flagged": True, "priority": "High", "parentId": "100", "parentKey": "PROJ-100"})
+            "status": "To Do", "statusCategory": "new", "flagged": True, "priority": "High"})
         self.assertEqual(history.state_at(self.at(9)), {
-            "status": "To Do", "statusCategory": "new", "resolution": "Done", "storyPoints": 8,
-            "flagged": False, "priority": "Low", "parentId": "200", "parentKey": "PROJ-200"})
+            "status": "To Do", "statusCategory": "new", "flagged": False, "priority": "Low"})
         # With no changelog the current fields held throughout; without the
-        # site's points or Flagged field the issue has no estimate and no flag.
-        unset = self.history(
-            self.raw(customfield_points=8.0, priority=None), [])
+        # site's Flagged field the issue has no flag.
+        unset = self.history(self.raw(priority=None), [])
         self.assertEqual(unset.state_at(self.at(5)), {
-            "status": "To Do", "statusCategory": "new", "resolution": None, "storyPoints": None,
-            "flagged": False, "priority": "", "parentId": None, "parentKey": None})
+            "status": "To Do", "statusCategory": "new", "flagged": False, "priority": ""})
 
     def test_unknown_status(self):
         # Not in Jira's list of statuses: the current status's category, else a failure.

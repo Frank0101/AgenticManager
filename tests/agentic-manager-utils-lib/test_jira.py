@@ -5,6 +5,7 @@ The client talks to a local fake Jira, whose answers each test sets in
 FakeJira.routes. read_source is patched, so no config is read.
 """
 
+import io
 import json
 import os
 import sys
@@ -19,30 +20,40 @@ TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(
     REPO_ROOT, "skills", os.path.basename(TEST_DIR)))
-from agentic_manager import jira  # noqa: E402
+from agentic_manager import batch, jira, retry  # noqa: E402
 
 TOKEN = "s3cret-token"
 
 
 class FakeJira(BaseHTTPRequestHandler):
-    """Answers each path from `routes`: a payload, or a function of the query
-    that returns one. A payload of (code, body) sends that status. Any other
-    path is a 404. Every request is recorded in `requests` as (path, query),
-    and its Authorization header in `authorizations`."""
+    """Answers each path from `routes`: a payload, or a function of the query,
+    or of a POST's JSON body, that returns one. A payload of (code, body)
+    sends that status. Any other path is a 404. Every request is recorded in
+    `requests` as (path, query or body), and its Authorization header in
+    `authorizations`; a POST's Content-Type in `content_types`."""
     routes = {}
     requests = []
     authorizations = []
+    content_types = []
 
     def log_message(self, format, *args):
         pass
 
     def do_GET(self):
         url = urlparse(self.path)
-        query = {k: v[0] for k, v in parse_qs(url.query).items()}
-        FakeJira.requests.append((url.path, query))
+        self.answer(url.path, {k: v[0]
+                    for k, v in parse_qs(url.query).items()})
+
+    def do_POST(self):
+        FakeJira.content_types.append(self.headers.get("Content-Type"))
+        self.answer(urlparse(self.path).path, json.loads(
+            self.rfile.read(int(self.headers["Content-Length"]))))
+
+    def answer(self, path, query):
+        FakeJira.requests.append((path, query))
         FakeJira.authorizations.append(self.headers.get("Authorization"))
         answer = FakeJira.routes.get(
-            url.path, (404, {"errorMessages": ["not found"]}))
+            path, (404, {"errorMessages": ["not found"]}))
         if callable(answer):
             answer = answer(query)
         code, body = answer if isinstance(answer, tuple) else (200, answer)
@@ -174,11 +185,16 @@ class ClientTest(unittest.TestCase):
     def setUp(self):
         self.reset_jira()
         self.client = self.make_client(self.base_url + "/")
+        # Retries wait for real; here each wait is only recorded.
+        sleep = mock.patch.object(retry.time, "sleep")
+        self.sleep = sleep.start()
+        self.addCleanup(sleep.stop)
 
     def reset_jira(self):
         FakeJira.routes = {}
         FakeJira.requests = []
         FakeJira.authorizations = []
+        FakeJira.content_types = []
 
     def make_client(self, base_url, excluded=()):
         settings = {"base-url": base_url, "email": "me@acme.test", "api-token": TOKEN,
@@ -225,7 +241,7 @@ class ClientTest(unittest.TestCase):
             # A missing resource has its own type, so callers can tell it apart.
             ("404", None, None, "404 Not Found for /rest/api/3/myself", jira.NotFound),
             ("unreachable site", None, "http://127.0.0.1:9",
-             "could not reach Jira. Check your `base-url` setting", SystemExit),
+             "could not reach Jira, after trying 4 times. Check your `base-url` setting", SystemExit),
         ]
         for name, answer, base_url, expected, kind in cases:
             with self.subTest(name):
@@ -240,6 +256,50 @@ class ClientTest(unittest.TestCase):
             error = self.assert_exits(
                 "could not reach Jira", self.client.whoami)
         self.assertNotIn(self.client.base_url, str(error))
+
+    def test_retries(self):
+        # A dropped connection or a 5xx is tried again after each of
+        # RETRY_WAITS; any other answer, a 429 rate limit included, is final
+        # at once.
+        # name: (Jira's answers in turn, expected answer or error, waits)
+        busy, ok = (503, {}), (200, {"displayName": "Alex Example"})
+        cases = [
+            ("busy, then fine", [busy, busy, ok], {
+             "displayName": "Alex Example"}, [1, 3]),
+
+            ("busy every time", [
+             busy] * 4, "Jira returned 503 for /rest/api/3/myself.", [1, 3, 9]),
+            ("a rate limit isn't tried again", [(429, {})],
+             "Jira returned 429 Too Many Requests for /rest/api/3/myself. Wait a minute and run it again.", []),
+            ("not found isn't tried again", [(404, {})], "404 Not Found", []),
+            ("unauthorized isn't tried again", [
+             (401, {})], "401 Unauthorized", []),
+        ]
+        for name, answers, expected, waits in cases:
+            with self.subTest(name), mock.patch.object(retry, "RETRY_WAITS", (1, 3, 9)):
+                self.reset_jira()
+                self.sleep.reset_mock()
+                queue = list(answers)
+                FakeJira.routes["/rest/api/3/myself"] = lambda query: queue.pop(
+                    0)
+                if isinstance(expected, dict):
+                    self.assertEqual(self.client.whoami(), expected)
+                else:
+                    self.assert_exits(expected, self.client.whoami)
+                self.assertEqual(len(FakeJira.requests), len(answers))
+                self.assertEqual([c.args[0]
+                                 for c in self.sleep.call_args_list], waits)
+        # A dropped connection is tried again too.
+        self.sleep.reset_mock()
+        response = mock.MagicMock()
+        response.__enter__.return_value = io.BytesIO(
+            b'{"displayName": "Alex Example"}')
+        with mock.patch.object(jira, "urlopen", side_effect=[ConnectionResetError(), response]) as opened, \
+                mock.patch.object(retry, "RETRY_WAITS", (1, 3, 9)):
+            self.assertEqual(self.client.whoami(), {
+                             "displayName": "Alex Example"})
+        self.assertEqual(opened.call_count, 2)
+        self.assertEqual([c.args[0] for c in self.sleep.call_args_list], [1])
 
     # --- queries and paging
 
@@ -326,31 +386,164 @@ class ClientTest(unittest.TestCase):
                                  {"key": "PROJ-100"}])
                 self.assertEqual(FakeJira.requests[0][1]["jql"], jql)
 
-    def test_field_changes_reads_every_page_names_fields_and_sorts_by_instant(self):
+    # --- changelogs
+
+    BATCH = "/rest/api/3/changelog/bulkfetch"
+    MYSELF = "/rest/api/3/myself"
+    # The account's profile, read for its time zone by the batched changelog.
+    ZONE = {"timeZone": "Europe/Berlin"}
+    # The fields of the changelog tests: the Sprint field by name, the status
+    # by id, the parent logged without an id, and points never logged.
+    TRACKED = {"sprint": "Sprint", "status": "status", "parent": "IssueParentAssociation",
+               "points": None}
+
+    def histories(self):
+        """One issue's change histories, as both changelog endpoints give
+        them: out of order across a daylight saving offset, with an
+        untracked field and the parent logged by name alone."""
         def entry(created, *items):
-            return {"created": created, "items": list(items)}
-        sprint = {"field": "Sprint", "fieldId": "customfield_10020",
-                  "from": "6", "to": "6, 7"}
+            return {"id": created[11:16], "created": created, "items": list(items)}
+        return [entry("2026-03-29T09:30:00.000+0200",
+                      {"field": "Sprint", "fieldId": "customfield_10020", "from": "6", "to": "6, 7"}),
+                entry("2026-03-29T08:00:00.000+0200",
+                      {"field": "status", "fieldId": "status", "from": "1", "fromString": "To Do",
+                       "to": "3", "toString": "Done"},
+                      {"field": "summary", "fieldId": "summary"}),
+                # 08:00+01:00 is 09:00+02:00: earlier than the first entry despite the string.
+                entry("2026-03-29T08:00:00.000+0100",
+                      {"field": "IssueParentAssociation", "to": "1001", "toString": "PROJ-100"})]
+
+    def batch_pages(self, *pages):
+        """A batched-changelog route answering each request by its page token: pages[0]
+        without one, pages[n] for token "t<n>", each page given the next
+        token but the last."""
+        def answer(body):
+            index = int(body.get("nextPageToken", "t0")[1:])
+            page = {"issueChangeLogs": pages[index]}
+            if index + 1 < len(pages):
+                page["nextPageToken"] = f"t{index + 1}"
+            return page
+        return answer
+
+    def test_field_changes_reads_every_page_names_fields_and_sorts_by_instant(self):
+        # 08:00+01:00 is 09:00+02:00: the parent's change sorts between the
+        # others despite its string; the summary isn't tracked, nor are
+        # points, which have no changelog name.
+        histories = self.histories()
         FakeJira.routes["/rest/api/3/issue/PROJ-1/changelog"] = pages(
-            (0, {"values": [entry("2026-03-29T09:30:00.000+0200", sprint),
-                            entry("2026-03-29T08:00:00.000+0200",
-                                  {"field": "status", "fieldId": "status", "from": "1", "fromString": "To Do",
-                                   "to": "3", "toString": "Done"},
-                                  {"field": "summary", "fieldId": "summary"})],
-                 "total": 3, "isLast": False}),
-            # 08:00+01:00 is 09:00+02:00: earlier than the first entry despite the string.
-            (2, {"values": [entry("2026-03-29T08:00:00.000+0100",
-                                  {"field": "IssueParentAssociation", "to": "1001", "toString": "PROJ-100"})],
-                 "total": 3, "isLast": True}))
-        changes = self.client.field_changes(
-            "PROJ-1", {"sprint": "Sprint", "status": "status", "parent": "IssueParentAssociation",
-                       "points": None})
+            (0, {"values": histories[:2], "total": 3, "isLast": False}),
+            (2, {"values": histories[2:], "total": 3, "isLast": True}))
+        changes = self.client.field_changes("PROJ-1", self.TRACKED)
         self.assertEqual([(c["created"], c["field"]) for c in changes], [
             ("2026-03-29T08:00:00.000+0200", "status"),
             ("2026-03-29T08:00:00.000+0100", "parent"),
             ("2026-03-29T09:30:00.000+0200", "sprint")])
         self.assertEqual(changes[0], {"created": "2026-03-29T08:00:00.000+0200", "field": "status",
                                       "from": "1", "to": "3", "fromString": "To Do", "toString": "Done"})
+        self.assertEqual([q["startAt"]
+                         for _, q in FakeJira.requests], ["0", "2"])
+
+    def test_batched_field_changes_match_field_changes(self):
+        # The same history gives the same changes either way. It is asked for
+        # by id, each page by its token, and comes back under keys in the
+        # issues' order: one issue's history split over two pages is joined;
+        # one without an entry, or with an empty one, has no changes.
+        histories = self.histories()
+        FakeJira.routes[self.MYSELF] = self.ZONE
+        FakeJira.routes["/rest/api/3/issue/PROJ-1/changelog"] = {
+            "values": histories, "total": 3, "isLast": True}
+        FakeJira.routes[self.BATCH] = self.batch_pages(
+            [{"issueId": "10001", "changeHistories": histories[:1]},
+             {"issueId": "10003", "changeHistories": []}],
+            [{"issueId": "10001", "changeHistories": histories[1:]}])
+        one = self.client.field_changes("PROJ-1", self.TRACKED)
+        self.assertEqual([c["field"] for c in one], [
+                         "status", "parent", "sprint"])
+        FakeJira.requests, FakeJira.authorizations = [], []
+        issues = [{"id": "10002", "key": "PROJ-2"}, {"id": "10001", "key": "PROJ-1"},
+                  {"id": 10003, "key": "PROJ-3"}]
+        changes = self.client.batched_field_changes(issues, self.TRACKED)
+        self.assertEqual(list(changes), ["PROJ-2", "PROJ-1", "PROJ-3"])
+        self.assertEqual(changes, {"PROJ-2": [], "PROJ-1": one, "PROJ-3": []})
+        ids = ["10002", "10001", "10003"]
+        self.assertEqual(self.batch_requests(), [
+            (self.BATCH, {"issueIdsOrKeys": ids,
+             "maxResults": jira.BATCH_CHANGELOG_PAGE}),
+            (self.BATCH, {"issueIdsOrKeys": ids, "maxResults": jira.BATCH_CHANGELOG_PAGE,
+                          "nextPageToken": "t1"})])
+        self.assertEqual(FakeJira.content_types, ["application/json"] * 2)
+        self.assertEqual(set(FakeJira.authorizations), {
+                         "Basic bWVAYWNtZS50ZXN0OnMzY3JldC10b2tlbg=="})
+        # No issues, no request.
+        FakeJira.requests = []
+        self.assertEqual(
+            self.client.batched_field_changes([], self.TRACKED), {})
+        self.assertEqual(FakeJira.requests, [])
+
+    def test_batched_field_changes_ask_for_a_chunk_of_issues_at_a_time(self):
+        def answer(body):
+            return {"issueChangeLogs": [{"issueId": issue_id, "changeHistories": self.histories()}
+                                        for issue_id in body["issueIdsOrKeys"]]}
+        FakeJira.routes[self.BATCH] = answer
+        FakeJira.routes[self.MYSELF] = self.ZONE
+        issues = [{"id": str(n), "key": f"PROJ-{n}"} for n in range(1, 6)]
+        with mock.patch.object(batch, "BATCH_SIZE", 2):
+            changes = self.client.batched_field_changes(issues, self.TRACKED)
+        self.assertEqual([body["issueIdsOrKeys"] for _, body in self.batch_requests()],
+                         [["1", "2"], ["3", "4"], ["5"]])
+        self.assertEqual(list(changes), [f"PROJ-{n}" for n in range(1, 6)])
+        self.assertTrue(all(len(c) == 3 for c in changes.values()))
+
+    def test_batched_field_changes_times_and_order(self):
+        # The batched read gives times in milliseconds: they are written as the
+        # per-issue changelog writes them, in the account's time zone; the
+        # changes of one instant go by field, whichever order Jira lists them.
+        FakeJira.routes[self.MYSELF] = {"timeZone": "Europe/London"}
+        at = 1791363196961  # 2026-10-07T08:53:16.961Z, 09:53 in London
+        FakeJira.routes[self.BATCH] = self.batch_pages([{"issueId": "1", "changeHistories": [
+            {"id": "1", "created": at, "items": [
+                {"field": "status", "fieldId": "status", "to": "3"},
+                {"field": "resolution", "fieldId": "resolution", "to": "1"}]}]}])
+        changes = self.client.batched_field_changes([{"id": "1", "key": "PROJ-1"}],
+                                                    {"status": "status", "resolution": "resolution"})["PROJ-1"]
+        self.assertEqual([(c["created"], c["field"]) for c in changes],
+                         [("2026-10-07T09:53:16.961+0100", "resolution"), ("2026-10-07T09:53:16.961+0100", "status")])
+
+    def batch_requests(self):
+        """The requests to the batched changelog endpoint, the profile read for
+        the account's time zone left out."""
+        return [r for r in FakeJira.requests if r[0] == self.BATCH]
+
+    def test_batched_field_changes_failures(self):
+        # A busy Jira is tried again; an answer that is final names the
+        # endpoint; an excluded ticket is refused before any request.
+        ok = (200, {"issueChangeLogs": []})
+        cases = [("busy, then fine", [(503, {}), ok], None, [1]),
+                 ("a bad request", [(400, {"errorMessages": [TOKEN]})],
+                  f"Jira returned 400 for {self.BATCH}.", [])]
+        issues = [{"id": "1", "key": "PROJ-1"}]
+        for name, answers, expected, waits in cases:
+            with self.subTest(name), mock.patch.object(retry, "RETRY_WAITS", (1, 3, 9)):
+                self.reset_jira()
+                self.sleep.reset_mock()
+                queue = list(answers)
+                FakeJira.routes[self.BATCH] = lambda body: queue.pop(0)
+                FakeJira.routes[self.MYSELF] = self.ZONE
+                if expected is None:
+                    self.assertEqual(self.client.batched_field_changes(
+                        issues, self.TRACKED), {"PROJ-1": []})
+                else:
+                    self.assert_exits(expected, lambda: self.client.batched_field_changes(
+                        issues, self.TRACKED))
+                self.assertEqual(len(self.batch_requests()), len(answers))
+                self.assertEqual([c.args[0]
+                                 for c in self.sleep.call_args_list], waits)
+        with self.subTest("excluded"):
+            self.reset_jira()
+            client = self.make_client(self.base_url, excluded=["SEC"])
+            self.assert_exits("SEC-1 is of a project excluded by `excluded-projects`",
+                              lambda: client.batched_field_changes(issues + [{"id": "2", "key": "SEC-1"}], {}))
+            self.assertEqual(FakeJira.requests, [])
 
     def test_issue(self):
         # A moved ticket is found under its current key; one that moved into
