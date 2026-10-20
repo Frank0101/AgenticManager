@@ -24,7 +24,8 @@ from agentic_manager.output_folder import clear_folder, day_folder, output_folde
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order,  # noqa: E402,F401
                                   parse_ts, plain_text, value_at)
-from agentic_manager.batch import WORKERS  # noqa: E402,F401
+from agentic_manager.batch import gather  # noqa: E402,F401
+from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
 from agentic_manager.github import gh_available  # noqa: E402,F401
 from agentic_manager.ticket_pulls import PANEL, first_found, panel_pulls, read_events  # noqa: E402,F401
 

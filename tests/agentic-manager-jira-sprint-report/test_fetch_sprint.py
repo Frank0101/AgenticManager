@@ -2,7 +2,7 @@
 Run with: python3 tests/run.py agentic-manager-jira-sprint-report
 
 They cover the script's own logic: its arguments, the report folder, the
-previous sprint and each ticket's pull requests. The Jira calls belong to the
+previous sprint, the changelogs it keeps and each ticket's pull requests. The Jira calls belong to the
 library's client, tested there; test_e2e_fetch.py runs the whole script
 against a fake Jira.
 """
@@ -396,9 +396,9 @@ class PullRequestsTest(unittest.TestCase):
     def test_a_gh_failure_stops(self):
         # Never taken for a pull request with no times: the fetch stops
         # instead, with the first failure's command, gh's words and the
-        # library's advice, and how many failed when several did. A pull
-        # request GitHub can't find beside it doesn't change that, and a
-        # rate limit stops at once, never tried again.
+        # library's advice. A pull request GitHub can't find beside it
+        # doesn't change that, and a rate limit stops at once, never tried
+        # again.
         stopped = "GitHub couldn't be read, so no report was written"
         limited = f": {LIMIT} Wait a minute and run it again."
         refused = ("Resource not accessible. Check that gh works (gh auth status) and run it again, or disable "
@@ -422,19 +422,45 @@ class PullRequestsTest(unittest.TestCase):
                  ("beside one GitHub can't find", answer(("p0", "FORBIDDEN"), ("p1", "NOT_FOUND")),
                   f"{stopped}: gh api graphql: {PR.format(41)}: ", refused),
                  ("several", answer(("p0", "FORBIDDEN"), ("p1", "FORBIDDEN")),
-                  f"{stopped} (2 gh calls failed, the first shown): gh api graphql: {PR.format(41)}: ", refused),
+                  f"{stopped}: gh api graphql: {PR.format(41)}: ", refused),
                  ("the GraphQL call rate limited", None,
-                  f"{stopped} (2 gh calls failed, the first shown): gh api graphql: ", limited)]
+                  f"{stopped}: gh api graphql: ", limited)]
         for name, graphql, start, end in cases:
             run = gh({**self.TIMES, "api graphql": graphql})
+            # Raised as GhError, which main stops on with NO_REPORT.
             with self.subTest(name), contextlib.redirect_stderr(io.StringIO()), \
-                    self.assertRaises(SystemExit) as raised:
+                    self.assertRaises(SystemExit) as raised, fetch_sprint.stops_on_failure(fetch_sprint.NO_REPORT):
                 fetch_sprint.pull_requests(
                     Panel(self.PANEL), self.ISSUES, True, run)
             message = str(raised.exception.code)
             self.assertTrue(message.startswith(start), message)
             self.assertTrue(message.endswith(end), message)
             self.assertEqual(len(run.calls), 1, run.calls)
+
+
+class ChangelogsTest(unittest.TestCase):
+    def test_read_changelogs(self):
+        # Each issue's changes, in the issues' order; one Jira now has none
+        # of gets [] and a line on stderr, and the rest are kept.
+        change = {"created": "2026-03-10T11:00:00.000+0000", "field": "status"}
+        why = "PROJ-2: Jira has no such ticket, or this account can't see it"
+        # name: (the client's (changes, gone), the changelogs, stderr)
+        cases = [("every issue", ({"PROJ-1": [change], "PROJ-2": []}, {}),
+                  {"PROJ-1": [change], "PROJ-2": []}, ""),
+                 ("one gone", ({"PROJ-1": [change]}, {"PROJ-2": why}), {"PROJ-1": [change], "PROJ-2": []},
+                  f"no changelog read, so its current values stand for its history: {why}\n")]
+        issues = [{"id": "1", "key": "PROJ-1"}, {"id": "2", "key": "PROJ-2"}]
+        for name, answer, expected, said in cases:
+            with self.subTest(name), contextlib.redirect_stderr(io.StringIO()) as err:
+                client = mock.Mock(
+                    **{"batched_field_changes.return_value": answer})
+                changelogs = fetch_sprint.read_changelogs(
+                    client, issues, {"status": "status"})
+                self.assertEqual(changelogs, expected)
+                self.assertEqual(list(changelogs), ["PROJ-1", "PROJ-2"])
+                self.assertEqual(err.getvalue(), said)
+                client.batched_field_changes.assert_called_once_with(
+                    issues, {"status": "status"})
 
 
 class HelpersTest(unittest.TestCase):

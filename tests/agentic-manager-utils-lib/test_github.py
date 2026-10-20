@@ -29,11 +29,10 @@ retry.RETRY_WAITS = (0, 0, 0)
 
 
 class Fails:
-    """A case's expected failure: the message gh_json() raises GhError with,
-    and whether it is not_found."""
+    """A case's expected failure: the message gh_json() raises GhError with."""
 
-    def __init__(self, message, not_found=False):
-        self.message, self.not_found = message, not_found
+    def __init__(self, message):
+        self.message = message
 
 
 class Runner:
@@ -92,25 +91,55 @@ class GithubTest(unittest.TestCase):
                 self.assertEqual(
                     run.calls, [["gh", *c] for c in tries.get(name, [command])])
 
-    def test_gather(self):
-        # Every subject is tried: an answer, even an empty one, is kept apart
-        # from a failure, each in the order of the subjects.
-        failed = github.GhError(
-            ["api", "b"], "HTTP 403: API rate limit exceeded")
-
-        def call(subject):
-            if subject == "b":
-                raise failed
-            return [] if subject == "c" else [subject]
-        # name: (workers, subjects, expected (answers, failures))
-        cases = [("parallel", 8, ["a", "b", "c"], ([("a", ["a"]), ("c", [])], [("b", failed)])),
-                 ("one at a time", 1, ["a", "b", "c"],
-                  ([("a", ["a"]), ("c", [])], [("b", failed)])),
-                 ("none", 8, [], ([], []))]
-        for name, workers, subjects, expected in cases:
+    def test_gh_found(self):
+        # GitHub saying it has no such thing, in any of gh's words for it, is
+        # an answer: none, and why, in gh's words on one line, asked once;
+        # any other failure raises, as gh_json()'s does.
+        # name: (gh's exit code, stdout, stderr, the thing, the answer and
+        # why, or the failure's message)
+        def missing(thing, words):
+            return None, f"GitHub has no such {thing}, or this account can't see it: {words}"
+        no_pull = "GraphQL: Could not resolve to a PullRequest with the number of 9. (repository.pullRequest)"
+        no_repository = "GraphQL: Could not resolve to a Repository with the name 'acme/gone'. (repository)"
+        cases = [
+            ("answer", 0, json.dumps({"branch": "main"}),
+             "", "repository", ({"branch": "main"}, None)),
+            ("empty answer", 0, "[]", "", "commit", ([], None)),
+            ("gh pr view, no pull request", 1, "", no_pull + "\n", "pull request",
+             missing("pull request", no_pull)),
+            ("gh pr view, no repository", 1, "", no_repository + "\n", "pull request",
+             missing("pull request", no_repository)),
+            ("gh api, not found", 1, json.dumps({"message": "Not Found"}), "gh: Not Found (HTTP 404)\n",
+             "repository", missing("repository", "gh: Not Found (HTTP 404)")),
+            ("gh api, older wording", 1, "", "HTTP 404: Not Found (https://api.github.com/repos/acme/gone)\n",
+             "repository", missing("repository", "HTTP 404: Not Found (https://api.github.com/repos/acme/gone)")),
+            ("no such commit", 1, "", "gh: No commit found for SHA: c9 (HTTP 422)\n", "commit",
+             missing("commit", "gh: No commit found for SHA: c9 (HTTP 422)")),
+            ("rate limit", 1, "", "HTTP 403: API rate limit exceeded for user ID 1.", "commit",
+             Fails("HTTP 403: API rate limit exceeded for user ID 1.")),
+            ("bad login", 1, "", "HTTP 401: Bad credentials", "commit",
+             Fails("HTTP 401: Bad credentials")),
+            ("another 422", 1, "", "gh: Validation Failed (HTTP 422)", "commit",
+             Fails("gh: Validation Failed (HTTP 422)")),
+            ("GitHub down", 1, "", "HTTP 503: Service Unavailable", "commit",
+             Fails("HTTP 503: Service Unavailable")),
+        ]
+        command = ["api", "repos/acme/api"]
+        for name, code, out, err, thing, expected in cases:
             with self.subTest(name):
-                self.assertEqual(github.gather(
-                    subjects, call, workers), expected)
+                run = Runner(out, code=code, stderr=err)
+                if isinstance(expected, Fails):
+                    with self.assertRaises(github.GhError) as raised:
+                        github.gh_found(command, thing, run)
+                    self.assertEqual(
+                        raised.exception.message, expected.message)
+                else:
+                    self.assertEqual(github.gh_found(
+                        command, thing, run), expected)
+                # GitHub down is tried until the retries run out; anything
+                # else once.
+                self.assertEqual(len(run.calls), len(
+                    retry.RETRY_WAITS) + 1 if name == "GitHub down" else 1)
 
     def test_advice(self):
         # One wording for every skill: wait a minute for GitHub's rate limit,
@@ -182,7 +211,7 @@ class GithubTest(unittest.TestCase):
         searched = [{"url": PR.format(47), "state": "open", "title": "PROJ-123 Backoff"},
                     {"url": PR.format(48), "title": "PROJ-123 Jitter"}]
         cases = [
-            ("pulls holding", lambda run: github.pulls_holding("acme/api", "c1", run), found, found,
+            ("pulls holding", lambda run: github.pulls_holding("acme/api", "c1", run), found, (found, None),
              ["gh", "api", "repos/acme/api/commits/c1/pulls"]),
             # States in capitals, as the other reads give them.
             ("search", lambda run: github.search_pull_titles("PROJ-123", "acme", run), searched,
@@ -197,7 +226,8 @@ class GithubTest(unittest.TestCase):
             with self.subTest(name + ", gh fails"), self.assertRaises(github.GhError):
                 call(Runner(code=1))
             with self.subTest(name + ", gh answers nothing"):
-                self.assertEqual(call(answering([])), [])
+                self.assertEqual(call(answering([])), ([], None)
+                                 if name == "pulls holding" else [])
 
     def test_pull_url(self):
         # url: (repository, owner, number), or None for a page that isn't a pull request
@@ -214,35 +244,32 @@ class GithubTest(unittest.TestCase):
     def test_pull_events(self):
         # Many pull requests in one GraphQL call, grouped by repository, each
         # value a variable; split into calls of a batch each, one host
-        # each; one GitHub can't resolve, or whose address isn't safe to ask
-        # about, a failure of its own while the rest are answered, marked
-        # not_found only when GitHub says the pull request doesn't exist.
+        # each. One GitHub says doesn't exist is returned apart with GitHub's
+        # words; one it can't resolve otherwise, or whose address isn't safe
+        # to ask about, raises.
         def node(url):
             return {"url": url, "state": "MERGED", "createdAt": "2026-10-01T08:00:00Z",
                     "mergedAt": "2026-10-10T08:00:00Z"}
         web = "https://github.com/acme/web/pull/{}"
         enterprise = "https://git.acme.test/acme/api/pull/{}"
-        unsafe = "https://github.com/acme/api$x/pull/1"
         # name: (urls, those GitHub can't resolve, the batch size, each
-        # call's --hostname, "" for GitHub's own, the urls answered, the
-        # failures)
+        # call's --hostname, "" for GitHub's own, the urls answered, those
+        # GitHub says don't exist with its words)
         cases = [
             ("one call, two repositories", [PR.format(41), web.format(7), PR.format(42)], [], 50,
-             [""], [PR.format(41), web.format(7), PR.format(42)], []),
+             [""], [PR.format(41), web.format(7), PR.format(42)], {}),
             ("each once", [PR.format(41), PR.format(41)],
-             [], 50, [""], [PR.format(41)], []),
+             [], 50, [""], [PR.format(41)], {}),
             ("split into batches", [PR.format(n) for n in range(1, 6)], [], 2, [""] * 3,
-             [PR.format(n) for n in range(1, 6)], []),
+             [PR.format(n) for n in range(1, 6)], {}),
             ("one host a call", [PR.format(41), enterprise.format(3)], [], 50,
-             ["", "git.acme.test"], [PR.format(41), enterprise.format(3)], []),
-            ("one GitHub can't resolve", [PR.format(41), PR.format(9)], [PR.format(9)], 50, [""],
-             [PR.format(41)], [(PR.format(9), f"{PR.format(9)}: Could not resolve to a PullRequest with the "
-                                "number of 9.", True)]),
-            ("an address not safe to ask about", [unsafe, PR.format(41)], [], 50, [""], [PR.format(41)],
-             [(unsafe, f"{unsafe}: not a pull request's address gh can be asked about", False)]),
-            ("none", [], [], 50, [], [], []),
+             ["", "git.acme.test"], [PR.format(41), enterprise.format(3)], {}),
+            ("one GitHub says doesn't exist", [PR.format(41), PR.format(9)], [PR.format(9)], 50, [""],
+             [PR.format(41)], {PR.format(9): f"{PR.format(9)}: Could not resolve to a PullRequest with the "
+                               "number of 9."}),
+            ("none", [], [], 50, [], [], {}),
         ]
-        for name, urls, missing, size, hosts, answered, failed in cases:
+        for name, urls, missing, size, hosts, answered, gone in cases:
             with self.subTest(name), mock.patch.object(batch, "BATCH_SIZE", size):
                 calls = []
 
@@ -251,15 +278,21 @@ class GithubTest(unittest.TestCase):
                     code, out, err = graphql_answer(command[1:], lambda url: None if url in missing
                                                     else node(url))
                     return subprocess.CompletedProcess(command, code, out, err)
-                events, failures = github.pull_events(urls, run)
-                self.assertEqual(events, {url: node(url) for url in answered})
-                self.assertEqual([(url, error.message, error.not_found)
-                                 for url, error in failures], failed)
-                self.assertTrue(
-                    all(error.command == ["api", "graphql"] for _, error in failures))
+                self.assertEqual(github.pull_events(urls, run),
+                                 ({url: node(url) for url in answered}, gone))
                 self.assertEqual(sorted((c[c.index("--hostname") + 1] if "--hostname" in c else "")
                                         for c in calls), sorted(hosts))
                 self.assertTrue(all(is_graphql(c) for c in calls))
+
+    def test_unsafe_address(self):
+        # Never asked about: it raises before any call.
+        unsafe = "https://github.com/acme/api$x/pull/1"
+        run = Runner()
+        with self.assertRaises(github.GhError) as raised:
+            github.pull_events([PR.format(41), unsafe], run)
+        self.assertEqual((raised.exception.command, raised.exception.message),
+                         (["api", "graphql"], f"{unsafe}: not a pull request's address gh can be asked about"))
+        self.assertEqual(run.calls, [])
 
     def test_events_query(self):
         # Aliases r<i> for each repository and p<j> for each pull request;
@@ -283,11 +316,13 @@ class GithubTest(unittest.TestCase):
                 github.events_query([url])
 
     def test_graphql_failures(self):
-        # The call as a whole failing, with gh's words; an answer holding
-        # data is GitHub's even when gh exits non-zero, and only a pull
-        # request GitHub says doesn't exist is not_found: a repository it
-        # can't find is also what an account without access gets.
-        # name: (exit code, stdout, stderr, expected events or the message)
+        # The call as a whole failing raises, with gh's words; an answer
+        # holding data is GitHub's even when gh exits non-zero, and only a
+        # pull request GitHub says doesn't exist is returned apart: a
+        # repository it can't find is also what an account without access
+        # gets, so it raises.
+        # name: (exit code, stdout, stderr, expected (events, gone) or the
+        # failure)
         data = {
             "data": {"r0": {"p0": {"url": PR.format(41), "state": "OPEN"}}}}
         gone = "Could not resolve to a PullRequest with the number of 41."
@@ -300,11 +335,11 @@ class GithubTest(unittest.TestCase):
                   Fails("HTTP 401: Bad credentials")),
                  ("not JSON", 0, "oops", "", Fails(
                      "answered something other than GraphQL data")),
-                 ("data", 0, json.dumps(data), "", {
-                  PR.format(41): {"url": PR.format(41), "state": "OPEN"}}),
+                 ("data", 0, json.dumps(data), "", ({
+                  PR.format(41): {"url": PR.format(41), "state": "OPEN"}}, {})),
                  ("pull request not found", 1, json.dumps({"data": {"r0": {"p0": None}}, "errors": [
                      {"type": "NOT_FOUND", "path": ["r0", "p0"], "message": gone}]}), "gh: " + gone,
-                  Fails(f"{PR.format(41)}: {gone}", True)),
+                  ({}, {PR.format(41): f"{PR.format(41)}: {gone}"})),
                  ("repository not found", 1, json.dumps({"data": {"r0": None}, "errors": [
                      {"type": "NOT_FOUND", "path": ["r0"], "message": no_repository}]}), "gh: " + no_repository,
                   Fails(f"{PR.format(41)}: {no_repository}")),
@@ -315,12 +350,14 @@ class GithubTest(unittest.TestCase):
             with self.subTest(name):
                 def run(command, **kwargs):
                     return subprocess.CompletedProcess(command, code, out, err)
-                events, failures = github.pull_events([PR.format(41)], run)
                 if isinstance(expected, Fails):
-                    self.assertEqual([(url, e.command, e.message, e.not_found) for url, e in failures],
-                                     [(PR.format(41), ["api", "graphql"], expected.message, expected.not_found)])
+                    with self.assertRaises(github.GhError) as raised:
+                        github.pull_events([PR.format(41)], run)
+                    self.assertEqual((raised.exception.command, raised.exception.message),
+                                     (["api", "graphql"], expected.message))
                 else:
-                    self.assertEqual((events, failures), (expected, []))
+                    self.assertEqual(github.pull_events(
+                        [PR.format(41)], run), expected)
 
 
 if __name__ == "__main__":

@@ -34,7 +34,9 @@ columns, values and a worked row: the script is their one source, so SKILL.md
 doesn't repeat them. Ticket keys and owner/repo#123 are linked on write, so
 none needs a separate step: a key to the Jira site the ledger's links give its
 project, else to the site that has the project; anything else key-shaped is
-written as code.
+written as code, as is every key when jira-api isn't enabled or its settings
+aren't filled in. A Jira call that fails stops the write with Jira's message,
+writing nothing: a key Jira couldn't be asked about isn't taken for no ticket.
 """
 import argparse
 import glob
@@ -43,7 +45,7 @@ import os
 import re
 import sys
 
-from common import (ID, JiraClient, is_enabled, AREAS, BLOCKERS, BOUNDARY, CODE_STATUSES, claim_length_warning,
+from common import (ID, JiraClient, is_enabled, stops_on_failure, AREAS, BLOCKERS, BOUNDARY, CODE_STATUSES, claim_length_warning,
                     COMPONENT_HEADER, DECISION_HEADER, DEFINITION, DEPTHS, EVIDENCE_LINE, FILE_HEADER, FINDINGS,
                     FINDING_FIELDS, FINDING_OPTIONAL, FINDING_START, FOLDER_NAME, GAP_FIX, GAP_HEADER, GROUPS, ID_ANCHOR,
                     INLINE_LINK, LEDGER, LINKS, QUEUE_HEADER, QUEUE_TABLES, READ_DEPTHS, REFERENCE_LINK, REFLECTION,
@@ -681,17 +683,18 @@ def linked(lines, values):
 
 
 def jira_site(project):
-    """The Jira site that has `project`, or None: without jira-api, or when
-    the site has no such project, or it is one the user excludes."""
+    """The Jira site that has `project`, or None: without jira-api or with
+    its settings not filled in, when the site has no such project, or it is
+    one the user excludes. Raises JiraError when Jira fails."""
     if project not in SITES:
         SITES[project] = None
         if is_enabled("workflow", "jira-api"):
             try:
                 client = JiraClient()
-                client.project(project)
-                SITES[project] = client.base_url
             except SystemExit:
-                pass
+                return None
+            if client.project(project) is not None:
+                SITES[project] = client.base_url
     return SITES[project]
 
 
@@ -1203,104 +1206,107 @@ def main(argv=None):
             sub.add_argument("--replace", nargs=2, metavar=("OLD", "NEW"),
                              help="replace one exact text of the section, instead of reading the whole of it")
     args = parser.parse_args(argv)
-    if args.command == "help":
-        if not args.table:
-            print(full_help())
-        else:
-            print(table_help(args.table)
-                  if args.table in TABLES else COMMAND_HELP[args.table])
-        return
-    text = load(args.investigation)
-    lines = text.split("\n")
-    result, warnings = {}, []
-    written, read_batch = [], []
-    if args.command == "brief":
-        print(brief(lines))
-        return
-    if args.command in ("show", "find", "status"):
-        if args.command == "show" and sum(map(bool, (args.id, args.table, args.section))) != 1:
-            raise SystemExit("show takes one of --id, --table or --section")
-        if args.command == "show" and (args.raw or args.section):
-            print(show_raw(lines, args.id, args.table, args.section))
+    with stops_on_failure():
+        if args.command == "help":
+            if not args.table:
+                print(full_help())
+            else:
+                print(table_help(args.table)
+                      if args.table in TABLES else COMMAND_HELP[args.table])
             return
-        folder = investigation_dir(args.investigation)[0]
-        report = bool(glob.glob(os.path.join(
-            glob.escape(folder), f"*{REPORT_SUFFIX}")))
-        # Anchors are for viewers; the plain text costs fewer tokens without them.
-        print(strip_anchors({"show": lambda: show(lines, args.id, args.table), "find": lambda: find(lines, args.text),
-                             "status": lambda: status(lines, report)}[args.command]()))
-        return
-    if args.command == "next-id":
-        print(json.dumps({"id": next_id(text, args.kind)}))
-        return
-    if args.command == "row":
-        cells = (row_with_sets(lines, args.table, args.id, args.match, args.set) if args.set
-                 else read_input(args, as_json=True))
-        written = put_row(lines, args.table, args.id, args.match, cells)
-        if args.table == "sources":
-            sync_sources(lines)
-    elif args.command == "batch":
-        read_batch = read_input(args, as_json=True)
-        written, result["written"] = put_batch(lines, read_batch, warnings)
-    elif args.command == "move":
-        columns = [s.partition("=")[0] for s in args.set]
-        values = written = linked(
-            lines, [s.partition("=")[2] for s in args.set])
-        move_row(lines, args.id, f"queue-{args.to}",
-                 [f"{c}={v}" for c, v in zip(columns, values)])
-    elif args.command == "remove":
-        if args.table == "findings":
-            if not args.id:
-                raise SystemExit("findings need --id")
-            remove_finding(lines, args.id)
-        else:
-            _, _, letters = TABLES[args.table]
-            if bool(letters) == bool(args.match) or (letters and not args.id):
+        text = load(args.investigation)
+        lines = text.split("\n")
+        result, warnings = {}, []
+        written, read_batch = [], []
+        if args.command == "brief":
+            print(brief(lines))
+            return
+        if args.command in ("show", "find", "status"):
+            if args.command == "show" and sum(map(bool, (args.id, args.table, args.section))) != 1:
                 raise SystemExit(
-                    f"{args.table} " + ("takes --id" if letters else "has no IDs: use --match"))
-            remove_row(lines, args.table, args.id, args.match)
-    elif args.command == "finding":
-        fields = finding_with_sets(
-            lines, args.id, args.set) if args.set else read_input(args, as_json=True)
-        result["id"], written = put_finding(lines, args.id, fields, warnings)
-        sync_sources(lines)
-    elif args.command == "link":
-        if not re.fullmatch(r"[A-Za-z0-9._-]+", args.key) or not re.match(r"https?://", args.url):
-            raise SystemExit(
-                "--key is letters, digits, dots, hyphens and underscores; --url starts with http(s)://")
-        set_link(lines, args.key.casefold(), args.url)
-    elif args.command == "unlink":
-        remove_link(lines, args.key.casefold())
-    elif args.command == "review":
-        result["id"] = record_review(
-            lines, args.raised or "none", args.stopped)
-    elif args.command == "sync-sources":
-        sync_sources(lines)
-    elif args.command == "text":
-        text = replaced_text(lines, args.section, *
-                             args.replace) if args.replace else read_input(args)
-        written = linked(lines, [text])
-        check_backticks(lines, written, args.section)
-        set_text(lines, args.section, written[0])
-    # An action closed by this call: the records naming it may need its answer.
-    closed = ([args.id] if (args.command == "move" and args.to == "completed")
-              or (args.command == "row" and args.table == "queue-completed") else
-              [item["id"] for item in read_batch if isinstance(
-                  item, dict) and item.get("table") == "queue-completed"]
-              if args.command == "batch" else [])
-    if named := {ident: found for ident in closed if (found := mentions(lines, ident))}:
-        result["update_if_needed"] = named
-    upgrade_tickets(lines)
-    link_ids(lines)
-    # Checked once every record of the call is written, so a batch can hold
-    # records that cite each other.
-    missing = unrecorded_citations(written, "\n".join(lines))
-    if missing:
-        raise SystemExit(f"cites {', '.join(missing)}, which the ledger doesn't hold: write each in the same "
-                         "call, such as one batch, or before it. Nothing was written")
-    if warnings:
-        result["warnings"] = warnings
-    print(json.dumps({"path": save(args.investigation, lines), **result}))
+                    "show takes one of --id, --table or --section")
+            if args.command == "show" and (args.raw or args.section):
+                print(show_raw(lines, args.id, args.table, args.section))
+                return
+            folder = investigation_dir(args.investigation)[0]
+            report = bool(glob.glob(os.path.join(
+                glob.escape(folder), f"*{REPORT_SUFFIX}")))
+            # Anchors are for viewers; the plain text costs fewer tokens without them.
+            print(strip_anchors({"show": lambda: show(lines, args.id, args.table), "find": lambda: find(lines, args.text),
+                                 "status": lambda: status(lines, report)}[args.command]()))
+            return
+        if args.command == "next-id":
+            print(json.dumps({"id": next_id(text, args.kind)}))
+            return
+        if args.command == "row":
+            cells = (row_with_sets(lines, args.table, args.id, args.match, args.set) if args.set
+                     else read_input(args, as_json=True))
+            written = put_row(lines, args.table, args.id, args.match, cells)
+            if args.table == "sources":
+                sync_sources(lines)
+        elif args.command == "batch":
+            read_batch = read_input(args, as_json=True)
+            written, result["written"] = put_batch(lines, read_batch, warnings)
+        elif args.command == "move":
+            columns = [s.partition("=")[0] for s in args.set]
+            values = written = linked(
+                lines, [s.partition("=")[2] for s in args.set])
+            move_row(lines, args.id, f"queue-{args.to}",
+                     [f"{c}={v}" for c, v in zip(columns, values)])
+        elif args.command == "remove":
+            if args.table == "findings":
+                if not args.id:
+                    raise SystemExit("findings need --id")
+                remove_finding(lines, args.id)
+            else:
+                _, _, letters = TABLES[args.table]
+                if bool(letters) == bool(args.match) or (letters and not args.id):
+                    raise SystemExit(
+                        f"{args.table} " + ("takes --id" if letters else "has no IDs: use --match"))
+                remove_row(lines, args.table, args.id, args.match)
+        elif args.command == "finding":
+            fields = finding_with_sets(
+                lines, args.id, args.set) if args.set else read_input(args, as_json=True)
+            result["id"], written = put_finding(
+                lines, args.id, fields, warnings)
+            sync_sources(lines)
+        elif args.command == "link":
+            if not re.fullmatch(r"[A-Za-z0-9._-]+", args.key) or not re.match(r"https?://", args.url):
+                raise SystemExit(
+                    "--key is letters, digits, dots, hyphens and underscores; --url starts with http(s)://")
+            set_link(lines, args.key.casefold(), args.url)
+        elif args.command == "unlink":
+            remove_link(lines, args.key.casefold())
+        elif args.command == "review":
+            result["id"] = record_review(
+                lines, args.raised or "none", args.stopped)
+        elif args.command == "sync-sources":
+            sync_sources(lines)
+        elif args.command == "text":
+            text = replaced_text(lines, args.section, *
+                                 args.replace) if args.replace else read_input(args)
+            written = linked(lines, [text])
+            check_backticks(lines, written, args.section)
+            set_text(lines, args.section, written[0])
+        # An action closed by this call: the records naming it may need its answer.
+        closed = ([args.id] if (args.command == "move" and args.to == "completed")
+                  or (args.command == "row" and args.table == "queue-completed") else
+                  [item["id"] for item in read_batch if isinstance(
+                      item, dict) and item.get("table") == "queue-completed"]
+                  if args.command == "batch" else [])
+        if named := {ident: found for ident in closed if (found := mentions(lines, ident))}:
+            result["update_if_needed"] = named
+        upgrade_tickets(lines)
+        link_ids(lines)
+        # Checked once every record of the call is written, so a batch can hold
+        # records that cite each other.
+        missing = unrecorded_citations(written, "\n".join(lines))
+        if missing:
+            raise SystemExit(f"cites {', '.join(missing)}, which the ledger doesn't hold: write each in the same "
+                             "call, such as one batch, or before it. Nothing was written")
+        if warnings:
+            result["warnings"] = warnings
+        print(json.dumps({"path": save(args.investigation, lines), **result}))
 
 
 if __name__ == "__main__":

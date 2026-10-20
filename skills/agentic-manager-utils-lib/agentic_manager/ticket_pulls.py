@@ -17,15 +17,16 @@ A pull request names a key only in its title, never in its description: a
 key only in a description is a mention, such as "follow-up to PROJ-123",
 not the ticket's work; a long description makes a match likelier to be wrong;
 and Jira's GitHub integration doesn't link a pull request for it either. The
-key is matched whole, so PROJ-1234 doesn't name PROJ-123. Each way that
-makes several gh calls returns (what gh answered, failures), the failures as
-github.gather() gives them, [(subject, GhError)]: a commit, owner or pull
-request gh couldn't answer for is never left out as if it held or named
-nothing, and the caller decides whether to stop or show it as not known.
+key is matched whole, so PROJ-1234 doesn't name PROJ-123. As failures.py
+sets out, a commit GitHub doesn't have is returned with why, and a gh call
+that fails otherwise raises GhError and stops the rest, as batch.gather()
+does: a commit, owner or pull request gh couldn't answer for is never left
+out as if it held or named nothing.
 """
 import subprocess
 
-from agentic_manager.github import PULL_URL, gather, pull_events, pulls_holding, search_pull_titles
+from agentic_manager.batch import gather
+from agentic_manager.github import PULL_URL, pull_events, pulls_holding, search_pull_titles
 from agentic_manager.jira import ISSUE_KEY
 
 # How each pull request was found.
@@ -47,33 +48,34 @@ def panel_commits(repositories):
 
 
 def holding_pulls(commits, run=subprocess.run):
-    """(held, failures) for the (repository, commit) pairs of `commits`, as
-    panel_commits() gives them: held as [(pair, the found pull requests of
-    its GitHub repository that hold the commit)], none when no pull request
-    does, and failures as [(pair, GhError)] of the commits gh couldn't
-    check, each in the order of `commits`."""
-    return gather(commits, lambda pair: holding_pull(pair, run))
+    """[(pair, pulls, why)] for the (repository, commit) pairs of `commits`,
+    as panel_commits() gives them, in their order, each as holding_pull()
+    gives it. Raises GhError when gh can't tell for one."""
+    commits = list(commits)
+    return [(pair, *held) for pair, held in zip(commits, gather(commits, lambda pair: holding_pull(pair, run)))]
 
 
 def holding_pull(pair, run=subprocess.run):
-    """The found pull requests of a (repository, commit) pair's GitHub
-    repository that hold the commit, none when no pull request does. Raises
-    GhError when gh can't tell."""
+    """(pulls, why): the found pull requests of a (repository, commit) pair's
+    GitHub repository that hold the commit, none when no pull request does;
+    or none and why GitHub has no such commit. Raises GhError when gh can't
+    tell."""
     repository, commit = pair
-    return [{**pr, "found": COMMITS}
-            for pr in pulls_holding(repository.get("name", ""), commit.get("id", ""), run)]
+    pulls, why = pulls_holding(repository.get(
+        "name", ""), commit.get("id", ""), run)
+    return [{**pr, "found": COMMITS} for pr in pulls or []], why
 
 
 def search_pulls(key, owners, run=subprocess.run):
-    """(found, failures): the found pull requests in the repositories of
-    `owners` whose title names `key`, each once, and [(owner, GhError)] of
-    the owners gh couldn't search. Owners are searched one at a time, in
-    name order, as GitHub's search allows few requests a minute."""
-    searched, failures = gather(
-        sorted(owners), lambda owner: search_pull_titles(key, owner, run), workers=1)
-    found = {pr["url"]: {**pr, "found": SEARCH} for _, hits in searched for pr in hits
+    """The found pull requests in the repositories of `owners` whose title
+    names `key`, each once. Owners are searched one at a time, in name
+    order, as GitHub's search allows few requests a minute. Raises GhError
+    when gh can't search one."""
+    searched = gather(sorted(owners), lambda owner: search_pull_titles(
+        key, owner, run), workers=1)
+    found = {pr["url"]: {**pr, "found": SEARCH} for hits in searched for pr in hits
              if key in ISSUE_KEY.findall(pr.get("title") or "")}
-    return list(found.values()), failures
+    return list(found.values())
 
 
 def first_found(*groups):
@@ -87,8 +89,7 @@ def first_found(*groups):
 
 
 def read_events(pulls, run=subprocess.run):
-    """(events, failures): {url: {url, state, createdAt, mergedAt}}, when it
-    was opened and merged, of each pull request of `pulls` on GitHub, and
-    [(url, GhError)] of those gh couldn't read, as github.pull_events()
-    gives them."""
+    """(events, gone) of each pull request of `pulls` on GitHub, as
+    github.pull_events() gives them: when each was opened and merged, and
+    GitHub's words for those it says don't exist."""
     return pull_events([pr["url"] for pr in pulls if PULL_URL.match(pr.get("url") or "")], run)

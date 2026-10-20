@@ -8,6 +8,7 @@ FakeJira.routes. read_source is patched, so no config is read.
 import io
 import json
 import os
+import re
 import sys
 import threading
 import unittest
@@ -208,11 +209,13 @@ class ClientTest(unittest.TestCase):
     def paths(self):
         return [path for path, _ in FakeJira.requests]
 
-    def assert_exits(self, expected, call):
-        with self.assertRaises(SystemExit) as raised:
+    def assert_fails(self, expected, call):
+        """The JiraError call() raises, whose explanation holds `expected`
+        and never the token."""
+        with self.assertRaises(jira.JiraError) as raised:
             call()
-        self.assertIn(expected, str(raised.exception))
-        self.assertNotIn(TOKEN, str(raised.exception))
+        self.assertIn(expected, raised.exception.explanation)
+        self.assertNotIn(TOKEN, raised.exception.explanation)
         return raised.exception
 
     # --- requests and errors
@@ -228,32 +231,41 @@ class ClientTest(unittest.TestCase):
                          "Basic bWVAYWNtZS50ZXN0OnMzY3JldC10b2tlbg=="])
 
     def test_errors(self):
+        # Every final failure raises JiraError, with the message and advice
+        # the user is shown, never Jira's body, which can echo the token.
         # name: (Jira's answer, the client's base-url if not the fake's,
-        # expected in the message, the error's type)
+        # the explanation, whether it is a 404)
         cases = [
-            ("401", (401, {}), None, "401 Unauthorized for /rest/api/3/myself. Check that your `api-token`",
-             SystemExit),
-            ("403", (403, {}), None, "403 Forbidden for /rest/api/3/myself", SystemExit),
+            ("401", (401, {}), None, "Jira returned 401 Unauthorized for /rest/api/3/myself. Check that your "
+             "`api-token` in sources.workflow.jira-api is valid and belongs to the account in your `email` "
+             "setting.", False),
+            ("403", (403, {}), None,
+             "Jira returned 403 Forbidden for /rest/api/3/myself: the account lacks permission.", False),
+            ("429", (429, {}), None,
+             "Jira returned 429 Too Many Requests for /rest/api/3/myself. Wait a minute and run it again.", False),
             ("500", (500, {"errorMessages": ["boom"]}), None,
-             'Jira returned 500 for /rest/api/3/myself.', SystemExit),
+             "Jira returned 500 for /rest/api/3/myself.", False),
             ("reflected token", (500, {"errorMessages": [TOKEN]}), None,
-             'Jira returned 500 for /rest/api/3/myself.', SystemExit),
-            # A missing resource has its own type, so callers can tell it apart.
-            ("404", None, None, "404 Not Found for /rest/api/3/myself", jira.NotFound),
+             "Jira returned 500 for /rest/api/3/myself.", False),
+            # A missing resource says so, so the client can answer None for it.
+            ("404", None, None,
+             "Jira returned 404 Not Found for /rest/api/3/myself", True),
             ("unreachable site", None, "http://127.0.0.1:9",
-             "could not reach Jira, after trying 4 times. Check your `base-url` setting", SystemExit),
+             "could not reach Jira, after trying 4 times. Check your `base-url` setting in "
+             "sources.workflow.jira-api and the connection.", False),
         ]
-        for name, answer, base_url, expected, kind in cases:
+        for name, answer, base_url, expected, not_found in cases:
             with self.subTest(name):
                 self.reset_jira()
                 if answer:
                     FakeJira.routes["/rest/api/3/myself"] = answer
                 client = self.make_client(
                     base_url) if base_url else self.client
-                self.assertIsInstance(self.assert_exits(
-                    expected, client.whoami), kind)
+                error = self.assert_fails(expected, client.whoami)
+                self.assertEqual(
+                    (error.explanation, str(error), error.not_found), (expected, expected, not_found))
         with mock.patch.object(jira, "urlopen", side_effect=jira.URLError(TOKEN)):
-            error = self.assert_exits(
+            error = self.assert_fails(
                 "could not reach Jira", self.client.whoami)
         self.assertNotIn(self.client.base_url, str(error))
 
@@ -285,7 +297,7 @@ class ClientTest(unittest.TestCase):
                 if isinstance(expected, dict):
                     self.assertEqual(self.client.whoami(), expected)
                 else:
-                    self.assert_exits(expected, self.client.whoami)
+                    self.assert_fails(expected, self.client.whoami)
                 self.assertEqual(len(FakeJira.requests), len(answers))
                 self.assertEqual([c.args[0]
                                  for c in self.sleep.call_args_list], waits)
@@ -413,6 +425,20 @@ class ClientTest(unittest.TestCase):
                 entry("2026-03-29T08:00:00.000+0100",
                       {"field": "IssueParentAssociation", "to": "1001", "toString": "PROJ-100"})]
 
+    SEARCH = "/rest/api/3/search/jql"
+
+    def search_by_id(self, *known):
+        """A search route that answers `id in (...)` with the issues of the
+        ids `known` among those asked for, as Jira's search finds them."""
+        def answer(query):
+            asked = re.findall(r"\d+", query["jql"])
+            return {"issues": [{"id": i, "key": f"PROJ-{i}"} for i in asked if i in known]}
+        return answer
+
+    def searches(self):
+        """The JQL of each search made."""
+        return [q["jql"] for path, q in FakeJira.requests if path == self.SEARCH]
+
     def batch_pages(self, *pages):
         """A batched-changelog route answering each request by its page token: pages[0]
         without one, pages[n] for token "t<n>", each page given the next
@@ -447,7 +473,8 @@ class ClientTest(unittest.TestCase):
         # The same history gives the same changes either way. It is asked for
         # by id, each page by its token, and comes back under keys in the
         # issues' order: one issue's history split over two pages is joined;
-        # one without an entry, or with an empty one, has no changes.
+        # one without an entry, which a search by id finds, or with an empty
+        # one, has no changes.
         histories = self.histories()
         FakeJira.routes[self.MYSELF] = self.ZONE
         FakeJira.routes["/rest/api/3/issue/PROJ-1/changelog"] = {
@@ -456,15 +483,19 @@ class ClientTest(unittest.TestCase):
             [{"issueId": "10001", "changeHistories": histories[:1]},
              {"issueId": "10003", "changeHistories": []}],
             [{"issueId": "10001", "changeHistories": histories[1:]}])
+        FakeJira.routes[self.SEARCH] = self.search_by_id("10002")
         one = self.client.field_changes("PROJ-1", self.TRACKED)
         self.assertEqual([c["field"] for c in one], [
                          "status", "parent", "sprint"])
         FakeJira.requests, FakeJira.authorizations = [], []
         issues = [{"id": "10002", "key": "PROJ-2"}, {"id": "10001", "key": "PROJ-1"},
                   {"id": 10003, "key": "PROJ-3"}]
-        changes = self.client.batched_field_changes(issues, self.TRACKED)
+        changes, gone = self.client.batched_field_changes(
+            issues, self.TRACKED)
         self.assertEqual(list(changes), ["PROJ-2", "PROJ-1", "PROJ-3"])
-        self.assertEqual(changes, {"PROJ-2": [], "PROJ-1": one, "PROJ-3": []})
+        self.assertEqual(
+            (changes, gone), ({"PROJ-2": [], "PROJ-1": one, "PROJ-3": []}, {}))
+        self.assertEqual(self.searches(), ["id in (10002)"])
         ids = ["10002", "10001", "10003"]
         self.assertEqual(self.batch_requests(), [
             (self.BATCH, {"issueIdsOrKeys": ids,
@@ -477,8 +508,35 @@ class ClientTest(unittest.TestCase):
         # No issues, no request.
         FakeJira.requests = []
         self.assertEqual(
-            self.client.batched_field_changes([], self.TRACKED), {})
+            self.client.batched_field_changes([], self.TRACKED), ({}, {}))
         self.assertEqual(FakeJira.requests, [])
+
+    def test_batched_field_changes_an_issue_jira_has_none_of(self):
+        # An issue left without an entry that the search by id doesn't find
+        # either is Jira's answer: no changes, and why, worded as issue()
+        # words it. The search asks only for those issues, a batch at a
+        # time, and isn't made when every issue has an entry.
+        FakeJira.routes[self.MYSELF] = self.ZONE
+        FakeJira.routes[self.SEARCH] = self.search_by_id("2", "4")
+        why = "Jira has no such ticket, or this account can't see it"
+        # name: (the ids with an entry, the keys gone, the searches made)
+        cases = [("some gone", ["1"], ["PROJ-3", "PROJ-5"], ["id in (2,3)", "id in (4,5)"]),
+                 ("every issue has an entry", ["1", "2", "3", "4", "5"], [], [])]
+        issues = [{"id": str(n), "key": f"PROJ-{n}"} for n in range(1, 6)]
+        for name, logged, gone, searches in cases:
+            with self.subTest(name), mock.patch.object(batch, "BATCH_SIZE", 2):
+                FakeJira.requests = []
+                FakeJira.routes[self.BATCH] = lambda body, logged=logged: {"issueChangeLogs": [
+                    {"issueId": i, "changeHistories": self.histories()} for i in body["issueIdsOrKeys"] if i in logged]}
+                changes, missing = self.client.batched_field_changes(
+                    issues, self.TRACKED)
+                self.assertEqual(
+                    missing, {key: f"{key}: {why}" for key in gone})
+                self.assertEqual(list(changes), [i["key"]
+                                 for i in issues if i["key"] not in gone])
+                self.assertEqual(self.searches(), searches)
+        _, unread = self.client.issue("PROJ-9", ["summary"])
+        self.assertEqual(unread, f"PROJ-9: {why}")
 
     def test_batched_field_changes_ask_for_a_batch_of_issues_at_a_time(self):
         def answer(body):
@@ -488,7 +546,9 @@ class ClientTest(unittest.TestCase):
         FakeJira.routes[self.MYSELF] = self.ZONE
         issues = [{"id": str(n), "key": f"PROJ-{n}"} for n in range(1, 6)]
         with mock.patch.object(batch, "BATCH_SIZE", 2):
-            changes = self.client.batched_field_changes(issues, self.TRACKED)
+            changes, gone = self.client.batched_field_changes(
+                issues, self.TRACKED)
+        self.assertEqual(gone, {})
         self.assertEqual([body["issueIdsOrKeys"] for _, body in self.batch_requests()],
                          [["1", "2"], ["3", "4"], ["5"]])
         self.assertEqual(list(changes), [f"PROJ-{n}" for n in range(1, 6)])
@@ -505,7 +565,7 @@ class ClientTest(unittest.TestCase):
                 {"field": "status", "fieldId": "status", "to": "3"},
                 {"field": "resolution", "fieldId": "resolution", "to": "1"}]}]}])
         changes = self.client.batched_field_changes([{"id": "1", "key": "PROJ-1"}],
-                                                    {"status": "status", "resolution": "resolution"})["PROJ-1"]
+                                                    {"status": "status", "resolution": "resolution"})[0]["PROJ-1"]
         self.assertEqual([(c["created"], c["field"]) for c in changes],
                          [("2026-10-07T09:53:16.961+0100", "resolution"), ("2026-10-07T09:53:16.961+0100", "status")])
 
@@ -529,11 +589,12 @@ class ClientTest(unittest.TestCase):
                 queue = list(answers)
                 FakeJira.routes[self.BATCH] = lambda body: queue.pop(0)
                 FakeJira.routes[self.MYSELF] = self.ZONE
+                FakeJira.routes[self.SEARCH] = self.search_by_id("1")
                 if expected is None:
                     self.assertEqual(self.client.batched_field_changes(
-                        issues, self.TRACKED), {"PROJ-1": []})
+                        issues, self.TRACKED), ({"PROJ-1": []}, {}))
                 else:
-                    self.assert_exits(expected, lambda: self.client.batched_field_changes(
+                    self.assert_fails(expected, lambda: self.client.batched_field_changes(
                         issues, self.TRACKED))
                 self.assertEqual(len(self.batch_requests()), len(answers))
                 self.assertEqual([c.args[0]
@@ -541,23 +602,37 @@ class ClientTest(unittest.TestCase):
         with self.subTest("excluded"):
             self.reset_jira()
             client = self.make_client(self.base_url, excluded=["SEC"])
-            self.assert_exits("SEC-1 is of a project excluded by `excluded-projects`",
+            self.assert_fails("SEC-1 is of a project excluded by `excluded-projects`",
                               lambda: client.batched_field_changes(issues + [{"id": "2", "key": "SEC-1"}], {}))
             self.assertEqual(FakeJira.requests, [])
 
     def test_issue(self):
-        # A moved ticket is found under its current key; one that moved into
-        # an excluded project is refused.
+        # A moved ticket is found under its current key. One Jira doesn't
+        # have, or of an excluded project, even one moved into it, is an
+        # answer: nothing, with why, which a skill prints. Any other
+        # failure is raised.
         FakeJira.routes["/rest/api/3/issue/OLD-1"] = {
             "id": "1", "key": "NEW-5", "fields": {}}
         FakeJira.routes["/rest/api/3/issue/OLD-2"] = {
             "id": "2", "key": "SEC-3", "fields": {}}
-        self.assertEqual(self.client.issue(
-            "OLD-1", ["summary", "status"])["key"], "NEW-5")
-        self.assertEqual(FakeJira.requests[0][1], {"fields": "summary,status"})
+        FakeJira.routes["/rest/api/3/issue/BAD-1"] = (500, {})
         client = self.make_client(self.base_url, excluded=["SEC"])
-        self.assert_exits("SEC-3 is of a project excluded",
-                          lambda: client.issue("OLD-2", ["summary"]))
+        excluded = "is of a project excluded by `excluded-projects` in sources.workflow.jira-api: it is never read"
+        # key: (the issue's key, or None; why it isn't read)
+        cases = {"OLD-1": ("NEW-5", None),
+                 "PROJ-404": (None, "PROJ-404: Jira has no such ticket, or this account can't see it"),
+                 "OLD-2": (None, f"SEC-3 {excluded}"),
+                 "SEC-4": (None, f"SEC-4 {excluded}")}
+        for key, (found, why) in cases.items():
+            with self.subTest(key):
+                FakeJira.requests = []
+                issue, unread = client.issue(key, ["summary", "status"])
+                self.assertEqual(
+                    (issue and issue["key"], unread), (found, why))
+                self.assertEqual(FakeJira.requests, [] if key == "SEC-4" else [
+                                 (f"/rest/api/3/issue/{key}", {"fields": "summary,status"})])
+        self.assert_fails("Jira returned 500 for /rest/api/3/issue/BAD-1.",
+                          lambda: client.issue("BAD-1", ["summary"]))
 
     def test_only_projects_the_account_sees_are_excluded_in_jql(self):
         # JQL refuses a project the account can't see, and no search returns
@@ -623,11 +698,21 @@ class ClientTest(unittest.TestCase):
                                       for host in hosts])
 
     def test_project(self):
+        # None for a project the site doesn't have, or one excluded, unasked;
+        # any other failure is raised.
         FakeJira.routes["/rest/api/3/project/PROJ"] = {
             "key": "PROJ", "name": "Project"}
-        self.assertEqual(self.client.project("PROJ")["name"], "Project")
-        with self.assertRaises(jira.NotFound):
-            self.client.project("SHA")
+        FakeJira.routes["/rest/api/3/project/SEC"] = {"key": "SEC"}
+        FakeJira.routes["/rest/api/3/project/BAD"] = (500, {})
+        client = self.make_client(self.base_url, excluded=["SEC"])
+        self.assertEqual(client.project("PROJ"), {
+                         "key": "PROJ", "name": "Project"})
+        for key in ("SHA", "SEC"):
+            with self.subTest(key):
+                self.assertIsNone(client.project(key))
+        self.assertNotIn("/rest/api/3/project/SEC", self.paths())
+        self.assert_fails("Jira returned 500 for /rest/api/3/project/BAD.",
+                          lambda: client.project("BAD"))
 
     def test_remote_links(self):
         FakeJira.routes["/rest/api/3/issue/PROJ-1/remotelink"] = [
@@ -675,8 +760,8 @@ class ClientTest(unittest.TestCase):
             "parent": {"key": "SEC-7"},
             "issuelinks": [{"outwardIssue": {"key": "SEC-8"}}, {"inwardIssue": {"key": "PROJ-3"}}],
             "subtasks": [{"key": "SEC-9"}, {"key": "PROJ-4"}]}}
-        self.assertEqual(client.issue("PROJ-2", ["parent"])["fields"], {
-            "issuelinks": [{"inwardIssue": {"key": "PROJ-3"}}], "subtasks": [{"key": "PROJ-4"}]})
+        self.assertEqual(client.issue("PROJ-2", ["parent"]), ({"id": "2", "key": "PROJ-2", "fields": {
+            "issuelinks": [{"inwardIssue": {"key": "PROJ-3"}}], "subtasks": [{"key": "PROJ-4"}]}}, None))
         FakeJira.routes["/rest/api/3/search/jql"] = {"issues": [
             {"key": "PROJ-5", "fields": {"parent": {"key": "SEC-7"}}}]}
         self.assertEqual(client.search("text ~ x", ["parent"]), [
@@ -692,11 +777,10 @@ class ClientTest(unittest.TestCase):
         for name, call in [("changelog", lambda: client.field_changes("SEC-1", {})),
                            ("comments", lambda: client.comments("SEC-1")),
                            ("remote links", lambda: client.remote_links("SEC-1")),
-                           ("project", lambda: client.project("SEC")),
                            ("boards", lambda: client.boards_for_project("SEC")),
                            ("a sprint by project", lambda: client.find_sprint(project="SEC"))]:
             with self.subTest(name):
-                self.assert_exits(
+                self.assert_fails(
                     "is of a project excluded by `excluded-projects`", call)
         self.assertEqual(FakeJira.requests, [])
         # Without excluded projects, queries are unchanged.
@@ -733,7 +817,7 @@ class ClientTest(unittest.TestCase):
                 self.reset_jira()
                 FakeJira.routes["/rest/greenhopper/1.0/rapid/charts/sprintreport"] = body
                 if expected is None:
-                    self.assert_exits("unexpected shape (no contents.puntedIssues)",
+                    self.assert_fails("unexpected shape (no contents.puntedIssues)",
                                       lambda: self.client.sprint_report(42, 7))
                 else:
                     self.assertEqual(
@@ -872,7 +956,7 @@ class ClientTest(unittest.TestCase):
             with self.subTest(expected):
                 self.reset_jira()
                 setup()
-                self.assert_exits(
+                self.assert_fails(
                     expected, lambda: self.client.find_sprint(**selectors))
 
 

@@ -15,6 +15,8 @@ import time
 
 # Seconds to wait before each new try of a call that failed in passing.
 RETRY_WAITS = (1, 3, 9)
+# What the user does about a rate limit, of any service.
+RATE_LIMITED = "Wait a minute and run it again."
 
 
 def retried(attempt, passing, note):

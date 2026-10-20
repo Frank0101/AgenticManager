@@ -81,20 +81,31 @@ class TicketPullsTest(unittest.TestCase):
 
     def test_holding_pulls(self):
         api = {"name": "acme/api"}
-        run = gh({"api repos/acme/api/commits/c1/pulls": [{"url": PR.format(41), "state": "MERGED"}],
-                  "api repos/acme/api/commits/c2/pulls": []})
-        c1, c2, c3 = (api, {"id": "c1"}), (api, {
-            "id": "c2"}), (api, {"id": "c3"})
+
+        class with_gone(gh):
+            def __call__(self, command, **kwargs):
+                if command[2] == "repos/acme/api/commits/c4/pulls":
+                    self.calls.append(command)
+                    return subprocess.CompletedProcess(command, 1, "", "gh: No commit found for SHA: c4 (HTTP 422)")
+                return super().__call__(command, **kwargs)
+        run = with_gone({"api repos/acme/api/commits/c1/pulls": [{"url": PR.format(41), "state": "MERGED"}],
+                         "api repos/acme/api/commits/c2/pulls": []})
+        c1, c2, c3, c4 = ((api, {"id": sha})
+                          for sha in ("c1", "c2", "c3", "c4"))
         merged = [{"url": PR.format(41), "state": "MERGED", "found": COMMITS}]
-        # In the order of the commits: found, in none, and those gh can't
-        # tell about apart, never read as in no pull request.
-        held, failures = ticket_pulls.holding_pulls([c1, c3, c2], run)
-        self.assertEqual(held, [(c1, merged), (c2, [])])
-        self.assertEqual([(pair, failed.message) for pair, failed in failures],
-                         [(c3, REFUSED)])
-        self.assertEqual(ticket_pulls.holding_pull(c2, run), [])
-        with self.assertRaisesRegex(GhError, "Bad credentials"):
-            ticket_pulls.holding_pull(c3, run)
+        gone = "GitHub has no such commit, or this account can't see it: gh: No commit found for SHA: c4 (HTTP 422)"
+        # In the order of the commits: found, in none, or GitHub has no such
+        # commit, with why; one gh can't tell about raises, never read as in
+        # no pull request.
+        self.assertEqual(ticket_pulls.holding_pulls([c1, c2, c4], run),
+                         [(c1, merged, None), (c2, [], None), (c4, [], gone)])
+        self.assertEqual(ticket_pulls.holding_pulls([], run), [])
+        self.assertEqual(ticket_pulls.holding_pull(c2, run), ([], None))
+        self.assertEqual(ticket_pulls.holding_pull(c4, run), ([], gone))
+        for name, call in [("holding_pulls", lambda: ticket_pulls.holding_pulls([c1, c3, c2], run)),
+                           ("holding_pull", lambda: ticket_pulls.holding_pull(c3, run))]:
+            with self.subTest(name), self.assertRaisesRegex(GhError, "Bad credentials"):
+                call()
 
     def test_search_pulls(self):
         # name: (gh's hits, the URLs found)
@@ -110,36 +121,36 @@ class TicketPullsTest(unittest.TestCase):
         ]
         for name, hits, expected in cases:
             with self.subTest(name):
-                found, failures = ticket_pulls.search_pulls(
+                found = ticket_pulls.search_pulls(
                     "PROJ-123", {"acme"}, gh({"search prs PROJ-123": hits}))
-                self.assertEqual(
-                    ([pr["url"] for pr in found], failures), (expected, []))
+                self.assertEqual([pr["url"] for pr in found], expected)
                 self.assertTrue(all(pr["found"] == SEARCH and pr["state"] == "OPEN"
                                     for pr in found))
         # Every owner is searched, in order, and a pull request found twice
         # is listed once; gh answering no hit finds nothing, and an owner gh
-        # can't search is a failure, the others still searched.
+        # can't search raises, no owner searched after it.
         run = gh({"search prs PROJ-123": [search_hit(47, "PROJ-123 Backoff")]})
-        found, failures = ticket_pulls.search_pulls(
+        found = ticket_pulls.search_pulls(
             "PROJ-123", {"acme-labs", "acme"}, run)
-        self.assertEqual((len(found), failures), (1, []))
+        self.assertEqual(len(found), 1)
         self.assertEqual([c[c.index("--owner") + 1]
                          for c in run.calls], ["acme", "acme-labs"])
         self.assertEqual(ticket_pulls.search_pulls(
-            "PROJ-123", {"acme"}, gh({"search prs PROJ-123": []})), ([], []))
+            "PROJ-123", {"acme"}, gh({"search prs PROJ-123": []})), [])
 
         class by_owner(gh):
             def __call__(self, command, **kwargs):
+                self.calls.append(command)
                 answer = self.answers.get(
                     command[command.index("--owner") + 1])
                 if answer is None:
                     return subprocess.CompletedProcess(command, 1, "", REFUSED)
                 return subprocess.CompletedProcess(command, 0, json.dumps(answer), "")
-        found, failures = ticket_pulls.search_pulls(
-            "PROJ-123", {"acme", "acme-labs"}, by_owner({"acme-labs": [search_hit(47, "PROJ-123 Backoff")]}))
-        self.assertEqual([pr["url"] for pr in found], [PR.format(47)])
-        self.assertEqual([(owner, failed.message) for owner, failed in failures],
-                         [("acme", REFUSED)])
+        run = by_owner({"acme-labs": [search_hit(47, "PROJ-123 Backoff")]})
+        with self.assertRaisesRegex(GhError, "Bad credentials"):
+            ticket_pulls.search_pulls("PROJ-123", {"acme", "acme-labs"}, run)
+        self.assertEqual([c[c.index("--owner") + 1]
+                         for c in run.calls], ["acme"])
 
     def test_first_found(self):
         panel = [{"url": PR.format(41), "found": PANEL}]
@@ -159,15 +170,12 @@ class TicketPullsTest(unittest.TestCase):
         # Each pull request on GitHub once, in one GraphQL call; one
         # elsewhere isn't asked about.
         self.assertEqual(ticket_pulls.read_events(pulls, run),
-                         ({PR.format(41): events}, []))
+                         ({PR.format(41): events}, {}))
         self.assertEqual(len(run.calls), 1)
-        # One GitHub can't resolve is a failure, the others still read.
-        found, failures = ticket_pulls.read_events(
-            pulls + [{"url": PR.format(47)}], run)
-        self.assertEqual(found, {PR.format(41): events})
-        self.assertEqual([(url, failed.message) for url, failed in failures],
-                         [(PR.format(47), f"{PR.format(47)}: Could not resolve to a PullRequest with the number "
-                           "of 47.")])
+        # One GitHub says doesn't exist is returned apart, with its words.
+        self.assertEqual(ticket_pulls.read_events(pulls + [{"url": PR.format(47)}], run),
+                         ({PR.format(41): events}, {PR.format(47): f"{PR.format(47)}: Could not resolve to a "
+                                                    "PullRequest with the number of 47."}))
         self.assertEqual(len(run.calls), 2)
 
 

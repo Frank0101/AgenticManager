@@ -78,7 +78,9 @@ class FakeJira(BaseHTTPRequestHandler):
     `boards` holds the project's boards, `sprints` the board's sprints,
     `estimation` the board's estimation field, `fields` the site's fields and
     `removed` what a search for the removed issues returns, `parents` what
-    a search by id for past epics returns, `subtasks` what a search by
+    a search by id for past epics returns, `unknown` the ids of the issues a
+    search by id for issues without changes doesn't find, `subtasks` what a
+    search by
     parent returns and `panel` each issue's Development panel, so a test can
     change them. `requests` records each path, `queries` each JQL,
     `data_types` each Development panel's data type read and `batches` each
@@ -94,6 +96,7 @@ class FakeJira(BaseHTTPRequestHandler):
     removed = []
     parents = []
     subtasks = []
+    unknown = set()
     parent_queries = []
     reporting_timezone: Optional[str] = "Europe/London"
     estimation: Optional[dict] = None
@@ -175,6 +178,10 @@ class FakeJira(BaseHTTPRequestHandler):
         if path == "/rest/greenhopper/1.0/rapid/charts/sprintreport":
             return fixture.SPRINT_REPORT
         if path == "/rest/api/3/search/jql":
+            if query["jql"].startswith("id in") and query.get("fields") == "key":
+                ids = set(re.findall(r"\d+", query["jql"])) - FakeJira.unknown
+                return {"issues": [{"id": i["id"], "key": i["key"]} for i in fixture.CURRENT + FakeJira.removed
+                                   if i["id"] in ids]}
             if query["jql"].startswith("id in"):
                 FakeJira.parent_queries.append(
                     (query["jql"], query.get("fields")))
@@ -269,6 +276,7 @@ class FetchTest(unittest.TestCase):
         FakeJira.removed = fixture.REMOVED
         FakeJira.parents = []
         FakeJira.subtasks = []
+        FakeJira.unknown = set()
         FakeJira.panel = {}
         FakeJira.parent_queries = []
         FakeJira.requests = []
@@ -464,7 +472,8 @@ class FetchTest(unittest.TestCase):
         self.assertEqual(meta["flagged_field"], fixture.FLAGGED_FIELD)
         # Every issue's changelog, read in batches and kept as it was read one
         # issue at a time: in one request, by id, paged by its token, with
-        # [] for an issue without changes, which has no entry.
+        # [] for an issue without changes, which has no entry and a search by
+        # id finds.
         issues = fixture.CURRENT + fixture.REMOVED
         for issue in issues:
             self.assertEqual(self.raw(out, f"changelogs/{issue['key']}.json"),
@@ -495,6 +504,19 @@ class FetchTest(unittest.TestCase):
             for name in files:
                 with open(os.path.join(folder, name), encoding="utf-8") as f:
                     self.assertNotIn(TOKEN, f.read(), name)
+
+    def test_a_ticket_jira_then_has_none_of(self):
+        # A ticket the changelogs have no entry for, which the search by id
+        # then doesn't find either, is Jira's answer: said on stderr, its
+        # changelog written empty, and the fetch goes on.
+        FakeJira.unknown = {
+            next(i["id"] for i in fixture.CURRENT if i["key"] == "PROJ-7")}
+        proc = self.fetch("--project", "PROJ")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("no changelog read, so its current values stand for its history: PROJ-7: Jira has no such "
+                      "ticket, or this account can't see it", proc.stderr.splitlines())
+        self.assertEqual(self.raw(json.loads(proc.stdout),
+                         "changelogs/PROJ-7.json"), [])
 
     def test_raw_data_is_as_at_the_close(self):
         # The sprint closed at 16:00 on 13/03. Since then PROJ-2 was flagged,
@@ -581,7 +603,8 @@ class FetchTest(unittest.TestCase):
                    ], {pr.format(41): times[41]},
                   [{"url": pr.format(43), "via": ["PROJ-9"], "message": gone}]),
                  ("gh fails", True, {**answered, "api graphql": {"fails": refused}},
-                  [refused, "Check that gh works (gh auth status)"], None, None)]
+                  ["GitHub couldn't be read, so no report was written: gh api graphql: " + refused,
+                   "Check that gh works (gh auth status)"], None, None)]
         for name, github, gh_answers, expected, events, skipped in cases:
             with self.subTest(name):
                 FakeJira.requests, FakeJira.queries, FakeJira.data_types = [], [], []

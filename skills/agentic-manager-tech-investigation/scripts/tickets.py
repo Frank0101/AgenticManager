@@ -17,17 +17,17 @@ ticket_pulls.py matches a key, searched in the repositories of the owners the
 panel's pull requests name or --owner gives, or holding a commit the panel
 lists. Of the panel's commits in no pull request, those on the repository's
 default branch are listed, as code that reached it without review; the
-others, such as work rebased away before a merge, are only counted; and those
-gh couldn't check are listed apart, never claimed either way. A gh call that
-fails doesn't stop the others: the library's loops collect the failures, and
-each is printed where its answer would have been, with gh's words and the
-library's advice, so a pull request, owner or commit gh couldn't read is
-never taken for one with nothing to show. Without gh, or with github-cli
-disabled, the panel's pull requests and commits are printed and the output
-says what wasn't read.
+others, such as work rebased away before a merge, are only counted; those
+GitHub has no such commit or repository of are listed with why. As the
+library's failures.py sets out, a ticket, pull request, commit or repository
+the service says it has none of is its answer: why is printed where it would
+have been, and the rest still prints. A call to Jira or gh that fails, once
+the library has tried it again, stops the script with the service's message
+and what to do: a commit gh couldn't check is never read as in no pull
+request. Without gh, or with github-cli disabled, the panel's pull requests
+and commits are printed and the output says what wasn't read.
 Projects the user excludes don't exist here: the library's client never reads
-them, and a key of one is answered with why, as a key Jira doesn't have is, so
-the other keys still print.
+them, and a key of one is answered with why, as a key Jira doesn't have is.
 
 A pull request's description, reviews and comments are a command of their
 own: which pull requests matter is known only once the ticket is read, and
@@ -36,11 +36,10 @@ printed for every one they would make a ticket with many pull requests long.
 import argparse
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
 
-from common import (COMMITS, PANEL, PULL_URL, SEARCH, WORKERS, GhError, JiraClient, NotFound, browse_url, first_found,
-                    gather, gh_available, gh_json, holding_pulls, nested, panel_commits, panel_pulls, plain_text,
-                    search_pulls)
+from common import (COMMITS, PANEL, PULL_URL, SEARCH, JiraClient, browse_url, first_found, gather, gh_available,
+                    gh_found, holding_pulls, nested, panel_commits, panel_pulls, plain_text, search_pulls,
+                    stops_on_failure)
 
 FIELDS = ["summary", "status", "issuetype", "parent", "created", "updated", "resolutiondate",
           "labels", "fixVersions", "issuelinks", "description", "assignee"]
@@ -61,14 +60,10 @@ WHY = {SEARCH: "names the key in its title, not linked in Jira",
 def ticket(client, key, site, owners, gh, run=subprocess.run):
     """Everything printed for one ticket, as text."""
     criteria, sprint = site["criteria"], site["sprint"]
-    try:
-        issue = client.issue(
-            key, FIELDS + [f for f in (criteria, sprint) if f])
-    except NotFound:
-        return f"{key}: Jira has no such ticket, or this account can't see it"
-    except SystemExit as refused:
-        # Such as a ticket of an excluded project: the other keys still print.
-        return str(refused.code)
+    issue, unread = client.issue(
+        key, FIELDS + [f for f in (criteria, sprint) if f])
+    if issue is None:
+        return unread
     fields = issue["fields"]
     current = issue["key"]
     calls = {"children": lambda: client.search(f"parent = {current} ORDER BY key", LINE_FIELDS),
@@ -77,15 +72,14 @@ def ticket(client, key, site, owners, gh, run=subprocess.run):
              "repositories": lambda: client.commits(issue["id"]),
              "remote": lambda: client.remote_links(current),
              "history": lambda: client.field_changes(current, HISTORY)}
-    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        read = dict(zip(calls, pool.map(lambda call: call(), calls.values())))
+    read = dict(zip(calls, gather(calls.values(), lambda call: call())))
     children, comments, panel = read["children"], read["comments"], panel_pulls(
         read["panel"])
     if gh:
-        pulls, details, unread, unsearched, commits = github(
+        pulls, details, commits = github(
             current, panel, read["repositories"], owners, run)
     else:
-        pulls, details, unread, unsearched = panel, {}, {}, []
+        pulls, details = panel, {}
         every = panel_commits(read["repositories"])
         commits = [f"Commits, those in pull requests not told apart without gh ({len(every)}):",
                    *(commit_line(r, c) for r, c in every)]
@@ -106,9 +100,7 @@ def ticket(client, key, site, owners, gh, run=subprocess.run):
         out += ["", "Acceptance criteria:",
                 indented(plain_text(fields.get(criteria), links=True))]
     lines = links(issue)
-    prs = pr_lines(pulls, details, unread, gh)
-    unsearched = [
-        f"gh couldn't search {owner}: {failed.explanation}" for owner, failed in unsearched]
+    prs = pr_lines(pulls, details, gh)
     sprints = sprint_lines(fields.get(sprint)) if sprint else []
     history = history_lines(read["history"])
     web = web_link_lines(read["remote"])
@@ -118,7 +110,7 @@ def ticket(client, key, site, owners, gh, run=subprocess.run):
             (f"  {line(c)}" for c in children),
             "", f"Links ({len(lines)}):", *(f"  {entry}" for entry in lines),
             "", f"Web links ({len(web)}):", *web,
-            "", f"Pull requests ({len(pulls)}):", *(f"  {entry}" for entry in prs + unsearched)]
+            "", f"Pull requests ({len(pulls)}):", *(f"  {entry}" for entry in prs)]
     if not gh:
         out.append("  gh isn't available or github-cli isn't enabled: merge commits, files changed and pull "
                    "requests that name the key in their title without being linked in Jira weren't read")
@@ -163,11 +155,10 @@ def day(stamp):
     return stamp[:10] if stamp else "none"
 
 
-def pr_lines(pulls, details, unread, gh):
+def pr_lines(pulls, details, gh):
     """The pull request lines, in the order found: the panel's, with its
     branches, then those only gh found, with gh's branches and why they are
-    listed; each with what gh adds, or why gh couldn't read it (`unread`,
-    {url: GhError})."""
+    listed; each with what gh adds."""
     out = []
     for pr in pulls:
         detail = details.get(pr.get("url"))
@@ -180,7 +171,7 @@ def pr_lines(pulls, details, unread, gh):
         why = [WHY[pr["found"]]] if pr["found"] in WHY else []
         out.append(" · ".join([pr_label(pr.get("url")), pr["state"], " → ".join(branches),
                                f"updated {day(pr.get('updatedAt'))}", pr.get("url", ""), *why]))
-        out += detail_lines(detail, unread.get(pr.get("url")), gh)
+        out += detail_lines(detail, gh)
     return out
 
 
@@ -189,11 +180,13 @@ def pr_label(url):
     return f"{match[1]}#{match[3]}" if match else url
 
 
-def detail_lines(detail, failed, gh):
+def detail_lines(detail, gh):
+    """What gh adds to a pull request's line: its merge and files changed,
+    or why GitHub has none (a line of text)."""
     if not gh:
         return []
-    if failed:
-        return [f"    gh couldn't read it: {failed.explanation}"]
+    if isinstance(detail, str):
+        return [f"    {detail}"]
     if not detail:
         return ["    gh couldn't read it"]
     merge = nested(detail, ["mergeCommit", "oid"])
@@ -223,81 +216,85 @@ def web_link_lines(remote):
 
 def github(key, panel, repositories, owners, run=subprocess.run):
     """(every pull request found: the panel's, those whose title names the
-    key, then those holding the panel's commits; {url: gh's details of each};
-    {url: GhError} of those gh couldn't read; [(owner, GhError)] of the
-    owners gh couldn't search; the commit section's lines), read with gh."""
+    key, then those holding the panel's commits; {url: gh's details of each,
+    or why GitHub has no such pull request}; the commit section's lines),
+    read with gh."""
     repo_owners = set(owners) | {m[2] for pr in panel if (
         m := PULL_URL.match(pr.get("url") or ""))}
-    titled, unsearched = search_pulls(key, repo_owners, run)
-    pulls = first_found(panel, titled)
-    details, unread = view(pulls, run)
-    outside = outside_commits(panel_commits(repositories), details)
-    held, unheld = holding_pulls(outside, run)
-    found = first_found(pulls, *(prs for _, prs in held))
-    more, more_unread = view(found[len(pulls):], run)
-    details, unread = details | more, unread | more_unread
-    # A commit gh couldn't look up isn't claimed to be in no pull request.
-    commits, unchecked = unreviewed_lines(
-        [pair for pair, prs in held if not prs], run)
-    if unknown := unheld + unchecked:
-        commits += ["", f"Commits gh couldn't check ({len(unknown)}):", *(
-            f"{commit_line(*pair)} · {failed.explanation}" for pair, failed in unknown)]
-    return found, details, unread, unsearched, commits
+    pulls = first_found(panel, search_pulls(key, repo_owners, run))
+    details = view(pulls, run)
+    held = holding_pulls(outside_commits(
+        panel_commits(repositories), details), run)
+    found = first_found(pulls, *(prs for _, prs, _ in held))
+    details |= view(found[len(pulls):], run)
+    commits = unreviewed_lines([pair for pair, prs, why in held if not prs and not why],
+                               [(pair, why) for pair, _, why in held if why], run)
+    return found, details, commits
 
 
 def view(prs, run=subprocess.run):
-    """({url: gh's details}, {url: GhError}) of the pull requests of `prs` on
-    GitHub."""
+    """{url: gh's details, or why GitHub has no such pull request} of the
+    pull requests of `prs` on GitHub."""
     urls = [pr["url"] for pr in prs if PULL_URL.match(pr.get("url") or "")]
-    details, failures = gather(urls, lambda url: gh_json(
-        ["pr", "view", url, "--json", GH_PR_FIELDS], run))
-    return dict(details), dict(failures)
+    read = gather(urls, lambda url: gh_found(
+        ["pr", "view", url, "--json", GH_PR_FIELDS], "pull request", run))
+    return {url: detail if why is None else why for url, (detail, why) in zip(urls, read)}
 
 
 def outside_commits(commits, details):
     """The (repository, commit) of `commits` in none of the pull requests gh
     read, merge commits included."""
-    in_prs = {c.get("oid") for d in details.values() for c in d.get("commits") or []} | {
-        nested(d, ["mergeCommit", "oid"]) for d in details.values()}
+    read = [d for d in details.values() if not isinstance(d, str)]
+    in_prs = {c.get("oid") for d in read for c in d.get("commits") or []} | {
+        nested(d, ["mergeCommit", "oid"]) for d in read}
     return [(repository, commit) for repository, commit in commits if commit.get("id") not in in_prs]
 
 
-def unreviewed_lines(commits, run=subprocess.run):
-    """(the commit section, [(pair, GhError)] of the commits whose branch gh
-    couldn't tell), from the (repository, commit) pairs in no pull request:
-    those on their repository's default branch, then a count of the
-    others."""
+def unreviewed_lines(commits, missing=(), run=subprocess.run):
+    """The commit section, from the (repository, commit) pairs in no pull
+    request: those on their repository's default branch, then a count of
+    the others; then those GitHub has no such commit or repository of, from
+    `missing`, (pair, why) of those already known, and from the pairs."""
     names = sorted({r.get("name", "") for r, _ in commits})
-    branches, unknown = gather(names, lambda name: default_branch(name, run))
-    branches, unknown = dict(branches), dict(unknown)
+    branches = dict(
+        zip(names, gather(names, lambda name: default_branch(name, run))))
 
     def on_default(pair):
         name = pair[0].get("name", "")
-        if name in unknown:
-            raise unknown[name]
-        return on_branch(name, branches[name], pair[1].get("id", ""), run)
-    compared, unchecked = gather(commits, on_default)
-    listed = [commit_line(*pair) for pair, on in compared if on]
+        branch, why = branches[name]
+        if why:
+            return None, why
+        return on_branch(name, branch, pair[1].get("id", ""), run)
+    compared = gather(commits, on_default)
+    listed = [commit_line(*pair)
+              for pair, (on, _) in zip(commits, compared) if on]
     out = [
         f"Commits on the default branch in no pull request ({len(listed)}):", *listed]
-    if others := sum(not on for _, on in compared):
+    if others := sum(on is False for on, _ in compared):
         out.append(f"  {others} more in no pull request and not on the default branch, such as work "
                    "rebased away before a merge")
-    return out, unchecked
+    gone = [*missing, *((pair, why)
+                        for pair, (_, why) in zip(commits, compared) if why)]
+    if gone:
+        out += ["", f"Commits GitHub didn't find ({len(gone)}):",
+                *(f"{commit_line(*pair)} · {why}" for pair, why in gone)]
+    return out
 
 
 def default_branch(repository, run=subprocess.run):
-    """A GitHub repository's default branch, owner/name; raises GhError when
-    gh can't tell."""
-    return gh_json(["api", f"repos/{repository}", "--jq", "{branch: .default_branch}"], run).get("branch")
+    """(branch, why): a GitHub repository's default branch, owner/name, or
+    why GitHub has no such repository; raises GhError when gh can't tell."""
+    found, why = gh_found(["api", f"repos/{repository}", "--jq", "{branch: .default_branch}"],
+                          "repository", run)
+    return (found.get("branch"), None) if why is None else (None, why)
 
 
 def on_branch(repository, branch, sha, run=subprocess.run):
-    """Whether commit `sha` is on `branch`; raises GhError when gh can't
-    tell."""
-    compared = gh_json(["api", f"repos/{repository}/compare/{branch}...{sha}",
-                        "--jq", "{status: .status}"], run)
-    return compared["status"] in ("behind", "identical")
+    """(whether commit `sha` is on `branch`, None), or (None, why) GitHub
+    has no such commit; raises GhError when gh can't tell."""
+    compared, why = gh_found(["api", f"repos/{repository}/compare/{branch}...{sha}",
+                              "--jq", "{status: .status}"], "commit", run)
+    return (compared["status"] in ("behind", "identical"), None) if why is None else (None, why)
 
 
 def commit_line(repository, commit):
@@ -329,13 +326,15 @@ def pr_discussion(url, run=subprocess.run):
     match = PULL_URL.match(url)
     if not match:
         return f"{url}: not a GitHub pull request"
-    try:
-        pr = gh_json(["pr", "view", url, "--json", GH_DISCUSSION_FIELDS], run)
-        # Every page, as one list of pages: a filter would run on each page apart.
-        pages = gh_json(["api", f"repos/{match[1]}/pulls/{match[3]}/comments?per_page=100", "--paginate",
-                         "--slurp"], run)
-    except GhError as failed:
-        return f"{url}: gh couldn't read it: {failed.explanation}"
+    pr, why = gh_found(
+        ["pr", "view", url, "--json", GH_DISCUSSION_FIELDS], "pull request", run)
+    if why:
+        return f"{url}: {why}"
+    # Every page, as one list of pages: a filter would run on each page apart.
+    pages, why = gh_found(["api", f"repos/{match[1]}/pulls/{match[3]}/comments?per_page=100", "--paginate",
+                           "--slurp"], "pull request", run)
+    if why:
+        return f"{url}: {why}"
     inline = [comment for page in pages for comment in page]
     merge = nested(pr, ["mergeCommit", "oid"])
     reviews, comments = pr.get("reviews") or [], pr.get("comments") or []
@@ -385,24 +384,25 @@ def main(argv=None):
     search.add_argument(
         "jql", help="the query, such as 'parent = PROJ-100 ORDER BY key'")
     args = parser.parse_args(argv)
-    if args.command == "pr":
-        if not gh_available():
-            raise SystemExit("gh isn't available or github-cli isn't enabled: a pull request's discussion "
-                             "is read with it")
-        with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-            print("\n\n".join(pool.map(pr_discussion, args.urls)))
-        return
-    client = JiraClient()
-    if args.command == "search":
-        found = client.search(args.jql, LINE_FIELDS)
-        print("\n".join([f"{len(found)} tickets",
-              *(search_line(i) for i in found)]))
-        return
-    site, gh = site_fields(client), gh_available()
-    # One ticket after another: each already reads WORKERS at a time, and
-    # tickets read together would run more calls at once than that.
-    texts = [ticket(client, key, site, args.owner, gh) for key in args.keys]
-    print("\n\n".join(texts))
+    with stops_on_failure():
+        if args.command == "pr":
+            if not gh_available():
+                raise SystemExit("gh isn't available or github-cli isn't enabled: a pull request's discussion "
+                                 "is read with it")
+            print("\n\n".join(gather(args.urls, pr_discussion)))
+            return
+        client = JiraClient()
+        if args.command == "search":
+            found = client.search(args.jql, LINE_FIELDS)
+            print("\n".join([f"{len(found)} tickets",
+                  *(search_line(i) for i in found)]))
+            return
+        site, gh = site_fields(client), gh_available()
+        # One ticket after another: each already reads WORKERS at a time, and
+        # tickets read together would run more calls at once than that.
+        texts = [ticket(client, key, site, args.owner, gh)
+                 for key in args.keys]
+        print("\n\n".join(texts))
 
 
 if __name__ == "__main__":

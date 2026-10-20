@@ -7,16 +7,17 @@ gh is the user's `github-cli` source, so it is used only when enabled, and
 it signs in itself: no setting is read here. Every call takes `run`, which
 runs the command, so a test answers for gh and nothing reaches GitHub.
 
-A call gh can't answer, whether it fails, times out or answers something
-other than JSON, raises GhError with gh's own message, never returns an
-empty answer: "gh failed" and "gh answered: nothing" stay apart, so a
-failure such as GitHub's rate limit is never taken for a commit in no pull
-request or a ticket nothing names. gather() makes many calls and collects
-the failures instead of stopping at the first, so each caller decides what
-they mean for it: stop and say so, or show each as not known. Either way it
-shows gh's words and the error's advice, so every skill tells the user the
-same thing to do. Nothing here knows about Jira: matching a pull request to
-a ticket is ticket_pulls.py's.
+failures.py sets out the rule: GitHub saying what was asked for isn't there
+is an answer, and gh giving none is a failure. A single read of one thing,
+gh_found(), returns the answer or why it isn't there; gh tells "not there"
+only in its message, so NOT_FOUND_SIGNS lists its words for it, and GitHub
+gives the same for a private repository the account can't see, which the
+reason says. Any other call gh can't answer, whether it fails, times out or
+answers something other than JSON, raises GhError with gh's own message,
+never returns an empty answer: "gh failed" and "gh answered: nothing" stay
+apart, so a failure such as GitHub's rate limit is never taken for a commit
+in no pull request or a ticket nothing names. Nothing here knows about
+Jira: matching a pull request to a ticket is ticket_pulls.py's.
 
 Before failing, a call is tried again as retry.py sets out: a timeout or a
 busy GitHub is passing, and a rate limit final, its advice to wait a minute
@@ -25,23 +26,25 @@ and run it again.
 When pull requests were opened and merged is read through GraphQL, many in
 one call (pull_events()): a call per pull request spent hundreds of requests
 of a sprint's hourly limit. Owner, name and number go in as GraphQL
-variables, never into the query's text, and a pull request GitHub can't
-resolve is a failure of its own while the rest of the call is answered. When
-GitHub says the pull request itself doesn't exist (NOT_FOUND, such as one
-deleted that Jira still links), its error is `not_found`, so a caller can
-skip it without reading gh's words; a repository it can't find isn't, as
-that is also what an account without access to it gets.
+variables, never into the query's text. GitHub answers for each pull
+request apart: when it says the pull request itself doesn't exist
+(NOT_FOUND, such as one deleted that Jira still links), that is an answer,
+returned with GitHub's words, so a caller can skip it; any other error, for
+one pull request or the call, is a failure. Here, unlike in a single read,
+a repository it can't find isn't an answer: it is also what an account
+without access to it gets, and gh signed in to the wrong account would then
+drop every pull request of the repository.
 """
 import json
 import re
 import shutil
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
-from agentic_manager.batch import WORKERS, batches
+from agentic_manager.batch import batches, gather
 from agentic_manager.config import is_enabled
 from agentic_manager.json_path import nested
-from agentic_manager.retry import retried
+from agentic_manager.retry import RATE_LIMITED, retried
 
 GROUP, NAME = "source_control", "github-cli"
 TIMEOUT = 60
@@ -65,9 +68,14 @@ PASSING_SIGNS = ("no answer within", "http 500", "http 502", "http 503", "http 5
                  "connection reset", "connection refused", "eof")
 # What GitHub's GraphQL calls an error for something that doesn't exist.
 NOT_FOUND = "NOT_FOUND"
-# What to do when gh fails: a rate limit passes within a minute or so;
-# anything else is gh's own setup, or the user goes on without GitHub.
-RATE_LIMITED = "Wait a minute and run it again."
+# What gh says, in lower case, when GitHub has no such thing, or none the
+# account can see: GraphQL's "Could not resolve to a PullRequest with the
+# number of 9." (gh pr view), REST's "Not Found (HTTP 404)" (gh api), and
+# "No commit found for SHA: ..." (HTTP 422) for a commit's pull requests.
+NOT_FOUND_SIGNS = ("could not resolve to a ",
+                   "http 404", "no commit found for sha")
+# What to do when gh fails for anything but a rate limit (retry.py's
+# RATE_LIMITED): gh's own setup, or the user goes on without GitHub.
 GH_BROKEN = ("Check that gh works (gh auth status) and run it again, or disable the github-cli source to go on "
              "without GitHub.")
 
@@ -78,12 +86,13 @@ def gh_available():
 
 
 def pulls_holding(repository, sha, run=subprocess.run):
-    """The pull requests of a GitHub repository, owner/name, that hold commit
-    `sha`, as {url, state, updatedAt} with state OPEN, CLOSED or MERGED; none
-    when no pull request holds it. Raises GhError when gh can't tell."""
-    return gh_json(["api", f"repos/{repository}/commits/{sha}/pulls", "--jq",
-                    "[.[] | {url: .html_url, state: (if .merged_at then \"MERGED\" else (.state | ascii_upcase) end), "
-                    "updatedAt: .updated_at}]"], run)
+    """(pulls, why), as gh_found() gives them: the pull requests of a GitHub
+    repository, owner/name, that hold commit `sha`, as {url, state,
+    updatedAt} with state OPEN, CLOSED or MERGED, none when no pull request
+    holds it; or why GitHub has no such commit."""
+    return gh_found(["api", f"repos/{repository}/commits/{sha}/pulls", "--jq",
+                     "[.[] | {url: .html_url, state: (if .merged_at then \"MERGED\" else (.state | ascii_upcase) end), "
+                     "updatedAt: .updated_at}]"], "commit", run)
 
 
 def search_pull_titles(text, owner, run=subprocess.run):
@@ -98,34 +107,35 @@ def search_pull_titles(text, owner, run=subprocess.run):
 
 
 def pull_events(urls, run=subprocess.run):
-    """(events, failures) of the pull requests at `urls`: events as {url:
-    {url, state, createdAt, mergedAt}}, when each was opened and, if it was,
-    merged (else mergedAt is None), with state OPEN, CLOSED or MERGED; and
-    failures as [(url, GhError)] of those gh couldn't read, in the order of
-    `urls`, such as one GitHub can't resolve, `not_found` when it doesn't
-    exist, or a URL whose parts aren't safe to ask about. Read in a GraphQL
-    call for each batch (batch.py) of one host's pull requests: each is a
-    single object, not a connection, so a call costs one point of GraphQL's
-    hourly 5,000 and stays far below its node limit."""
+    """(events, gone) of the pull requests at `urls`: events as {url: {url,
+    state, createdAt, mergedAt}}, when each was opened and, if it was, merged
+    (else mergedAt is None), with state OPEN, CLOSED or MERGED; and gone as
+    {url: GitHub's words} of those GitHub says don't exist, in the order of
+    `urls`. Raises GhError for any other that gh couldn't read, such as one
+    GitHub can't resolve or a URL whose parts aren't safe to ask about. Read
+    in a GraphQL call for each batch (batch.py) of one host's pull requests:
+    each is a single object, not a connection, so a call costs one point of
+    GraphQL's hourly 5,000 and stays far below its node limit."""
     urls = list(dict.fromkeys(urls))
-    unsafe, hosts = {}, {}
+    hosts = {}
     for url in urls:
-        if parts := PULL_PARTS.fullmatch(url):
-            hosts.setdefault(parts[1], []).append(url)
-        else:
-            unsafe[url] = GhError(
+        if not (parts := PULL_PARTS.fullmatch(url)):
+            raise GhError(
                 GRAPHQL, f"{url}: not a pull request's address gh can be asked about")
+        hosts.setdefault(parts[1], []).append(url)
     calls = [(host, chunk) for host, found in hosts.items()
              for chunk in batches(found)]
-    answered, failed = gather(
-        calls, lambda call: batch_events(call[0], call[1], run))
-    events, unread = {}, dict(unsafe)
-    for _, (found, missing) in answered:
-        events.update(found)
-        unread.update(missing)
-    for (_, chunk), error in failed:
-        unread.update(dict.fromkeys(chunk, error))
-    return events, [(url, unread[url]) for url in urls if url in unread]
+    events, missing = {}, {}
+    for answered, unread in gather(calls, lambda call: batch_events(call[0], call[1], run)):
+        events.update(answered)
+        missing.update(unread)
+    gone = {}
+    for url in urls:
+        if failed := missing.get(url):
+            if not failed.not_found:
+                raise failed
+            gone[url] = failed.message
+    return events, gone
 
 
 def batch_events(host, urls, run=subprocess.run):
@@ -183,24 +193,18 @@ def events_query(urls):
     return query, fields, aliases
 
 
-def gather(subjects, call, workers=WORKERS):
-    """(answers, failures) of `call`, which reads one subject with gh, for
-    each of `subjects`: answers as [(subject, answer)] of those gh answered,
-    even with nothing, and failures as [(subject, GhError)] of those it
-    couldn't, each in the order of `subjects`; one failure never stops the
-    others."""
-    def attempt(subject):
-        try:
-            return call(subject)
-        except GhError as failed:
-            return failed
-    subjects = list(subjects)
-    answers, failures = [], []
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        for subject, outcome in zip(subjects, pool.map(attempt, subjects)):
-            (failures if isinstance(outcome, GhError)
-             else answers).append((subject, outcome))
-    return answers, failures
+def gh_found(args, thing, run=subprocess.run) -> tuple[Any, str | None]:
+    """(gh's JSON answer to `args`, None), or (None, why) when GitHub has no
+    such `thing`, such as "pull request", or none this account can see: a
+    line in gh's words. Raises GhError for any other failure, as gh_json()
+    does."""
+    try:
+        return gh_json(args, run), None
+    except GhError as failed:
+        if not failed.not_found:
+            raise
+        words = " ".join(failed.message.split()).rstrip(".")
+        return None, f"GitHub has no such {thing}, or this account can't see it: {words}"
 
 
 def gh_json(args, run=subprocess.run):
@@ -213,8 +217,9 @@ def gh_once(args, run):
     """gh's JSON answer to one try of `args`; raises GhError when gh gives none."""
     done = _ran(args, args, run)
     if done.returncode:
-        raise GhError(args, (done.stderr or "").strip()
-                      or f"exited with code {done.returncode}")
+        message = (done.stderr or "").strip()
+        raise GhError(args, message or f"exited with code {done.returncode}",
+                      not_found=any(sign in message.lower() for sign in NOT_FOUND_SIGNS))
     try:
         return json.loads(done.stdout)
     except ValueError:
@@ -253,9 +258,9 @@ def _ran(args, words, run):
 
 def passing(error):
     """Whether a failed gh call is passing, to retry.retried(): no answer in
-    time, or GitHub busy or unreachable; a rate limit, and anything else, is
-    final."""
-    if not isinstance(error, GhError) or error.rate_limited:
+    time, or GitHub busy or unreachable; a rate limit, something GitHub says
+    isn't there, and anything else, is final."""
+    if not isinstance(error, GhError) or error.rate_limited or error.not_found:
         return False
     return any(sign in error.message.lower() for sign in PASSING_SIGNS)
 

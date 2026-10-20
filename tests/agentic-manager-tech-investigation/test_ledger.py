@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import check_report  # noqa: E402
 import init_investigation  # noqa: E402
 import ledger  # noqa: E402
+from common import JiraError  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from investigation_fixture import INVESTIGATION, temp_output  # noqa: E402
 
@@ -499,8 +500,7 @@ class LedgerTest(unittest.TestCase):
 
             def project(self, key):
                 asked.append(key)
-                if key != "PROJ":
-                    raise SystemExit(f"no project {key}")
+                return {"key": key} if key == "PROJ" else None
         ledger.SITES.clear()
         self.addCleanup(ledger.SITES.clear)
         with mock.patch.object(ledger, "JiraClient", Site), mock.patch.object(ledger, "is_enabled", return_value=True):
@@ -511,6 +511,40 @@ class LedgerTest(unittest.TestCase):
         self.assertIn(
             "[proj-7]: https://acme.atlassian.net/browse/PROJ-7", self.text())
         self.assertEqual(asked, ["PROJ", "SHA"])
+
+    def test_ticket_keys_without_jira(self):
+        # Without jira-api, or with its settings not filled in, every key is
+        # written as code; a Jira failure stops the write with Jira's
+        # message, writing nothing.
+        failed = "Jira returned 500 for /rest/api/3/project/PROJ."
+
+        class Failing:
+            base_url = "https://acme.atlassian.net"
+
+            def project(self, key):
+                raise JiraError(failed)
+        # name: (jira-api enabled, the client, the message it stops with or None)
+        cases = [("not enabled", False, Failing, None),
+                 ("settings not filled in", True, mock.Mock(
+                     side_effect=SystemExit("not filled in")), None),
+                 ("Jira fails", True, Failing, failed)]
+        for name, enabled, client, stop in cases:
+            with self.subTest(name):
+                ledger.SITES.clear()
+                self.addCleanup(ledger.SITES.clear)
+                before = self.text()
+                with mock.patch.object(ledger, "JiraClient", client), \
+                        mock.patch.object(ledger, "is_enabled", return_value=enabled):
+                    if stop:
+                        with self.assertRaises(SystemExit) as stopped:
+                            self.run_ledger("text", "--section", "Reflection",
+                                            text="PROJ-7 is done.")
+                        self.assertEqual(stopped.exception.code, stop)
+                        self.assertEqual(self.text(), before)
+                    else:
+                        self.run_ledger("text", "--section", "Reflection",
+                                        text="PROJ-7 is done.")
+                        self.assertIn("`PROJ-7` is done.", self.text())
 
     def test_one_change_per_call(self):
         # --set changes named cells or fields of what is already written, and

@@ -7,12 +7,21 @@ Basic auth (email + token). The token is never printed or written to any file;
 errors name a setting, never its value. If you add debug output here, print
 URLs and status codes only, never headers.
 
+A request that fails, once retry.py's rule gives up, raises JiraError, as
+github.py raises GhError: the library never stops the program, a script's
+entry point does. "Jira has none" is an answer, not a failure, as
+failures.py sets out: issue() returns why it read nothing, project() None,
+and batched_field_changes() why for an issue it has none of, so a skill
+tells "Jira answered no" from "Jira failed" without sorting errors.
+
 Its `excluded-projects` lists the projects the user's organisation doesn't
-allow AI agents to read. The client enforces it, so no skill has to: it
-refuses a request for an excluded project or ticket, leaves excluded projects
-out of every search (those the account can see: JQL refuses a project it
-can't, whose tickets no search returns anyway), and drops them from the
-parent, links and sub-tasks of the issues it returns, as if they didn't exist.
+allow AI agents to read. The client enforces it, so no skill has to: an
+excluded key given to issue() or project() is answered as one Jira doesn't
+have, with why; any other request for an excluded project or ticket is
+refused, unsent, with a JiraError; excluded projects are left out of every
+search (those the account can see: JQL refuses a project it can't, whose
+tickets no search returns anyway), and dropped from the parent, links and
+sub-tasks of the issues it returns, as if they didn't exist.
 
 The greenhopper endpoints (board estimation field, sprint report) are internal,
 not part of Atlassian's documented API, so they could change without notice. The
@@ -34,7 +43,11 @@ Many issues' changelogs are read in batches, through Jira's "bulk fetch"
 endpoint: one request for each batch of issues (batch.py) rather than one per
 issue, each answer in pages of the 10000 change histories Jira allows. It is
 asked for every field, not only the tracked ones: a field logged without an
-id, such as IssueParentAssociation, can't be named in its `fieldIds`.
+id, such as IssueParentAssociation, can't be named in its `fieldIds`. It
+gives no entry both for an issue never changed and for one Jira doesn't
+have or the account can't see, so the issues left without one are looked
+up with one search by id, as github.py's batched read tells a pull request
+that isn't there from one it read.
 """
 import base64
 import json
@@ -48,7 +61,7 @@ from urllib.request import Request, urlopen
 from agentic_manager.batch import batches
 from agentic_manager.config import read_source
 from agentic_manager.json_path import nested
-from agentic_manager.retry import RETRY_WAITS, retried
+from agentic_manager.retry import RATE_LIMITED, RETRY_WAITS, retried
 from agentic_manager.text import DISPLAY_DATE
 from agentic_manager.web import ssl_context
 
@@ -67,6 +80,9 @@ BATCH_CHANGELOG = "/rest/api/3/changelog/bulkfetch"
 # Change histories a page of the batched changelog's answer holds: the most
 # Jira allows.
 BATCH_CHANGELOG_PAGE = 10000
+# Why a ticket isn't read when Jira answers it has none: it says the same of
+# one the account can't see.
+NO_SUCH_TICKET = "Jira has no such ticket, or this account can't see it"
 # The answers that mean Jira is busy or briefly unwell, not that the request is wrong.
 TRANSIENT_CODES = {500, 502, 503, 504}
 DEV_STATUS = "/rest/dev-status/latest/issue"
@@ -102,20 +118,17 @@ class JiraClient:
         return key.rpartition("-")[0] in self.excluded or key in self.excluded
 
     def _refuse_excluded(self, key):
+        """Raises JiraError, unsent, for a request about `key` of an excluded project."""
         if self.is_excluded(key):
-            raise SystemExit(f"{key} is of a project excluded by `{EXCLUDED}` in {SOURCE}: "
-                             "it is never read")
+            raise JiraError(excluded_reason(key))
 
     def _visible_excluded(self):
         """The excluded projects the account can see, looked up once."""
         if self._visible is None:
             visible = []
             for key in sorted(self.excluded):
-                try:
-                    self._get(f"/rest/api/3/project/{key}")
+                if self._found(f"/rest/api/3/project/{key}") is not None:
                     visible.append(key)
-                except NotFound:
-                    pass
             self._visible = visible
         return self._visible
 
@@ -174,8 +187,8 @@ class JiraClient:
                     log=None):
         """One sprint, by id, or on a board or a project's scrum boards: the one
         named `name` in any state, else the active one if `active`, else the
-        most recently closed. Exits if none or, for a name or the active one,
-        several match. `log` receives warnings.
+        most recently closed. Raises JiraError if none or, for a name or the
+        active one, several match. `log` receives warnings.
 
         A name given with no board or project is looked for in the project its
         first word spells, as in "PROJ Sprint 6". A wrong guess fails with a message
@@ -194,15 +207,15 @@ class JiraClient:
         else:
             try:
                 boards = self.boards_for_project(project)
-            except NotFound:
-                if not guessed:
+            except JiraError as failed:
+                if not (guessed and failed.not_found):
                     raise
                 boards = []
             # Only scrum boards have sprints; asking a kanban board for its sprints
             # fails with 400 and would abort the whole lookup.
             board_ids = [b["id"] for b in boards if b.get("type") == "scrum"]
             if not board_ids:
-                raise SystemExit(
+                raise JiraError(
                     f"no scrum board found for project {project}{note}")
 
         # A named sprint is matched in any state: the user named it, and it is most
@@ -220,12 +233,12 @@ class JiraClient:
 
         if not candidates:
             wanted = f"named {name!r}" if name else state
-            raise SystemExit(
+            raise JiraError(
                 f"no sprint {wanted} found on board(s) {board_ids}{note}")
         if name or active:
             if len(candidates) > 1:
-                raise SystemExit(f"{len(candidates)} sprints match (ids {[c['id'] for c in candidates]}); "
-                                 "give a sprint id or a board to pick one")
+                raise JiraError(f"{len(candidates)} sprints match (ids {[c['id'] for c in candidates]}); "
+                                "give a sprint id or a board to pick one")
             return candidates[0]
         if log and len({c.get("originBoardId") for c in candidates}) > 1:
             log("warning: closed sprints span several boards; picked the latest. "
@@ -260,7 +273,7 @@ class JiraClient:
                          {"rapidViewId": board_id, "sprintId": sprint_id})
         contents = nested(data, ["contents"])
         if contents is None or "puntedIssues" not in contents:
-            raise SystemExit(
+            raise JiraError(
                 "Jira's sprint report came back in an unexpected shape (no contents.puntedIssues). "
                 "This internal endpoint may have changed. Removed issues can't be found any other "
                 "way, so this fails rather than return the sprint report without them.")
@@ -283,10 +296,9 @@ class JiraClient:
         find the setting (404).
         A site can have several points-like fields and boards may use
         different ones, so the board's own setting comes first."""
-        try:
-            data = self._get("/rest/greenhopper/1.0/rapidviewconfig/editmodel.json",
-                             {"rapidViewId": board_id})
-        except NotFound:
+        data = self._found("/rest/greenhopper/1.0/rapidviewconfig/editmodel.json",
+                           {"rapidViewId": board_id})
+        if data is None:
             return None
         stat = nested(data, ["estimationStatisticConfig",
                              "currentEstimationStatistic"], {})
@@ -295,20 +307,28 @@ class JiraClient:
         return None
 
     def project(self, key):
-        """A project by its key, with its name; NotFound when the site has
-        none the account can see, which tells a ticket key from a word of the
-        same shape, such as SHA-256."""
-        self._refuse_excluded(key)
-        return self._get(f"/rest/api/3/project/{key}")
+        """A project by its key, with its name; None when the site has none
+        the account can see, or it is excluded, which tells a ticket key from
+        a word of the same shape, such as SHA-256."""
+        if self.is_excluded(key):
+            return None
+        return self._found(f"/rest/api/3/project/{key}")
 
     def issue(self, key, fields):
-        """One issue by key, with `fields`. A key of a ticket moved to another
-        project still finds it, under its current key."""
-        self._refuse_excluded(key)
-        issue = self._get(
+        """(the issue, None), one issue by key with `fields`, or (None, why
+        it isn't read, a line naming the key) when Jira has no such ticket
+        the account can see or it is of an excluded project. A key of a
+        ticket moved to another project still finds it, under its current
+        key."""
+        if self.is_excluded(key):
+            return None, excluded_reason(key)
+        issue = self._found(
             f"/rest/api/3/issue/{key}", {"fields": ",".join(fields)})
-        self._refuse_excluded(issue["key"])
-        return self._scrubbed(issue)
+        if issue is None:
+            return None, f"{key}: {NO_SUCH_TICKET}"
+        if self.is_excluded(issue["key"]):
+            return None, excluded_reason(issue["key"])
+        return self._scrubbed(issue), None
 
     def search(self, jql, fields):
         """Every issue a JQL query matches, with `fields`, excluded projects
@@ -381,30 +401,32 @@ class JiraClient:
             f"/rest/api/3/issue/{issue_key}/changelog", {}, "values"), fields)
 
     def batched_field_changes(self, issues, fields):
-        """{key: field_changes(key, fields)} of each of `issues`, in their
-        order, each issue given with its "id" and "key", read with Jira's
-        batched changelog read: a batch of issues a request, every
-        page of each. The answer names issues by id, which `issues` turns
+        """(changes, gone): changes as {key: field_changes(key, fields)} of
+        each of `issues` Jira has, in their order, each issue given with its
+        "id" and "key", read with Jira's batched changelog read: a batch of
+        issues a request, every page of each; and gone as {key: why, a line
+        naming the key} of those Jira has no such ticket of, or none the
+        account can see. The answer names issues by id, which `issues` turns
         back into keys. An issue with no change can come back without an
-        entry or with an empty one: either gives []. So does one the account
-        can't see, which the endpoint is taken to leave out rather than
-        refuse: give only issues the account has just read. Refuses, before
-        any request, an issue of an excluded project. The batched read gives a
-        change's time in milliseconds, so it is written as the per-issue
-        changelog writes it, in the account's time zone, and the two give the
-        same changes."""
+        entry or with an empty one: either gives [], once a search by id
+        finds the issues left without one. Refuses, before any request, an
+        issue of an excluded project. The batched read gives a change's time
+        in milliseconds, so it is written as the per-issue changelog writes
+        it, in the account's time zone, and the two give the same changes."""
         for issue in issues:
             self._refuse_excluded(issue["key"])
         zone = ZoneInfo(self.whoami().get("timeZone")
                         or "UTC") if issues else None
         keys = {str(issue["id"]): issue["key"] for issue in issues}
         histories = {issue_id: [] for issue_id in keys}
+        logged = set()
         for ids in batches(keys):
             body = {"issueIdsOrKeys": ids,
                     "maxResults": BATCH_CHANGELOG_PAGE}
             while True:
                 page = self._post(BATCH_CHANGELOG, body)
                 for log in page.get("issueChangeLogs", []):
+                    logged.add(str(log["issueId"]))
                     histories[str(log["issueId"])].extend(
                         {**history,
                             "created": jira_stamp(history.get("created"), zone)}
@@ -412,11 +434,26 @@ class JiraClient:
                 if not (token := page.get("nextPageToken")):
                     break
                 body = {**body, "nextPageToken": token}
-        return {key: tracked_changes(histories[issue_id], fields) for issue_id, key in keys.items()}
+        unseen = [issue_id for issue_id in keys if issue_id not in logged]
+        found = {str(issue["id"]) for chunk in batches(unseen)
+                 for issue in self.issues_by_ids(chunk, ["key"])}
+        gone = {keys[issue_id]: f"{keys[issue_id]}: {NO_SUCH_TICKET}"
+                for issue_id in unseen if issue_id not in found}
+        return ({key: tracked_changes(histories[issue_id], fields)
+                 for issue_id, key in keys.items() if key not in gone}, gone)
 
     def comments(self, issue_key):
         self._refuse_excluded(issue_key)
         return self._paginate(f"/rest/api/3/issue/{issue_key}/comment", {}, "comments")
+
+    def _found(self, path, params=None):
+        """Jira's answer for `path`, or None when Jira answers 404."""
+        try:
+            return self._get(path, params)
+        except JiraError as failed:
+            if failed.not_found:
+                return None
+            raise
 
     def _get(self, path, params=None):
         url = f"{self.base_url}{path}"
@@ -434,8 +471,8 @@ class JiraClient:
 
     def _send(self, path, request):
         """Jira's answer to `request`, to `path`, tried again while it fails
-        in passing; a failure exits with a message naming `path` and the
-        setting to check, never a secret."""
+        in passing; a failure raises JiraError, naming `path` and the setting
+        to check, never a secret."""
         def attempt():
             with urlopen(request, timeout=30, context=ssl_context()) as response:
                 return json.load(response)
@@ -443,22 +480,22 @@ class JiraClient:
             return retried(attempt, passing, note)
         except HTTPError as e:
             if e.code == 401:
-                raise SystemExit(
-                    f"Jira returned 401 Unauthorized for {path}. Check that your `api-token` in "
-                    f"{SOURCE} is valid and belongs to the account in your `email` setting.")
+                raise JiraError(f"Jira returned 401 Unauthorized for {path}.",
+                                f"Check that your `api-token` in {SOURCE} is valid and belongs to the account "
+                                "in your `email` setting.")
             if e.code == 403:
-                raise SystemExit(
+                raise JiraError(
                     f"Jira returned 403 Forbidden for {path}: the account lacks permission.")
             if e.code == 404:
-                raise NotFound(path)
+                raise JiraError(
+                    f"Jira returned 404 Not Found for {path}", not_found=True)
             if e.code == 429:
-                raise SystemExit(
-                    f"Jira returned 429 Too Many Requests for {path}. Wait a minute and run it again.")
-            raise SystemExit(f"Jira returned {e.code} for {path}.")
+                raise JiraError(
+                    f"Jira returned 429 Too Many Requests for {path}.", RATE_LIMITED)
+            raise JiraError(f"Jira returned {e.code} for {path}.")
         except (URLError, TimeoutError, ConnectionError):
-            raise SystemExit(
-                f"could not reach Jira, after trying {len(RETRY_WAITS) + 1} times. Check your "
-                f"`base-url` setting in {SOURCE} and the connection.")
+            raise JiraError(f"could not reach Jira, after trying {len(RETRY_WAITS) + 1} times.",
+                            f"Check your `base-url` setting in {SOURCE} and the connection.")
 
     def _paginate(self, path, params, items):
         """Every item of a paged list, under the page's `items` key. Paging ends
@@ -529,11 +566,25 @@ def note(error):
     return "Jira couldn't be reached"
 
 
-class NotFound(SystemExit):
-    """The error a request that Jira answers with 404 raises."""
+def excluded_reason(key):
+    """Why issue or project `key`, of an excluded project, is never read."""
+    return f"{key} is of a project excluded by `{EXCLUDED}` in {SOURCE}: it is never read"
 
-    def __init__(self, path):
-        super().__init__(f"Jira returned 404 Not Found for {path}")
+
+class JiraError(Exception):
+    """A request Jira gave no answer to: `message`, what failed, naming the
+    path, never Jira's response body, which could echo the token; `advice`,
+    what the user does about it, or ""; and `not_found`, whether Jira
+    answered 404."""
+
+    def __init__(self, message, advice="", not_found=False):
+        self.message, self.advice, self.not_found = message, advice, not_found
+        super().__init__(self.explanation)
+
+    @property
+    def explanation(self):
+        """The message, then the advice: how a skill shows the failure to the user."""
+        return f"{self.message} {self.advice}" if self.advice else self.message
 
 
 def browse_url(base, key):
