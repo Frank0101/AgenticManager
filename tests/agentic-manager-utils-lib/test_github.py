@@ -322,10 +322,6 @@ class GithubTest(unittest.TestCase):
                 else:
                     self.assertEqual((events, failures), (expected, []))
 
-    def test_workers(self):
-        # Four at a time: GitHub discourages concurrent requests.
-        self.assertEqual(github.WORKERS, 4)
-
 
 if __name__ == "__main__":
     unittest.main()

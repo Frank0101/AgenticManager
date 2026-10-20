@@ -92,6 +92,12 @@ def events(issue, changes):
     return build.ticket_events(issue, changes, context(), CLOSE)
 
 
+def spells_of(issue, changes, ctx=None, moment=CLOSE):
+    """The ticket's spells, from its events as main() works them out."""
+    ctx = ctx or context()
+    return build.spells_from_events(issue, build.ticket_events(issue, changes, ctx, moment), ctx, moment)
+
+
 def points(created, old, new):
     return changed(created, "points", old, new)
 
@@ -175,14 +181,14 @@ class CarryOverTest(unittest.TestCase):
         ]
         for name, changes, previous, expected in cases:
             with self.subTest(name):
-                found = build.build_spells(
-                    raw("PROJ-1"), changes, context(previous=previous), CLOSE)
+                found = spells_of(raw("PROJ-1"), changes,
+                                  context(previous=previous))
                 self.assertEqual([s["carriedIn"] for s in found], expected)
 
 
 class SpellsTest(unittest.TestCase):
     def build(self, changes, issue=None, moment=CLOSE):
-        return build.build_spells(issue or raw("PROJ-1"), changes, context(), moment)
+        return spells_of(issue or raw("PROJ-1"), changes, moment=moment)
 
     def test_spells(self):
         before, just_after = at("02-27"), "2026-03-02T09:00:01.000+0100"
@@ -292,7 +298,7 @@ class SpellsTest(unittest.TestCase):
         ]
         for name, issue, epics, expected in cases:
             with self.subTest(name):
-                found = build.build_spells(issue, [], context(epics), CLOSE)[0]
+                found = spells_of(issue, [], context(epics))[0]
                 self.assertEqual(
                     (found["parentKey"], found["parentSummary"]), expected)
                 self.assertNotIn("parentId", found)

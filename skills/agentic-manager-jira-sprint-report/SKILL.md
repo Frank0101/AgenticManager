@@ -31,7 +31,7 @@ Run the config check, `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/
 
 This skill needs the `jira-api` source. If `sources.workflow.jira-api.enabled` isn't `true`, stop and tell the user to enable it, showing its `setup` and the config `path`. The scripts read its settings themselves; never read, pass or show them.
 
-The `github-cli` source is optional: it gives when each ticket's pull requests were opened and merged. Without it, the report is the same and the brief says the pull request events weren't read; don't stop or ask to enable it.
+The `github-cli` source is optional: it adds pull request events to the brief's `ticket_events`. Without it, the report is the same and the brief says the pull request events weren't read; don't stop or ask to enable it.
 
 ## 1. Prepare
 

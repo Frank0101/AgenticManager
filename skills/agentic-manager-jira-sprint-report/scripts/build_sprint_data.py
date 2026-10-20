@@ -81,7 +81,7 @@ from common import (CHANGELOGS_DIR, COMMENTS_DIR, DATA_FILE, META_FILE, OUTCOME_
                     SPRINT_ISSUES_FILE, SPRINT_REPORT_FILE, STATUSES_FILE, SCOPE_GROUPS, add_and_remove_events, as_of,
                     in_sprint_at, history_fields, is_blocker_candidate, key_order, read_json, nested, outcome_total,
                     parse_ts, plain_text, points_value, report_timezone, spell_epic, split_ids, standard_issues,
-                    status_categories, write_json)
+                    status_categories, status_category, write_json)
 
 # Terms meaning an issue was closed without delivering it (duplicate, won't do,
 # cancelled...), matched against both the status and the resolution: a
@@ -152,13 +152,6 @@ def load_changelogs(changelog_dir, raw_issues):
         raise SystemExit("missing changelogs for " + ", ".join(sorted(missing)) +
                          "; fetch the sprint again rather than guessing when they joined")
     return changes
-
-
-def build_spells(raw, changes, context, moment):
-    """The ticket's spells during the reported period, or [] if it had none,
-    straight from its changelog: its Jira events (ticket_events), then the
-    spells they give (spells_from_events)."""
-    return spells_from_events(raw, ticket_events(raw, changes, context, moment), context, moment)
 
 
 def ticket_events(raw, changes, context, moment, pulls=(), read=None):
@@ -254,20 +247,6 @@ def field_extra(field, side, ident, category):
     if field == "parent":
         return {f"{side}Id" if side else "parentId": str(ident) if ident else None}
     return {}
-
-
-def status_category(raw, categories):
-    """A function giving a status id's category: from Jira's list of statuses,
-    else the ticket's current status's own when it is that status, else None,
-    since a status no longer in the list can still be in old history."""
-    fields = raw.get("fields") or {}
-
-    def category(status_id):
-        found = categories.get(str(status_id))
-        if found is None and str(status_id) == str(nested(fields, ["status", "id"])):
-            found = nested(fields, ["status", "statusCategory", "key"])
-        return found
-    return category
 
 
 def github_events(pulls, read, cutoff, zone):

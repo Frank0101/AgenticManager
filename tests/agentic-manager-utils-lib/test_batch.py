@@ -30,6 +30,11 @@ class BatchesTest(unittest.TestCase):
                 self.assertEqual(batch.batches(items), expected)
         self.assertEqual(batch.BATCH_SIZE, 100)
 
+    def test_workers(self):
+        # Four calls at a time: Jira drops connections and GitHub discourages
+        # concurrent requests under more.
+        self.assertEqual(batch.WORKERS, 4)
+
 
 if __name__ == "__main__":
     unittest.main()

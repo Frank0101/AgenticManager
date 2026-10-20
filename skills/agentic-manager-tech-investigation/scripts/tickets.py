@@ -38,7 +38,7 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
-from common import (COMMITS, PANEL, PULL_URL, SEARCH, GhError, JiraClient, NotFound, browse_url, first_found,
+from common import (COMMITS, PANEL, PULL_URL, SEARCH, WORKERS, GhError, JiraClient, NotFound, browse_url, first_found,
                     gather, gh_available, gh_json, holding_pulls, nested, panel_commits, panel_pulls, plain_text,
                     search_pulls)
 
@@ -56,9 +56,6 @@ GH_DISCUSSION_FIELDS = ("title,state,author,body,reviews,comments,createdAt,merg
 # Why a pull request Jira doesn't link is listed, by how it was found.
 WHY = {SEARCH: "names the key in its title, not linked in Jira",
        COMMITS: "holds commits that name the key, not linked in Jira"}
-# Parallel Jira reads: Jira's internal Development-panel endpoint drops
-# connections under more.
-WORKERS = 4
 
 
 def ticket(client, key, site, owners, gh, run=subprocess.run):
@@ -402,9 +399,9 @@ def main(argv=None):
               *(search_line(i) for i in found)]))
         return
     site, gh = site_fields(client), gh_available()
-    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        texts = list(pool.map(lambda key: ticket(
-            client, key, site, args.owner, gh), args.keys))
+    # One ticket after another: each already reads WORKERS at a time, and
+    # tickets read together would run more calls at once than that.
+    texts = [ticket(client, key, site, args.owner, gh) for key in args.keys]
     print("\n\n".join(texts))
 
 

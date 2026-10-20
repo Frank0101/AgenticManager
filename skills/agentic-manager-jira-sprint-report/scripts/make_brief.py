@@ -40,12 +40,12 @@ it never reads the raw files, so every fact it gives is the model's.
     how the work went. When GitHub wasn't read, pull_request_events says so,
     so the agent doesn't take the missing events for work without code.
 """
-from make_report import Report
 import argparse
 import os
 
-from common import (epic_title, BRIEF_FILE, DATA_FILE, SCOPE_GROUPS, TICKET_EVENT_TYPES, allowed_verdicts, chunks,
-                    display_date, read_json, spell_epic, write_json, link_text)
+from common import (BRIEF_FILE, DATA_FILE, SCOPE_GROUPS, TICKET_EVENT_TYPES, allowed_verdicts, chunks, display_date,
+                    epic_title, link_text, read_json, spell_epic, write_json)
+from make_report import Report
 
 # Why a brief has no pull request events, when GitHub wasn't read.
 EVENTS_NOT_READ = ("not read: gh isn't available or the github-cli source isn't enabled, so ticket_events "

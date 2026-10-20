@@ -19,9 +19,8 @@ same thing to do. Nothing here knows about Jira: matching a pull request to
 a ticket is ticket_pulls.py's.
 
 Before failing, a call is tried again as retry.py sets out: a timeout or a
-busy GitHub is passing. A rate limit is final: the skills make few calls (the
-sprint report about 9), so waiting one out isn't worth the machinery, and
-its advice is to wait a minute and run it again.
+busy GitHub is passing, and a rate limit final, its advice to wait a minute
+and run it again.
 
 When pull requests were opened and merged is read through GraphQL, many in
 one call (pull_events()): a call per pull request spent hundreds of requests
@@ -39,7 +38,7 @@ import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
-from agentic_manager.batch import batches
+from agentic_manager.batch import WORKERS, batches
 from agentic_manager.config import is_enabled
 from agentic_manager.json_path import nested
 from agentic_manager.retry import retried
@@ -60,9 +59,6 @@ SEARCH_LIMIT = 50
 # What a pull request's opening and merge are read with; GraphQL's state is
 # OPEN, CLOSED or MERGED, as gh pr view gives it.
 EVENT_FIELDS = "url state createdAt mergedAt"
-# Parallel gh calls: GitHub discourages concurrent requests (its secondary
-# rate limit), and reading pull requests in batches leaves few to make.
-WORKERS = 4
 # What gh says when the call failed in passing: no answer in time, GitHub
 # busy or briefly unwell, or the connection lost.
 PASSING_SIGNS = ("no answer within", "http 500", "http 502", "http 503", "http 504", "timeout", "timed out",
@@ -259,10 +255,9 @@ def passing(error):
     """Whether a failed gh call is passing, to retry.retried(): no answer in
     time, or GitHub busy or unreachable; a rate limit, and anything else, is
     final."""
-    if not isinstance(error, GhError):
+    if not isinstance(error, GhError) or error.rate_limited:
         return False
-    message = error.message.lower()
-    return "rate limit" not in message and any(sign in message for sign in PASSING_SIGNS)
+    return any(sign in error.message.lower() for sign in PASSING_SIGNS)
 
 
 def note(error):
@@ -282,10 +277,16 @@ class GhError(Exception):
         self.command, self.message, self.not_found = command, message, not_found
 
     @property
+    def rate_limited(self):
+        """Whether GitHub refused the call for its rate limit, primary or
+        secondary."""
+        return "rate limit" in self.message.lower()
+
+    @property
     def advice(self):
         """What the user does about it: wait a minute for GitHub's rate limit,
         or fix gh or disable the github-cli source."""
-        return RATE_LIMITED if "rate limit" in self.message.lower() else GH_BROKEN
+        return RATE_LIMITED if self.rate_limited else GH_BROKEN
 
     @property
     def explanation(self):

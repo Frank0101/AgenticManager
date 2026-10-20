@@ -35,11 +35,12 @@ pull requests are those the Jira Development panels of it and of each of its
 sub-tasks list, all of them, found by a search by parent, as a ticket removed
 from the sprint takes its sub-tasks with it. Each is kept once, through the
 ticket before its sub-tasks, those in key order: the link the team's
-integration made, a Jira call or two a ticket. GitHub isn't searched for more: looking up
-the panels' commits cost a GitHub request per commit, a thousand for a
-sprint, which used up GitHub's hourly limit in a few runs, and found only
-pull requests of tickets the panel already listed some for; a search of
-titles found none, and GitHub's search allows about 30 requests a minute.
+integration made, a Jira call or two a ticket. GitHub isn't searched for
+more: looking up the panels' commits cost a GitHub request per commit, a
+thousand for a sprint, which used up GitHub's hourly limit in a few runs, and
+found only pull requests of tickets the panel already listed some for; a
+search of titles found none, and GitHub's search allows about 30 requests a
+minute.
 Each pull request records the ticket it came through (`via`). Then GitHub
 gives when each was opened and merged, many in one GraphQL call.
 gh (the github-cli source) is optional: without it neither the panel nor
@@ -63,14 +64,11 @@ from datetime import datetime, timezone
 
 from common import (CHANGELOGS_DIR, COMMENTS_DIR, META_FILE, PARENTS_FILE, PREVIOUS_SPRINT_FILE, PULL_REQUESTS_FILE,
                     PUNTED_ISSUES_FILE, RAW_DIR, REPORTS_FOLDER, SPRINT_FILE, SPRINT_ISSUES_FILE,
-                    SPRINT_REPORT_FILE, STATUSES_FILE, JiraClient, as_of, blocker_candidate_keys, clear_folder,
-                    day_folder, first_found, gh_available, history_fields, key_order, nested, output_folder,
-                    panel_pulls, parse_ts, read_events, report_label, report_timezone,
+                    SPRINT_REPORT_FILE, STATUSES_FILE, WORKERS, JiraClient, as_of, blocker_candidate_keys,
+                    clear_folder, day_folder, first_found, gh_available, history_fields, key_order, nested,
+                    output_folder, panel_pulls, parse_ts, read_events, report_label, report_timezone,
                     standard_issues, status_categories, write_json)
 
-# Parallel Jira reads: Jira's internal Development-panel endpoint drops
-# connections under more.
-MAX_WORKERS = 4
 # Issue fields the report needs, besides the site's Flagged and story points fields.
 BASE_FIELDS = [
     "summary", "status", "issuetype", "created", "resolution", "priority", "parent",
@@ -140,7 +138,7 @@ def pull_requests(client, issues, gh, run=subprocess.run):
     # Each ticket, then its sub-tasks: (the ticket's index, the issue read).
     looked = [(index, read) for index, issue in enumerate(issues)
               for read in (issue, *children.get(issue["key"], []))]
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         panels = list(pool.map(lambda pair: panel_pulls(
             client.pull_requests(pair[1]["id"])), looked))
     groups = [[] for _ in issues]
@@ -291,7 +289,7 @@ def main():
     # at the moment the report describes.
     blocker_keys = blocker_candidate_keys(sprint_issues + punted_issues, changelogs, categories,
                                           flagged_field, sprint_id, moment)
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         comments = dict(
             zip(blocker_keys, pool.map(client.comments, blocker_keys)))
 

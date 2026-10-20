@@ -31,11 +31,10 @@ service's is, with the advice to wait a minute. A POST is tried again too: the
 only one, the batched changelog read, reads and changes nothing.
 
 Many issues' changelogs are read in batches, through Jira's "bulk fetch"
-endpoint: one request for each batch of
-issues (batch.py) rather than one per issue, each answer in pages of the
-10000 change histories Jira allows. It is asked
-for every field, not only the tracked ones: a field logged without an id,
-such as IssueParentAssociation, can't be named in its `fieldIds`.
+endpoint: one request for each batch of issues (batch.py) rather than one per
+issue, each answer in pages of the 10000 change histories Jira allows. It is
+asked for every field, not only the tracked ones: a field logged without an
+id, such as IssueParentAssociation, can't be named in its `fieldIds`.
 """
 import base64
 import json
@@ -471,10 +470,10 @@ class JiraClient:
         while True:
             page = self._get(
                 path, {**params, "startAt": start_at, "maxResults": PAGE_SIZE})
-            batch = page.get(items, [])
-            out.extend(batch)
-            start_at += len(batch)
-            if not batch or page.get("isLast") is True or start_at >= page.get("total", float("inf")):
+            found = page.get(items, [])
+            out.extend(found)
+            start_at += len(found)
+            if not found or page.get("isLast") is True or start_at >= page.get("total", float("inf")):
                 break
         return out
 

@@ -24,6 +24,7 @@ from agentic_manager.output_folder import clear_folder, day_folder, output_folde
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order,  # noqa: E402,F401
                                   parse_ts, plain_text, value_at)
+from agentic_manager.batch import WORKERS  # noqa: E402,F401
 from agentic_manager.github import gh_available  # noqa: E402,F401
 from agentic_manager.ticket_pulls import PANEL, first_found, panel_pulls, read_events  # noqa: E402,F401
 
@@ -186,7 +187,7 @@ class History:
         self.fields = raw.get("fields") or {}
         self.key = raw["key"]
         self.changes = changes
-        self.categories = categories
+        self.category_of = status_category(raw, categories)
         self.flagged_field = flagged_field
 
     def _current(self, path):
@@ -196,9 +197,7 @@ class History:
         return value_at(self.changes, field, instant, current)
 
     def category(self, status_id):
-        category = self.categories.get(str(status_id))
-        if category is None and str(status_id) == str(self._current(["status", "id"])):
-            category = self._current(["status", "statusCategory", "key"])
+        category = self.category_of(status_id)
         if category is None:
             raise SystemExit(f"{self.key}: status {status_id} is not in Jira's list of statuses; "
                              "fetch the sprint again")
@@ -218,6 +217,21 @@ class History:
         _, priority = self._at("priority", instant,
                                (None, self._current(["priority", "name"])))
         return {"status": status, "statusCategory": category, "flagged": flagged, "priority": priority or ""}
+
+
+def status_category(raw, categories):
+    """A function giving a status id's category: from Jira's list of statuses
+    (`categories`, as status_categories() gives it), else the issue's current
+    status's own when it is that status, else None, since a status no longer
+    in the list can still be in old history."""
+    fields = raw.get("fields") or {}
+
+    def category(status_id):
+        found = categories.get(str(status_id))
+        if found is None and str(status_id) == str(nested(fields, ["status", "id"])):
+            found = nested(fields, ["status", "statusCategory", "key"])
+        return found
+    return category
 
 
 def points_value(value):

@@ -480,7 +480,7 @@ class ClientTest(unittest.TestCase):
             self.client.batched_field_changes([], self.TRACKED), {})
         self.assertEqual(FakeJira.requests, [])
 
-    def test_batched_field_changes_ask_for_a_chunk_of_issues_at_a_time(self):
+    def test_batched_field_changes_ask_for_a_batch_of_issues_at_a_time(self):
         def answer(body):
             return {"issueChangeLogs": [{"issueId": issue_id, "changeHistories": self.histories()}
                                         for issue_id in body["issueIdsOrKeys"]]}

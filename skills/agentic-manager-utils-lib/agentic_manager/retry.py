@@ -6,10 +6,9 @@ shouldn't end a skill's run, so the call is tried again after each of
 RETRY_WAITS, then fails. Each client says which of its failures are passing;
 any other is final at once. A rate limit, of any service, is final, with the
 advice to wait a minute: it doesn't lift within the waits, and the skills make
-few calls (the sprint report about 9 to GitHub), so waiting out its window
-isn't worth the machinery. Each wait is said on stderr, so a run that
-recovered still shows the service struggled; the client words it, so it says
-nothing a secret could be in.
+few calls, so waiting out its window isn't worth the machinery. Each wait is
+said on stderr, so a run that recovered still shows the service struggled;
+the client words it, so it says nothing a secret could be in.
 """
 import sys
 import time

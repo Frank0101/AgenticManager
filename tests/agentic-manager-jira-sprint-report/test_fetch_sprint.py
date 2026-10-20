@@ -1,9 +1,10 @@
 """Unit tests for skills/agentic-manager-jira-sprint-report/scripts/fetch_sprint.py.
 Run with: python3 tests/run.py agentic-manager-jira-sprint-report
 
-They cover the script's own logic: its arguments and the report folder. The
-Jira calls belong to the library's client, tested there; test_e2e_fetch.py
-runs the whole script against a fake Jira.
+They cover the script's own logic: its arguments, the report folder, the
+previous sprint and each ticket's pull requests. The Jira calls belong to the
+library's client, tested there; test_e2e_fetch.py runs the whole script
+against a fake Jira.
 """
 
 import contextlib
@@ -434,11 +435,6 @@ class PullRequestsTest(unittest.TestCase):
             self.assertTrue(message.startswith(start), message)
             self.assertTrue(message.endswith(end), message)
             self.assertEqual(len(run.calls), 1, run.calls)
-
-    def test_parallelism(self):
-        # Four Jira reads at a time: its internal Development-panel endpoint
-        # drops connections under more.
-        self.assertEqual(fetch_sprint.MAX_WORKERS, 4)
 
 
 class HelpersTest(unittest.TestCase):
