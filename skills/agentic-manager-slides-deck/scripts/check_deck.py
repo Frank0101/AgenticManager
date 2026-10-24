@@ -38,7 +38,7 @@ def check(folder, deck, content):
     if files != wanted:
         extra, missing = sorted(files - wanted), sorted(wanted - files)
         errors.append("the folder must hold only " + ", ".join(sorted(wanted))
-                      + (f"; remove {', '.join(extra)}" if extra else "")
+                      + (f"; move {', '.join(extra)} to your own scratch folder" if extra else "")
                       + (f"; missing {', '.join(missing)}" if missing else ""))
     path = os.path.join(folder, deck_file(deck))
     if not os.path.isfile(path):

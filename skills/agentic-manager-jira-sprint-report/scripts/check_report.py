@@ -521,7 +521,8 @@ def check_files(c, report_dir, data):
     extra = sorted(name for name in os.listdir(report_dir)
                    if not name.startswith(".") and name not in expected_files(data["label"]))
     c.check(not extra, "files",
-            f"only the report's files are in the folder (unexpected: {extra or 'none'})")
+            f"only the report's files are in the folder (unexpected: {extra or 'none'}; "
+            "keep working files in your own scratch folder)")
 
 
 def check_timeline(c, table, data):

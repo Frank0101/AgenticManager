@@ -55,7 +55,7 @@ HEADINGS = [
 # The ledger's sections, in order, and the queue's subsections. Each title is
 # named once, here: one typed differently elsewhere would leave a check reading
 # an empty section.
-QUEUE = "Research action queue"
+QUEUE = "Research questions"
 BOUNDARY = "Boundary"
 REGISTER = "Revisions and source register"
 FINDINGS = "Findings and validation chains"
@@ -66,7 +66,7 @@ GAPS = "Evidence gaps"
 LINKS = "Links"
 LEDGER_SECTIONS = [QUEUE, BOUNDARY, REGISTER, FINDINGS,
                    INVENTORY, DESIGN, DECISIONS, GAPS, LINKS]
-# An action is ready until someone starts it, so that after a break, or with
+# An question is ready until someone starts it, so that after a break, or with
 # work shared out, what is under way shows apart from what is waiting.
 QUEUE_SUBSECTIONS = ["Ready", "In progress", "Blocked", "Completed"]
 QUEUE_TABLES = ["queue-ready", "queue-in-progress",
@@ -103,7 +103,7 @@ DECISION_HEADER = ["ID", "Decision", "Established position or unresolved choice"
                    "Candidates, constraints", "Source authority and status",
                    "Owner and next check"]
 # What a gap can be blocked by. Anything else is work the agent can do, so it is
-# a ready action in the queue and not a gap; scope is settled with the user in
+# a ready question in the queue and not a gap; scope is settled with the user in
 # Define, so no gap waits on them.
 BLOCKERS = ("No access", "Waiting on decision")
 GAP_HEADER = ["ID", "Gap", "What is established and what is missing",
@@ -134,14 +134,14 @@ CODE_STATUSES = ("🟩", "🟦")
 DEPTHS = ["full", "entrypoints and routes",
           "partial", "README", "listing", "search hit"]
 READ_DEPTHS = ("full", "entrypoints and routes")
-# The independent review is recorded as a completed action with this question,
-# by `ledger.py review`; it answers with the actions it raised, or with
+# The independent review is recorded as a completed question with this question,
+# by `ledger.py review`; it answers with the questions it raised, or with
 # REVIEW_NONE. Its row is what shows the review took place. A strict reviewer
 # can keep finding something, so after a few rounds the user decides whether to
 # go on; their choice to stop ends the review like a round that raised nothing,
 # as a review row answered REVIEW_STOPPED.
 REVIEW_QUESTION = "Independent review of the ledger"
-REVIEW_NONE = "Nothing doable found"
+REVIEW_NONE = "No issue raised"
 REVIEW_STOPPED = "Stopped by the user:"
 FINDING_FIELDS = ["Claim", "Evidence", "Validation and limits"]
 # A finding holds one claim, of about 80 words; a claim far past that, here
@@ -184,7 +184,7 @@ ANY_REFERENCE = re.compile(
 # check_report.py's error.
 SOURCE_LINK_FIX = ("link the Exact reference at its pinned revision, or, for a search, give it as "
                    '{"query": "<the exact query>"} and the script writes it')
-GAP_FIX = ("Blocked by starts with one of: " + "; ".join(BLOCKERS) + ". A gap nothing blocks is a ready action in "
+GAP_FIX = ("Blocked by starts with one of: " + "; ".join(BLOCKERS) + ". A gap nothing blocks is a ready question in "
            "the queue: do it")
 # A link, inline or by reference, or a bare URL: where a claim's trail ends.
 LINK = re.compile(r"\]\(https?://[^)\s]+\)|\]\[[^\]]*\]|https?://\S+")
@@ -345,19 +345,20 @@ def unresolved_message(unresolved):
 
 
 def outcome_problem(row_id, outcome, question=""):
-    """Why a completed action's outcome doesn't close it, or None. The review's
-    own row is answered by the actions it raised."""
+    """Why a completed question's outcome doesn't close it, or None. The review's
+    own row is answered by the questions it raised."""
     if question == REVIEW_QUESTION:
         if re.search(r"\bQ\d{2,}\b", outcome) or outcome.strip() == REVIEW_NONE \
                 or outcome.strip().startswith(REVIEW_STOPPED):
             return None
-        return (f"{row_id}: the review's outcome names the actions it raised (Q14, Q15), is '{REVIEW_NONE}' "
+        return (f"{row_id}: the review's outcome names the questions it raised (Q14, Q15), is '{REVIEW_NONE}' "
                 f"or starts '{REVIEW_STOPPED}'")
-    # A question closes answered, by what answers it; never by a choice not to pursue it.
-    if re.search(r"\b[FDG]\d{2,}\b", outcome):
+    # A question is completed by the findings that answer it; one a gap or a
+    # decision stops is blocked, never completed.
+    if re.search(r"\bF\d{2,}\b", outcome):
         return None
-    return (f"{row_id}: a completed action names the findings, decision or gap that answer it "
-            "(F01, D01, G01) in Outcome / finding IDs; a question you can't answer is blocked instead")
+    return (f"{row_id}: a completed question names the findings that answer it (F01, F02) in Outcome / finding "
+            "IDs; a question a gap or a decision stops is blocked by it instead")
 
 
 def claim_length_warning(ident, claim):
@@ -369,12 +370,12 @@ def claim_length_warning(ident, claim):
 
 
 def review_problem(completed):
-    """What the review still needs, or None once a round raised no action."""
+    """What the review still needs, or None once a round raised no question."""
     if last_review(completed) is None:
         return "no independent review is recorded: run it, then record it with ledger.py review"
     if not reviewed(completed):
-        return ("the last review round raised actions: once they are done, run another round with the same "
-                "brief, until one raises no action or the user chooses to stop")
+        return ("the last review round raised questions: once they are done, run another round with the same "
+                "brief, until one raises no question or the user chooses to stop")
     return None
 
 
@@ -388,7 +389,7 @@ def last_review(completed):
 
 def reviewed(completed):
     """Whether the review is finished: rounds repeat until one raises no
-    action, since the actions a round raises change the ledger the next round
+    question, since the questions a round raises change the ledger the next round
     reads. The user's choice to stop also ends it."""
     outcome = last_review(completed)
     return outcome is not None and (outcome == REVIEW_NONE or outcome.startswith(REVIEW_STOPPED))
@@ -527,7 +528,7 @@ def linked_ids(text, recorded):
 
 
 def unrecorded_ids(body):
-    """The source, action, decision, gap and component IDs the ledger cites but
+    """The source, question, decision, gap and component IDs the ledger cites but
     never records in a table row, a bold label or a heading."""
     return sorted(set(RECORD.findall(body)) - recorded_ids(body), key=id_order)
 

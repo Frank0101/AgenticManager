@@ -73,7 +73,7 @@ ROW_EXAMPLES = {
     "flows": ["A user searches", "E01, E02", "F02, F05"],
 }
 # What each table is for, printed by `help` under its columns.
-QUEUE_PURPOSE = ("the research actions: every question or check still to do, by state. A blocked one names the gap "
+QUEUE_PURPOSE = ("the research questions: every one still to answer, by state. A blocked one names the gap "
                  "or decision that blocks it; a completed one, the findings, decision or gap that answer it")
 PURPOSES = {
     **{table: QUEUE_PURPOSE for table in QUEUE_TABLES},
@@ -99,7 +99,7 @@ ALLOWED = {
                 "Areas": "comma separated, from: " + ", ".join(AREAS)},
     "gaps": {"Areas": "comma separated, from: " + ", ".join(AREAS),
              "Blocked by": "starts with one of: " + "; ".join(BLOCKERS)
-             + " (a gap nothing blocks is a ready action instead)"},
+             + " (a gap nothing blocks is a ready question instead)"},
     "file-coverage": {"Depth": "starts with one of: " + ", ".join(DEPTHS)},
     "components": {"Name and type": "the name, then its type in brackets, such as 'Search API (service)'",
                    "Status": "starts with one of: " + "; ".join(f"{label} ({meaning})" for label, meaning in STATUSES)
@@ -119,8 +119,8 @@ ALLOWED = {
               "Evidence": "the findings it rests on (F01), or the gap that explains it (G01)"},
     "queue-blocked": {"Depends on": "the gap or decision that blocks it, such as G01 or D01, or the blocked "
                       "question it needs, as ledger.py writes it when it blocks the question with that one"},
-    "queue-completed": {"Outcome / finding IDs": "names F, D or G IDs; "
-                        "the review's own row, written by `review`, names the actions it raised"},
+    "queue-completed": {"Outcome / finding IDs": "names the findings that answer it, such as F01, F02; "
+                        "the review's own row, written by `review`, names the questions it raised"},
 }
 PLACEHOLDERS = {"None yet.", "None."}
 LINKS_HEADING = f"## {LINKS}"
@@ -161,7 +161,7 @@ LOOP = "\n".join([
     "  2. record, before reading anything else: the source (row --table sources), each file or folder of code "
     "read (row --table file-coverage), then each finding (finding), citing the source; records that cite each "
     "other go in one batch",
-    "  3. add: each new question as a ready action (row --table queue-ready), its Depends on naming the open "
+    "  3. add: each new question as a ready question (row --table queue-ready), its Depends on naming the open "
     "questions it needs, or None",
     "  4. close: completed with what answers it, or blocked on the gap or decision that stops you; every question "
     "that depends on a blocked one is blocked with it",
@@ -219,11 +219,11 @@ COMMAND_HELP = {
                 "The topic covers ...\nThe sibling service X: mention only."),
     ]),
     "move": "\n".join([
-        'move: moves an action to ready, in-progress, blocked or completed; each --set "Column=value" sets a cell',
+        'move: moves an question to ready, in-progress, blocked or completed; each --set "Column=value" sets a cell',
         f'  {CALL} move --investigation <investigation> --id Q05 --to in-progress',
         f'  {CALL} move --investigation <investigation> --id Q05 --to completed --set "Outcome / finding IDs=F03, G01"']),
     "review": "\n".join([
-        "review: records an independent review round, with the ready actions its real issues became, or none",
+        "review: records an independent review round, with the ready questions its real issues became, or none",
         f"  {CALL} review --investigation <investigation> --raised Q08,Q09",
         f"  {CALL} review --investigation <investigation> --raised none",
         "  after the user, asked whether to go on, chose to stop the review:",
@@ -594,7 +594,7 @@ def put_row(lines, name, row_id, match, cells):
             "the input must be a JSON list of strings, the row's cells:\n" + table_help(name))
     written = linked(lines, [c.replace("\n", " ") for c in cells])
     set_row(lines, name, row_id, written, match)
-    # An action is in one part of the queue: writing it in one takes it out of the others.
+    # An question is in one part of the queue: writing it in one takes it out of the others.
     for other in QUEUE_TABLES if name in QUEUE_TABLES else ():
         if other != name and any(row[0] == row_id for row in table_rows(lines, other)):
             write_rows(lines, other, [row for row in table_rows(lines, other) if row[0] != row_id],
@@ -1039,7 +1039,7 @@ def cited_outside_records(lines, ident):
 
 def mentions(lines, ident):
     """The records, other than `ident`'s own, whose text names `ident`: when
-    an action closes, what they say while it was open, such as "not
+    an question closes, what they say while it was open, such as "not
     established yet: see Q06", may need its answer; while any does, `ident`
     can't be removed."""
     found = [table_row_id for table in TABLES if TABLES[table][2]
@@ -1079,8 +1079,8 @@ def remove_link(lines, key):
 
 
 def record_review(lines, raised="none", stopped=None):
-    """Add the independent review as a completed action answered by the
-    actions it raised, which must already be in the queue, or by the user's
+    """Add the independent review as a completed question answered by the
+    questions it raised, which must already be in the queue, or by the user's
     choice to stop reviewing."""
     if stopped is not None:
         if not stopped.strip():
@@ -1094,8 +1094,8 @@ def record_review(lines, raised="none", stopped=None):
                   for name in QUEUE_TABLES for row in table_rows(lines, name)}
         missing = [i for i in ids if i not in queued]
         if missing:
-            raise SystemExit(f"--raised names actions not in the queue: {', '.join(missing)}. "
-                             "Add each issue the review raised to the queue as a ready action first")
+            raise SystemExit(f"--raised names questions not in the queue: {', '.join(missing)}. "
+                             "Add each issue the review raised to the queue as a ready question first")
         by = "Subagent given the skill's brief"
         outcome = "Raised " + ", ".join(ids) if ids else REVIEW_NONE
     row_id = next_id("\n".join(lines), "Q")
@@ -1176,7 +1176,7 @@ def main(argv=None):
         "next-id": "print the next free ID of a kind",
         "row": "write a table's row, its cells on standard input",
         "batch": "write many rows and findings in one call, all or nothing",
-        "move": "move an action between ready, in progress, blocked and completed",
+        "move": "move an question between ready, in progress, blocked and completed",
         "remove": "delete a row or a finding",
         "finding": "add or replace a finding, read from standard input",
         "link": "add a link definition under Links",
@@ -1213,7 +1213,7 @@ def main(argv=None):
         if name == "review":
             choice = sub.add_mutually_exclusive_group(required=True)
             choice.add_argument("--raised",
-                                help="the ready actions the review's real issues became, comma separated, or none")
+                                help="the ready questions the review's real issues became, comma separated, or none")
             choice.add_argument("--stopped",
                                 help="what the user said when, asked whether to go on, they chose to stop")
         if name == "next":
@@ -1238,7 +1238,7 @@ def main(argv=None):
                              help='"Name=value": change one cell or field of a row or finding already written, '
                              "instead of reading the whole input; repeat for more")
         if name == "move":
-            sub.add_argument("--id", required=True, help="the action's ID")
+            sub.add_argument("--id", required=True, help="the question's ID")
             sub.add_argument("--to", required=True,
                              choices=[table.removeprefix("queue-") for table in QUEUE_TABLES], help="where it goes")
             sub.add_argument("--set", action="append",
@@ -1345,7 +1345,7 @@ def main(argv=None):
             written = linked(lines, [text])
             check_backticks(lines, written, args.section)
             set_text(lines, args.section, written[0])
-        # An action closed by this call: the records naming it may need its answer.
+        # An question closed by this call: the records naming it may need its answer.
         closed = ([args.id] if (args.command == "move" and args.to == "completed")
                   or (args.command == "row" and args.table == "queue-completed") else
                   [item["id"] for item in read_batch if isinstance(

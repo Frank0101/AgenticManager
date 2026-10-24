@@ -26,12 +26,16 @@ from init_investigation import ledger_skeleton  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from investigation_fixture import with_queue  # noqa: E402
 
-# A ledger as handover needs it: its gap, its queue worked and its review finished.
+# A ledger as handover needs it: a finding, a gap, its queue worked and its
+# review finished.
 LEDGER = with_queue(ledger_skeleton("Acme").replace(
+    "## Findings and validation chains\n\nNone yet.",
+    "## Findings and validation chains\n\n### F01 — Search is merged\n\n"
+    + "\n".join(f"- **{field}:** text." for field in check_report.FINDING_FIELDS)).replace(
     "## Evidence gaps\n\nNone yet.",
     "## Evidence gaps\n\n### G01\n\nEvidence unavailable."), "Completed", [
-    ["Q01", "Start", "Read code", "Code", "—", "G01"],
-    ["Q02", "Independent review", "Independent review of the ledger", "Subagent", "None", "Nothing doable found"]])
+    ["Q01", "Start", "Read code", "Code", "—", "F01"],
+    ["Q02", "Independent review", "Independent review of the ledger", "Subagent", "None", "No issue raised"]])
 
 
 class CheckReportTest(unittest.TestCase):
@@ -210,24 +214,24 @@ class CheckReportTest(unittest.TestCase):
         # At handover nothing is left ready or in progress, and the last
         # review round raised nothing, or the user chose to stop.
         review = ("| Q02 | Independent review | Independent review of the ledger | Subagent | None"
-                  " | Nothing doable found |\n")
+                  " | No issue raised |\n")
         raised = ("| Q02 | Independent review | Independent review of the ledger | Subagent | None"
-                  " | Raised Q03 |\n| Q03 | Q02 | Read the job | Code | None | G01 |\n")
+                  " | Raised Q03 |\n| Q03 | Q02 | Read the job | Code | None | F01 |\n")
         open_action = ["Q01", "Start", "Read code", "Code", "—", "—"]
         cases = [
             ("an action, reviewed", LEDGER, None),
-            ("a ready action", with_queue(LEDGER, "Ready", [open_action]),
+            ("a ready question", with_queue(LEDGER, "Ready", [open_action]),
              "still ready or in progress"),
             ("an action in progress", with_queue(LEDGER, "In progress", [open_action]),
              "still ready or in progress"),
             ("no review recorded", LEDGER.replace(review, ""),
              "no independent review is recorded"),
-            ("the last round raised actions", LEDGER.replace(review, raised),
-             "the last review round raised actions"),
+            ("the last round raised questions", LEDGER.replace(review, raised),
+             "the last review round raised questions"),
             ("a later round raised nothing", LEDGER.replace(review, raised + review.replace("Q02", "Q04")),
              None),
             ("the user chose to stop", LEDGER.replace(review, raised + review.replace("Q02", "Q04").replace(
-                "Subagent", "The user").replace("Nothing doable found", "Stopped by the user: wrap up")),
+                "Subagent", "The user").replace("No issue raised", "Stopped by the user: wrap up")),
              None)]
         for name, text, expected in cases:
             with self.subTest(name):
@@ -343,7 +347,7 @@ class CheckReportTest(unittest.TestCase):
                             sum("without a link" in e and expected in e for e in result["errors"]), 2, result)
 
     def test_handover_closing_rules(self):
-        # A completed action names its answer; a component's status is an allowed one, and one claiming
+        # A completed question names its answer; a component's status is an allowed one, and one claiming
         # code rests on code read under its path.
         tree = "https://github.com/acme/app/tree/abc/services/search"
         component = ("## Component inventory and evolution\n\n| ID | Name | Responsibility | Repository | Status |"
@@ -352,23 +356,28 @@ class CheckReportTest(unittest.TestCase):
         coverage = ("### File reading coverage\n\n| Source | Material | Depth |\n| --- | --- | --- |\n"
                     "| S01 | [routes](https://github.com/acme/app/blob/abc/services/search/{}) | {} |\n")
         cases = [
-            ("an answered action", "G01", "⬜ Unverified",
+            ("an answered action", "F01", "⬜ Unverified",
+             ("README.md", "README"), None),
+            # A question a gap stops is blocked, never completed.
+            ("an action closed on a gap", "G01", "⬜ Unverified",
+             ("README.md", "README"), "Q01: a completed question"),
+            ("an action closed on its finding", "F01", "⬜ Unverified",
              ("README.md", "README"), None),
             ("an action with no answer", "—", "⬜ Unverified",
-             ("README.md", "README"), "Q01: a completed action"),
+             ("README.md", "README"), "Q01: a completed question"),
             # A question closes answered, never by a choice not to pursue it.
             ("a user rejection", "Rejected by the user: not needed", "⬜ Unverified",
-             ("README.md", "README"), "Q01: a completed action"),
-            ("a status not allowed", "G01", "Done",
+             ("README.md", "README"), "Q01: a completed question"),
+            ("a status not allowed", "F01", "Done",
              ("README.md", "README"), "C01: Status starts with"),
-            ("code claimed from a README", "G01", "🟩 Implemented", ("README.md", "README"),
+            ("code claimed from a README", "F01", "🟩 Implemented", ("README.md", "README"),
              "C01 links acme/app: services/search"),
-            ("code claimed from its routes", "G01", "🟩 Implemented",
+            ("code claimed from its routes", "F01", "🟩 Implemented",
              ("src/routes.py", "entrypoints and routes"), None),
         ]
         for name, outcome, status, (path, depth), expected in cases:
             with self.subTest(name):
-                text = (LEDGER.replace("| G01 |", f"| {outcome} |")
+                text = (LEDGER.replace("| — | F01 |", f"| — | {outcome} |")
                         .replace("## Component inventory and evolution\n\nNone yet.", component.format(status))
                         .replace("### File reading coverage\n\nNone yet.", coverage.format(path, depth))
                         .replace("## Links\n\nNone yet.", f"## Links\n\n[search]: {tree}"))
@@ -419,10 +428,8 @@ class CheckReportTest(unittest.TestCase):
 
     def test_long_claims_warn_and_unrecorded_ids_fail_at_handover(self):
         ledger = self.folder / "ledger.md"
-        finding = "### F01 — Search is merged\n\n" + "\n".join(
-            f"- **{field}:** " + ("word " * 160 if field == "Claim" else "text.") for field in check_report.FINDING_FIELDS)
-        ledger.write_text(LEDGER.replace("## Findings and validation chains\n\nNone yet.",
-                                         "## Findings and validation chains\n\n" + finding), encoding="utf-8")
+        ledger.write_text(LEDGER.replace("- **Claim:** text.", "- **Claim:** " + "word " * 160),
+                          encoding="utf-8")
         _, warnings = check_report.check_ledger(ledger)
         self.assertIn("claim is 160 words", " ".join(warnings))
         ledger.write_text(LEDGER.replace("## Boundary\n\nNone yet.",

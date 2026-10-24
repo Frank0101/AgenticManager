@@ -148,7 +148,7 @@ class ReferencesTest(unittest.TestCase):
         # (completed rows, reviewed)
         cases = [([], False), ([review("Q01", "Raised Q02")], False),
                  ([review("Q01", "Raised Q02"), review(
-                     "Q03", "Nothing doable found")], True),
+                     "Q03", "No issue raised")], True),
                  ([review("Q01", "Raised Q02"), review("Q03", "Stopped by the user: enough")], True)]
         for completed, done in cases:
             with self.subTest(completed=completed):
@@ -158,7 +158,7 @@ class ReferencesTest(unittest.TestCase):
 
     def test_closing_values(self):
         # (function, value, accepted)
-        cases = [(common.outcome_problem, "F01, F02", True), (common.outcome_problem, "G03", True),
+        cases = [(common.outcome_problem, "F01, F02", True), (common.outcome_problem, "G03", False), (common.outcome_problem, "D01", False),
                  (common.outcome_problem, "Rejected by the user: not needed", False),
                  (common.outcome_problem, "Answered within scope",
                   False), (common.outcome_problem, "", False),

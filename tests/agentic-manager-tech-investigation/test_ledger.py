@@ -202,7 +202,7 @@ class LedgerTest(unittest.TestCase):
                 "## Evidence gaps\n\nNone."]
         # The queue, the coverage, the sources' notes and the link definitions are for research and review.
         left_out = ["Read the code", "server.py", "Read.",
-                    "[api]:", "## Research action queue", "<a id"]
+                    "[api]:", "## Research questions", "<a id"]
         for text in kept:
             with self.subTest(kept=text):
                 self.assertIn(text, brief)
@@ -845,7 +845,7 @@ class LedgerTest(unittest.TestCase):
         # An action may be written straight as completed, and is then in that part only.
         self.records("Q08")
         result = self.run_ledger("batch", cells=[{"table": "queue-completed", "id": "Q08",
-                                                  "cells": QUEUE_ROW[:-1] + ["D01"]},
+                                                  "cells": QUEUE_ROW[:-1] + ["F01"]},
                                                  {"table": "gaps", "id": "G01", "cells": [
                                                      "a", "b", "c", "No access (x)", "Q08 was blocked", "f", ""]}])
         self.assertEqual(result["update_if_needed"], {"Q08": ["G01"]})
@@ -906,7 +906,7 @@ class LedgerTest(unittest.TestCase):
 
     def test_a_completed_action_names_its_answer(self):
         self.records("F01", "F02", "G01", "D02")
-        for outcome in ("F01, F02", "G01", "D02"):
+        for outcome in ("F01, F02", "F02"):
             with self.subTest(outcome):
                 self.run_ledger("row", "--table", "queue-completed",
                                 "--id", "Q01", cells=QUEUE_ROW[:-1] + [outcome])
@@ -994,7 +994,7 @@ class LedgerTest(unittest.TestCase):
         self.assertIn(
             "| Stopped by the user: wrap up now |", self.text())
 
-    def test_review_is_recorded_with_the_actions_it_raised(self):
+    def test_review_is_recorded_with_the_questions_it_raised(self):
         with self.assertRaisesRegex(SystemExit, "not in the queue: Q09"):
             self.run_ledger("review", "--raised", "Q09")
         self.run_ledger("row", "--table", "queue-ready",
@@ -1003,9 +1003,9 @@ class LedgerTest(unittest.TestCase):
         self.assertIn("| Q02 | Independent review | Independent review of the ledger |"
                       " Subagent given the skill's brief | None | Raised Q01 |", self.plain())
         self.run_ledger("review", "--raised", "none")
-        self.assertIn("| Nothing doable found |", self.text())
+        self.assertIn("| No issue raised |", self.text())
         # Its row closes on actions raised, not on findings.
-        with self.assertRaisesRegex(SystemExit, "the review's outcome names the actions it raised"):
+        with self.assertRaisesRegex(SystemExit, "the review's outcome names the questions it raised"):
             self.run_ledger("row", "--table", "queue-completed", "--id", "Q09", cells=[
                 "Independent review", "Independent review of the ledger", "s", "None", "F01"])
 

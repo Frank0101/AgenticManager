@@ -91,13 +91,13 @@ class JiraClient:
         self.excluded = frozenset(settings[EXCLUDED])
         self._visible = None
 
-    def is_excluded(self, key):
+    def _is_excluded(self, key):
         """Whether issue `key`, or project `key`, is of an excluded project."""
         return project_of(key) in self.excluded or key in self.excluded
 
     def _refuse_excluded(self, key):
         """Raises JiraError, unsent, for a request about `key` of an excluded project."""
-        if self.is_excluded(key):
+        if self._is_excluded(key):
             raise JiraError(excluded_reason(key))
 
     def _visible_excluded(self):
@@ -115,14 +115,14 @@ class JiraClient:
     def _scrubbed(self, issue):
         """`issue` without the parent, links and sub-tasks of excluded projects."""
         fields = issue.get("fields") or {}
-        if self.is_excluded(nested(fields, ["parent", "key"], "")):
+        if self._is_excluded(nested(fields, ["parent", "key"], "")):
             fields.pop("parent")
         if "issuelinks" in fields:
-            fields["issuelinks"] = [link for link in fields["issuelinks"] if not self.is_excluded(
+            fields["issuelinks"] = [link for link in fields["issuelinks"] if not self._is_excluded(
                 nested(link, ["outwardIssue", "key"]) or nested(link, ["inwardIssue", "key"], ""))]
         if "subtasks" in fields:
             fields["subtasks"] = [task for task in fields["subtasks"]
-                                  if not self.is_excluded(task.get("key", ""))]
+                                  if not self._is_excluded(task.get("key", ""))]
         return issue
 
     def _not_excluded(self, jql):
@@ -295,7 +295,7 @@ class JiraClient:
         """A project by its key, with its name; None when the site has none
         the account can see, or it is excluded, which tells a ticket key from
         a word of the same shape, such as SHA-256."""
-        if self.is_excluded(key):
+        if self._is_excluded(key):
             return None
         return self._found(f"/rest/api/3/project/{key}")
 
@@ -305,13 +305,13 @@ class JiraClient:
         the account can see or it is of an excluded project. A key of a
         ticket moved to another project still finds it, under its current
         key."""
-        if self.is_excluded(key):
+        if self._is_excluded(key):
             return None, excluded_reason(key)
         issue = self._found(
             f"/rest/api/3/issue/{key}", {"fields": ",".join(fields)})
         if issue is None:
             return None, f"{key}: {NO_SUCH_TICKET}"
-        if self.is_excluded(issue["key"]):
+        if self._is_excluded(issue["key"]):
             return None, excluded_reason(issue["key"])
         return self._scrubbed(issue), None
 
@@ -358,7 +358,7 @@ class JiraClient:
     def issues_by_keys(self, keys, fields):
         """Issues by key through JQL; [] for no keys rather than a query that
         matches everything. Keys of excluded projects are left out."""
-        return self._issues_where("key", [k for k in keys if not self.is_excluded(k)], fields)
+        return self._issues_where("key", [k for k in keys if not self._is_excluded(k)], fields)
 
     def issues_by_ids(self, ids, fields):
         """Issues by numeric id, as changelogs name them; [] for no ids."""

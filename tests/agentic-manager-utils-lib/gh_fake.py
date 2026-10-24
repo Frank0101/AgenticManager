@@ -3,7 +3,7 @@ built from each pull request's own answer, so a test's fake gh answers it
 from answers by URL; shared by the tests of every skill that reads pull
 requests' events, including a fake gh run as a program.
 
-It reads the query as github.events_query() writes it, one repository a line,
+It reads the query as github._events_query() writes it, one repository a line,
 and answers as GitHub does: the data of every alias, null for a pull request
 it can't resolve with an error naming its path, and then, as gh does, the
 answer on stdout, the first error on stderr and exit code 1.

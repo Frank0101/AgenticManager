@@ -208,7 +208,7 @@ class GithubTest(unittest.TestCase):
             with self.subTest(name):
                 failed = github.GhError(
                     command, "HTTP 503: Service Unavailable")
-                self.assertEqual((github.command_name(command), failed.name, str(failed),
+                self.assertEqual((github._command_name(command), failed.name, str(failed),
                                   github.note(failed)),
                                  (expected, expected, f"{expected}: HTTP 503: Service Unavailable",
                                   f"{expected}: HTTP 503: Service Unavailable"))
@@ -323,7 +323,7 @@ class GithubTest(unittest.TestCase):
     def test_events_query(self):
         # Aliases r<i> for each repository and p<j> for each pull request;
         # owner, name and number only as variables, never in the query.
-        query, fields, aliases = github.events_query(
+        query, fields, aliases = github._events_query(
             [PR.format(41), "https://github.com/acme/web/pull/7", PR.format(42)])
         self.assertEqual(query, "\n".join([
             "query($o0: String!, $n0: String!, $p0: Int!, $p1: Int!, $o1: String!, $n1: String!, $p2: Int!) {",
@@ -339,7 +339,7 @@ class GithubTest(unittest.TestCase):
         for url in ("https://github.com/acme/api/pull/4x", "https://github.com/ac{me}/api/pull/1",
                     'https://github.com/acme/a"pi/pull/1', "https://github.com/acme/api/issues/1"):
             with self.subTest(url), self.assertRaises(ValueError):
-                github.events_query([url])
+                github._events_query([url])
 
     def test_graphql_failures(self):
         # The call as a whole failing raises, with gh's words; an answer

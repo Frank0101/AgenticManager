@@ -10,8 +10,6 @@ Writes a short, exec-ready report of one Jira sprint, closed or still running. S
 
 The report's files go to the `jira-sprint-reports` folder of the user's configured output root (`output.root`), or to a temporary folder if none is set. The scripts choose the folder; don't pass one.
 
-A report folder holds only these files, and `finish_report.py` fails on any other; anything else you need goes in your own scratch folder.
-
 ```text
 jira-sprint-reports/
 └── PROJ_Sprint_3_26-10-05/
@@ -29,7 +27,7 @@ jira-sprint-reports/
 
 Run the config check, `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py`, pre-approved in the frontmatter. If it fails, stop here and follow its `next_steps`. If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ as `python3`; if the script is missing, tell them to reinstall every skill.
 
-This skill needs the `jira-api` source. If `sources.workflow.jira-api.enabled` isn't `true`, stop and tell the user to enable it, showing its `setup` and the config `path`. The scripts read its settings themselves; never read, pass or show them.
+This skill needs the `jira-api` source. If it isn't enabled, stop and tell the user to enable it, showing its `setup` and the config `path`. The scripts read its settings themselves; never read, pass or show them.
 
 The `github-cli` source is optional: it fetches pull request data into the raw files, not used by the report yet. Without it, the report is the same; don't stop or ask to enable it.
 

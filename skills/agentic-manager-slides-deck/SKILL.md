@@ -12,8 +12,6 @@ The files go to the `slides-decks` folder of the config's `output.root`, or to a
 
 You write only `slides.json`: the title, the CSS, each slide's HTML and the data of charts and rings. `make_deck.py` owns the rest, from the page around the slides to the check. When a script refuses something, its message says what to fix: fix the input, never work around the check.
 
-A deck's folder holds only these files, and the check fails on any other; your own working files go in your scratch folder.
-
 ```text
 slides-decks/
 ├── _assets/                         add_asset.py writes, the images every deck links to

@@ -25,13 +25,11 @@ tech-investigations/
     └── Payments-Retry-Service_Report.md   the report, generated from the two above
 ```
 
-An investigation's folder holds only these files, and the final check fails on any other; anything else you need goes in your own scratch folder.
-
 ## Prerequisite
 
 Run the config check, `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py`, pre-approved in the frontmatter. If it fails, stop here and follow its `next_steps`. If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ as `python3`; if the script is missing, tell them to reinstall every skill.
 
-This skill reads three kinds of source (see [Sources and evidence](#sources-and-evidence)): the code, from any enabled `source_control` source with a command-line tool, such as `github-cli`, since repositories are cloned and read with git and that tool; the tracker, from the `jira-api` source, which this skill's client reads; and the documentation, from any enabled `documentation` source.
+This skill reads three kinds of source (see [Sources and evidence](#sources-and-evidence)): the code, from any enabled `source_control` source; the tracker, from the `jira-api` source, which this skill's client reads; and the documentation, from any enabled `documentation` source.
 
 All three are required. If any of them isn't enabled, stop and tell the user how to enable it, showing its `setup` and the config `path`.
 
@@ -89,9 +87,9 @@ Agree what is being investigated, then create the investigation's folder.
 
 ## 2. Research
 
-Build the ledger, methodically, until it can answer the three questions this skill exists for: the vision, purpose and impact; the current status, what is done, how it works (its system design today) and what is in progress; and the direction, with the system design it targets. Every answer rests on evidence the ledger holds.
+Build the ledger, methodically, until it covers the three aims this skill exists for: the vision, purpose and impact; the current status, what is done, how it works (its system design today) and what is in progress; and the direction, with the system design it targets. Every answer rests on evidence the ledger holds.
 
-Use those three questions as your compass. Before you add a question to the queue, ask whether its answer would change one of them. If it would, add it; if not, leave it.
+Use those three aims as your compass. Before you add a question to the queue, ask whether its answer would change what the ledger says about one of them. If it would, add it; if not, leave it.
 
 ### The queue
 
@@ -162,9 +160,9 @@ Research is finished when `ledger.py next` returns nothing and no question is in
 
 When research is finished, have the ledger reviewed by someone who didn't build it: a subagent given only the brief below. Change nothing while it runs.
 
-> Read the research ledger at `<ledger path>` in full. It must answer three questions: the vision, purpose and impact; the current status, what is done, how it works (its system design today) and what is in progress; and the direction, with the system design it targets. Judge whether it does, and list only significant issues: a question that should have been asked and wasn't, or a finding that claims more than its sources show. An issue is significant only if settling it could change one of the three answers. Leave out completeness for its own sake, cosmetic points and improbable cases. For each issue, say what would settle it.
+> Read the research ledger at `<ledger path>` in full. It must cover three aims: the vision, purpose and impact; the current status, what is done, how it works (its system design today) and what is in progress; and the direction, with the system design it targets. Judge whether it does, and list only significant issues: a question that should have been asked and wasn't, or a finding that claims more than its sources show. An issue is significant only if settling it could change what the ledger says about one of the three aims. Leave out completeness for its own sake, cosmetic points and improbable cases. For each issue, say what would settle it.
 
-Judge each issue yourself by the same test, and drop any that couldn't change an answer. Add every one left to the queue as a question, with its dependencies, before you change anything. Record the round with `ledger.py review --raised <the questions, or none>`, then go back to [2. Research](#2-research) for them.
+Judge each issue yourself by the same test, and drop any that couldn't change what the ledger says about an aim. Add every one left to the queue as a question, with its dependencies, before you change anything. Record the round with `ledger.py review --raised <the questions, or none>`, then go back to [2. Research](#2-research) for them.
 
 The review is finished when a round raises nothing. A good investigation needs one or two rounds; after three, before starting a fourth, show the user what each round found and ask whether to go on. If they stop, record it with `ledger.py review --stopped '<what they said>'`.
 
@@ -223,5 +221,5 @@ To decide: drawn from the ledger's system design, or written by hand.
 ## 5. Hand over
 
 1. Run `python3 ${CLAUDE_SKILL_DIR}/scripts/check_report.py --report '<absolute report path>' --handover`, and fix every error it reports.
-2. Tell the user the report is ready, with the full paths of the report and the ledger. Don't recap the report; add only a doubt about your own judgment that it doesn't show. If the folder is temporary, say so and offer to copy the report and the ledger.
+2. Tell the user the report is ready, with Markdown links to the full paths of the report and the ledger. Don't recap the report; add only a doubt about your own judgment that it doesn't show, and, if `make_report.py` reported `temporary` as true, that the folder is temporary and setting `output.root` in the config keeps investigations.
 3. Offer to keep the report as an example for future investigations. If the user says they're happy with it, keep it with `python3 ${CLAUDE_SKILL_DIR}/scripts/save_example.py --investigation <investigation> --note '<one line on what makes it good>'`.

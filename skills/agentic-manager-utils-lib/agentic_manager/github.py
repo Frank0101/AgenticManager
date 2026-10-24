@@ -77,7 +77,7 @@ def pull_events(urls, run=subprocess.run):
     (else mergedAt is None), with state OPEN, CLOSED or MERGED; and gone as
     {url: GitHub's words} of those GitHub says don't exist, in the order of
     `urls`. Raises GhError for any other that gh couldn't read, such as one
-    in a repository GitHub can't find (see batch_events()) or a URL whose
+    in a repository GitHub can't find (see _batch_events()) or a URL whose
     parts aren't safe to ask about. Read in a GraphQL call for each batch
     (batch.py) of one host's pull requests, as a call per pull request spent
     hundreds of requests of a sprint's hourly limit: each is a single object,
@@ -93,7 +93,7 @@ def pull_events(urls, run=subprocess.run):
     calls = [(host, chunk) for host, found in hosts.items()
              for chunk in batches(found)]
     events, missing = {}, {}
-    for answered, unread in gather(calls, lambda call: batch_events(call[0], call[1], run)):
+    for answered, unread in gather(calls, lambda call: _batch_events(call[0], call[1], run)):
         events.update(answered)
         missing.update(unread)
     gone = {}
@@ -111,7 +111,7 @@ def pull_parts(url):
     return PULL_URL.fullmatch(url or "")
 
 
-def batch_events(host, urls, run=subprocess.run):
+def _batch_events(host, urls, run=subprocess.run):
     """({url: its events}, {url: GhError}) of the pull requests at `urls`, all
     on `host`, read in one GraphQL call: a repository by alias r<i>, its pull
     requests by p<j>, each one's owner, name and number a variable, never in
@@ -122,10 +122,10 @@ def batch_events(host, urls, run=subprocess.run):
     it can't find isn't an answer: it is also what an account without access
     gets, and gh signed in to the wrong account would then drop every pull
     request of the repository."""
-    query, fields, aliases = events_query(urls)
+    query, fields, aliases = _events_query(urls)
     args = [*GRAPHQL, *(["--hostname", host] if host !=
                         DEFAULT_HOST else []), "-f", f"query={query}", *fields]
-    answer = retried(lambda: graphql_once(args, run), passing, note)
+    answer = retried(lambda: _graphql_once(args, run), passing, note)
     errors: dict[tuple, dict] = {tuple(error.get("path") or ())[:2]: error
                                  for error in answer.get("errors") or [] if isinstance(error, dict)}
     events, missing = {}, {}
@@ -142,7 +142,7 @@ def batch_events(host, urls, run=subprocess.run):
     return events, missing
 
 
-def events_query(urls):
+def _events_query(urls):
     """(query, gh's field arguments, {(repository alias, pull alias): url})
     that read the events of the pull requests at `urls`, grouped by
     repository. Raises ValueError for a URL that isn't a pull request's, so
@@ -192,10 +192,10 @@ def gh_json(args, run=subprocess.run):
     times out or answers something other than JSON. It never returns an
     empty answer for a failure, so one such as GitHub's rate limit is never
     taken for a thing that doesn't exist."""
-    return retried(lambda: gh_once(args, run), passing, note)
+    return retried(lambda: _gh_once(args, run), passing, note)
 
 
-def gh_once(args, run):
+def _gh_once(args, run):
     """gh's JSON answer to one try of `args`; raises GhError when gh gives none."""
     done = _ran(args, args, run)
     if done.returncode:
@@ -208,7 +208,7 @@ def gh_once(args, run):
         raise GhError(args, "answered something other than JSON")
 
 
-def graphql_once(args, run):
+def _graphql_once(args, run):
     """GitHub's answer to one try of the GraphQL call `args`, {data, errors},
     even when gh fails because some of the query couldn't be resolved;
     raises GhError, as the words `gh api graphql`, when it holds no data."""
@@ -266,7 +266,7 @@ class GhError(Exception):
     @property
     def name(self):
         """The command as its failures name it, such as "gh pr view"."""
-        return command_name(self.command)
+        return _command_name(self.command)
 
     @property
     def rate_limited(self):
@@ -287,7 +287,7 @@ class GhError(Exception):
         return f"{' '.join(self.message.split()).rstrip('.')}. {self.advice}"
 
 
-def command_name(command):
+def _command_name(command):
     """gh's command `command`, the words after gh, by its first words, such
     as "gh pr view": its leading lower-case words, at most COMMAND_WORDS,
     up to the first that isn't one, such as a URL, a key, a path or a flag."""

@@ -63,7 +63,7 @@ SOURCES_READ = table(SOURCE_HEADER, [
      "Superseded by a newer ticket", "Delivery"]])
 LEDGER = (with_queue(ledger_skeleton("Acme-Search"), "Completed", [
     ["Q01", "Start", "Read code", "Code", "—", "F01"],
-    ["Q02", "Independent review", "Independent review of the ledger", "Subagent", "None", "Nothing doable found"]])
+    ["Q02", "Independent review", "Independent review of the ledger", "Subagent", "None", "No issue raised"]])
     .replace(table(SOURCE_HEADER, []), SOURCES_READ, 1)
     .replace("## Findings and validation chains\n\nNone yet.",
              "## Findings and validation chains\n\n" + FINDING)

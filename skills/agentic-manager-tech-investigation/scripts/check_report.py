@@ -105,7 +105,7 @@ def check_ledger(path, handover=False):
     """(errors, warnings) of the ledger's structure: its sections and the
     queue's in order, one heading per finding with its fields, every ticket and
     pull request linked, and, at handover, a queue with nothing left ready or in
-    progress, the review finished, completed actions answered, allowed
+    progress, the review finished, completed questions answered, allowed
     statuses, depths and areas, the system design's rules, code read for every
     component claiming it, and linked sources."""
     errors, warnings = [], []
@@ -175,7 +175,7 @@ def check_ledger(path, handover=False):
         if any(row[0].startswith("Q") for table in ("queue-ready", "queue-in-progress")
                for row in ledger_rows(body, TABLE_HEADINGS[table])):
             errors.append(
-                f"{LEDGER}: actions are still ready or in progress; answer or block them before handover")
+                f"{LEDGER}: questions are still ready or in progress; answer or block them before handover")
         # The trail from a claim to its source ends in a link, or, for a search, which has
         # no URL to pin, in its exact query between backticks.
         register = failing_rows(body, TABLE_HEADINGS["sources"], 2,
@@ -278,7 +278,7 @@ def reference_error(where, found):
 
 
 def closing_problems(body):
-    """The independent review not yet finished, completed actions with no
+    """The independent review not yet finished, completed questions with no
     answer, coverage depths, component statuses and source or gap areas that
     are not allowed ones, and components claiming code nobody read."""
     problems = []

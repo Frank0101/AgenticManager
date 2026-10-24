@@ -18,7 +18,7 @@ import subprocess
 from common import (DESIGN, DESIGN_SUBSECTIONS, EXAMPLE_DESCRIPTION, EXAMPLES, GITHUB_CLI, GROUPS, JIRA_API, JIRA_GROUP, QUEUE, REGISTER,
                     WHY_GOOD, read_description, TABLE_HEADINGS, FOLDER_NAME, INVESTIGATION, LEDGER, LEDGER_SECTIONS, QUEUE_HEADER,
                     QUEUE_SUBSECTIONS, SOURCE_HEADER, TOPIC, GhError, anchored, clear_folder, day_folder,
-                    enabled_sources, gh_signed_in, output_folder, table, tool_channel, write_output_file)
+                    enabled_sources, gh_signed_in, output_folder, table, write_output_file)
 
 # An example's folder: its investigation's, and --<n> for a later copy of the
 # same day's example, as save_example.py names it.
@@ -42,7 +42,7 @@ def init(topic, today=None, run=subprocess.run):
     replaced = clear_folder(path)
     os.makedirs(os.path.join(folder, EXAMPLES), exist_ok=True)
     write_output_file(FOLDER_NAME, f"{relative}/{LEDGER}",
-                      ledger_skeleton(topic, first_actions(topic, sources)).encode("utf-8"))
+                      ledger_skeleton(topic, first_questions(topic, sources)).encode("utf-8"))
     return {"folder": folder, "temporary": temporary, "investigation": relative,
             "investigation_dir": path, "replaced": replaced,
             "sources": {GROUPS[group]: names for group, names in sources.items()},
@@ -50,15 +50,11 @@ def init(topic, today=None, run=subprocess.run):
 
 
 def usable_sources():
-    """{group: its enabled sources this skill can use}, in GROUPS' order: a
-    cli source for the code, whose repositories the agent clones and reads
-    with git and its CLI; an mcp or cli source for the documentation, which the
-    agent uses directly; and jira-api for the tracker, which tickets.py reads."""
-    def usable(group, name):
-        if group == JIRA_GROUP:
-            return name == JIRA_API
-        return tool_channel(name)[1] in (("cli",) if group == "source_control" else ("mcp", "cli"))
-    return {group: [name for name in enabled_sources(group) if usable(group, name)] for group in GROUPS}
+    """{group: its enabled sources this skill can use}, in GROUPS' order: any
+    of the code and the documentation, and jira-api for the tracker, which
+    tickets.py reads."""
+    return {group: [name for name in enabled_sources(group) if group != JIRA_GROUP or name == JIRA_API]
+            for group in GROUPS}
 
 
 def check_gh(sources, run=subprocess.run):
@@ -76,8 +72,8 @@ def check_gh(sources, run=subprocess.run):
             "gh isn't signed in: run gh auth login, then run init_investigation.py again")
 
 
-def first_actions(topic, sources):
-    """The first research actions: a question about the topic for each group,
+def first_questions(topic, sources):
+    """The first research questions: a question about the topic for each group,
     the documentation first, which Define has skimmed, then the tracker, then
     the code."""
     order = ["documentation", JIRA_GROUP, "source_control"]
@@ -89,7 +85,7 @@ def first_actions(topic, sources):
 
 def ledger_skeleton(topic, ready=()):
     """The ledger's fixed sections and tables, empty but for the `ready`
-    actions, as rows."""
+    questions, as rows."""
     parts = [f"# {topic.replace('-', ' ')} research ledger"]
     for section in LEDGER_SECTIONS:
         parts.append(f"## {section}")

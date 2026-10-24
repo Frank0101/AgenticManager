@@ -126,7 +126,7 @@ class CheckDeckTest(unittest.TestCase):
             with open(os.path.join(self.deck, name), "w", encoding="utf-8") as f:
                 f.write("x")
         self.assertEqual(check_deck.check_deck(DECK)["errors"],
-                         [f"the folder must hold only {PAGE}, slides.json; remove notes.md"])
+                         [f"the folder must hold only {PAGE}, slides.json; move notes.md to your own scratch folder"])
         os.remove(os.path.join(self.deck, "notes.md"))
         os.remove(os.path.join(self.deck, PAGE))
         self.assertEqual(check_deck.check_deck(DECK)["errors"],
