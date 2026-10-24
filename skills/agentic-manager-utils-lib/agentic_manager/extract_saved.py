@@ -1,24 +1,11 @@
 """Prints chosen fields of the items in a saved tool result, one line per item.
 
-    python3 extract_saved.py --path <saved JSON file> --fields key,fields.status.name,fields.summary
-                             [--items issues.nodes]
-
 When an MCP or CLI result is too large for the chat, the agent's harness saves
-it to a file. Reading that file back whole costs the tokens the save avoided,
-and writing code on the fly to pick it apart is slow and differs every time, so
-this does the one job any skill needs from such a file: list its items with the
-fields asked for.
-
-A field is a dotted path inside an item, with numbers for list positions, such
-as fields.fixVersions.0.name. --items is the dotted path to the list of items;
-left out, it is the longest list of objects in the file, which is the result
-list in the tools' usual shapes. A missing field prints as empty; a value that
-isn't text prints as compact JSON. Values are joined with " | " and kept on one
-line each.
-
-Prints a first line, "<n> items at <path>", then one line per item, as plain
-text, which costs fewer tokens than JSON. Exits 1 with a message if the file
-can't be read as JSON or holds no such list.
+it to a file. Reading it back whole costs the tokens the save avoided, and code
+written on the fly to pick it apart is slow and differs every time, so this
+does the one job any skill needs from such a file. The items are by default
+the longest list of objects in the file, the result list in the tools' usual
+shapes, and the output is plain text, which costs fewer tokens than JSON.
 """
 import argparse
 import json
@@ -31,6 +18,16 @@ if not __package__:
         os.path.dirname(os.path.realpath(__file__))))
 from agentic_manager.json_path import nested  # noqa: E402
 from agentic_manager.output_file import read_json  # noqa: E402
+
+EPILOG = """A field is a dotted path inside an item, with numbers for list positions,
+such as fields.fixVersions.0.name. A missing field prints as empty, and a value
+that isn't text as compact JSON; an item's values are joined with " | ".
+
+Prints a first line, "<n> items at <path>", then one line per item. Exits 1
+with a message if the file can't be read as JSON or holds no such list.
+
+example:
+  python3 <lib>/extract_saved.py --path <saved JSON file> --fields key,fields.status.name,fields.summary"""
 
 
 def _lines(data, fields, items=None):
@@ -81,7 +78,8 @@ def _text_of(value):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description=(__doc__ or "").split("\n")[0])
+        description=(__doc__ or "").split("\n")[0], epilog=EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--path", required=True, help="the saved JSON file")
     parser.add_argument("--fields", required=True,
                         help="dotted paths inside an item, comma separated, such as key,fields.status.name")

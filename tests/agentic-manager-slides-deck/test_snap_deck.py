@@ -1,5 +1,8 @@
 """Unit tests for skills/agentic-manager-slides-deck/scripts/snap_deck.py, and,
-where Chrome is installed, a run that pictures a real deck.
+where Chrome is installed and can take a picture headless, a run that pictures
+a real deck. Chrome that hangs, such as one whose sign-in a company policy
+forces, is found by picturing a blank page first, so the run is skipped with
+the reason rather than failing after snap_deck.py's own wait.
 Run with: python3 tests/run.py agentic-manager-slides-deck
 """
 
@@ -9,6 +12,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -24,6 +28,8 @@ sys.path.insert(0, TEST_DIR)
 from deck_fixture import DECK, content, temp_output, write_slides  # noqa: E402
 
 MAC = snap_deck.CHROME_PATHS[0]
+# How long Chrome has to picture a blank page before the real run is skipped.
+PROBE_SECONDS = 5
 
 
 class FindChromeTest(unittest.TestCase):
@@ -88,8 +94,31 @@ class SheetPageTest(unittest.TestCase):
                                 + snap_deck.GAP))
 
 
+def chrome_cannot_picture():
+    """Why Chrome can't picture a blank page on this machine, or None when it can."""
+    with tempfile.TemporaryDirectory() as folder:
+        page, picture = Path(folder) / "blank.html", Path(folder) / "blank.png"
+        page.write_text("<html><body>blank</body></html>", encoding="utf-8")
+        command = snap_deck.chrome_command(snap_deck.find_chrome(), Path(folder) / "profile",
+                                           picture, page, (200, 100))
+        try:
+            subprocess.run(command, capture_output=True, timeout=PROBE_SECONDS)
+        except subprocess.TimeoutExpired:
+            return f"Chrome took over {PROBE_SECONDS} seconds to picture a blank page"
+        if not picture.exists():
+            return "Chrome made no picture of a blank page"
+    return None
+
+
 @unittest.skipUnless(snap_deck.find_chrome(), "Chrome isn't installed")
 class SnapTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        reason = chrome_cannot_picture()
+        if reason:
+            raise unittest.SkipTest(
+                f"{reason}: it can't run headless on this machine")
+
     def test_pictures_every_slide_at_its_size_and_the_sheet(self):
         folder = temp_output(self)
         write_slides(folder, content())

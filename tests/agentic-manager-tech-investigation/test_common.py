@@ -20,32 +20,11 @@ from investigation_fixture import INVESTIGATION, temp_output  # noqa: E402
 
 class StructureTest(unittest.TestCase):
     def test_report_headings(self):
-        # skip: the section titles left out, in order; both layers repeat two titles
-        executive = ["Executive / product summary", "Problem and intended outcome", "Current status",
-                     "Next steps and evolution", "Key decisions and risks"]
-        architect = ["Architect summary", "Current status", "Next steps and evolution",
-                     "Key decisions and gaps"]
-        references = ["References"]
-        cases = [((), executive + architect + references),
-                 (("evolution",), [t for t in executive if t != "Next steps and evolution"]
-                  + [t for t in architect if t != "Next steps and evolution"] + references),
-                 (("architecture",), executive + references)]
-        for skip, titles in cases:
-            with self.subTest(skip=skip):
-                self.assertEqual(
-                    [title for _, title in common.report_headings(skip)], titles)
-
-    def test_read_skip(self):
-        # Only content.json's known dimensions, in their own order; nothing
-        # without a readable content.json.
-        cases = [(None, ()), ("not JSON", ()), ("[]", ()), ('{"skip": "evolution"}', ()),
-                 ('{"skip": ["evolution", "design", "architecture"]}', ("architecture", "evolution"))]
-        for text, expected in cases:
-            with self.subTest(text=text), tempfile.TemporaryDirectory() as folder:
-                if text is not None:
-                    with open(os.path.join(folder, common.CONTENT), "w", encoding="utf-8") as f:
-                        f.write(text)
-                self.assertEqual(common.read_skip(folder), expected)
+        # Every section is always in the report, in this order.
+        self.assertEqual([title for _, title in common.report_headings()], [
+            "Executive / product summary", "Problem and purpose", "Current status", "Direction",
+            "Key decisions and risks", "Architect summary", "How it works today", "Target design",
+            "Open technical choices and gaps", "References"])
 
     def test_expected_files(self):
         self.assertEqual(common.expected_files("Acme_Report.md"),
@@ -117,17 +96,62 @@ class ReferencesTest(unittest.TestCase):
         self.assertEqual(common.unlinked_references(text),
                          ["PROJ-1", "acme/app#3", "#4"])
 
-    def test_review_rounds_and_the_choice_to_stop(self):
+    def test_design_problem(self):
+        # name: (table, row, the problem's text, or None when the row is allowed)
+        component = ["C01", "Search API (service)", "Serves",
+                     "p", "🟩 Implemented", "d", "F01", "n", "B01"]
+        connection = ["E01", "C01", "C02", "HTTP",
+                      "query", "yes", "I01", "🟩 Implemented", "F02"]
+        cases = [
+            ("a component in a boundary", "components", component, None),
+            ("a component outside any", "components",
+             component[:8] + ["None"], None),
+            ("a component with no boundary", "components",
+             component[:8] + [""], "Boundary names"),
+            ("a component resting on nothing", "components",
+             component[:6] + ["", "n", "B01"], "Evidence names"),
+            ("an unverified component with no gap", "components",
+             component[:4] + ["⬜ Unverified"] + component[5:], "names the gap"),
+            ("an unverified component with its gap", "components",
+             component[:4] + ["⬜ Unverified"] + component[5:6] + ["G01"] + component[7:], None),
+            ("a connection", "connections", connection, None),
+            ("a connection of unknown identity", "connections",
+             connection[:6] + ["Unknown"] + connection[7:], None),
+            ("a connection from two components", "connections", connection[:1] + ["C01, C03"] + connection[2:],
+             "From names one component"),
+            ("a connection to nothing", "connections", connection[:2] + ["the index"] + connection[3:],
+             "To names one component"),
+            ("a connection with no identity", "connections", connection[:6] + [""] + connection[7:],
+             "Identity names"),
+            ("a connection with no state", "connections", connection[:7] + ["live"] + connection[8:],
+             "Status starts with"),
+            ("a boundary", "boundaries", [
+             "B01", "Production cluster", "network", "F04"], None),
+            ("an identity resting on nothing", "identities", ["I01", "token", "token", "the API", "-"],
+             "Evidence names"),
+            ("a flow", "flows", [
+             "P01", "A user searches", "E01, E02", "F02"], None),
+            ("a flow with no connections", "flows", ["P01", "A user searches", "the search", "F02"],
+             "Connections in order names"),
+        ]
+        for name, table, row, expected in cases:
+            with self.subTest(name):
+                problem = common.design_problem(table, row)
+                if expected is None:
+                    self.assertIsNone(problem)
+                else:
+                    self.assertIn(expected, problem or "")
+
+    def test_the_review_ends_on_a_round_raising_nothing_or_the_choice_to_stop(self):
         def review(row_id, outcome):
-            return [row_id, "Independent review", common.REVIEW_QUESTION, "s", "None", "High", outcome]
-        # (completed rows, rounds, reviewed)
-        cases = [([], 0, False), ([review("Q01", "Raised Q02")], 1, False),
+            return [row_id, "Independent review", common.REVIEW_QUESTION, "s", "None", outcome]
+        # (completed rows, reviewed)
+        cases = [([], False), ([review("Q01", "Raised Q02")], False),
                  ([review("Q01", "Raised Q02"), review(
-                     "Q03", "Nothing doable found")], 2, True),
-                 ([review("Q01", "Raised Q02"), review("Q03", "Stopped by the user: enough")], 1, True)]
-        for completed, rounds, done in cases:
+                     "Q03", "Nothing doable found")], True),
+                 ([review("Q01", "Raised Q02"), review("Q03", "Stopped by the user: enough")], True)]
+        for completed, done in cases:
             with self.subTest(completed=completed):
-                self.assertEqual(common.review_rounds(completed), rounds)
                 self.assertEqual(common.reviewed(completed), done)
         self.assertIsNone(common.outcome_problem(
             "Q03", "Stopped by the user: enough", common.REVIEW_QUESTION))
@@ -139,7 +163,7 @@ class ReferencesTest(unittest.TestCase):
                  (common.outcome_problem, "Answered within scope",
                   False), (common.outcome_problem, "", False),
                  (common.status_problem,
-                  "🟨 Implemented, needs significant work (routes read)", True),
+                  "🟦 In development (on a branch)", True),
                  (common.status_problem, "Implemented", False),
                  (common.depth_problem, "partial: lines 1-70 of 474", True),
                  (common.depth_problem, "Full", True), (common.depth_problem, "skimmed", False)]

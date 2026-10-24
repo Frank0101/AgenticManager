@@ -6,7 +6,6 @@ ID carries and the links to them, the linking of tickets and pull requests,
 and how to find an investigation's folder. Scripts import the shared library's
 names from here, so they don't depend on the order of their imports.
 """
-import json
 import os
 import re
 import sys
@@ -23,7 +22,7 @@ from agentic_manager.jira import GROUP as JIRA_GROUP, NAME as JIRA_API, PROJECT_
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, clear_folder, day_folder, output_folder  # noqa: E402,F401
-from agentic_manager.text import DEFINITION, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, free_name, heading_anchor, headings, link_definitions, link_text, links, local_link, markdown, reference_key, slug, word_count  # noqa: E402,F401
+from agentic_manager.text import DEFINITION, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, free_name, headings, link_definitions, link_text, links, local_link, markdown, reference_key, slug, word_count  # noqa: E402,F401
 from agentic_manager.ticket_pulls import pulls_by_ticket  # noqa: E402,F401
 
 FOLDER_NAME = "tech-investigations"
@@ -40,64 +39,59 @@ REPORT_SUFFIX = "_Report.md"
 # as the user named it.
 TOPIC, INVESTIGATION = NAME, DAY_FOLDER
 
-# The report's headings: (level, title, id). The architect summary repeats the
-# executive layer's two section titles, so a skip names headings by id.
+# The report's headings: (level, title, id); the script names a heading by its id.
 HEADINGS = [
     (2, "Executive / product summary", "exec"),
-    (3, "Problem and intended outcome", "exec.problem"),
+    (3, "Problem and purpose", "exec.purpose"),
     (3, "Current status", "exec.current"),
-    (3, "Next steps and evolution", "exec.next"),
+    (3, "Direction", "exec.direction"),
     (3, "Key decisions and risks", "exec.decisions"),
     (2, "Architect summary", "arch"),
-    (3, "Current status", "arch.current"),
-    (3, "Next steps and evolution", "arch.next"),
-    (3, "Key decisions and gaps", "arch.decisions"),
+    (3, "How it works today", "arch.today"),
+    (3, "Target design", "arch.target"),
+    (3, "Open technical choices and gaps", "arch.decisions"),
     (2, "References", "references"),
 ]
-# What a report may leave out, when the research shows it doesn't apply:
-# {dimension: the heading ids it removes}. Skipping shapes the output only; the
-# research covers every group either way.
-SKIPS = {
-    "architecture": ["arch", "arch.current", "arch.next", "arch.decisions"],
-    "evolution": ["exec.next", "arch.next"],
-}
-
 # The ledger's sections, in order, and the queue's subsections. Each title is
 # named once, here: one typed differently elsewhere would leave a check reading
 # an empty section.
 QUEUE = "Research action queue"
-BOUNDARY = "Boundary, method and access"
+BOUNDARY = "Boundary"
 REGISTER = "Revisions and source register"
 FINDINGS = "Findings and validation chains"
 INVENTORY = "Component inventory and evolution"
+DESIGN = "System design"
 DECISIONS = "Open decisions"
 GAPS = "Evidence gaps"
-REFLECTION = "Reflection"
 LINKS = "Links"
 LEDGER_SECTIONS = [QUEUE, BOUNDARY, REGISTER, FINDINGS,
-                   INVENTORY, DECISIONS, GAPS, REFLECTION, LINKS]
+                   INVENTORY, DESIGN, DECISIONS, GAPS, LINKS]
 # An action is ready until someone starts it, so that after a break, or with
 # work shared out, what is under way shows apart from what is waiting.
 QUEUE_SUBSECTIONS = ["Ready", "In progress", "Blocked", "Completed"]
 QUEUE_TABLES = ["queue-ready", "queue-in-progress",
                 "queue-blocked", "queue-completed"]
+# The system design beside the components, one table each under its own
+# heading, so the design is recorded as rows, never pieced together from prose.
+DESIGN_SUBSECTIONS = ["Boundaries", "Connections", "Identities", "Flows"]
+DESIGN_TABLES = ["boundaries", "connections", "identities", "flows"]
 # The heading each of the ledger's tables sits under, by the name ledger.py's
 # commands use: one place, since a heading typed differently elsewhere would
 # leave a check reading an empty table.
 TABLE_HEADINGS = {**{table: f"### {title}" for table, title in zip(QUEUE_TABLES, QUEUE_SUBSECTIONS)},
                   "sources": f"## {REGISTER}", "file-coverage": "### File reading coverage",
                   "decisions": f"## {DECISIONS}", "gaps": f"## {GAPS}",
-                  "components": f"## {INVENTORY}"}
+                  "components": f"## {INVENTORY}",
+                  **{table: f"### {title}" for table, title in zip(DESIGN_TABLES, DESIGN_SUBSECTIONS)}}
 QUEUE_HEADER = ["ID", "Trigger / linked finding", "Question or check",
                 "Sources and validation required", "Depends on",
-                "Priority / severity", "Outcome / finding IDs"]
+                "Outcome / finding IDs"]
 # The evidence areas a source or a gap is tagged with; `ledger.py status` counts
 # them across the source groups, so no table of its own holds that grid.
 AREAS = ["Architecture", "Delivery", "Implementation", "Security and data",
          "Identity and credentials", "Runtime and operations"]
 # The source groups in their order of authority, each with the name the ledger
-# and the output give it: when two disagree, the earlier one wins, so the first
-# actions search them in it.
+# and the output give it: when two disagree, the earlier one wins.
 GROUPS = {"source_control": "code", "workflow": "tracker",
           "documentation": "documentation"}
 SOURCE_HEADER = ["Source ID", "Group / evidence kind", "Exact reference",
@@ -119,22 +113,23 @@ GAP_HEADER = ["ID", "Gap", "What is established and what is missing",
               "Owner and next check",
               "Areas"]
 COMPONENT_HEADER = ["ID", "Name and type", "Responsibility", "Repository, paths, revision",
-                    "Status", "Deployment evidence and how much was read", "Callers → outgoing",
-                    "Evidence", "Current → next steps"]
+                    "Status", "How much was read",
+                    "Evidence", "Current → next steps", "Boundary"]
+BOUNDARY_HEADER = ["ID", "Name", "Kind", "Evidence"]
+CONNECTION_HEADER = ["ID", "From", "To", "How", "Data",
+                     "Waits for reply", "Identity", "State", "Evidence"]
+IDENTITY_HEADER = ["ID", "Name", "Kind", "What it can reach", "Evidence"]
+FLOW_HEADER = ["ID", "Entry point", "Connections in order", "Evidence"]
 # A component's implementation status: the Status cell starts with one of these.
 # Code is the source of truth, so the two that claim code exists need the code
 # read (READ_DEPTHS below); the others say what the evidence can't establish.
-STATUSES = [("🟩 Implemented", "merged code establishes it; this doesn't imply deployment"),
-            ("🟨 Implemented, needs significant work",
-             "it exists but doesn't meet the proposed capability"),
+STATUSES = [("🟩 Implemented", "merged to the main branch"),
             ("🟦 In development",
-             "unmerged or development-branch code, or an experiment branch with no pull request"),
-            ("🟥 No implementation found",
-             "a search outcome, not proof of absence: say where you searched"),
-            ("⬜ Unverified",
-             "access or evidence is insufficient; a ticket or document alone can't establish code"),
-            ("⚫ Legacy or superseded", "code establishes an older implementation")]
-CODE_STATUSES = ("🟩", "🟨")
+             "code written but not merged: an open pull request or a branch"),
+            ("🟨 Planned", "in the tracker, with no code"),
+            ("🟪 Vision", "only in the documentation"),
+            ("⬜ Unverified", "not established: name the gap that explains it")]
+CODE_STATUSES = ("🟩", "🟦")
 # How deeply a file or folder was read: the Depth cell of file coverage starts
 # with one of these. A README or a listing says what the authors meant, not
 # what the code does.
@@ -147,15 +142,14 @@ READ_DEPTHS = ("full", "entrypoints and routes")
 REJECTED = "Rejected by the user:"
 # The independent review is recorded as a completed action with this question,
 # by `ledger.py review`; it answers with the actions it raised, or with
-# REVIEW_NONE. Its row is what tells the phases that the review took place.
-# A strict reviewer can keep finding something, so after REVIEW_BACKSTOP rounds
-# the user decides whether to go on; their choice to stop ends the review like
-# a round that raised nothing, as a review row answered REVIEW_STOPPED.
-REVIEW_QUESTION = "Independent review of the ledger and report"
+# REVIEW_NONE. Its row is what shows the review took place. A strict reviewer
+# can keep finding something, so after a few rounds the user decides whether to
+# go on; their choice to stop ends the review like a round that raised nothing,
+# as a review row answered REVIEW_STOPPED.
+REVIEW_QUESTION = "Independent review of the ledger"
 REVIEW_NONE = "Nothing doable found"
 REVIEW_STOPPED = "Stopped by the user:"
-REVIEW_BACKSTOP = 3
-FINDING_FIELDS = ["Claim", "Kind", "Evidence", "Validation and limits"]
+FINDING_FIELDS = ["Claim", "Evidence", "Validation and limits"]
 # A finding holds one claim, of about 80 words; a claim far past that, here
 # about twice it, usually bundles several, which are then cited and corrected
 # as one. It is a warning, never a refusal: a single claim can need the room.
@@ -203,36 +197,30 @@ GAP_FIX = ("Blocked by starts with one of: " + "; ".join(BLOCKERS) + ". A gap no
 LINK = re.compile(r"\]\(https?://[^)\s]+\)|\]\[[^\]]*\]|https?://\S+")
 # A search has no URL to pin, so its exact query, between backticks, stands in.
 QUERY = re.compile(r"`[^`\n]+`")
+# The letters of the recorded IDs: S sources, Q questions, F findings,
+# C components, D decisions, G gaps, B boundaries, E connections, I identities
+# and P flows.
+ID_LETTERS = "SQFCDGBEIP"
 # Every recorded ID has an anchor, so any citation of it can link to it: a
 # table row carries an HTML anchor in its ID cell, which Markdown viewers such
 # as VS Code and GitHub render, and a finding one under its heading. A heading's
 # own anchor would change with its title; these don't.
-ID = re.compile(r"\b[SQFCDG]\d{2,}\b")
+ID = re.compile(rf"\b[{ID_LETTERS}]\d{{2,}}\b")
 ANCHOR_ID = r"[a-z]+\d+"
 ID_ANCHOR = re.compile(rf'<a id="{ANCHOR_ID}"></a>')
 # The start of a table row, before its ID and the anchor that may precede it.
 ROW_START = rf"^\|\s*(?:{ID_ANCHOR.pattern})?"
-RECORD = re.compile(r"\b[SQDGC]\d{2,}\b")
+# The IDs recorded in a table row or under a bold label: all but findings.
+RECORD = re.compile(rf"\b[{ID_LETTERS.replace('F', '')}]\d{{2,}}\b")
 RECORD_DEFINITION = re.compile(
     rf"(?:{ROW_START}|^[-*]\s+\*\*|^#{{3}}\s+)({RECORD.pattern})", re.M)
 # The Findings a source row lists, which ledger.py writes and check_report.py reads.
 SOURCE_FINDINGS = re.compile(r"\s*Findings: ([^.]*)\.\s*$")
 
 
-def report_headings(skip=()):
-    """The report's (level, title) headings, without those `skip` removes."""
-    removed = {ident for dimension in skip for ident in SKIPS[dimension]}
-    return [(level, title) for level, title, ident in HEADINGS if ident not in removed]
-
-
-def read_skip(folder):
-    """The dimensions content.json skips in `folder`, or () without one."""
-    try:
-        with open(os.path.join(folder, CONTENT), encoding="utf-8") as f:
-            skip = json.load(f).get("skip")
-    except (OSError, UnicodeError, ValueError, AttributeError):
-        return ()
-    return tuple(d for d in SKIPS if isinstance(skip, list) and d in skip)
+def report_headings():
+    """The report's (level, title) headings, in order."""
+    return [(level, title) for level, title, _ in HEADINGS]
 
 
 def expected_files(report_name):
@@ -387,18 +375,6 @@ def claim_length_warning(ident, claim):
     return f"{ident}'s claim is {words} words; split it into findings of one claim each"
 
 
-def review_rounds(completed):
-    """How many independent review rounds ran: the review rows, apart from
-    one recording the user's choice to stop."""
-    return sum(1 for outcome in _review_outcomes(completed) if not outcome.startswith(REVIEW_STOPPED))
-
-
-def _review_outcomes(completed):
-    """The outcomes of the independent review's rows among the completed
-    rows, in order."""
-    return [row[-1].strip() for row in completed if len(row) > 2 and row[2] == REVIEW_QUESTION]
-
-
 def review_problem(completed):
     """What the review still needs, or None once a round raised no action."""
     if last_review(completed) is None:
@@ -412,16 +388,15 @@ def review_problem(completed):
 def last_review(completed):
     """The outcome of the latest independent review among the completed
     rows, or None."""
-    outcomes = _review_outcomes(completed)
+    outcomes = [row[-1].strip() for row in completed
+                if len(row) > 2 and row[2] == REVIEW_QUESTION]
     return outcomes[-1] if outcomes else None
 
 
 def reviewed(completed):
     """Whether the review is finished: rounds repeat until one raises no
-    action, since the actions a round raises change the ledger and the report
-    the next round reads. Record fixes, which change nothing in the report,
-    raise no action, so they don't keep the rounds going. The user's choice
-    to stop also ends it."""
+    action, since the actions a round raises change the ledger the next round
+    reads. The user's choice to stop also ends it."""
     outcome = last_review(completed)
     return outcome is not None and (outcome == REVIEW_NONE or outcome.startswith(REVIEW_STOPPED))
 
@@ -614,6 +589,36 @@ def areas_of(row):
     return [a for a in (x.strip() for x in row[-1].split(",")) if a]
 
 
+def design_problem(name, row):
+    """Why a components or system design row breaks a rule of the design, or
+    None: each row rests on findings or a gap, an unverified one on the gap
+    that explains it, a connection joins two components with a state and an
+    identity, a flow walks connections, and a component sits in a boundary."""
+    def names(cell, letter):
+        return re.findall(rf"\b{letter}\d{{2,}}\b", cell)
+    header = {"components": COMPONENT_HEADER, "boundaries": BOUNDARY_HEADER, "connections": CONNECTION_HEADER,
+              "identities": IDENTITY_HEADER, "flows": FLOW_HEADER}[name]
+    cell = dict(zip(header, row))
+    evidence = cell["Evidence"]
+    if not (names(evidence, "F") or names(evidence, "G")):
+        return f"{row[0]}: Evidence names the findings it rests on (F01), or the gap that explains it (G01)"
+    state = cell.get("Status") or cell.get("State")
+    if state and state.startswith("⬜") and not names(evidence, "G"):
+        return f"{row[0]}: an unverified row names the gap that explains it (G01) in Evidence"
+    if name == "components" and not (names(cell["Boundary"], "B") or cell["Boundary"].strip() == "None"):
+        return f"{row[0]}: Boundary names the boundary it sits in (B01), or None"
+    if name == "connections":
+        for end in ("From", "To"):
+            if len(names(cell[end], "C")) != 1:
+                return f"{row[0]}: {end} names one component (C01)"
+        if not (names(cell["Identity"], "I") or cell["Identity"].strip() in ("None", "Unknown")):
+            return f"{row[0]}: Identity names the identity it uses (I01), None or Unknown"
+        return status_problem(row[0], state)
+    if name == "flows" and not names(cell["Connections in order"], "E"):
+        return f"{row[0]}: Connections in order names the connections it uses (E01, E02)"
+    return None
+
+
 def status_problem(row_id, status):
     """Why a component's Status cell isn't one of STATUSES, or None."""
     if any(status.startswith(label) for label, _ in STATUSES):
@@ -632,7 +637,7 @@ def depth_problem(depth):
 
 def unread_components(components, coverage, definitions):
     """{component ID: the paths it links} of the components whose Status
-    claims code (🟩, 🟨) without file coverage read at READ_DEPTHS of one of
+    claims code (🟩, 🟦) without file coverage read at READ_DEPTHS of one of
     those paths, of a file or folder under it, or of a folder above it, which
     covers the files in it. `components` are rows (ID, ..., repository cell
     at 3, status at 4); `coverage` rows (source, material, depth)."""

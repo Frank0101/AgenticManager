@@ -4,8 +4,7 @@ make_report.py, check_report.py --handover and save_example.py.
 Run with: python3 tests/run.py agentic-manager-tech-investigation
 
 HOME points at a temporary folder holding the test's own config, and TMPDIR at
-the same folder. A fake npx put first on PATH writes SVGs instead of running the
-Mermaid CLI, one per diagram of a Markdown batch, so no Node.js is needed.
+the same folder.
 """
 
 import json
@@ -23,22 +22,7 @@ LIB = os.path.join(REPO_ROOT, "skills",
                    "agentic-manager-utils-lib", "agentic_manager")
 sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, TEST_DIR)
-from investigation_fixture import LEDGER, content  # noqa: E402
-
-FAKE_NPX = """#!{python}
-import os, sys
-args = sys.argv[1:]
-source, out = args[args.index("-i") + 1], args[args.index("-o") + 1]
-svg = '<svg id="my-svg" viewBox="0 0 600 300"></svg>'
-if source.endswith(".md"):
-    with open(source) as f:
-        count = f.read().count("```mermaid")
-    for number in range(1, count + 1):
-        with open(out[:-3] + f"-{{number}}.svg", "w") as f:
-            f.write(svg)
-with open(out, "w") as f:
-    f.write(svg)
-"""
+from investigation_fixture import LEDGER, SOURCES, content  # noqa: E402
 
 
 class PipelineTest(unittest.TestCase):
@@ -50,16 +34,9 @@ class PipelineTest(unittest.TestCase):
                               "agentic-manager", "config.json")
         os.makedirs(os.path.dirname(config))
         with open(config, "w", encoding="utf-8") as f:
-            json.dump({"sources": {}, "output": {
+            json.dump({"sources": SOURCES, "output": {
                       "root": os.path.join(self.root, "out")}}, f)
-        bin_dir = os.path.join(self.root, "bin")
-        os.makedirs(bin_dir)
-        npx = os.path.join(bin_dir, "npx")
-        with open(npx, "w", encoding="utf-8") as f:
-            f.write(FAKE_NPX.format(python=sys.executable))
-        os.chmod(npx, 0o755)
-        self.env = dict(os.environ, HOME=self.root, TMPDIR=self.root,
-                        PATH=bin_dir + os.pathsep + os.environ["PATH"])
+        self.env = dict(os.environ, HOME=self.root, TMPDIR=self.root)
 
     def run_script(self, path, *args, stdin=""):
         proc = subprocess.run([sys.executable, path, *args], env=self.env, input=stdin.encode("utf-8"),
@@ -73,23 +50,15 @@ class PipelineTest(unittest.TestCase):
                         "--path", relative, stdin=text)
 
     def test_pipeline(self):
-        # name: (the dimensions content.json skips, whether the user keeps it
-        # as an example). A prose-only report leaves out the architect summary
-        # and the content that fills it.
-        cases = [("prose only, without an architect summary", ["architecture"], False),
-                 ("full", [], True)]
-        for name, skip, keep in cases:
+        # name: whether the user keeps it as an example.
+        cases = [("kept", True), ("not kept", False)]
+        for name, keep in cases:
             with self.subTest(name):
                 started = self.run_script(os.path.join(
                     SCRIPTS, "init_investigation.py"), "--topic", "Acme-Search")
                 investigation = started["investigation"]
                 self.assertTrue(investigation.startswith("Acme-Search_"))
                 data = content()
-                data["evidence_snapshot"] = "20" + investigation.split("_")[1]
-                if skip:
-                    data["skip"] = skip
-                    for key in ("architecture", "decisions_and_gaps"):
-                        data.pop(key)
                 self.write(f"{investigation}/ledger.md", LEDGER)
                 self.write(f"{investigation}/content.json", json.dumps(data))
 
@@ -105,7 +74,7 @@ class PipelineTest(unittest.TestCase):
                                  ["Acme-Search_Report.md", "content.json", "ledger.md"])
                 if keep:
                     example = self.run_script(os.path.join(SCRIPTS, "save_example.py"),
-                                              "--investigation", investigation, "--note", "Clear current milestone.")
+                                              "--investigation", investigation, "--note", "Clear current status.")
                     self.assertEqual(sorted(os.listdir(example["example"])),
                                      ["Acme-Search_Report.md", "description.md", "ledger.md"])
 

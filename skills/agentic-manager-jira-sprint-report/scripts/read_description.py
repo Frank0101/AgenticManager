@@ -1,8 +1,4 @@
-"""
-Print one chunk of a ticket's or an epic's description, from data.json.
-
-Usage:
-    python3 read_description.py --report-dir <report_dir> --key PROJ-123 [--chunk 2]
+"""Print one chunk of a ticket's or an epic's description, from data.json.
 
 The brief gives each description as its first chunk, and says how many there
 are when there are more. Reading the others costs tokens only when the agent
@@ -24,7 +20,7 @@ def descriptions(data):
 
 def main():
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+        description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument("--report-dir", required=True,
                         help="report folder holding data.json")
     parser.add_argument("--key", required=True, help="a ticket or epic key")

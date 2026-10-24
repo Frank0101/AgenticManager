@@ -10,7 +10,6 @@ import contextlib
 import io
 import json
 import os
-import re
 import sys
 import tempfile
 import unittest
@@ -27,17 +26,12 @@ from init_investigation import ledger_skeleton  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from investigation_fixture import with_queue  # noqa: E402
 
-# A ledger with its gap and no action yet, then with a worked action and a review.
-UNQUEUED = ledger_skeleton("Acme").replace(
+# A ledger as handover needs it: its gap, its queue worked and its review finished.
+LEDGER = with_queue(ledger_skeleton("Acme").replace(
     "## Evidence gaps\n\nNone yet.",
-    "## Evidence gaps\n\n### G01\n\nEvidence unavailable.")
-LEDGER = with_queue(UNQUEUED, "Completed", [
-    ["Q01", "Start", "Read code", "Code", "—", "High", "G01"],
-    ["Q02", "Independent review", "Independent review of the ledger and report", "Subagent", "None", "High",
-     "Nothing doable found"]])
-# The same ledger with its Reflection written, as handover needs.
-REFLECTED = LEDGER.replace(
-    "## Reflection\n\nNone yet.", "## Reflection\n\nConverged.")
+    "## Evidence gaps\n\n### G01\n\nEvidence unavailable."), "Completed", [
+    ["Q01", "Start", "Read code", "Code", "—", "G01"],
+    ["Q02", "Independent review", "Independent review of the ledger", "Subagent", "None", "Nothing doable found"]])
 
 
 class CheckReportTest(unittest.TestCase):
@@ -51,15 +45,13 @@ class CheckReportTest(unittest.TestCase):
             "# Acme\n\nEvidence snapshot: today. [Research ledger](ledger.md).\n"]
         for level, title, ident in HEADINGS:
             parts.append("#" * level + " " + title + "\n\n")
-            if ident in ("arch.current", "arch.next"):
-                parts.append("Architect text with [code](https://example.com/code).\n\n"
-                             "#### Search flow\n\n"
-                             "```mermaid\nsequenceDiagram\nautonumber\n"
-                             "Client->>Service: Search\n```\n\n")
+            if ident in ("arch.today", "arch.target"):
+                parts.append(
+                    "Architect text with [code](https://example.com/code).\n\n")
             elif ident == "arch.decisions":
-                parts.append("| Decision | Options and tradeoffs | Rationale and evidence | Status |\n"
+                parts.append("| Decision or gap | Why it matters | Established position | Evidence |\n"
                              "| --- | --- | --- | --- |\n"
-                             "| Storage | Cache or index | [Proposal](https://example.com/proposal) | Open |\n")
+                             "| Storage | Cache or index | Open | [Proposal](https://example.com/proposal) |\n")
             else:
                 parts.append(
                     "Account supported by [source](https://example.com/evidence).\n\n")
@@ -75,25 +67,19 @@ class CheckReportTest(unittest.TestCase):
         # Each variant passes, with this many warnings, and the check writes
         # nothing.
         proposal = "[Proposal](https://example.com/proposal)"
-        row = "| Storage | Cache or index | [Proposal](https://example.com/proposal) | Open |"
-        sequence = self.text[self.text.index("#### Search flow"):self.text.index(
-            "```\n\n", self.text.index("```mermaid")) + 5]
+        row = "| Storage | Cache or index | Open | [Proposal](https://example.com/proposal) |"
         (self.folder / "extra evidence.md").write_text("Evidence", encoding="utf-8")
         cases = [
             ("the complete report", self.text, 0),
             ("a shortcut reference link citing a table row",
              self.text.replace(proposal, "[Proposal]") + "\n[Proposal]: https://example.com/proposal\n", 0),
-            ("an unknown row", self.text.replace(
-                row, "| Storage | Not established | Evidence unavailable | Unverified |"), 0),
             ("a row citing a ledger gap", self.text.replace(
-                row, "| Storage | Cache or index | [G01](ledger.md#g01) | Open |"), 0),
+                row, "| Storage | Cache or index | Open | [G01](ledger.md#g01) |"), 0),
             ("reference links, encoded paths and fences", self.text.replace(proposal, "[Proposal][proof]")
              + "\n[proof]: https://example.com/proposal\n[Local](<extra%20evidence.md>)\n"
              "```text\n## Fake heading\n[Not a link](missing.md)\n```\n", 0),
             ("a summary with its own subheading", self.text.replace(
                 "Architect text with", "#### Entry paths\n\nArchitect text with", 1), 0),
-            ("an explicit flow gap instead of the sequence", self.text.replace(
-                sequence, "Flow evidence gap: sequence not established. [G01](ledger.md#g01).\n\n", 1), 0),
         ]
         for name, text, warnings in cases:
             with self.subTest(name):
@@ -108,16 +94,17 @@ class CheckReportTest(unittest.TestCase):
 
     def test_rejected_reports(self):
         # Each breakage fails, with an error naming it.
-        sequence = "```mermaid\nsequenceDiagram\nautonumber\nClient->>Service: Search\n```"
-        text_before = "Architect text with [code](https://example.com/code).\n\n"
         cases = [
             # Structure
             ("missing section", self.text.replace(
                 "### Key decisions and risks", "#### Key decisions and risks"), "H2/H3"),
             ("extra section", self.text + "\n## Engineering\n", "H2/H3"),
-            # Citations: an unknown owner doesn't excuse a row from its link.
+            # Citations: every table row links its evidence, even one saying what is unknown.
             ("a row without a source", self.text.replace(
                 "[Proposal](https://example.com/proposal)", "Lower latency"), "point-of-use source link"),
+            ("a row of unknowns without a source", self.text.replace(
+                "| Cache or index | Open | [Proposal](https://example.com/proposal) |",
+                "| Not established | Unverified | Evidence unavailable |"), "point-of-use source link"),
             ("an undefined shortcut reference", self.text.replace(
                 "[Proposal](https://example.com/proposal)", "[Proposal]"), "table row needs"),
             # Local files
@@ -127,17 +114,6 @@ class CheckReportTest(unittest.TestCase):
              "\n[Details](absent.md#section)", "local link target is missing"),
             ("unresolved reference", self.text +
              "\n[Details][absent]", "unresolved Markdown"),
-            # The architect summary: text, then one sequence
-            ("missing sequence", self.text.replace(
-                sequence, "", 1), "native Mermaid sequence"),
-            ("two sequences", self.text.replace(
-                sequence, sequence + "\n\n#### Second flow\n\n" + sequence, 1), "expected one sequence"),
-            ("no text before the sequence", self.text.replace(
-                text_before, "", 1), "add the text before the sequence"),
-            # The caption and components diagram under the flow's title are not its text.
-            ("only the flow's caption before the sequence", self.text.replace(text_before, "", 1).replace(
-                "#### Search flow\n\n", "#### Search flow\n\nThe components this flow crosses.\n\n"
-                "```mermaid\nflowchart LR\nA --> B\n```\n\n", 1), "add the text before the sequence"),
         ]
         for name, text, expected in cases:
             with self.subTest(name):
@@ -157,17 +133,6 @@ class CheckReportTest(unittest.TestCase):
                 self.assertEqual(
                     any("has no heading for" in e for e in errors), not ok, errors)
 
-    def test_skipped_sections_follow_content_json(self):
-        content = self.folder / "content.json"
-        content.write_text('{"skip": ["evolution"]}', encoding="utf-8")
-        self.assertIn("H2/H3 headings", " ".join(self.check()["errors"]))
-        text = re.sub(
-            r"### Next steps and evolution\n.*?(?=\n#{2,3} )", "", self.text, flags=re.S)
-        text = text.replace("\n\n\n", "\n\n")
-        self.assertTrue(self.check(text)["ok"], self.check(text))
-        content.unlink()
-        self.assertIn("H2/H3 headings", " ".join(self.check(text)["errors"]))
-
     def test_ledger_structure(self):
         ledger = self.folder / "ledger.md"
         finding = ("### F01 — Search is merged\n\n" +
@@ -176,7 +141,7 @@ class CheckReportTest(unittest.TestCase):
                                   "## Findings and validation chains\n\n" + finding)
         cases = [
             ("complete", complete, None, None),
-            ("section order", complete.replace("## Reflection",
+            ("section order", complete.replace("## Links",
              "## Summary"), "sections must be exactly", None),
             ("queue subsections", complete.replace(
                 "### Blocked", "### Waiting"), "queue needs exactly", None),
@@ -185,7 +150,7 @@ class CheckReportTest(unittest.TestCase):
             ("undefined finding", complete.replace(
                 "None yet.", "See F07.", 1), "never written: F07", None),
             ("missing fields", complete.replace(
-                "**Kind:** text.", ""), None, "F01 lacks Kind"),
+                "**Evidence:** text.", ""), None, "F01 lacks Evidence"),
         ]
         for name, text, error, warning in cases:
             with self.subTest(name=name):
@@ -231,7 +196,7 @@ class CheckReportTest(unittest.TestCase):
                   "G01: Areas must be some of: Architecture, Delivery")]
         for name, blocker, areas, expected in cases:
             with self.subTest(name):
-                text = REFLECTED.replace(
+                text = LEDGER.replace(
                     "## Evidence gaps\n\n", "## Evidence gaps\n\n" +
                     gap.format(blocker, areas), 1
                 ).replace("## Open decisions\n\nNone yet.",
@@ -242,30 +207,27 @@ class CheckReportTest(unittest.TestCase):
                 if expected:
                     self.assertIn(expected, " ".join(result["errors"]))
 
-    def test_handover_needs_the_queue_worked_reviewed_and_reflected(self):
-        # An investigation raises questions as it reads, so a queue with no
-        # action at all shows the ledger was written afterwards. At handover
-        # nothing is left ready or in progress, the last review round raised
-        # nothing, or the user chose to stop, and the Reflection is written.
-        review = ("| Q02 | Independent review | Independent review of the ledger and report | Subagent | None | High"
+    def test_handover_needs_the_queue_worked_and_reviewed(self):
+        # At handover nothing is left ready or in progress, and the last
+        # review round raised nothing, or the user chose to stop.
+        review = ("| Q02 | Independent review | Independent review of the ledger | Subagent | None"
                   " | Nothing doable found |\n")
-        raised = ("| Q02 | Independent review | Independent review of the ledger and report | Subagent | None | High"
-                  " | Raised Q03 |\n| Q03 | Q02 | Read the job | Code | None | High | G01 |\n")
-        open_action = ["Q01", "Start", "Read code", "Code", "—", "High", "—"]
+        raised = ("| Q02 | Independent review | Independent review of the ledger | Subagent | None"
+                  " | Raised Q03 |\n| Q03 | Q02 | Read the job | Code | None | G01 |\n")
+        open_action = ["Q01", "Start", "Read code", "Code", "—", "—"]
         cases = [
-            ("an action, reviewed and reflected", REFLECTED, None),
-            ("no reflection", LEDGER, "Reflection"),
-            ("a ready action", with_queue(REFLECTED, "Ready", [open_action]),
+            ("an action, reviewed", LEDGER, None),
+            ("a ready action", with_queue(LEDGER, "Ready", [open_action]),
              "still ready or in progress"),
-            ("an action in progress", with_queue(REFLECTED, "In progress", [open_action]),
+            ("an action in progress", with_queue(LEDGER, "In progress", [open_action]),
              "still ready or in progress"),
-            ("no review recorded", REFLECTED.replace(review, ""),
+            ("no review recorded", LEDGER.replace(review, ""),
              "no independent review is recorded"),
-            ("the last round raised actions", REFLECTED.replace(review, raised),
+            ("the last round raised actions", LEDGER.replace(review, raised),
              "the last review round raised actions"),
-            ("a later round raised nothing", REFLECTED.replace(review, raised + review.replace("Q02", "Q04")),
+            ("a later round raised nothing", LEDGER.replace(review, raised + review.replace("Q02", "Q04")),
              None),
-            ("the user chose to stop", REFLECTED.replace(review, raised + review.replace("Q02", "Q04").replace(
+            ("the user chose to stop", LEDGER.replace(review, raised + review.replace("Q02", "Q04").replace(
                 "Subagent", "The user").replace("Nothing doable found", "Stopped by the user: wrap up")),
              None)]
         for name, text, expected in cases:
@@ -278,7 +240,7 @@ class CheckReportTest(unittest.TestCase):
                     self.assertIn(expected, " ".join(result["errors"]))
 
     def test_handover_allows_only_the_skills_files(self):
-        (self.folder / "ledger.md").write_text(REFLECTED, encoding="utf-8")
+        (self.folder / "ledger.md").write_text(LEDGER, encoding="utf-8")
         for name in ("content.json", ".DS_Store"):
             (self.folder / name).write_text("{}", encoding="utf-8")
         self.assertTrue(check_report.check_report(
@@ -317,8 +279,8 @@ class CheckReportTest(unittest.TestCase):
         ]
         for name, register, files, expected in cases:
             with self.subTest(name):
-                text = REFLECTED.replace("## Revisions and source register\n\n",
-                                         "## Revisions and source register\n\n" + header + register, 1)
+                text = LEDGER.replace("## Revisions and source register\n\n",
+                                      "## Revisions and source register\n\n" + header + register, 1)
                 text = text.replace(
                     "### File reading coverage\n\nNone yet.", coverage + files)
                 (self.folder / "ledger.md").write_text(text, encoding="utf-8")
@@ -343,8 +305,8 @@ class CheckReportTest(unittest.TestCase):
         for name, sentence, expected in cases:
             with self.subTest(name):
                 (self.folder / "ledger.md").write_text(
-                    REFLECTED.replace("## Boundary, method and access\n\nNone yet.",
-                                      "## Boundary, method and access\n\n" + sentence), encoding="utf-8")
+                    LEDGER.replace("## Boundary\n\nNone yet.",
+                                   "## Boundary\n\n" + sentence), encoding="utf-8")
                 self.report.write_text(
                     self.text + "\n" + sentence + "\n", encoding="utf-8")
                 self.assertTrue(check_report.check_report(self.report)["ok"])
@@ -369,9 +331,9 @@ class CheckReportTest(unittest.TestCase):
             for name, sentence, expected in cases:
                 with self.subTest(name, handover=handover):
                     (self.folder / "ledger.md").write_text(
-                        REFLECTED.replace(
-                            "## Boundary, method and access\n\nNone yet.",
-                            "## Boundary, method and access\n\n" + sentence), encoding="utf-8")
+                        LEDGER.replace(
+                            "## Boundary\n\nNone yet.",
+                            "## Boundary\n\n" + sentence), encoding="utf-8")
                     self.report.write_text(
                         self.text + "\n" + sentence + "\n", encoding="utf-8")
                     result = check_report.check_report(
@@ -386,8 +348,8 @@ class CheckReportTest(unittest.TestCase):
         # code rests on code read under its path.
         tree = "https://github.com/acme/app/tree/abc/services/search"
         component = ("## Component inventory and evolution\n\n| ID | Name | Responsibility | Repository | Status |"
-                     " Deployment | Callers | Evidence | Next |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
-                     "| C01 | search | Serves | [search][search] | {} | d | c | G01 | n |\n")
+                     " Read | Evidence | Next |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n"
+                     "| C01 | search | Serves | [search][search] | {} | d | G01 | n |\n")
         coverage = ("### File reading coverage\n\n| Source | Material | Depth |\n| --- | --- | --- |\n"
                     "| S01 | [routes](https://github.com/acme/app/blob/abc/services/search/{}) | {} |\n")
         cases = [
@@ -406,7 +368,7 @@ class CheckReportTest(unittest.TestCase):
         ]
         for name, outcome, status, (path, depth), expected in cases:
             with self.subTest(name):
-                text = (REFLECTED.replace("| High | G01 |", f"| High | {outcome} |")
+                text = (LEDGER.replace("| G01 |", f"| {outcome} |")
                         .replace("## Component inventory and evolution\n\nNone yet.", component.format(status))
                         .replace("### File reading coverage\n\nNone yet.", coverage.format(path, depth))
                         .replace("## Links\n\nNone yet.", f"## Links\n\n[search]: {tree}"))
@@ -433,8 +395,8 @@ class CheckReportTest(unittest.TestCase):
             with self.subTest(name):
                 text = LEDGER.replace("## Links\n\nNone yet.", body.split(
                     "\n\n## Links\n\n")[1].join(["## Links\n\n", ""]))
-                text = text.replace("## Boundary, method and access\n\nNone yet.",
-                                    "## Boundary, method and access\n\n" + body.split("\n\n## Links")[0])
+                text = text.replace("## Boundary\n\nNone yet.",
+                                    "## Boundary\n\n" + body.split("\n\n## Links")[0])
                 ledger.write_text(text, encoding="utf-8")
                 found_errors, found_warnings = check_report.check_ledger(
                     ledger)
@@ -448,8 +410,8 @@ class CheckReportTest(unittest.TestCase):
     def test_reference_links_count_as_links_at_handover(self):
         sentence = "See [`app.py`][app], [PROJ-1][proj-1] and [#2][pr-2]."
         links = "[app]: https://github.com/acme/app/blob/abc/app.py\n[pr-2]: https://github.com/acme/app/pull/2\n[proj-1]: https://example.atlassian.net/browse/PROJ-1"
-        text = REFLECTED.replace("## Boundary, method and access\n\nNone yet.",
-                                 "## Boundary, method and access\n\n" + sentence)
+        text = LEDGER.replace("## Boundary\n\nNone yet.",
+                              "## Boundary\n\n" + sentence)
         text = text.replace("## Links\n\nNone yet.", "## Links\n\n" + links)
         (self.folder / "ledger.md").write_text(text, encoding="utf-8")
         result = check_report.check_report(self.report, handover=True)
@@ -459,12 +421,12 @@ class CheckReportTest(unittest.TestCase):
         ledger = self.folder / "ledger.md"
         finding = "### F01 — Search is merged\n\n" + "\n".join(
             f"- **{field}:** " + ("word " * 160 if field == "Claim" else "text.") for field in check_report.FINDING_FIELDS)
-        ledger.write_text(REFLECTED.replace("## Findings and validation chains\n\nNone yet.",
-                                            "## Findings and validation chains\n\n" + finding), encoding="utf-8")
+        ledger.write_text(LEDGER.replace("## Findings and validation chains\n\nNone yet.",
+                                         "## Findings and validation chains\n\n" + finding), encoding="utf-8")
         _, warnings = check_report.check_ledger(ledger)
         self.assertIn("claim is 160 words", " ".join(warnings))
-        ledger.write_text(REFLECTED.replace("## Boundary, method and access\n\nNone yet.",
-                                            "## Boundary, method and access\n\nSee S07 and Q03; Q4 is a quarter."), encoding="utf-8")
+        ledger.write_text(LEDGER.replace("## Boundary\n\nNone yet.",
+                                         "## Boundary\n\nSee S07 and Q03; Q4 is a quarter."), encoding="utf-8")
         self.assertEqual(check_report.check_ledger(
             ledger, handover=False)[0], [])
         errors, _ = check_report.check_ledger(ledger, handover=True)

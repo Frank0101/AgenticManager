@@ -1,60 +1,29 @@
 """Edits the research ledger's tables, findings, text and links by ID, and reads it back.
 
-Why a script: the ledger is long, and a patch has to match text exactly once, so
-every new row, finding, status change or move cost a hand-built edit. IDs and
-ordering are mechanical, so they are the script's; what goes in the cells and the
-findings is the agent's judgment. The reading commands (show, find, status) exist
-so the agent never opens the whole ledger to check what it already holds, and they
-print plain text, which costs fewer tokens than JSON, as does help. `brief` prints
-what writing the report reads, without the queue, coverage and research notes,
-which are for research and review and make up much of a long ledger. Every other
+The ledger is long, and a hand-made patch has to match its text exactly once, so
+every edit goes through here: IDs, order, anchors and links are mechanical, the
+script's; what goes in the cells and the findings is the agent's judgment. A row
+is checked as it is written, with the rules check_report.py applies to the whole
+ledger at handover. The reading commands print plain text, which costs fewer
+tokens than JSON, so the agent never opens the whole ledger; every writing
 command prints one line of JSON.
-
-Rows of a table with no ID (file coverage) append, and are replaced or removed
-by text only that row contains.
-
-`batch` writes many rows and findings in one call, with the same checks, since
-reading a part of the code records dozens at once. It is all or nothing: the
-ledger is saved only after every item is written, so a bad item leaves no half.
-
-The ledger stores IDs as links to their anchors and links by reference, so
-`show --raw` and `show --section` print a record or a section as the input its
-writing command reads: an edit is read, change, write back, and what it didn't
-change is stored unchanged.
-
-The allowed values (areas, statuses, depths, blockers) and the rules for a row
-live in common.py and are checked as a row is written; check_report.py applies
-the same rules to the whole ledger. A cited ID the ledger doesn't hold is
-refused too, once every record of the call is written, so records that cite
-each other go in one batch and nothing ever points at a record that isn't
-there; for the same reason a record still cited elsewhere can't be removed.
-
-`help` prints each command's input and a command to copy, and each table's
-columns, values and a worked row: the script is their one source, so SKILL.md
-doesn't repeat them. Ticket keys and owner/repo#123 are linked on write, so
-none needs a separate step: a key to the Jira site the ledger's links give its
-project, else to the site that has the project; anything else key-shaped is
-written as code, as is every key when jira-api isn't enabled or its settings
-aren't filled in. A Jira call that fails stops the write with Jira's message,
-writing nothing: a key Jira couldn't be asked about isn't taken for no ticket.
 """
 import argparse
-import glob
 import json
 import os
 import re
 import sys
 
-from common import (ID, JIRA_API, JIRA_GROUP, JiraClient, is_enabled, stops_on_failure, AREAS, BLOCKERS, BOUNDARY, CODE_STATUSES, claim_length_warning,
+from common import (ID, ID_LETTERS, BOUNDARY_HEADER, CONNECTION_HEADER, DESIGN_TABLES, FLOW_HEADER, IDENTITY_HEADER, design_problem, JIRA_API, JIRA_GROUP, JiraClient, is_enabled, stops_on_failure, AREAS, BLOCKERS, BOUNDARY, CODE_STATUSES, claim_length_warning,
                     COMPONENT_HEADER, DECISION_HEADER, DEFINITION, DEPTHS, EVIDENCE_LINE, FILE_HEADER, FINDINGS,
                     FINDING_FIELDS, FINDING_OPTIONAL, FINDING_START, FOLDER_NAME, GAP_FIX, GAP_HEADER, GROUPS, ID_ANCHOR,
-                    INLINE_LINK, LEDGER, LINKS, QUEUE_HEADER, QUEUE_TABLES, READ_DEPTHS, REFERENCE_LINK, REFLECTION,
-                    REJECTED, REPORT_SUFFIX, REVIEW_BACKSTOP, REVIEW_NONE, REVIEW_QUESTION, REVIEW_STOPPED, ROW_START,
+                    INLINE_LINK, LEDGER, LINKS, QUEUE_HEADER, QUEUE_TABLES, READ_DEPTHS, REFERENCE_LINK,
+                    REJECTED, REVIEW_NONE, REVIEW_QUESTION, REVIEW_STOPPED, ROW_START,
                     SOURCE_FINDINGS, SOURCE_HEADER, SOURCE_LINK_FIX, STATUSES, TABLE_HEADINGS, anchor_tag, anchored,
                     areas_of, areas_problem, autolink, backtick_error, cited_sources, free_name, coverage_material_missing,
-                    depth_problem, finding_blocks, gap_problem, id_order, investigation_dir, last_review, ledger_rows,
+                    depth_problem, finding_blocks, gap_problem, id_order, investigation_dir, ledger_rows,
                     link_definitions, link_text, linked_ids, outcome_problem, read_in_full, recorded_ids, reference_key,
-                    review_rounds, reviewed, h2_span, section_span, slug, source_reference_missing, status_problem,
+                    h2_span, section_span, slug, source_reference_missing, status_problem,
                     strip_anchors, table_cells, table_row, ticket_sites, unlinked_backticks, unread_components,
                     unread_message, unrecorded_citations, unresolved_message, upgraded_tickets, write_output_file)
 
@@ -67,17 +36,22 @@ TABLES = {
     "decisions": (TABLE_HEADINGS["decisions"], DECISION_HEADER, "D"),
     "gaps": (TABLE_HEADINGS["gaps"], GAP_HEADER, "G"),
     "components": (TABLE_HEADINGS["components"], COMPONENT_HEADER, "C"),
+    "boundaries": (TABLE_HEADINGS["boundaries"], BOUNDARY_HEADER, "B"),
+    "connections": (TABLE_HEADINGS["connections"], CONNECTION_HEADER, "E"),
+    "identities": (TABLE_HEADINGS["identities"], IDENTITY_HEADER, "I"),
+    "flows": (TABLE_HEADINGS["flows"], FLOW_HEADER, "P"),
 }
 SHA = "<sha>"
 # A worked row per table, its cells after the ID, printed by `help` and with a
-# wrong column count.
+# wrong column count. `help` is the one source of the tables' columns, values
+# and examples, and of each command's input, so SKILL.md doesn't repeat them.
 ROW_EXAMPLES = {
-    "queue-ready": ["S03 names a deploy job", "Is the deploy job live?", "Workflow runs at a pinned commit",
-                    "None", "High", ""],
-    "queue-in-progress": ["S03 names a deploy job", "Is the deploy job live?", "Workflow runs at a pinned commit",
-                          "None", "High", ""],
-    "queue-blocked": ["F04", "Is the cluster config deployed?", "Cluster read access", "G01", "High", ""],
-    "queue-completed": ["Request", "Which service serves search?", "Routes at a pinned commit", "None", "High",
+    "queue-ready": ["S03 names a retry worker", "Which queue does the retry worker read?", "Worker code at a pinned commit",
+                    "None", ""],
+    "queue-in-progress": ["S03 names a retry worker", "Which queue does the retry worker read?", "Worker code at a pinned commit",
+                          "None", ""],
+    "queue-blocked": ["F04", "Does the billing service call the retry API?", "Read access to the billing repository", "G01", ""],
+    "queue-completed": ["Request", "Which service serves search?", "Routes at a pinned commit", "None",
                         "F02, F03"],
     "sources": ["source_control", f"[api server.py](https://github.com/acme/api/blob/{SHA}/server.py)",
                 f"{SHA}, 2026-10-05", "Routes read in full.", "None", "Implementation, Architecture"],
@@ -85,16 +59,41 @@ ROW_EXAMPLES = {
                       "entrypoints and routes: lines 1-200 of 900"],
     "decisions": ["Which queue to use", "Unresolved: the design names two options", "SQS or Kafka; replay needed",
                   "Design doc, proposed", "Owner not named; next check: design review"],
-    "gaps": ["Production config", "Code merged; deployed config not read", "Read access to the cluster",
-             "No access (cluster)", "Code; deployment reported", "Platform team; once access exists",
-             "Runtime and operations"],
+    "gaps": ["Billing service callers", "The retry API is merged; its callers in billing are not read",
+             "Read access to the billing repository", "No access (billing repository)",
+             "Code; the caller is named in the design only", "Billing team; once access exists", "Architecture"],
     "components": ["search-api (service)", "Serves search queries",
                    f"[services/search](https://github.com/acme/api/tree/{SHA}/services/search)", "🟩 Implemented",
-                   "Declared in the manifest, live state not read", "Web app → search-api → index", "F02, F03",
-                   "Unchanged in the next milestone"],
+                   "Routes read in full", "F02, F03",
+                   "Unchanged", "B01"],
+    "boundaries": ["Production cluster", "network", "F04"],
+    "connections": ["C01", "C02", "HTTP", "the search query and its results", "yes", "I01", "🟩 Implemented",
+                    "F02, F05"],
+    "identities": ["search-api service account", "service account", "read on the search index", "F06"],
+    "flows": ["A user searches", "E01, E02", "F02, F05"],
+}
+# What each table is for, printed by `help` under its columns.
+QUEUE_PURPOSE = ("the research actions: every question or check still to do, by state. A blocked one names the gap "
+                 "or decision that blocks it; a completed one, the findings, decision or gap that answer it")
+PURPOSES = {
+    **{table: QUEUE_PURPOSE for table in QUEUE_TABLES},
+    "sources": "every source read, with an exact reference: a link pinned to a revision for code, the exact query "
+               "for a search",
+    "file-coverage": "each file or folder of code read, and how deeply: what makes a component's status believable",
+    "decisions": "the choices that wait on a person",
+    "gaps": "the evidence you can't get yourself: what would close each gap and what blocks it",
+    "components": "every part that runs, stores or talks across a boundary, such as a service, job, library that "
+                  "calls out, store, queue or external product, and the people or roles that act on it, with its "
+                  "status and the boundary it sits in",
+    "boundaries": "what groups components: a network, an environment, a trust zone or the team that owns them",
+    "connections": "who calls whom, how, with what data and identity, as the system design draws it",
+    "identities": "the credentials or accounts connections use, and what each can reach",
+    "flows": "the main flows: for each entry point that matters, the connections it uses, in order",
 }
 # The allowed values of a table's cells, by column.
 ALLOWED = {
+    **{table: {"Depends on": "None, or the open questions it needs, such as Q04, Q07: ledger.py next returns it "
+               "once they are all completed"} for table in QUEUE_TABLES},
     "sources": {"Exact reference": 'a link at the pinned revision, or for a search {"query": "<the exact query>"}, '
                                    "which is written as the query between backticks",
                 "Areas": "comma separated, from: " + ", ".join(AREAS)},
@@ -102,29 +101,42 @@ ALLOWED = {
              "Blocked by": "starts with one of: " + "; ".join(BLOCKERS)
              + " (a gap nothing blocks is a ready action instead)"},
     "file-coverage": {"Depth": "starts with one of: " + ", ".join(DEPTHS)},
-    "components": {"Name and type": "the name, then its type in brackets, such as 'Search API (service)'; the "
-                   "report's flows name it so, and a store, queue, topic, stream or external product type sets "
-                   "its shape",
+    "components": {"Name and type": "the name, then its type in brackets, such as 'Search API (service)'",
                    "Status": "starts with one of: " + "; ".join(f"{label} ({meaning})" for label, meaning in STATUSES)
                    + f". {' and '.join(CODE_STATUSES)} need file coverage at depth {' or '.join(READ_DEPTHS)} "
-                   "of the linked path, a file under it or a folder above it"},
-    "queue-blocked": {"Depends on": "the gap or decision that blocks it, such as G01 or D01"},
+                   "of the linked path, a file under it or a folder above it; ⬜ Unverified names the gap that "
+                   "explains it in Evidence",
+                   "Evidence": "the findings it rests on (F01), or the gap that explains it (G01)",
+                   "Boundary": "the boundary it sits in (B01), or None"},
+    "connections": {"From": "one component (C01)", "To": "one component (C02)",
+                    "Identity": "the identity it uses (I01), None or Unknown",
+                    "State": "starts with one of the component statuses; ⬜ Unverified names the gap that explains "
+                    "it in Evidence",
+                    "Evidence": "the findings it rests on (F01), or the gap that explains it (G01)"},
+    "boundaries": {"Evidence": "the findings it rests on (F01), or the gap that explains it (G01)"},
+    "identities": {"Evidence": "the findings it rests on (F01), or the gap that explains it (G01)"},
+    "flows": {"Connections in order": "the connections it uses, in order (E01, E02)",
+              "Evidence": "the findings it rests on (F01), or the gap that explains it (G01)"},
+    "queue-blocked": {"Depends on": "the gap or decision that blocks it, such as G01 or D01, or the blocked "
+                      "question it needs, as ledger.py writes it when it blocks the question with that one"},
     "queue-completed": {"Outcome / finding IDs": f"names F, D or G IDs, or starts '{REJECTED} <what they said>'; "
                         "the review's own row, written by `review`, names the actions it raised"},
 }
 PLACEHOLDERS = {"None yet.", "None."}
 LINKS_HEADING = f"## {LINKS}"
 FINDINGS_HEADING = f"## {FINDINGS}"
-TEXT_SECTIONS = [BOUNDARY, REFLECTION]
+TEXT_SECTIONS = [BOUNDARY]
 # How every help entry calls the script: the path the skill pre-approves.
 CALL = "<scripts>/ledger.py"
 # How text names what it rests on, which every writing command reads the same way.
 LINKING = ("links: write a link as [text](url), a ticket key plainly (PROJ-123), a pull request as owner/repo#123, "
-           "never a bare #123, and a recorded ID plainly (F03): the script links each one")
+           "never a bare #123, and a recorded ID plainly (F03): the script links each one. Write a reference to code "
+           "(a file, a function, a setting) in backticks only inside a link to its pinned revision; otherwise as "
+           "plain words")
 FINDING_EXAMPLE = {"title": "Search API serves queries from the index",
                    "Claim": "The search API answers /search from the index, never the primary database.",
-                   "Kind": "observed implementation", "Evidence": "S04",
-                   "Validation and limits": "Routes read in full at the pinned commit; deployment not read.",
+                   "Evidence": "S04",
+                   "Validation and limits": "Routes read in full at the pinned commit; the index build job not read.",
                    "Supersedes or contradicted by": "Contradicts the design note in S02"}
 # A file or folder path in a finding's evidence, such as app/server.ts.
 PATH = re.compile(
@@ -135,8 +147,6 @@ PATH = re.compile(
 SITES = {}
 # A recorded ID's citation as stored: a link to its anchor.
 ID_CITATION = re.compile(r"\[([A-Z]\d+)\]\(#[a-z]\d+\)")
-# How a review round is recorded, as next_step tells it.
-RECORD_ROUND = "ledger.py review --raised <the ready actions its real issues became, or none>"
 
 
 def heredoc(command, body):
@@ -150,7 +160,10 @@ def heredoc(command, body):
 COMMAND_HELP = {
     "findings": "\n".join([
         "finding: a JSON object on standard input; leave --id out to add the next one, or give it to replace one",
+        "  holds one claim, of about 80 words: a topic with ten facts is ten findings",
         f"  fields, each text: title, {', '.join(FINDING_FIELDS)}; optional: {', '.join(FINDING_OPTIONAL)}",
+        "  Evidence: the sources the claim was read in (S04), with a precise location where the source row isn't "
+        "enough; for an inference, a conclusion drawn from other findings, the findings it rests on (F02, F03)",
         heredoc("finding --investigation <investigation>",
                 json.dumps(FINDING_EXAMPLE, ensure_ascii=False, indent=2)),
         f'  to change fields of a finding already written: {CALL} finding --investigation <investigation> --id F07 '
@@ -158,7 +171,8 @@ COMMAND_HELP = {
     "batch": "\n".join([
         "batch: writes many rows and findings in one call, from a JSON list on standard input, in order; "
         "each row as `row` takes it, each finding as `finding` does, with the same checks. If one item "
-        "can't be written, nothing is",
+        "can't be written, nothing is. A cited ID must exist once the call is written, so records that cite "
+        "each other go in one batch",
         "  a row: {\"table\": ..., \"id\": ..., \"match\": ..., \"cells\": [...]}, leaving out an id or match "
         "it doesn't take; a finding: {\"finding\": {...}, \"id\": ...}, leaving out id to add the next one",
         heredoc("batch --investigation <investigation>", json.dumps([
@@ -172,19 +186,18 @@ COMMAND_HELP = {
         "with --raw, a finding or row is printed as the input its writing command reads, and a section "
         "is always printed so: IDs plain and links inline, so an edit is read, change, write back",
         f"  {CALL} show --investigation <investigation> --raw --id F07",
-        f'  {CALL} show --investigation <investigation> --section Reflection']),
+        f'  {CALL} show --investigation <investigation> --section Boundary']),
     "brief": "\n".join([
         "brief: prints what writing the report reads, from the ledger as it stands: the boundary, "
-        "each source's exact reference with its limits, every finding, and the components, decisions and gaps; not the queue, "
-        "the coverage or the research notes",
+        "each source's exact reference with its limits, every finding, the components, the system design, "
+        "decisions and gaps; not the queue, the file coverage or the sources' reading notes",
         f"  {CALL} brief --investigation <investigation>"]),
     "text": "\n".join([
         f"text: replaces a section's text, read as Markdown from standard input; --section is "
         f"{', '.join(TEXT_SECTIONS)}",
-        heredoc('text --investigation <investigation> --section Reflection',
-                "The first draft assumed ...; the code showed ..."),
-        "  to change part of it, --replace the exact text, as show --section prints it, and its replacement:",
-        f'  {CALL} text --investigation <investigation> --section Reflection --replace "old text" "new text"']),
+        heredoc('text --investigation <investigation> --section Boundary',
+                "The topic covers ...\nThe sibling service X: mention only."),
+    ]),
     "move": "\n".join([
         'move: moves an action to ready, in-progress, blocked or completed; each --set "Column=value" sets a cell',
         f'  {CALL} move --investigation <investigation> --id Q05 --to in-progress',
@@ -200,7 +213,7 @@ COMMAND_HELP = {
         f"  {CALL} link --investigation <investigation> --key api-server --url https://github.com/acme/api/blob/<sha>/server.py",
         f"  {CALL} unlink --investigation <investigation> --key api-server"]),
     "next-id": "\n".join([
-        "next-id: prints the next free ID of a kind, S, Q, F, C, D or G, for a row you are about to write",
+        "next-id: prints the next free ID of a kind, S, Q, F, C, D, G, B, E, I or P, for a row you are about to write",
         f"  {CALL} next-id --investigation <investigation> --kind S"]),
     "sync-sources": "\n".join([
         "sync-sources: rewrites each source's Findings from the findings' Evidence lines; row and finding keep "
@@ -215,16 +228,36 @@ COMMAND_HELP = {
 }
 
 
+# The research loop, one move per step, with the command each uses: SKILL.md
+# says what the moves are for, so the commands live here alone.
+LOOP = "\n".join([
+    "loop: the research loop, one question at a time in the queue's order, and the commands each step uses",
+    "  0. take the next question, or up to 4 to work in parallel, and move each to in-progress",
+    f"     {CALL} next --investigation <investigation> --max 4",
+    f"     {CALL} move --investigation <investigation> --id Q01 --to in-progress",
+    "  1. read: find --text <source or term> first shows what the ledger already holds",
+    f"     {CALL} find --investigation <investigation> --text server.py",
+    "  2. record, before reading anything else: the source (row --table sources), each file or folder of code "
+    "read (row --table file-coverage), then each finding (finding), citing the source; records that cite each "
+    "other go in one batch",
+    "  3. add: each new question as a ready action (row --table queue-ready), its Depends on naming the open "
+    "questions it needs, or None",
+    "  4. close: completed with what answers it, or blocked on the gap or decision that stops you; every question "
+    "that depends on a blocked one is blocked with it",
+    f'     {CALL} move --investigation <investigation> --id Q01 --to completed --set "Outcome / finding IDs=F03, F04"',
+    f'     {CALL} move --investigation <investigation> --id Q01 --to blocked --set "Depends on=G01"'])
+
+
 def full_help():
-    """How text names what it rests on, then every table's entry, then every other command's."""
-    return "\n\n".join([LINKING, *(table_help(name) for name in TABLES), *COMMAND_HELP.values()])
+    """How text names what it rests on, the research loop, then every table's entry, then every other command's."""
+    return "\n\n".join([LINKING, LOOP, *(table_help(name) for name in TABLES), *COMMAND_HELP.values()])
 
 
 def table_help(name):
     """A table's columns, allowed values, a worked row and a command to copy, as text."""
     header = TABLES[name][1]
     letters = TABLES[name][2]
-    out = [f"{name}: " + " | ".join(header),
+    out = [f"{name}: " + " | ".join(header), f"  holds {PURPOSES[name]}",
            ("--id " + letters + "01, then " if letters else "no --id, then ")
            + f"{len(header) - bool(letters)} cells on standard input, as a JSON list of strings"]
     out += [f"  {column}: {rule}" for column,
@@ -245,9 +278,12 @@ def table_help(name):
 
 def brief(lines):
     """What writing the report reads, from the ledger as it stands: the
-    boundary, each source's exact reference with its limits, every finding, and the
-    components, decisions and gaps. Links show their text, IDs are plain, and a
-    source's reference keeps its URL for the report's references."""
+    boundary, each source's exact reference with its limits, every finding, the
+    components, the system design, decisions and gaps, and the findings resting
+    on a partial read. The queue, the coverage and the sources' reading notes are
+    for research and review, and make up much of a long ledger. Links show their
+    text, IDs are plain, and a source's reference keeps its URL, so the report
+    can link the source itself."""
     def plain(text):
         return link_text(strip_anchors(text))
 
@@ -264,7 +300,7 @@ def brief(lines):
     out += ["", FINDINGS_HEADING, ""]
     out += ["\n".join(line for line in plain(blocks[k]).split("\n") if line.strip()) + "\n"
             for k in sorted(blocks, key=id_order)] or ["None.", ""]
-    for name in ("components", "decisions", "gaps"):
+    for name in ("components", *DESIGN_TABLES, "decisions", "gaps"):
         rows = table_rows(lines, name)
         out += [TABLES[name][0], ""]
         out += ([" | ".join(header_of(lines, name))] + [plain(" | ".join(row)) for row in rows]
@@ -352,7 +388,7 @@ def snippet(text, needle, width=110):
     return ("..." if start else "") + text[start:start + width].replace("\n", " ")
 
 
-def status(lines, report=False):
+def status(lines):
     out = []
     queue = {table: table_rows(lines, table) for table in QUEUE_TABLES}
     out.append(
@@ -360,10 +396,10 @@ def status(lines, report=False):
     for label, table in (("in progress", "queue-in-progress"), ("ready", "queue-ready"),
                          ("blocked", "queue-blocked")):
         for row in queue[table]:
-            out.append(f"  {label} {row[0]} [{row[5]}] {row[2][:100]}")
+            out.append(f"  {label} {row[0]} {row[2][:100]}")
     blocks, _, _ = findings_of(lines)
     totals = [("findings", len(blocks))]
-    for table in ("sources", "file-coverage", "components", "decisions", "gaps"):
+    for table in ("sources", "file-coverage", "components", *DESIGN_TABLES, "decisions", "gaps"):
         totals.append((table, len(table_rows(lines, table))))
     out.append("counts: " + ", ".join(f"{n} {name}" for name, n in totals))
     out += coverage(lines)
@@ -382,7 +418,6 @@ def status(lines, report=False):
         out.append("components claiming code with no code read: " +
                    ", ".join(unread))
     out += partial_lines(lines)
-    out.append("next: " + next_step(queue, REFLECTION in unstarted, report))
     return "\n".join(out)
 
 
@@ -439,34 +474,6 @@ def coverage(lines):
     if untagged:
         out.append("  sources with no Areas: " + ", ".join(untagged))
     return out
-
-
-def next_step(queue, reflection_missing, report):
-    """The phase the investigation is in, from the queue, the report and the
-    reflection: each phase opens only when the one before is finished, so the
-    independent review sees the whole investigation."""
-    if queue["queue-in-progress"]:
-        return (f"research: finish the actions in progress before starting a ready one: "
-                f"{', '.join(row[0] for row in queue['queue-in-progress'])}")
-    if queue["queue-ready"]:
-        return (f"research: move a ready action to in-progress and work it, such as {queue['queue-ready'][0][0]}. "
-                "Ask the user before adding or leaving out a topic outside the one asked")
-    if not report:
-        return "write: read ledger.py brief in full, write content.json, run make_report.py"
-    if not reviewed(queue["queue-completed"]):
-        rounds = review_rounds(queue["queue-completed"])
-        if rounds >= REVIEW_BACKSTOP:
-            return (f"review: {rounds} rounds have run. Before another, show the user in a few lines what "
-                    "each round found and ask whether to go on. If they choose to stop, record it with "
-                    "ledger.py review --stopped '<what they said>'; otherwise start another round (step 4) "
-                    f"and record it with {RECORD_ROUND}")
-        round_ = "another round of the independent review" if last_review(queue["queue-completed"]) \
-            else "the independent review"
-        return (f"review: nothing is left to research and the report is drafted, so start {round_} "
-                f"(step 4) now, and change nothing while it runs. Record it with {RECORD_ROUND}")
-    if reflection_missing:
-        return "hand over: write the Reflection, then run check_report.py --handover"
-    return "hand over: run check_report.py --handover"
 
 
 def section(lines, heading):
@@ -533,8 +540,10 @@ def links_section(lines):
 def put_batch(lines, items, warnings):
     """Write each row and finding of `items` in order and return (every value
     as written, what each item wrote: an ID, or the table of a row without
-    one). Exits at the first item that can't be written, naming it; the ledger
-    is saved only after every item is, so nothing is written then."""
+    one). Reading a part of the code records dozens at once, so one call
+    writes them all, with the same checks. Exits at the first item that can't
+    be written, naming it; the ledger is saved only after every item is, so
+    nothing is written then."""
     if not isinstance(items, list) or not items:
         raise SystemExit(
             "the input must be a non-empty JSON list of rows and findings:\n" + COMMAND_HELP["batch"])
@@ -662,9 +671,9 @@ def finding_block(ident, fields):
 
 def linked(lines, values):
     """`values` with every link written by reference, and ticket keys and
-    owner/repo#123 linked. Inline links go first, so a ticket or a page of a
-    code host linked in one value lets the same project's keys or host's pull
-    requests be linked in the others.
+    owner/repo#123 linked, so none needs a separate step. Inline links go
+    first, so a ticket or a page of a code host linked in one value lets the
+    same project's keys or host's pull requests be linked in the others.
     Exits, writing nothing, if a reference can't be linked."""
     values = [reference_links(lines, v) for v in values]
     out, unresolved = [], []
@@ -685,7 +694,8 @@ def linked(lines, values):
 def jira_site(project):
     """The Jira site that has `project`, or None: without jira-api or with
     its settings not filled in, when the site has no such project, or it is
-    one the user excludes. Raises JiraError when Jira fails."""
+    one the user excludes. Raises JiraError when Jira fails, which stops the
+    write: a key Jira couldn't be asked about isn't taken for no ticket."""
     if project not in SITES:
         SITES[project] = None
         if is_enabled(JIRA_GROUP, JIRA_API):
@@ -738,6 +748,58 @@ def sync_sources(lines):
             found = sorted(cited[id_order(row[0])[1]], key=id_order)
             row[4] = f"{row[4].rstrip()} Findings: {', '.join(found)}.".strip()
     write_rows(lines, "sources", rows, header_of(lines, "sources"))
+
+
+def check_dependencies(lines):
+    """Exit if a question depends on itself, or questions depend on each other
+    in a circle: none of them could ever be worked."""
+    needs = {row[0]: depends_on(
+        row) for name in QUEUE_TABLES for row in table_rows(lines, name)}
+
+    def circle(ident, path):
+        if ident in path:
+            return path[path.index(ident):] + [ident]
+        return next((found for need in needs.get(ident, []) if (found := circle(need, path + [ident]))), None)
+    for ident in needs:
+        if found := circle(ident, []):
+            raise SystemExit(f"questions depend on each other in a circle: {' → '.join(found)}. "
+                             "Nothing was written")
+
+
+def depends_on(row):
+    """The questions a queue row waits for: the Q IDs of its Depends on cell."""
+    return [ident for ident in ID.findall(row[QUEUE_HEADER.index("Depends on")]) if ident.startswith("Q")]
+
+
+def block_dependents(lines):
+    """Move every ready or in-progress question that depends on a blocked one
+    to blocked, until none is left: it can't be answered while what it needs is
+    blocked. Its Depends on cell already names that question, so it says why.
+    Returns the IDs moved."""
+    moved = []
+    while True:
+        blocked = {row[0] for row in table_rows(lines, "queue-blocked")}
+        stuck = [row[0] for name in ("queue-ready", "queue-in-progress") for row in table_rows(lines, name)
+                 if blocked & set(depends_on(row))]
+        if not stuck:
+            return moved
+        for ident in stuck:
+            move_row(lines, ident, "queue-blocked", [])
+        moved += stuck
+
+
+def next_questions(lines, maximum):
+    """The next ready questions to work, in the queue's order, up to `maximum`:
+    those whose dependencies are all completed; a blocked one isn't."""
+    completed = {row[0] for row in table_rows(lines, "queue-completed")}
+    waiting = table_rows(lines, "queue-ready")
+    ready = [row for row in waiting if set(depends_on(row)) <= completed]
+    out = [f"{row[0]} {row[2]}" for row in ready[:maximum]]
+    if out:
+        return "\n".join(out)
+    if waiting:
+        return "none ready: " + "; ".join(f"{row[0]} waits on {', '.join(depends_on(row))}" for row in waiting)
+    return "none ready: the queue has no ready question"
 
 
 def move_row(lines, row_id, target, sets):
@@ -817,17 +879,6 @@ def show_raw(lines, ident, name, heading):
     return json.dumps({k: as_written(lines, v) for k, v in fields.items()}, ensure_ascii=False, indent=2)
 
 
-def replaced_text(lines, section_name, old, new):
-    """A text section, as written, with its one `old` replaced by `new`; exits
-    unless `old` is in it exactly once."""
-    current = show_raw(lines, None, None, section_name)
-    count = current.count(old)
-    if count != 1:
-        raise SystemExit(f"--replace: {old!r} is in {section_name} {count} times, not once; "
-                         "copy it from show --section, with enough of the text to be unique")
-    return current.replace(old, new)
-
-
 def find_row(lines, row_id):
     for name in QUEUE_TABLES:
         for row in table_rows(lines, name):
@@ -858,7 +909,10 @@ def check_cells(lines, name, row):
     """Exit if a cell holds a value its column doesn't allow."""
     problem = None
     if name == "components":
-        problem = status_problem(row[0], row[4])
+        problem = status_problem(row[0], row[4]) or (len(row) == len(COMPONENT_HEADER)
+                                                     and design_problem(name, row))
+    elif name in DESIGN_TABLES:
+        problem = design_problem(name, row)
     elif name == "file-coverage":
         problem = depth_problem(row[2]) or (
             coverage_material_missing(row) and f"for {row[0]}: link the material read in Material")
@@ -977,7 +1031,7 @@ def cited_outside_records(lines, ident):
             heading = line.lstrip("#").strip()
             in_findings = in_findings and line.startswith(
                 "###") or heading == FINDINGS
-        elif not in_findings and not re.match(rf"{ROW_START}[SQDGCF]\d", line) \
+        elif not in_findings and not re.match(rf"{ROW_START}[{ID_LETTERS}]\d", line) \
                 and re.search(rf"\b{ident}\b", line) and heading not in found:
             found.append(heading)
     return [f"the {heading} section" for heading in found]
@@ -1046,7 +1100,7 @@ def record_review(lines, raised="none", stopped=None):
         outcome = "Raised " + ", ".join(ids) if ids else REVIEW_NONE
     row_id = next_id("\n".join(lines), "Q")
     set_row(lines, "queue-completed", row_id,
-            ["Independent review", REVIEW_QUESTION, by, "None", "High", outcome])
+            ["Independent review", REVIEW_QUESTION, by, "None", outcome])
     return row_id
 
 
@@ -1131,7 +1185,8 @@ def main(argv=None):
         "text": "replace a text section, read from standard input",
         "show": "print a finding, a row, a table or a text section",
         "find": "print every record that mentions a text",
-        "status": "print the counts, open work and the next step",
+        "status": "print the queue, the counts and what is still open",
+        "next": "print the next ready questions to work, whose dependencies are all completed",
         "brief": "print what writing the report reads",
         "help": "print each table's columns and values, and each writing command's input, with a command to copy",
         "review": "record an independent review round",
@@ -1145,8 +1200,10 @@ def main(argv=None):
                                if name in shapes else "")
         sub = commands.add_parser(name, help=about, description=description)
         if name == "help":
-            sub.add_argument("--table", choices=list(TABLES) + list(COMMAND_HELP),
-                             help="a table, or one of the other commands: " + ", ".join(COMMAND_HELP) + "; leave out for all")
+            sub.add_argument("--table", choices=["loop"] + list(TABLES) + list(COMMAND_HELP),
+                             help="loop, a table, or one of the other commands: " +
+                             ", ".join(COMMAND_HELP)
+                             + "; leave out for all")
             continue
         sub.add_argument("--investigation", required=True,
                          help="<Topic>_<YY-MM-DD>")
@@ -1159,8 +1216,11 @@ def main(argv=None):
                                 help="the ready actions the review's real issues became, comma separated, or none")
             choice.add_argument("--stopped",
                                 help="what the user said when, asked whether to go on, they chose to stop")
+        if name == "next":
+            sub.add_argument("--max", type=int, default=1,
+                             help="how many questions at most, such as 4 to give each to a subagent")
         if name == "next-id":
-            sub.add_argument("--kind", required=True, choices=list("SQFCDG"),
+            sub.add_argument("--kind", required=True, choices=list(ID_LETTERS),
                              help="the ID's letter")
         if name in ("row", "remove"):
             sub.add_argument("--table", required=True, choices=list(TABLES) +
@@ -1203,15 +1263,13 @@ def main(argv=None):
         if name == "text":
             sub.add_argument("--section", required=True,
                              help=" or ".join(TEXT_SECTIONS))
-            sub.add_argument("--replace", nargs=2, metavar=("OLD", "NEW"),
-                             help="replace one exact text of the section, instead of reading the whole of it")
     args = parser.parse_args(argv)
     with stops_on_failure():
         if args.command == "help":
             if not args.table:
                 print(full_help())
             else:
-                print(table_help(args.table)
+                print(LOOP if args.table == "loop" else table_help(args.table)
                       if args.table in TABLES else COMMAND_HELP[args.table])
             return
         text = load(args.investigation)
@@ -1221,6 +1279,9 @@ def main(argv=None):
         if args.command == "brief":
             print(brief(lines))
             return
+        if args.command == "next":
+            print(strip_anchors(next_questions(lines, args.max)))
+            return
         if args.command in ("show", "find", "status"):
             if args.command == "show" and sum(map(bool, (args.id, args.table, args.section))) != 1:
                 raise SystemExit(
@@ -1228,12 +1289,9 @@ def main(argv=None):
             if args.command == "show" and (args.raw or args.section):
                 print(show_raw(lines, args.id, args.table, args.section))
                 return
-            folder = investigation_dir(args.investigation)[0]
-            report = bool(glob.glob(os.path.join(
-                glob.escape(folder), f"*{REPORT_SUFFIX}")))
             # Anchors are for viewers; the plain text costs fewer tokens without them.
             print(strip_anchors({"show": lambda: show(lines, args.id, args.table), "find": lambda: find(lines, args.text),
-                                 "status": lambda: status(lines, report)}[args.command]()))
+                                 "status": lambda: status(lines)}[args.command]()))
             return
         if args.command == "next-id":
             print(json.dumps({"id": next_id(text, args.kind)}))
@@ -1283,8 +1341,7 @@ def main(argv=None):
         elif args.command == "sync-sources":
             sync_sources(lines)
         elif args.command == "text":
-            text = replaced_text(lines, args.section, *
-                                 args.replace) if args.replace else read_input(args)
+            text = read_input(args)
             written = linked(lines, [text])
             check_backticks(lines, written, args.section)
             set_text(lines, args.section, written[0])
@@ -1296,6 +1353,10 @@ def main(argv=None):
                   if args.command == "batch" else [])
         if named := {ident: found for ident in closed if (found := mentions(lines, ident))}:
             result["update_if_needed"] = named
+        if args.command in ("row", "batch", "move"):
+            check_dependencies(lines)
+            if blocked := block_dependents(lines):
+                result["blocked"] = blocked
         upgrade_tickets(lines)
         link_ids(lines)
         # Checked once every record of the call is written, so a batch can hold

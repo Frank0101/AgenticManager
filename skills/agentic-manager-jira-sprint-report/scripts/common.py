@@ -1,7 +1,7 @@
 """Helpers shared by the sprint-report scripts: file names, blocker candidates, an
 issue's moves into and out of the sprint, its state at a past moment, the kinds
-of event a ticket's history holds, and the quantity formats every part of the
-report uses.
+of event a ticket's history holds, and the report's vocabulary, formats, goal
+verdicts and commentary groups.
 
 It also puts the agentic-manager-utils-lib skill, installed next to this one, on
 sys.path and imports what the scripts need from it. The scripts import those

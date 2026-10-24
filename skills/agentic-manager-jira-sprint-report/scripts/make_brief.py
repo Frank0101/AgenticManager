@@ -1,43 +1,11 @@
-"""
-Write <report_dir>/brief.json: everything the agent reads to write content.json,
-from data.json alone.
+"""Write <report_dir>/brief.json: everything the agent reads to write
+content.json, from data.json alone.
 
-Usage:
-    python3 make_brief.py --report-dir <report_dir>
-
-The agent writes only the parts marked [AI Gen.]. Gathering their material
-is bookkeeping, not judgment, so it happens here: the agent reads one file
-instead of joining data.json's spells, epics and comments, which costs tokens
-and invites slips. Like the report and the charts, it is a view of data.json:
-it never reads the raw files, so every fact it gives is the model's.
-
-  * Tickets are grouped by epic, each with its commentary group, scope, latest
-    estimate, flag and, for blocker candidates, the comments up to the end.
-    Work the sprint didn't do (left_out in data.json) isn't listed under epics,
-    so commentary doesn't describe it as this sprint's work.
-  * Epics come in order of completed pts, commitment and extra together: the
-    order Key Achievements takes after the goal's themes. Matching tickets to
-    themes is left to the agent, since it is the same reading as the goal
-    verdict, which is an interpretation.
-  * carried_in marks the tickets that were still in the previous sprint when it
-    closed, so the agent can see work that spans sprints, as the charts do.
-  * Descriptions come as their first chunk (common.chunks) with the chunk count
-    when there are more: reading is bounded and nothing is lost, since
-    read_description.py gives any other chunk.
-  * Comments are data.json's blocker_comments, which hold no authors: AI text
-    names teams, never colleagues.
-  * goal_tickets separately includes every original commitment ticket, including
-    work excluded from commentary, so goal themes have their full denominator.
-    Its outcome distinguishes completed, not_completed and removed work.
-  * report_facts are the generated report's own sentences and figures, in its
-    exact wording, so the retro notes can quote them in a single pass, without
-    first generating the report and reading it back.
-  * ticket_events gives each ticket listed under epics, once however many
-    spells it has, its status changes: how the work moved, which the spells
-    don't show. Its other changes are left out: the spells and report_facts
-    already give its sprint moves and estimates, and the rest doesn't tell
-    the agent how the work went. Pull request data is fetched for a later
-    use; data.json leaves it out until then, so the brief has none.
+The agent writes only the parts marked [AI Gen.]. Gathering their material is
+bookkeeping, not judgment, so it happens here: the agent reads one file instead
+of joining data.json's spells, epics and comments, which costs tokens and
+invites slips. Like the report and the charts, it is a view of data.json: it
+never reads the raw files, so every fact it gives is the model's.
 """
 import argparse
 import os
@@ -48,6 +16,13 @@ from make_report import Report
 
 
 def build_brief(data):
+    """The brief: the sprint, each epic's tickets, goal_tickets, report_facts
+    and ticket_events. Tickets are grouped by epic, each with its commentary
+    group, scope, latest estimate, flag and, for blocker candidates, the
+    comments up to the end. Work the sprint didn't do (data.json's left_out)
+    isn't listed under the epics, so the commentary doesn't describe it as this
+    sprint's work, but goal_tickets holds every ticket of the commitment, that
+    work included, so each goal theme has its full denominator."""
     comments = data["blocker_comments"]
     epics = []
     for epic in data["epics"]:
@@ -56,6 +31,8 @@ def build_brief(data):
             for ticket in epic["scope_groups"][group]:
                 tickets.append({
                     "key": ticket["key"], "group": group,
+                    # Still in the previous sprint when it closed, so the
+                    # agent sees work that spans sprints, as the charts do.
                     "carried_in": ticket["carriedIn"],
                     **{k: ticket[k] for k in ("scope", "points", "status", "flagged", "summary")},
                     **first_chunk(ticket["description"]),
@@ -64,6 +41,10 @@ def build_brief(data):
         completed = epic["original_points_done"] + epic["extra_points_done"]
         epics.append({"key": epic["key"], "name": epic["name"], **first_chunk(epic["description"]),
                       "completed_pts": completed, "tickets": tickets})
+    # By completed pts, commitment and extra together: the order Key
+    # Achievements takes after the goal's themes. Matching tickets to themes
+    # is left to the agent: it is the same reading as the goal verdict, an
+    # interpretation.
     epics.sort(key=lambda e: -e["completed_pts"])
     return {
         "sprint": {
@@ -86,14 +67,16 @@ def build_brief(data):
 
 def brief_events(events):
     """A ticket's status changes, in time order, dated as the brief dates
-    everything."""
+    everything: how the work moved, which the spells don't show. The other
+    changes are left out: the spells and report_facts give its sprint moves
+    and estimates, and the rest doesn't tell how the work went."""
     return [{"date": display_date(e["date"]), "type": e["type"], "from": e["from"], "to": e["to"]}
             for e in events if e["type"] == "status_changed"]
 
 
 def brief_comments(comments):
-    """A blocker candidate's comments, as data.json holds them, dated as
-    the brief dates everything."""
+    """A blocker candidate's comments, as data.json holds them, without
+    authors, dated as the brief dates everything."""
     return [{"date": display_date(c["date"]) if c["date"] else None, "text": c["text"]} for c in comments]
 
 
@@ -105,7 +88,9 @@ def first_chunk(description):
 
 
 def report_facts(data):
-    """The generated report's figures and sentences, word for word."""
+    """The generated report's figures and sentences, word for word, so the
+    retro notes can quote them without first generating the report and
+    reading it back."""
     report = Report(data, {})
     facts = [f"Sprint target completion: {link_text(report.target_completion_value())}",
              link_text(report.commentary())]
@@ -120,7 +105,7 @@ def report_facts(data):
 
 def main():
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+        description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument("--report-dir", required=True,
                         help="report folder holding data.json")
     args = parser.parse_args()

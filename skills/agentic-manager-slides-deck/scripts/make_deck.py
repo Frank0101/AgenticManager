@@ -1,40 +1,12 @@
 """Writes the deck's <Name>_Slides.html from <deck>/slides.json, then checks it
 with check_deck.py.
 
-    python3 make_deck.py --deck <Name>_<YY-MM-DD> [--open]
-
 The page around the slides is fixed, and this script owns it: the slide's
 size, the grey page behind the slides, the toolbar with zoom and PDF export,
-the print rules that put one slide on each PDF page, and the scripts that
-zoom and draw the charts. slides.json holds only what needs judgment: the
-title, the deck's own CSS and each slide's HTML, plus the data of its charts
-and rings. Its fields are in SKILL.md.
-
-A slide's HTML can't load anything (no script, style, link or frame, and no
-remote image) and must close every tag it opens, since one unclosed tag would
-swallow every slide after it. A chart is Chart.js, drawn in the browser from
-its data, without animation so a PDF never catches it half drawn. Its settings
-are data, never code: how its values read ("£3.5m") is a `format`, which the
-page's script turns into the label functions Chart.js needs. A ring is a donut
-or pie of equal or weighted segments with gaps between them, drawn here as SVG,
-since its geometry is arithmetic. A diagram is inline SVG in the deck's own
-look, never Mermaid, whose look a deck can't match and which would load another
-library. An image is {{asset:<name>}}, linked to the file in _assets, which
-must be there: an image from anywhere else, a path or a URL, would show only on
-one machine or online; a downloaded image's credit is added to every slide that
-shows it, so no slide can drop it. {{page}} is the slide's number, counted
-here, so no number is kept by hand.
-
-With --open, a deck that passes the check opens in the user's default
-browser, their own window rather than one a tool drives, so they review it
-where they will present it; it is a flag, not the default, since every
-revision after the first is a refresh of the page already open.
-
-Prints one line of JSON: the deck's path, whether the folder is temporary,
-what check_deck.py reports (ok, errors, placeholders and stand-ins), the
-credits of the downloaded images it shows and whether it was opened. Exits 1
-if slides.json is invalid (writing nothing) or the written deck fails the
-check.
+the print rules that put one slide on each PDF page, and the scripts that zoom
+and draw the charts. slides.json holds only what needs judgment: the title,
+the deck's own CSS, each slide's HTML and the data of its charts and rings, so
+it is checked field by field and nothing is written while it has a problem.
 """
 import argparse
 import html
@@ -48,7 +20,7 @@ from pathlib import Path
 from typing import TypeIs
 
 from common import (CHART_JS, ELEMENT_ID, FOLDER_NAME, PAGE, REMOTE, SLIDE_HEIGHT, SLIDE_WIDTH,
-                    SLIDES, SLUG, TOKEN, URL_ATTRIBUTES, VOID, asset_link, asset_names, credit_line, credits,
+                    SLIDES, TOKEN, URL_ATTRIBUTES, VOID, asset_link, asset_names, credit_line, credits,
                     deck_dir, deck_file, placed_images, read_json, write_output_file)
 import check_deck
 
@@ -92,6 +64,9 @@ def make_deck(deck, open_page=False):
     result["credits"] = [{"asset": name, "license": known[name]["license"], "source": known[name]["source"]}
                          for name in sorted({name for text in texts for name in placed_images(text)})
                          if name in known]
+    # The user's own browser, not one a tool drives, so they review the deck
+    # where they will present it; only on request, since every revision after
+    # the first is a refresh of the page already open.
     result["opened"] = bool(open_page and result["ok"]
                             and webbrowser.open(Path(path).as_uri()))
     return result
@@ -148,7 +123,7 @@ def problems(content, assets=frozenset()):
         for match in TOKEN.finditer(text):
             key = (match[1], match[2])
             if match[1] == "asset":
-                if not SLUG.fullmatch(match[2]) or match[2] not in assets:
+                if match[2] not in assets:
                     errors.append(f"{where}.html: {match[0]} names no image in _assets: add it with "
                                   "add_asset.py, which prints its name")
             elif key in elements:
@@ -277,7 +252,8 @@ def is_number(value) -> TypeIs[int | float]:
 
 
 def read_slide(text):
-    """The first problem with one slide's HTML, or None."""
+    """The first problem with one slide's HTML, or None. Every tag it opens
+    must close, since one unclosed tag would swallow every slide after it."""
     parser = SlideParser()
     parser.feed(text)
     parser.finish()
@@ -308,6 +284,10 @@ class SlideParser(HTMLParser):
         if tag in FORBIDDEN:
             self.fail(f"<{tag}> isn't allowed in a slide: put CSS in `style`, and charts and rings "
                       "in their own fields")
+        # An image from a path or a URL would show only on one machine or
+        # online: it is {{asset:<name>}}, linked to the file in _assets. A
+        # diagram is inline SVG in the deck's own look, never Mermaid, whose
+        # look a deck can't match and which would load another library.
         for name, value in attrs:
             value = (value or "").strip()
             if name in URL_ATTRIBUTES and REMOTE.match(value):
@@ -352,6 +332,7 @@ def build(content, texts, image_credits, depth=1):
         classes = " ".join(["slide"] + slide.get("class", "").split())
         body = TOKEN.sub(lambda match: place(match, rings, depth),
                          text.replace(PAGE, str(number)))
+        # Credited here, on every slide that shows the image, so none can drop it.
         shown = [name for name in placed_images(text) if name in image_credits]
         if shown:
             line = "; ".join(credit_line(
@@ -398,8 +379,9 @@ def place(match, rings, depth):
 
 
 def ring_svg(ident, ring):
-    """The ring as inline SVG: each segment's share of the circle is its value's
-    share of the total, less the gap, the first starting at `start`."""
+    """The ring as inline SVG, drawn here since its geometry is arithmetic: each
+    segment's share of the circle is its value's share of the total, less the
+    gap, the first starting at `start`."""
     size, gap = ring["size"], ring.get("gap", 0)
     values = [segment.get("value", 1) for segment in ring["segments"]]
     centre, cursor, paths = size / 2, ring.get("start", 0), []
@@ -565,6 +547,9 @@ ZOOM_SCRIPT = """    <script>
       }
     </script>"""
 
+# Charts are drawn without animation, so a PDF never catches one half drawn.
+# Their settings are data, never code: how values read ("£3.5m") is a
+# `format`, which this script turns into the label functions Chart.js needs.
 CHART_SCRIPT = """    <script src="{src}"></script>
     <script>
       Chart.defaults.animation = false;
@@ -596,7 +581,10 @@ CHART_SCRIPT = """    <script src="{src}"></script>
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Write the deck from slides.json, then check it.")
+        description="Write the deck from slides.json, then check it. Prints one line of JSON: the deck's "
+        "path, whether the folder is temporary, what check_deck.py reports (ok, errors, placeholders, "
+        "stand_ins), the credits of the downloaded images it shows and whether it was opened. Exits 1 "
+        "if slides.json is invalid, writing nothing, or the deck fails the check.")
     parser.add_argument("--deck", required=True,
                         help="the deck's folder, <Name>_<YY-MM-DD>, inside slides-decks")
     parser.add_argument("--open", action="store_true",

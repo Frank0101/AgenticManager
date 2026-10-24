@@ -1,14 +1,8 @@
-"""
-Everything after the agent writes content.json: draw the charts, write the
+"""Everything after the agent writes content.json: draw the charts, write the
 report and check it.
 
-Usage:
-    python3 finish_report.py --report-dir <report_dir>
-
-Prints only what needs attention: content.json's problems, or the checks that
-failed, then the report's path. Exits non-zero unless the report passes.
-The passing checks are left out, as the agent would read hundreds of lines to
-find the one to fix.
+It prints only what needs attention, as the agent would otherwise read hundreds
+of passing checks to find the one to fix.
 """
 import argparse
 import os
@@ -20,7 +14,10 @@ from common import DATA_FILE, read_json, report_file, run_script
 
 def main():
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+        description=(__doc__ or "").split("\n\n")[0],
+        epilog="Prints content.json's problems, or the checks that failed, then the report's path.\n"
+        "Exits non-zero unless the report passes.",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--report-dir", required=True,
                         help="report folder holding data.json and content.json")
     args = parser.parse_args()

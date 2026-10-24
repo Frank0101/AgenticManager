@@ -2,25 +2,11 @@
 code: those the Development panels of each ticket and of its sub-tasks list,
 and when GitHub says each was opened and merged.
 
-A ticket's pull requests are those its panel lists and those its sub-tasks'
-panels list, all of them, found by one search by parent: a sub-task's work
-is its parent's, as Jira's sprint report rolls it in. Each is kept once,
-through the ticket before its sub-tasks, those in key order, and records the
-issue it came through (`via`). The panel is the link the team's integration
-made, a Jira call or two an issue. GitHub isn't searched for more: looking
-up the panels' commits cost a GitHub request per commit, a thousand for a
-sprint, which used up GitHub's hourly limit in a few runs, and found only
-pull requests of tickets the panel already listed some for; a search of
-titles found none, and GitHub's search allows about 30 requests a minute.
-Commits matter only as part of a pull request, what it changed; the current
-state of the code comes from the repository itself.
-
-pulls_by_ticket() takes `read`, whether to read them at all: a skill reads
-them only on request, or only when GitHub can be read, as the panel alone
-gives no dates or changes, and otherwise asks nothing of Jira. Each pull
-request is a dict with the panel's fields, state, updatedAt and `via`. read_events() then reads when each was opened and merged, many in one
-GraphQL call; as failures.py sets out, one GitHub says doesn't exist is
-returned with why, and any other gh failure raises GhError.
+A sub-task's work is its parent's, as Jira's sprint report rolls it in. The
+panel is the link the team's integration made, and GitHub isn't searched for
+more: reading the panels' commits cost a request per commit, using up
+GitHub's hourly limit in a few runs, and found only pull requests of tickets
+the panel already listed some for; a search of titles found none.
 """
 import subprocess
 
@@ -38,8 +24,9 @@ def pulls_by_ticket(client, issues, read):
     key), in their order: those the Development panels of the ticket and of
     its sub-tasks list, each once, through the ticket before its sub-tasks,
     those in key order, with `via`, the key of the issue it came through.
-    With `read` false, {} and nothing asked of Jira. Raises JiraError when
-    Jira can't answer."""
+    With `read` false, {} and nothing asked of Jira: a skill reads them only
+    on request, or only when GitHub can be read, as the panel alone gives no
+    dates or changes. Raises JiraError when Jira can't answer."""
     if not read:
         return {}
     children = sub_tasks(client, [issue["key"] for issue in issues])
@@ -89,5 +76,6 @@ def first_found(*groups):
 def read_events(pulls, run=subprocess.run):
     """(events, gone) of each pull request of `pulls` on GitHub, as
     github.pull_events() gives them: when each was opened and merged, and
-    GitHub's words for those it says don't exist."""
+    GitHub's words for those it says don't exist. Raises GhError for any
+    other gh failure."""
     return pull_events([pr["url"] for pr in pulls if pull_parts(pr.get("url"))], run)

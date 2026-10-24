@@ -1,18 +1,12 @@
 """Keeps a report the user approved as an example, exactly as approved.
 
-    python3 save_example.py --investigation <Topic>_<YY-MM-DD> --note "<why it's good>"
-
-Copies <investigation>/<Topic>_Report.md into _examples/<Topic>_<YY-MM-DD>/,
-or --2, --3... when that folder exists, never overwriting an earlier example,
-with the local files it links (images, the ledger, and what those link in
-turn), at the same relative paths, so the example stays whole after the
-investigation changes. Beside them, description.md holds the note on what
-makes it good, which the agent writes, and a link to the approved report:
-the example carries everything about itself, so deleting its folder removes
-it whole, and no index can go stale.
-
-Prints one line of JSON: the example's folder, the files copied, and whether
-the output folder is temporary.
+It copies the report into _examples/<investigation>/, or --2, --3... when that
+folder exists, never overwriting an earlier example, with the local files it
+links, such as the ledger, and what those link in turn, at the same relative
+paths, so the example stays whole after the investigation changes. Beside them,
+description.md holds the note on what makes it good: the example carries
+everything about itself, so deleting its folder removes it whole, and no index
+can go stale.
 """
 import argparse
 import json
@@ -78,7 +72,9 @@ def local_links(folder, relative):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Keep an approved report as an example.")
+        description="Keep an approved report as an example.",
+        epilog='Prints one line of JSON, {"example": its folder, "files": the files copied, '
+        '"temporary": whether the output folder is temporary}.')
     parser.add_argument("--investigation", required=True,
                         help="<Topic>_<YY-MM-DD>")
     parser.add_argument("--note", required=True,

@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from deck_fixture import temp_output  # noqa: E402
+from deck_fixture import temp_output, write_asset  # noqa: E402
 
 
 class DeckFolderTest(unittest.TestCase):
@@ -39,6 +39,20 @@ class DeckFolderTest(unittest.TestCase):
             common.deck_dir("Other_26-10-05")
         with self.assertRaisesRegex(SystemExit, "without .."):
             common.deck_dir("../Acme_26-10-05")
+
+
+class AssetsTest(unittest.TestCase):
+    def test_the_asset_list_reads_every_folder_with_an_image(self):
+        # An image put there by hand, without a description, is listed with
+        # nothing in what it shows; a folder without an image isn't listed.
+        folder = temp_output(self)
+        write_asset(folder)
+        write_asset(folder, "by-hand", "")
+        os.makedirs(os.path.join(folder, "_assets", "no-image"))
+        self.assertEqual(common.assets(), [
+            {"name": "acme-logo", "title": "Acme logo",
+                "shows": "the Acme logo, wide", "credit": None},
+            {"name": "by-hand", "title": "", "shows": "", "credit": None}])
 
 
 if __name__ == "__main__":

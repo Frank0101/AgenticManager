@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import add_asset  # noqa: E402
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from deck_fixture import CREDIT, temp_output, write_asset  # noqa: E402
+from deck_fixture import CREDIT, temp_output  # noqa: E402
 
 PNG = b"\x89PNG\r\n\x1a\n" + bytes(16)
 URL = "https://example.org/files/Blue%20Earth.png"
@@ -139,15 +139,6 @@ class AddAssetTest(unittest.TestCase):
         for data, kind in cases:
             with self.subTest(data[:8]):
                 self.assertEqual(add_asset.image_type(data), kind)
-
-    def test_the_asset_list_reads_every_folder_with_an_image(self):
-        write_asset(self.folder)
-        write_asset(self.folder, "by-hand", "")
-        os.makedirs(os.path.join(self.folder, "_assets", "no-image"))
-        self.assertEqual(common.assets(), [
-            {"name": "acme-logo", "title": "Acme logo",
-                "shows": "the Acme logo, wide", "credit": None},
-            {"name": "by-hand", "title": "", "shows": "", "credit": None}])
 
 
 if __name__ == "__main__":

@@ -407,6 +407,24 @@ class TicketTest(unittest.TestCase):
             with self.subTest(url):
                 self.assertEqual(tickets.pr_label(url), expected)
 
+    def test_moved_projects(self):
+        # A search that finds nothing says, for each project its query names,
+        # whether the project was renamed or isn't visible.
+        class Client:
+            def project(self, key):
+                return {"OLD": {"key": "NEW"}, "NEW": {"key": "NEW"}}.get(key)
+        cases = [("project = OLD AND text ~ \"retry\"", ["Moved: project OLD is now NEW: search under NEW"]),
+                 ('project in (NEW, "OLD") ORDER BY key', [
+                  "Moved: project OLD is now NEW: search under NEW"]),
+                 ("project = NEW", []),
+                 ("project = GONE", [
+                  "No project GONE that the account can see"]),
+                 ("text ~ \"retry\"", [])]
+        for jql, expected in cases:
+            with self.subTest(jql):
+                self.assertEqual(tickets.moved_projects(
+                    Client(), jql), expected)
+
     def test_search_line(self):
         cases = [(issue("PROJ-2", parent={"key": "PROJ-1"}), "PROJ-2 · Story · To Do · Something · parent PROJ-1"),
                  (issue("PROJ-1", "Epic"), "PROJ-1 · Epic · To Do · Something")]

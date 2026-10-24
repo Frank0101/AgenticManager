@@ -2,21 +2,11 @@
 each skill's scripts folder, what it is for, and the functions and classes
 other code may use, each with what it is for.
 
-    python3 code_map.py [--skill <skill>]
-
-It is generated from the code each time, never kept by hand, so it can't go
-stale: a module's purpose is the first sentence of its header comment, and a
-function's or class's is the first sentence of its docstring. The code is read
-with ast, never run.
-
-What it lists of a module: in the library, and in a skill's module without a
-`main`, every public function and class (top level, no leading underscore); in
-a skill's command, a module with a `main`, only those the folder's other
-modules use from it. `main` and `parse_args` are a command's entry, and
-constants are left out, so the map stays quick to read.
-
-With --skill it maps only that skill's scripts (or the library, by its name);
-without, the library and then every skill. Prints Markdown.
+It is generated from the code each time, read with ast and never run, so it
+can't go stale: a module's purpose is the first sentence of its header
+comment, a function's or class's that of its docstring. A skill's command, a
+module with a `main`, lists only what the folder's other modules use from it,
+and constants and a command's entry are left out, so the map stays quick.
 """
 import argparse
 import ast
@@ -119,9 +109,10 @@ def first_sentence(text):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Print the map of the skills' code, generated from the code.")
+        description="Print the map of the skills' code, generated from the code, as Markdown: "
+        "the library, then every skill.")
     parser.add_argument(
-        "--skill", help="only this skill, or the library by its name")
+        "--skill", help="only this skill's scripts, or the library by its name")
     print(code_map(parser.parse_args(argv).skill), end="")
 
 

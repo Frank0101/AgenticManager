@@ -1,25 +1,10 @@
-"""
-Check a finished sprint report against the data it was built from and against
-the report's formatting rules.
+"""Check a finished sprint report against the data it was built from and
+against the report's formatting rules.
 
-Usage:
-    python3 check_report.py --report-dir <report_dir>
-
-Prints every check and exits non-zero if any fails. make_report.py validates
-the agent's text (content.json) before writing; this checks what the generator
-produced from data.json. It shares only the format helpers with make_report.py
-and recomputes every figure from the spells' events, so a generator bug can't
-pass by agreeing with itself. Every rule here exists because a table drifted
-when corrected by hand: prose guidance didn't stop it, a failing check does.
-
-The spells are worked out from each ticket's events, so the checker replays a
-ticket's events on their own, with its own membership and state rules, and
-fails a spell event they don't give: a commitment while the ticket was out of
-the sprint, a joining or removal with no sprint change at its instant, a
-completion or reopening with no status change, a re-estimate with no points
-change, or an estimate or Done flag the ticket didn't have then. A spell still
-running at the end must also match the ticket's state then, so an event
-missing from a spell fails too.
+It shares only the format helpers with make_report.py and recomputes every
+figure from the spells' events, so a generator bug can't pass by agreeing with
+itself. Every rule here exists because a table drifted when corrected by hand:
+prose guidance didn't stop it, a failing check does.
 """
 import argparse
 import html
@@ -228,7 +213,10 @@ def check_commentary_groups(c, data):
 def check_ticket_events(c, data):
     """Each ticket with a spell, and no other, has its events, well formed,
     dated, as at the end and in time order; and its spells' events are what
-    its events give."""
+    its events give. The spells are worked out from those events, so the
+    checker replays them on their own, with its own membership and state
+    rules, and fails a spell event they don't give, or one they give that a
+    spell misses."""
     tickets = data["ticket_events"]
     c.check(set(tickets) == {s["key"] for s in data["spells"]}, "model",
             "every ticket with a spell has its events, and no other ticket")
@@ -773,7 +761,8 @@ def historical_references(data):
 
 def main():
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+        description=(__doc__ or "").split("\n\n")[0],
+        epilog="Prints every check and exits non-zero if any fails.")
     parser.add_argument("--report-dir", required=True,
                         help="report folder holding data.json and the report")
     args = parser.parse_args()

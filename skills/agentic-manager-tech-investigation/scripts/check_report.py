@@ -1,12 +1,9 @@
-"""Read-only checks of report structure and local artifacts, not evidence truth.
+"""Checks a report and its ledger, read-only: their structure, links and local
+files, and, at handover, the rules a finished investigation meets. It checks
+the form of the evidence, not whether it is true.
 
-    python3 check_report.py --report <absolute report path> [--handover]
-
-This deliberately recognizes the skill's ordinary Markdown output, not every
-Markdown extension. Sequence syntax and visual layout still need their own review.
-
-Prints one line of JSON: "ok", and the "errors" and "warnings" found. Exits 1
-unless the report passes.
+It recognizes the skill's ordinary Markdown output, not every Markdown
+extension.
 """
 import argparse
 import json
@@ -14,21 +11,8 @@ import os
 from pathlib import Path
 import re
 
-from common import (CELL_PIPE, DEFINITION, claim_length_warning, FINDING_FIELDS, FINDING_HEADING, FINDINGS, GAP_FIX, HEADING,
-                    HEADINGS, LEDGER, LEDGER_SECTIONS, LINKS, QUERY, QUEUE, QUEUE_SUBSECTIONS, REFERENCE_LINK,
-                    REFLECTION, SOURCE_FINDINGS, SOURCE_LINK_FIX, TABLE_HEADINGS, anchor_ids, areas_problem, backtick_error,
-                    cited_sources, component_rows, coverage_material_missing, depth_problem, expected_files,
-                    finding_blocks, gap_problem, h2_span, headings, id_order, ledger_rows, link_definitions, link_text, links,
-                    listed, local_link, markdown, outcome_problem, read_skip, reference_key, report_headings, review_problem,
-                    section_span, source_reference_missing, status_problem, strip_anchors, table_cells,
-                    unlinked_backticks, unlinked_references, unread_components, unread_message, unrecorded_ids)
-
-GAP = re.compile(
-    r"\b(evidence gap|not established|unavailable|unverified|insufficient evidence|no evidence)\b", re.I)
-# The architect summary's title, and the titles of its sections that each end in a flow.
-ARCHITECT = next(title for _, title, ident in HEADINGS if ident == "arch")
-FLOW_SECTIONS = [title for _, title,
-                 ident in HEADINGS if ident in ("arch.current", "arch.next")]
+from common import (COMPONENT_HEADER, DESIGN_TABLES, design_problem, CELL_PIPE, DEFINITION, claim_length_warning, FINDING_FIELDS, FINDING_HEADING, FINDINGS, GAP_FIX, HEADING, LEDGER, LEDGER_SECTIONS, LINKS, QUERY, QUEUE, QUEUE_SUBSECTIONS, REFERENCE_LINK, SOURCE_FINDINGS, SOURCE_LINK_FIX, TABLE_HEADINGS, anchor_ids, areas_problem, backtick_error, cited_sources, component_rows, coverage_material_missing,
+                    depth_problem, expected_files, finding_blocks, gap_problem, h2_span, headings, id_order, ledger_rows, link_definitions, link_text, links, listed, local_link, markdown, outcome_problem, reference_key, report_headings, review_problem, section_span, source_reference_missing, status_problem, strip_anchors, table_cells, unlinked_backticks, unlinked_references, unread_components, unread_message, unrecorded_ids)
 
 
 def check_report(report, handover=False):
@@ -50,8 +34,7 @@ def check_report(report, handover=False):
     found = [match for match in HEADING.finditer(
         prose) if len(match[1]) in (2, 3)]
     actual = [(len(match[1]), match[2]) for match in found]
-    # Sections content.json skips, because the research showed they don't apply.
-    expected = report_headings(read_skip(report.parent))
+    expected = report_headings()
     if actual != expected:
         errors.append("H2/H3 headings must occur exactly in this order: " +
                       " → ".join("#" * level + " " + title for level, title in expected))
@@ -90,42 +73,13 @@ def check_report(report, handover=False):
             report.parent / LEDGER, handover)
         errors += ledger_errors
         warnings += ledger_warnings
-    for line, cells, row in table_rows(prose):
+    # Every table row carries its evidence: a source link or a ledger link.
+    for line, row in table_rows(prose):
         citations = [target for _, _, image, target in links(
             row, definitions) if not image and target]
-        # An unknown owner alone cannot excuse uncited options or tradeoffs.
-        unknown_row = all(GAP.search(cell) or cell.strip(" *_`") in ("", "—", "-", "N/A")
-                          for cell in cells[1:])
-        if not citations and not re.search(r"https?://[^\s<>]+", row) and not unknown_row:
+        if not citations and not re.search(r"https?://[^\s<>]+", row):
             errors.append(
-                f"Line {line}: table row needs a point-of-use source link (or a ledger gap link); an unknown owner does not exempt other claims.")
-    architect = next((i for i, (level, title) in enumerate(actual)
-                      if level == 2 and title == ARCHITECT), None)
-    for i in range(architect + 1 if architect is not None else len(found), len(found)):
-        title = found[i][2]
-        if title not in FLOW_SECTIONS:
-            break
-        start = found[i].end()
-        end = found[i + 1].start() if i + 1 < len(found) else len(text)
-        section = prose[start:end]
-        sequences = [(a, b) for a, b, language, source in fences
-                     if start <= a < end and language == "mermaid" and diagram_kind(source) == "sequenceDiagram"]
-        if len(sequences) > 1:
-            errors.append(
-                f"Architect summary, {title}: expected one sequence, not {len(sequences)}.")
-        if not sequences and not has_gap(section, r"\b(flow|sequence|interaction)s?\b"):
-            errors.append(
-                f"Architect summary, {title}: add a native Mermaid sequence or an explicit flow evidence gap.")
-        if sequences:
-            # The text above the flow's own title, the last heading before the
-            # sequence: the caption under it doesn't count.
-            parts = re.split(
-                r"^####\s", prose[start:sequences[0][0]], flags=re.M)
-            before = "\n".join(parts[:-1])
-            before = re.sub(r"^\s*#+.*$", "", before, flags=re.M).strip()
-            if not before:
-                errors.append(
-                    f"Architect summary, {title}: add the text before the sequence.")
+                f"Line {line}: table row needs a point-of-use source link or a ledger link.")
     if handover:
         extra = sorted(name for name in os.listdir(report.parent)
                        if not name.startswith(".") and name not in expected_files(report.name))
@@ -151,9 +105,9 @@ def check_ledger(path, handover=False):
     """(errors, warnings) of the ledger's structure: its sections and the
     queue's in order, one heading per finding with its fields, every ticket and
     pull request linked, and, at handover, a queue with nothing left ready or in
-    progress, the review recorded, completed actions answered,
-    allowed statuses, depths and areas, code read for every component claiming it,
-    linked sources and a recorded reflection."""
+    progress, the review finished, completed actions answered, allowed
+    statuses, depths and areas, the system design's rules, code read for every
+    component claiming it, and linked sources."""
     errors, warnings = [], []
     try:
         text = path.read_text(encoding="utf-8")
@@ -241,10 +195,6 @@ def check_ledger(path, handover=False):
         spans = unlinked_backticks(without_queries(body))
         if spans:
             errors.append(backtick_error(LEDGER, spans))
-        reflection = h2_text(body, REFLECTION)
-        if not reflection or reflection.strip() in ("", "None yet."):
-            errors.append(
-                f"{LEDGER}: write the ## {REFLECTION} section before handover")
     return errors, warnings
 
 
@@ -257,7 +207,8 @@ def h2_text(body, title):
 
 
 def table_rows(prose):
-    """Find data rows only in pipe tables with a Markdown separator line."""
+    """(line number, line) of each data row of the pipe tables with a Markdown
+    separator line."""
     lines = prose.splitlines()
     active = False
     for index, line in enumerate(lines):
@@ -268,20 +219,9 @@ def table_rows(prose):
             active = True
             continue
         if active and "|" in line and line.strip():
-            yield index + 1, cells, line
+            yield index + 1, line
         else:
             active = False
-
-
-def diagram_kind(source):
-    # Init directives and Mermaid comments may precede the diagram declaration.
-    match = re.search(r"^\s*(flowchart|graph|sequenceDiagram)\b", source, re.M)
-    return match[1] if match else None
-
-
-def has_gap(text, subject):
-    return any(GAP.search(paragraph) and re.search(subject, paragraph, re.I)
-               for paragraph in re.split(r"\n\s*\n", text))
 
 
 def anchors(path):
@@ -353,6 +293,11 @@ def closing_problems(body):
     problems += [depth_problem(row[2]) for row in coverage]
     components = component_rows(body)
     problems += [status_problem(row[0], row[4]) for row in components]
+    # The system design's rules, as ledger.py applies them on write.
+    problems += [design_problem("components", row)
+                 for row in components if len(row) == len(COMPONENT_HEADER)]
+    problems += [design_problem(table, row) for table in DESIGN_TABLES
+                 for row in ledger_rows(body, TABLE_HEADINGS[table]) if re.fullmatch(r"[BEIP]\d+", row[0])]
     problems += [areas_problem(row) for table in ("sources", "gaps")
                  for row in ledger_rows(body, TABLE_HEADINGS[table]) if re.fullmatch(r"[SG]\d+", row[0])]
     definitions = link_definitions(body)
@@ -377,7 +322,9 @@ def failing_rows(body, heading, width, failing):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Check a report's structure and local files; --handover adds the handover checks.")
+        description="Check a report's structure and local files; --handover adds the handover checks.",
+        epilog='Prints one line of JSON, {"ok": bool, "errors": [...], "warnings": [...]}, and exits 1 '
+        "unless the report passes.")
     parser.add_argument("--report", required=True,
                         help="Absolute path of the Markdown report.")
     parser.add_argument("--handover", action="store_true",

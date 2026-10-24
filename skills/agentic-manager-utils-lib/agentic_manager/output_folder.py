@@ -2,27 +2,11 @@
 config sets (output.root), or in <system temp>/agentic-manager if it sets none.
 output_folder() creates it if missing, and keeps what is already in it.
 
-As a script, it prints the folder, so the folder can be known without reading
-the config:
-
-    python3 output_folder.py --name <folder name>
-
---name is the name of the skill's output folder, such as "tech-investigations":
-one folder name, not a path. It prints one line of JSON, {"folder": ...,
-"temporary": bool}, and fails with a message on stderr if the config can't be
-read or the name isn't a single folder name.
-
-"temporary" is true when the config sets no output root, so the folder is in the
-system temp folder and may be cleared; the skill tells the user. Only
-output.root is read from the config, never a source's settings.
-
-A skill that keeps a folder per subject names it with day_folder() and empties
-its place with clear_folder() before each run: a rerun for the same subject and
-day starts from scratch, and earlier days' folders, whose names can't clash,
-are left. Which day it is, and what may be deleted, stay the skill's choice.
-
-An example a skill keeps is a folder holding a description.md that says what
-it is, so every skill names that file the same way.
+As a script it prints the folder, so the agent knows it without reading the
+config, of which only output.root is read. A skill keeping a folder per
+subject names it with day_folder() and empties its place with clear_folder():
+a rerun for the same subject and day starts from scratch, and earlier days'
+folders, whose names can't clash, stay; the skill picks the day and the path.
 """
 import argparse
 import json
@@ -40,7 +24,8 @@ from agentic_manager.config import is_filled, load_config  # noqa: E402
 
 # Where skills write their files when the config sets no output root.
 TEMP_ROOT = os.path.join(tempfile.gettempdir(), "agentic-manager")
-# The file in an example's folder that says what the example is.
+# The file in an example's folder that says what the example is, named here so
+# every skill names it the same way.
 EXAMPLE_DESCRIPTION = "description.md"
 # The name day_folder() gives, read back: its subject and its YY-MM-DD date.
 DAY_FOLDER = re.compile(r"(?P<subject>.+)_(?P<date>\d\d-\d\d-\d\d)")
@@ -102,7 +87,11 @@ def clear_folder(path):
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Print, and create, the folder a skill writes its files to.")
+        description="Print, and create, the folder a skill writes its files to.",
+        epilog='Prints one line of JSON, {"folder": ..., "temporary": bool}. "temporary" is true when '
+        "the config sets no output root, so the folder is in the system temp folder and may be "
+        "cleared, which the skill tells the user. Fails with a message on stderr if the config "
+        "can't be read or the name isn't a single folder name.")
     add_name_argument(parser)
     return parser.parse_args(argv)
 

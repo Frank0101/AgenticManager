@@ -1,39 +1,19 @@
-"""Reads tickets from Jira: each one with its sprints, history, children,
-links, web links and comments in one call, and with --prs its pull requests
-and what each changed; or the tickets a JQL query finds, one line each; and
-the discussion of the pull requests the investigation picks from them.
+"""Reads tickets from Jira: each one in full, with its sprints, history, children,
+links, web links and comments, and with --prs its pull requests and what each
+changed; the tickets a JQL query finds, one line each; and the discussion of the
+pull requests the investigation picks from them.
 
-Why a script: through an MCP, a ticket took a call for itself, one for each
-child or link and more for its pull requests, each answering with every field;
-here one call prints what the investigation reads, as plain text, which costs
-fewer tokens than JSON. Text is printed in full, links kept, since tickets are
-read in full and the pages they link are followed.
-
-A ticket's pull requests are read only with --prs, as the library's
-ticket_pulls.py reads them for every skill: those the Development panels of
-the ticket and of its sub-tasks list, each with the issue it came through.
-gh adds what each changed: its merge commit, files and commits. Commits
-matter only as part of a pull request, and the current state of the code
-comes from cloning the repository, so neither the panel's commits nor
-GitHub's pull requests that name the key are read. Without gh, or with
-github-cli disabled, --prs reads no panel either, as the sprint report
-doesn't, and the output says so. As the library's failures.py sets out, a
-ticket or pull request the service says it has none of is its answer: why
-is printed where it would have been, and the rest still prints. A call to
-Jira or gh that fails, once the library has tried it again, stops the script
-with the service's message and what to do. Projects the user excludes don't
-exist here: the library's client never reads them, and a key of one is
-answered with why, as a key Jira doesn't have is.
-
-A pull request's description, reviews and comments are a command of their
-own: which pull requests matter is known only once the ticket is read, and
-printed for every one they would make a ticket with many pull requests long.
+One call prints, as plain text, what an MCP took a call per ticket, child, link
+and pull request to answer, each with every field. A ticket or pull request the
+service has none of, or of a project the user excludes, is answered with why in
+its place; any other failure stops the script, as the library's failures.py says.
 """
 import argparse
+import re
 import subprocess
 import sys
 
-from common import (JiraClient, pull_parts, browse_url, gather, gh_available, gh_found, nested, plain_text,
+from common import (PROJECT_KEY, JiraClient, pull_parts, browse_url, gather, gh_available, gh_found, nested, plain_text,
                     pulls_by_ticket, stops_on_failure)
 
 FIELDS = ["summary", "status", "issuetype", "parent", "created", "updated", "resolutiondate",
@@ -54,7 +34,8 @@ NO_GH = "gh isn't available or github-cli isn't enabled, so pull requests weren'
 
 def ticket(client, key, site, prs, gh, run=subprocess.run):
     """Everything printed for one ticket, as text: with `prs`, its pull
-    requests too, read only when `gh`."""
+    requests too, read only when `gh`. Text is printed in full, links kept,
+    since tickets are read in full and the pages they link are followed."""
     criteria, sprint = site["criteria"], site["sprint"]
     issue, unread = client.issue(
         key, FIELDS + [f for f in (criteria, sprint) if f])
@@ -137,8 +118,12 @@ def day(stamp):
 
 
 def pull_section(client, issue, gh, run=subprocess.run):
-    """The pull requests' lines: each with what gh says it changed, or, without
-    gh, that none was read."""
+    """The pull requests' lines: those the Development panels of the ticket and
+    of its sub-tasks list, as the library reads them for every skill, each with
+    what gh says it changed. Commits matter only as part of a pull request, and
+    the current code comes from cloning the repository, so neither the panel's
+    commits nor GitHub's pull requests naming the key are read. Without gh, no
+    panel is read either, and the lines say so."""
     if not gh:
         return ["Pull requests (not read):", f"  {NO_GH}"]
     pulls = pulls_by_ticket(client, [issue], True)[issue["key"]]
@@ -221,6 +206,25 @@ def criteria_field(client):
     return next((ident for name, ident in client.field_ids().items() if (name or "").casefold() == CRITERIA), None)
 
 
+def moved_projects(client, jql):
+    """Why a search found nothing, for each project its query names: a project
+    renamed since is found by its old key under its current one, and a search
+    on the old key returns nothing, without an error."""
+    keys = re.findall(rf'\bproject\s*=\s*"?({PROJECT_KEY})\b', jql, re.I)
+    for listed in re.findall(r"\bproject\s+in\s*\(([^)]*)\)", jql, re.I):
+        keys += re.findall(rf'"?({PROJECT_KEY})\b', listed)
+    notes = []
+    for key in dict.fromkeys(keys):
+        project = client.project(key)
+        current = project.get("key") if isinstance(project, dict) else None
+        if current is None:
+            notes.append(f"No project {key} that the account can see")
+        elif current != key:
+            notes.append(
+                f"Moved: project {key} is now {current}: search under {current}")
+    return notes
+
+
 def search_line(issue):
     """A search result on one line, with its parent."""
     parent = nested(issue, ["fields", "parent", "key"])
@@ -229,7 +233,10 @@ def search_line(issue):
 
 def pr_discussion(url, run=subprocess.run):
     """Everything printed for one pull request: its description, reviews,
-    review comments on code lines and conversation comments, in full."""
+    review comments on code lines and conversation comments, in full. A
+    command of its own: which pull requests matter is known only once the
+    ticket is read, and printed for every one they would make a ticket with
+    many pull requests long."""
     parts = pull_parts(url)
     if not parts:
         return f"{url}: not a GitHub pull request"
@@ -303,7 +310,8 @@ def main(argv=None):
         if args.command == "search":
             found = client.search(args.jql, LINE_FIELDS)
             print("\n".join([f"{len(found)} tickets",
-                  *(search_line(i) for i in found)]))
+                  *(search_line(i) for i in found),
+                  *([] if found else moved_projects(client, args.jql))]))
             return
         site, gh = site_fields(client), gh_available()
         # One ticket after another: each already reads WORKERS at a time, and

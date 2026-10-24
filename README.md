@@ -29,11 +29,11 @@ Skills read one global config, `~/.config/agentic-manager/config.json`, wherever
 
 ## Available skills
 
-| Skill                                                                           | What it does                                                                                                                                                                       | Additional dependencies                    |
-| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| [agentic-manager-jira-sprint-report](skills/agentic-manager-jira-sprint-report) | Writes an exec-ready report of a Jira sprint, closed or in progress, with its goal outcome, delivery by epic, burndown, scope timeline and retro notes.                            | -                                          |
-| [agentic-manager-slides-deck](skills/agentic-manager-slides-deck)               | Turns a conversation into an HTML slide deck, with zoom and PDF export, from your reference, from described example layouts or from a blank skeleton, and iterates on it with you. | Google Chrome (optional; tested with 155). |
-| [agentic-manager-tech-investigation](skills/agentic-manager-tech-investigation) | Investigates a technical system or proposal by comparing its documentation, tickets and code, and reports the current state, the current milestone and the next steps.             | Node.js 22.13+.                            |
+| Skill                                                                           | What it does                                                                                                                                                                                       | Additional dependencies                    |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| [agentic-manager-jira-sprint-report](skills/agentic-manager-jira-sprint-report) | Writes an exec-ready report of a Jira sprint, closed or in progress, with its goal outcome, delivery by epic, burndown, scope timeline and retro notes.                                            | -                                          |
+| [agentic-manager-slides-deck](skills/agentic-manager-slides-deck)               | Turns a conversation into an HTML slide deck, with zoom and PDF export, from your reference, from described example layouts or from a blank skeleton, and iterates on it with you.                 | Google Chrome (optional; tested with 155). |
+| [agentic-manager-tech-investigation](skills/agentic-manager-tech-investigation) | Investigates a technical system or proposal by comparing its documentation, tickets and code, and reports its purpose, current status and direction, with its system design today and as targeted. | -                                          |
 
 ## List
 

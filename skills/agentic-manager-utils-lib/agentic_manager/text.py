@@ -1,21 +1,12 @@
 """Helpers for Markdown text, shared by every skill: word counts, names, links,
 headings, fenced code and the date format reports show.
 
-A word count checks the length of AI-written text against its target or limit
-(see AGENTS.md: a length is room to articulate, never a quota), so it only has
-to count words as a reader would, the same way in every skill: a link counts
-as its text, never its URL or key, and a token counts only if it holds a letter
-or a digit, so a dash or an ampersand isn't a word while "don't", "per-market"
-and "3.14" are one each.
-
-A name made from free text, such as an example's title, is a slug, so it is
-safe as a file name or a link key in every skill; when it is taken, the next
-free one gets a number, never replacing what is there. The separator before
-the number is the caller's, so each skill keeps its names' shape.
-
-A heading's anchor is the one a Markdown viewer gives it, GitHub style, so a
-link checked against it works where the document is read; fenced code is
-blanked first, since a # line inside it is neither a heading nor a link.
+A word count checks AI-written text against its length, so it counts words as
+a reader would, the same in every skill: a link as its text, and only tokens
+with a letter or a digit ("don't", "per-market" and "3.14" are one each). A
+name from free text is a slug, safe as a file name or a link key, numbered
+when taken. An anchor is GitHub's for a heading, so a checked link works where
+it is read; fenced code is blanked first, as a # line in it is no heading.
 """
 import re
 from pathlib import Path
@@ -64,7 +55,8 @@ def slug(text):
 
 def free_name(base, taken, separator="-"):
     """`base`, or the first numbered name after it for which `taken(name)` is
-    false: base-2, base-3 and so on, with `separator` before the number."""
+    false: base-2, base-3 and so on, with `separator` before the number, the
+    caller's, so each skill keeps its names' shape."""
     name, number = base, 1
     while taken(name):
         number += 1

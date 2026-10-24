@@ -1,26 +1,12 @@
 """Takes a picture of each slide of a deck with headless Chrome, so the agent
 can see what the user will see before handing it over.
 
-    python3 snap_deck.py --deck <Name>_<YY-MM-DD>
-
 Only a browser can lay out a page, so overflowing text, overlaps and a font
 that renders other than intended are invisible to check_deck.py; Chrome is the
 one browser the skill relies on, run headless so no window opens. The deck
-itself is never changed: for each slide a copy of its page goes to a
-temporary folder, showing that slide alone at its real size, with a <base>
-pointing at the deck's folder so its images in _assets still load. Each copy
-is shot in its own Chrome with its own throwaway profile, in parallel, and
-given a few seconds of page time so charts, drawn by Chart.js loaded from
-the internet, are there when it is shot.
-
-The pictures are then laid out, numbered, at a third of their size, in one
-sheet, so the whole deck is looked at in a single image and a slide's own
-picture is opened only where something looks wrong.
-
-Prints one line of JSON: the `sheet`, then `slides`, the picture of each slide
-in order, all in a new temporary folder. Exits 1, saying to skip the check, if
-Chrome isn't installed or takes over 60 seconds on a picture; exits too if
-Chrome makes no picture.
+itself is never changed: each slide is shot from a copy of its page. The
+pictures are then laid out in one sheet, so the whole deck is looked at in a
+single image, and a slide's own picture opened only where something is wrong.
 """
 import argparse
 import html
@@ -51,7 +37,8 @@ SHEET_COLUMNS = 3
 THUMB_WIDTH = 360
 THUMB_HEIGHT = round(THUMB_WIDTH * SLIDE_HEIGHT / SLIDE_WIDTH)
 GAP, LABEL = 16, 22
-# How long, in page time, scripts get to draw before the picture is taken.
+# How long, in page time, scripts get to draw before the picture is taken, so
+# charts, drawn by Chart.js loaded from the internet, are there when it is.
 PAGE_TIME_MS = 5000
 
 
@@ -87,6 +74,8 @@ def snap(deck):
                 f"Chrome made no picture of {name}: {run.stderr.strip()[-300:]}")
         return picture
 
+    # Each copy is shot in its own Chrome, with its own throwaway profile, so
+    # they can run in parallel.
     with ThreadPoolExecutor(max_workers=4) as pool:
         pictures = list(pool.map(lambda number: shoot(f"slide-{number}", one_slide_page(page, folder, number)),
                                  range(1, count + 1)))
@@ -135,7 +124,8 @@ def chrome_command(chrome, profile, picture, page, size=(SLIDE_WIDTH, SLIDE_HEIG
 def one_slide_page(page, folder, number):
     """The deck's page `page` showing only slide `number` (1 for the first),
     at its real size from the window's corner, its links resolved from the
-    deck's folder `folder`."""
+    deck's folder `folder`, so its images in _assets still load from a copy
+    elsewhere."""
     base = Path(folder).as_uri() + "/"
     style = ("<style>body { padding: 0 !important; background: none !important; }"
              " .toolbar { display: none !important; }"
@@ -147,7 +137,10 @@ def one_slide_page(page, folder, number):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Picture each slide of the deck with headless Chrome.")
+        description="Picture each slide of the deck with headless Chrome. Prints one line of JSON: the "
+        "`sheet`, every slide numbered at a third of its size, then `slides`, the picture of each slide in "
+        "order, all in a new temporary folder. Exits 1, saying to skip the check, if Chrome isn't installed "
+        "or takes over 60 seconds on a picture, and exits if Chrome makes no picture.")
     parser.add_argument("--deck", required=True,
                         help="the deck's folder, <Name>_<YY-MM-DD>, inside slides-decks")
     sheet, pictures = snap(parser.parse_args(argv).deck)

@@ -2,41 +2,11 @@
 its JSON answers, when pull requests were opened and merged, and what to do
 when gh fails.
 
-gh is the user's `github-cli` source, so it is used only when enabled, and
-it signs in itself: no setting is read here. Every call takes `run`, which
-runs the command, so a test answers for gh and nothing reaches GitHub.
-
-failures.py sets out the rule: GitHub saying what was asked for isn't there
-is an answer, and gh giving none is a failure. A single read of one thing,
-gh_found(), returns the answer or why it isn't there; gh tells "not there"
-only in its message, so NOT_FOUND_SIGNS lists its words for it, and GitHub
-gives the same for a private repository the account can't see, which the
-reason says. Any other call gh can't answer, whether it fails, times out or
-answers something other than JSON, raises GhError with gh's own message,
-never returns an empty answer: "gh failed" and "gh answered: nothing" stay
-apart, so a failure such as GitHub's rate limit is never taken for a pull
-request that doesn't exist. Nothing here knows about Jira: a ticket's pull
-requests are ticket_pulls.py's.
-
-A failure names gh's command by its first words only, such as "gh pr
-view" or "gh api graphql" (command_name()): its other arguments, a URL, a
-query or flags, are too long to show and can hold what was searched for.
-
-Before failing, a call is tried again as retry.py sets out: a timeout or a
-busy GitHub is passing, and a rate limit final, its advice to wait a minute
-and run it again.
-
-When pull requests were opened and merged is read through GraphQL, many in
-one call (pull_events()): a call per pull request spent hundreds of requests
-of a sprint's hourly limit. Owner, name and number go in as GraphQL
-variables, never into the query's text. GitHub answers for each pull
-request apart: when it says the pull request itself doesn't exist
-(NOT_FOUND, such as one deleted that Jira still links), that is an answer,
-returned with GitHub's words, so a caller can skip it; any other error, for
-one pull request or the call, is a failure. Here, unlike in a single read,
-a repository it can't find isn't an answer: it is also what an account
-without access to it gets, and gh signed in to the wrong account would then
-drop every pull request of the repository.
+gh is the user's `github-cli` source, used only when enabled, and signs in
+itself: no setting is read here. Every call takes `run`, which runs the
+command, so a test answers for gh and nothing reaches GitHub. As failures.py
+sets out, GitHub saying a thing isn't there is an answer, and gh giving none
+a failure, tried again as retry.py sets out and then raised as GhError.
 """
 import json
 import re
@@ -64,7 +34,9 @@ DEFAULT_HOST = "github.com"
 GRAPHQL = ["api", "graphql"]
 # A word of gh's command: gh's commands are a group and a command (pr view,
 # search prs) or api and its endpoint (api graphql), in lower-case words, so
-# at most COMMAND_WORDS of them name it.
+# at most COMMAND_WORDS of them name it. A failure names the command by these
+# alone: its other arguments, a URL, a query or flags, are too long to show
+# and can hold what was searched for.
 COMMAND_WORD = re.compile(r"[a-z]+(?:-[a-z]+)*")
 COMMAND_WORDS = 2
 # What a pull request's opening and merge are read with; GraphQL's state is
@@ -77,8 +49,9 @@ PASSING_SIGNS = ("no answer within", "http 500", "http 502", "http 503", "http 5
 # What GitHub's GraphQL calls an error for something that doesn't exist.
 NOT_FOUND = "NOT_FOUND"
 # What gh says, in lower case, when GitHub has no such thing, or none the
-# account can see: GraphQL's "Could not resolve to a PullRequest with the
-# number of 9." (gh pr view) and REST's "Not Found (HTTP 404)" (gh api).
+# account can see, such as a private repository: GraphQL's "Could not resolve
+# to a PullRequest with the number of 9." (gh pr view) and REST's "Not Found
+# (HTTP 404)" (gh api). gh tells it only in its message.
 NOT_FOUND_SIGNS = ("could not resolve to a ", "http 404")
 # What to do when gh fails for anything but a rate limit (retry.py's
 # RATE_LIMITED): gh's own setup, or the user goes on without GitHub.
@@ -105,9 +78,11 @@ def pull_events(urls, run=subprocess.run):
     {url: GitHub's words} of those GitHub says don't exist, in the order of
     `urls`. Raises GhError for any other that gh couldn't read, such as one
     GitHub can't resolve or a URL whose parts aren't safe to ask about. Read
-    in a GraphQL call for each batch (batch.py) of one host's pull requests:
-    each is a single object, not a connection, so a call costs one point of
-    GraphQL's hourly 5,000 and stays far below its node limit."""
+    in a GraphQL call for each batch (batch.py) of one host's pull requests,
+    as a call per pull request spent hundreds of requests of a sprint's
+    hourly limit: each is a single object, not a connection, so a call costs
+    one point of GraphQL's hourly 5,000 and stays far below its node
+    limit."""
     urls = list(dict.fromkeys(urls))
     hosts = {}
     for url in urls:
@@ -139,8 +114,14 @@ def pull_parts(url):
 def batch_events(host, urls, run=subprocess.run):
     """({url: its events}, {url: GhError}) of the pull requests at `urls`, all
     on `host`, read in one GraphQL call: a repository by alias r<i>, its pull
-    requests by p<j>, each one's owner, name and number a variable. Raises
-    GhError when gh answers nothing for the call as a whole."""
+    requests by p<j>, each one's owner, name and number a variable, never in
+    the query's text. Raises GhError when gh answers nothing for the call as
+    a whole. GitHub answers for each pull request apart: one it says doesn't
+    exist (NOT_FOUND, such as one deleted that Jira still links) is an
+    answer; any other error is a failure. Unlike in gh_found(), a repository
+    it can't find isn't an answer: it is also what an account without access
+    gets, and gh signed in to the wrong account would then drop every pull
+    request of the repository."""
     query, fields, aliases = events_query(urls)
     args = [*GRAPHQL, *(["--hostname", host] if host !=
                         DEFAULT_HOST else []), "-f", f"query={query}", *fields]
@@ -207,7 +188,10 @@ def gh_found(args, thing, run=subprocess.run) -> tuple[Any, str | None]:
 
 def gh_json(args, run=subprocess.run):
     """gh's JSON answer to `args`, the command after gh, tried again while gh
-    fails in passing; raises GhError when gh gives none."""
+    fails in passing; raises GhError when gh gives none, whether it fails,
+    times out or answers something other than JSON. It never returns an
+    empty answer for a failure, so one such as GitHub's rate limit is never
+    taken for a thing that doesn't exist."""
     return retried(lambda: gh_once(args, run), passing, note)
 
 

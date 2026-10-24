@@ -1,14 +1,12 @@
 """Trying a call to a service again when it fails in passing, the one rule
 every client of the library follows.
 
-Services drop connections, time out and answer "busy"; one such failure
-shouldn't end a skill's run, so the call is tried again after each of
-RETRY_WAITS, then fails. Each client says which of its failures are passing;
-any other is final at once. A rate limit, of any service, is final, with the
-advice to wait a minute: it doesn't lift within the waits, and the skills make
-few calls, so waiting out its window isn't worth the machinery. Each wait is
-said on stderr, so a run that recovered still shows the service struggled;
-the client words it, so it says nothing a secret could be in.
+Services drop connections, time out and answer "busy", and one such failure
+shouldn't end a run; each client says which of its failures are passing. A
+rate limit, of any service, is final, with the advice to wait a minute: it
+doesn't lift within the waits, and the skills make too few calls to wait out
+its window. Each wait is said on stderr in the client's words, which hold no
+secret, so a run that recovered still shows the service struggled.
 """
 import sys
 import time

@@ -1,25 +1,12 @@
-"""
-Write the sprint report Markdown from <report_dir>/data.json and the agent's
+"""Write the sprint report Markdown from <report_dir>/data.json and the agent's
 text in <report_dir>/content.json.
 
-Usage:
-    python3 make_report.py --report-dir <report_dir>
-
-Writes <report_dir>/<label>_Sprint_Report.md. Everything but content.json's
-text is generated here, in the vocabulary and formats set out in common.py: a
-fixed layout lets readers find the same figure in the same place in every
-report, and the agent's parts are marked [AI Gen.] so they can tell
-interpretation from data. check_report.py checks the result.
-
-The timeline's commentary is generated, not written, because what departed
-from the ideal sprint is a fact of the data. Every spell is shown in the
-timeline, including extra work added and descoped again, which the final
-figures don't count: the history hides nothing.
-
-The agent's text is validated before anything is written, each problem naming
-the content.json field to fix, so it is fixed where it was written. Bare Jira
-keys in it are linked here; em dashes in it are replaced by commas. Copied Jira
-text (goal, sprint and epic names) keeps its wording.
+Everything but content.json's text is generated here, in the vocabulary and
+formats set out in common.py: a fixed layout lets readers find the same figure
+in the same place in every report, and the agent's parts are marked [AI Gen.]
+so they can tell interpretation from data. The agent's text is validated before
+anything is written, each problem naming the content.json field to fix, so it
+is fixed where it was written. check_report.py checks the result.
 """
 import argparse
 import html
@@ -49,6 +36,9 @@ TAGS = {
 
 
 def strip_em_dashes(value):
+    """The agent's text with each em dash, and the spaces around it, as a
+    comma, at any depth: the report uses none. Copied Jira text (the goal,
+    sprint and epic names) isn't the agent's, so it keeps its wording."""
     if isinstance(value, str):
         return re.sub(r"\s*—\s*", ", ", value)
     if isinstance(value, dict):
@@ -155,6 +145,7 @@ class Report:
         return f'<a href="{self.url(key)}">{html.escape(key)}</a>'
 
     def linkify(self, text):
+        """`text` with each bare Jira key, the agent's included, a link."""
         return ISSUE_KEY.sub(lambda m: self.md_key(m.group(0)), text)
 
     def table_text(self, text):
@@ -186,9 +177,11 @@ class Report:
         return "<br><br>".join(parts) or "–"
 
     def timeline_table(self):
-        """Every spell's events by day: one row per ticket with events that
-        day, its estimate at the end of the day and its events as tags in time
-        order; the day's date and end-of-day figures span its rows."""
+        """Every spell's events by day, counted or not, as the history hides
+        nothing, not even extra work added and descoped again: one row per
+        ticket with events that day, its estimate at the end of the day and its
+        events as tags in time order; the day's date and end-of-day figures
+        span its rows."""
         lines = ['<table style="font-size:75%">', '<tr>', '<th style="width:14%">Date</th>',
                  '<th style="width:14%">Ticket</th>', '<th style="width:46%">Events</th>',
                  '<th style="width:26%">End of day</th>', '</tr>']
@@ -293,7 +286,8 @@ class Report:
     def commentary(self):
         """The timeline's commentary: everything that departed from the ideal
         sprint (all of it committed on the first day, completed steadily,
-        nothing left at the end), from the spells alone, in this order and
+        nothing left at the end), generated rather than written by the agent,
+        as it is a fact of the data. From the spells alone, in this order and
         leaving out what didn't happen: the commitment, with what was already
         Done at the start and what was descoped; the extra work, with what had
         no estimate and what was added and descoped again; reopened,
@@ -507,7 +501,10 @@ def were(count):
 
 def main():
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+        description=(__doc__ or "").split("\n\n")[0],
+        epilog="Writes <report_dir>/<label>_Sprint_Report.md, or nothing when content.json breaks a rule,\n"
+        "each problem naming the field to fix.",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--report-dir", required=True,
                         help="report folder holding data.json and content.json")
     args = parser.parse_args()

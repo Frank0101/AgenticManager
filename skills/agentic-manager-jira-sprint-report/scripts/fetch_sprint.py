@@ -1,55 +1,12 @@
-"""
-Fetch everything a sprint report needs from Jira, and GitHub when it can be
+"""Fetch everything a sprint report needs from Jira, and GitHub when it can be
 read, into a new report folder.
 
-Usage (exactly one sprint selector):
-    python3 fetch_sprint.py --sprint-id 123 [--board 42]   (the board whose sprint report is read)
-    python3 fetch_sprint.py --project PROJ            # most recently closed sprint
-    python3 fetch_sprint.py --project PROJ --active   # the sprint in progress
-    python3 fetch_sprint.py --board 42 [--active]
-    python3 fetch_sprint.py --sprint-name "Sprint 3" --project PROJ   (or --board 42)
-    python3 fetch_sprint.py --sprint-name "PROJ Sprint 3"   (the first word is tried as the project key)
-
-Prints one line of JSON on stdout (the sprint, its report folder and whether
-that folder is temporary); progress goes to stderr. The raw data goes to
-<report_dir>/_raw.
-
-Every run starts from scratch: once the sprint is fetched, the report folder
-of the same sprint and day is deleted, so there is no stale state to reuse.
-Earlier days' folders are left, since their names can't clash with today's.
-Only active and closed sprints can be reported; a future one fails before
-anything is deleted.
-
-The report is as at the close, or the fetch for an active sprint, so changelogs
-are fetched, not current values (see build_sprint_data.py). A ticket just read
-that Jira then says it has none of, such as one deleted meanwhile, is Jira's
-answer, as the library's failures.py sets out: said on stderr, and its
-changelog written empty, so its current values stand for its history, as
-for a ticket never changed. Nothing is computed here beyond choosing what to
-fetch: the previous sprint (for the carry-over), which comments and epics,
-and where to look for each ticket's pull requests; the raw files keep what
-was fetched, and build_sprint_data.py does the rest, such as leaving out the
-comments written after that moment. The tickets whose comments are fetched
-are the blocker candidates, worked out here from the changelogs
-(common.blocker_candidate_keys), as there are no events yet.
-
-Sub-tasks are left out of the report, as Jira's sprint report rolls their
-work into the parent, but their pull requests are the parent's: a ticket's
-pull requests are read as the library's ticket_pulls.py reads them, from the
-Development panels of it and of its sub-tasks, each with the ticket it came
-through (`via`), as a ticket removed from the sprint takes its sub-tasks with
-it. Then GitHub gives when each was opened and merged, many in one GraphQL
-call. The pull request data is fetched for a later use; build_sprint_data.py
-leaves it out until then. gh (the github-cli source) is optional: without it
-neither the panel nor GitHub is read, as the panel alone gives no open or
-merge times, and the raw file records that GitHub wasn't read. With it, a
-pull request GitHub says doesn't exist, such as one deleted that Jira still
-links, is skipped: dropped from its tickets, said on stderr and kept in the
-raw file's `skipped` with GitHub's message, as there is nothing to read and
-nothing to fix. Any other gh failure, such as GitHub's rate limit, stops the
-fetch with gh's message and the library's advice: a pull request it couldn't
-read would otherwise be taken for work without times. A Jira or gh failure
-is raised to main, which stops with it (the library's failures.py).
+Nothing is computed here beyond choosing what to fetch: the previous sprint,
+the epics, whose comments and where to look for pull requests. The raw files
+keep what was fetched, today's values included, and build_sprint_data.py
+rebuilds the sprint as at its end from them. Everything is fetched before the
+report folder is touched, so a Jira or gh failure, which stops the fetch with
+the library's failures.py, leaves the earlier report in place.
 """
 import argparse
 import json
@@ -72,11 +29,25 @@ BASE_FIELDS = [
 ]
 # What a GitHub failure's message starts with.
 NO_REPORT = "GitHub couldn't be read, so no report was written"
+# How the sprint is named on the command line, shown in --help.
+SELECTOR_EXAMPLES = """examples, with exactly one sprint selector:
+  %(prog)s --sprint-id 123 [--board 42]
+  %(prog)s --project PROJ               the last closed sprint
+  %(prog)s --project PROJ --active      the sprint in progress
+  %(prog)s --board 42 [--active]
+  %(prog)s --sprint-name "Sprint 3" --project PROJ    (or --board 42)
+  %(prog)s --sprint-name "PROJ Sprint 3"              its first word tried as the project key"""
+# What this script prints, shown in --help.
+PRINTS = """Prints one line of JSON on stdout: the sprint, its report folder and whether that
+folder is temporary; progress goes to stderr. Only an active or closed sprint can
+be reported."""
 
 
 def prepare_report_dir(report_dir, sprint_id, log):
     """Delete the report already in the destination folder (the same sprint and
-    day), then return a new, empty _raw folder."""
+    day), then return a new, empty _raw folder. Every run starts from scratch,
+    so there is no stale state to reuse; earlier days' folders are left, since
+    their names can't clash with today's."""
     if os.path.lexists(report_dir):
         other = stored_sprint_id(report_dir)
         if other is not None and other != str(sprint_id):
@@ -116,8 +87,11 @@ def previous_sprint(sprint, board_sprints):
 
 
 def read_changelogs(client, issues, fields):
-    """{key: its changes} of each of `issues`; one Jira now says it has none
-    of, said on stderr, gets [], its current values all along."""
+    """{key: its changes} of each of `issues`, from which the sprint is
+    rebuilt as at its end. One Jira now says it has none of, such as one
+    deleted meanwhile, is Jira's answer, as the library's failures.py sets
+    out: said on stderr, it gets [], so its current values stand for its
+    history, as for a ticket never changed."""
     changelogs, gone = client.batched_field_changes(issues, fields)
     for why in gone.values():
         log(
@@ -138,7 +112,16 @@ def pull_requests(client, issues, gh, run=subprocess.run):
     {url: when GitHub says it was opened and merged}, skipped: [{url, via:
     [the tickets it was found through], message}] of those GitHub says don't
     exist, left out of `tickets`}; with gh False, nothing is read and all
-    are empty. Raises GhError when gh fails otherwise."""
+    are empty. Raises GhError when gh fails otherwise.
+
+    Sub-tasks are left out of the report, but their pull requests are their
+    ticket's, as a ticket removed from the sprint takes its sub-tasks with it.
+    Without gh the panel isn't read either, as it alone gives no open or merge
+    times. One GitHub says doesn't exist, such as one deleted that Jira still
+    links, is skipped, as there is nothing to read and nothing to fix; any
+    other failure stops the fetch, as a pull request it couldn't read would
+    otherwise be taken for work without times. The report doesn't use this
+    data yet: it is fetched for a later use."""
     found = pulls_by_ticket(client, issues, gh)
     if not gh:
         return {"github_read": False, "tickets": {}, "events": {}, "skipped": []}
@@ -160,17 +143,7 @@ def log(message):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--sprint-id", help="numeric Jira sprint id")
-    parser.add_argument(
-        "--sprint-name", help="exact sprint name; with neither --project nor --board, "
-        "its first word is tried as the project key")
-    parser.add_argument("--project", help="project key, e.g. PROJ")
-    parser.add_argument("--board", help="numeric board id; with --sprint-id, the board whose "
-                        "sprint report is read")
-    parser.add_argument("--active", action="store_true",
-                        help="with --project or --board: the sprint in progress, not the last closed one")
+    parser = selector_parser((__doc__ or "").split("\n\n")[0], PRINTS)
     args = parser.parse_args()
 
     # Conflicting selectors fail rather than one silently winning.
@@ -190,6 +163,24 @@ def parse_args():
     elif (args.project is None) == (args.board is None):
         parser.error("pass exactly one of --sprint-id, --project or --board")
     return args
+
+
+def selector_parser(description, prints):
+    """The command line that names the sprint, whose --help shows
+    `description`, the selectors with examples and `prints`, what the script
+    prints."""
+    parser = argparse.ArgumentParser(description=description, epilog=f"{SELECTOR_EXAMPLES}\n\n{prints}",
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--sprint-id", help="numeric Jira sprint id")
+    parser.add_argument(
+        "--sprint-name", help="exact sprint name; with neither --project nor --board, "
+        "its first word is tried as the project key")
+    parser.add_argument("--project", help="project key, e.g. PROJ")
+    parser.add_argument("--board", help="numeric board id; with --sprint-id, the board whose "
+                        "sprint report is read")
+    parser.add_argument("--active", action="store_true",
+                        help="with --project or --board: the sprint in progress, not the last closed one")
+    return parser
 
 
 def main():
@@ -260,7 +251,8 @@ def main():
         parents = client.issues_by_ids(parent_ids, ["summary", "description"])
 
         # Comments are fetched only for the tickets that were blocker candidates
-        # at the moment the report describes.
+        # at the moment the report describes, worked out from the changelogs,
+        # as no events exist yet.
         blocker_keys = blocker_candidate_keys(sprint_issues + punted_issues, changelogs, categories,
                                               flagged_field, sprint_id, moment)
         comments = dict(

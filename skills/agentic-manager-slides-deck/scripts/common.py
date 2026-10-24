@@ -1,26 +1,10 @@
-"""What the skill's scripts share: the deck folder's fixed file names and the
-closed set of files it holds, the slide's fixed size, the runtime libraries a
-deck may load, the HTML elements without a closing tag, what counts as a
-remote file, the tokens that place a chart, a ring, an image or the page
-number in a slide, the stand-in for a real image, the placeholder format, how
-to find a deck's folder, and the examples and images every deck shares, read
-from their descriptions.
-Scripts import the shared library's names from here, so they don't depend on
-the order of their imports.
-
-Chart.js is the only code a deck loads from outside: it runs in the viewer's
-browser, never while the deck is built, so nothing the skill runs depends on
-it. It is pinned, so a deck draws the same way every time it is opened.
-Diagrams are inline SVG, drawn in the deck's own look.
-
-Images (logos, screenshots, photos) live once in _assets, next to the decks,
-and every deck links to them there rather than holding a copy, so the HTML
-stays small; a deck shared on its own is exported to PDF, which carries its
-images. Each image is a folder of its own, like an example: the
-image, image.<type>, and a description.md saying what it shows, so a later
-deck can find and reuse it, and adding or deleting an image is adding or
-deleting its folder. A downloaded image's description also holds its credit,
-so every slide that shows it can credit it and no deck can lose the credit.
+"""What the skill's scripts share: the deck folder's file names and the closed
+set of files it holds, the slide's size, the one library a deck loads, what a
+slide may hold and the tokens that place a chart, a ring, an image or the page
+number in it, how to find a deck's folder, and the examples and images every
+deck shares, listed from their descriptions each time so the lists can't go
+stale. Scripts import the shared library's names from here, so they don't
+depend on the order of their imports.
 """
 import glob
 import os
@@ -37,9 +21,14 @@ from agentic_manager.text import NAME, SLUG, free_name, slug  # noqa: E402,F401
 from agentic_manager.web import ssl_context  # noqa: E402,F401
 
 FOLDER_NAME = "slides-decks"
+# Images (logos, screenshots, photos) live once in _assets, next to the decks,
+# and every deck links to them rather than holding a copy, so the HTML stays
+# small; a deck shared on its own is exported to PDF, which carries them. Each
+# is a folder named in lowercase words joined by hyphens, like an example,
+# holding image.<a type a browser shows> and a description of what it shows,
+# so a later deck can find and reuse it; a downloaded image's description also
+# holds its credit, so no deck that shows it can lose the credit.
 ASSETS = "_assets"
-# An image in _assets is a folder named in lowercase words joined by hyphens,
-# holding the image as image.<a type a browser shows> and its description.
 IMAGE_TYPES = ("png", "jpg", "jpeg", "gif", "svg", "webp")
 ASSET_IMAGE = re.compile(r"image\.(?:" + "|".join(IMAGE_TYPES) + ")")
 # The description's labelled lines: what the image shows, then, for an image
@@ -62,6 +51,9 @@ DECK_SUFFIX = "_Slides.html"
 # Every slide is this size; content that doesn't fit is clipped.
 SLIDE_WIDTH, SLIDE_HEIGHT = 1100, 618
 
+# Chart.js is the only code a deck loads from outside: it runs in the viewer's
+# browser, never while the deck is built, so nothing the skill runs depends on
+# it. It is pinned, so a deck draws the same way every time it is opened.
 CHART_JS = "https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"
 
 # {{chart:<id>}} or {{ring:<id>}} in a slide's HTML, replaced by the chart or
@@ -137,13 +129,21 @@ def examples():
             example = os.path.dirname(path)
             if os.path.basename(example).startswith("_"):
                 continue
-            with open(path, encoding="utf-8") as f:
-                text = f.read()
-            title = TITLE.match(text)
+            title, fields = read_description(path)
             found.append({"folder": os.path.realpath(example), "source": source,
-                          "title": title[1] if title else "",
-                          "use_for": dict(LABELLED_LINE.findall(text)).get(USE_FOR, "")})
+                          "title": title, "use_for": fields.get(USE_FOR, "")})
     return found
+
+
+def read_description(path):
+    """(title, {label: text}) of the description.md at `path`, an example's or
+    an image's: empty if there is none."""
+    text = ""
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    title = TITLE.match(text)
+    return title[1].strip() if title else "", dict(LABELLED_LINE.findall(text))
 
 
 def user_examples_dir():
@@ -196,16 +196,11 @@ def read_asset(name):
     """{"name", "title", "shows", "credit"} of the image `name` in _assets, from
     its description: empty text if it has none, and credit None unless it was
     downloaded."""
-    path = os.path.join(assets_dir(), name, EXAMPLE_DESCRIPTION)
-    text = ""
-    if os.path.isfile(path):
-        with open(path, encoding="utf-8") as f:
-            text = f.read()
-    title = TITLE.match(text)
-    fields = dict(LABELLED_LINE.findall(text))
+    title, fields = read_description(
+        os.path.join(assets_dir(), name, EXAMPLE_DESCRIPTION))
     credit = {key: fields.get(label, "")
               for key, label in CREDIT_FIELDS.items()}
-    return {"name": name, "title": title[1].strip() if title else "", "shows": fields.get(SHOWS, ""),
+    return {"name": name, "title": title, "shows": fields.get(SHOWS, ""),
             "credit": credit if credit["credit"] else None}
 
 

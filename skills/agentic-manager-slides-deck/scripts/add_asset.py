@@ -4,30 +4,9 @@ its own holding the image and its description, so a slide can show it as
 gave, one downloaded from the internet with its credit, or a description for
 an image already there.
 
-    python3 add_asset.py --file <path> --title <title> --shows <what it shows> [--name <name>]
-    python3 add_asset.py --url <image> --page <page> --license <license> --credit <credit> \
-        --title <title> --shows <what it shows> [--name <name>]
-    python3 add_asset.py --name <name> --title <title> --shows <what it shows>
-
-<name> is the folder's name: lowercase words joined by hyphens, such as
-acme-logo. Without --name it comes from the file's or the address's own name.
-An image of the same name is replaced, folder and all: every deck that links
-it shows the new one from then on. The image inside is always image.<type>,
-so the name says what the image is and nothing else.
-
 Every image has a description, since an agent can't tell what an image shows
-from its name: a title, and one line on what it shows and how it looks. A
-downloaded image's description also holds its credit line, its license, the
-page that states the license and its own address, so every slide that shows
-it credits it. Its type is read from its first bytes, not from the address,
-so a page that isn't an image is refused rather than saved. An image the user
-gave has no credit: it is theirs.
-
-_assets is never deleted by a new deck, so an image added once serves every
-later deck.
-
-Prints one line of JSON: the image's `asset` name, its `path` and whether it
-`replaced` one of the same name.
+from its name. The image inside is always image.<type>, so the name says what
+it is and nothing else; an image of the same name is replaced, folder and all.
 """
 import argparse
 import json
@@ -41,7 +20,8 @@ from common import (ASSETS, EXAMPLE_DESCRIPTION, FOLDER_NAME, SLUG, asset_image,
 # Image hosts often refuse requests without one.
 USER_AGENT = "AgenticManager-slides-deck/1.0 (an image for a slide deck)"
 MAX_BYTES = 20 * 1024 * 1024
-# An image's type by its first bytes; SVG is text, found by its root element.
+# An image's type by its first bytes, not by its address, so a page that isn't
+# an image is refused rather than saved; SVG is text, found by its root element.
 SIGNATURES = [(b"\x89PNG\r\n\x1a\n", "png"), (b"\xff\xd8\xff", "jpg"), (b"GIF87a", "gif"),
               (b"GIF89a", "gif")]
 NOT_AN_IMAGE = "is not a PNG, JPEG, GIF, WebP or SVG image"
@@ -156,6 +136,16 @@ def checked_name(name):
 
 
 EXAMPLES = """
+<name>, the image's folder, is lowercase words joined by hyphens; without
+--name it comes from the file's or the address's own name. An image of the
+same name is replaced: every deck that links it shows the new one from then
+on. A downloaded image's description also holds its credit line, its license,
+the page that states the license and its own address; an image the user gave
+has no credit: it is theirs.
+
+Prints one line of JSON: the image's `asset` name, its `path` and whether it
+`replaced` one of the same name.
+
 add an image the user gave:
   python3 add_asset.py --file ~/Downloads/acme-logo.svg --title 'Acme logo' \\
     --shows 'the Acme logo, dark blue lettering on a transparent background, wide'

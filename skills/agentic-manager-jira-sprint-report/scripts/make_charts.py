@@ -1,38 +1,10 @@
-"""
-Draw the report's three charts as SVG from <report_dir>/data.json, using only
+"""Draw the report's three charts as SVG from <report_dir>/data.json, using only
 the standard library.
 
-Usage:
-    python3 make_charts.py --report-dir <report_dir>
-    python3 make_charts.py --report-dir <report_dir> --print-series   # burndown numbers only
-
-Outcome charts (tickets and pts): how the counted spells ended (see
-build_sprint_data.py), as Completed, Not completed (Open while running) and
-Descoped, in three bars on one scale: carry-over, new commitment and extra. A
-bracket joins the first two as the commitment. Both charts share one layout so
-they read as a pair.
-
-Burndown: four series.
-
-  Commitment          open pts of the original commitment
-  Commitment + extra  the same plus later scope; never below the commitment
-  Ideal               from the same baseline, flat on the start day and over
-                      weekends, then even per weekday to zero at the end
-  Spread              commitment minus ideal: positive is behind
-
-  * Both lines replay the same events as every other part of the report, at
-    each day's estimates, so the burndown can't contradict the timeline.
-  * The start day has two points at the same x: the whole commitment at the
-    start, Done or not, then that day's reading. The drop between them is work
-    already Done and that day's changes, not delivery pace, so it is vertical.
-  * Readings are end of day, except the last: the exact close, or the fetch.
-    For a closed sprint, work finished after the close still counts as open.
-  * A running sprint past its end date continues through the fetch date;
-    the ideal keeps its final planned value. With no weekday after the start,
-    it stays at the baseline rather than inventing a daily burn rate.
-
-Blue and violet are close for deuteranopia, so each series also has its own
-dash pattern, repeated in the legend; keep the four patterns distinct.
+The charts are views of data.json: the outcome charts draw its breakdown of the
+counted spells, and the burndown its daily readings, which replay the same
+events as every other part of the report, so no chart can contradict the
+timeline.
 """
 import argparse
 import html
@@ -50,6 +22,12 @@ MUTED = "#6b6b6b"
 GRID = "#e8e7e4"
 WEEKEND = "#e7e4dc"
 
+# The burndown's series. Commitment is the open pts of the original commitment;
+# Commitment + extra adds later scope, so it is never below; Ideal starts from
+# the same baseline, flat on the start day and over weekends, then even per
+# weekday to zero at the end; Spread is the commitment minus the ideal, positive
+# when behind. Blue and violet are close for deuteranopia, so each series also
+# has its own dash pattern, repeated in the legend: keep the four distinct.
 SERIES = {
     "committed": {"label": "Commitment", "color": "#2a78d6", "width": 2.4, "dash": None},
     "total": {"label": "Commitment + extra", "color": "#9c27b0", "width": 2.0, "dash": "14 4"},
@@ -69,6 +47,11 @@ OUTCOME_SEGMENTS = [(outcome, *OUTCOME_COLOURS[outcome])
 
 
 # --- outcome charts
+#
+# How the counted spells ended, as Completed, Not completed (Open while the
+# sprint runs) and Descoped, in three bars on one scale: carry-over, new
+# commitment and extra, with a bracket joining the first two as the commitment.
+# The tickets and pts charts share one layout so they read as a pair.
 
 def outcome_chart(data, is_points):
     breakdown, totals, grand, rows, group_lines = outcome_labels(
@@ -264,6 +247,10 @@ def text_width(text, size, bold=False):
 # --- burndown
 
 def build_series(data):
+    """The burndown's rows, from data.json's daily readings. The start day has
+    two points at the same x, so the drop between them is vertical: the whole
+    commitment at the start, Done or not, then that day's reading, as that
+    drop is work already Done and the day's changes, not delivery pace."""
     actuals = {date.fromisoformat(
         row["date"]): row for row in data["burndown"]}
     sprint_start, sprint_end = date.fromisoformat(
@@ -426,7 +413,7 @@ def print_series(series):
 
 def main():
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+        description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument("--report-dir", required=True,
                         help="report folder holding data.json")
     parser.add_argument("--print-series", action="store_true",

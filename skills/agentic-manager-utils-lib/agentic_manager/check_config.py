@@ -1,38 +1,13 @@
 #!/usr/bin/env python3
 """Validates the user's AgenticManager config (~/.config/agentic-manager/config.json)
-against config-template.json, which lists every supported key: every group and
-source in its "sources" object, and in its "output" object the settings for
-where skills write files.
+against config-template.json, which lists every supported key.
 
-Usage: check_config.py [--init]
-  --init  copies the template to the config path first, if no config exists yet.
-  --help  prints this.
-
-Prints one line of JSON:
-  success: {"ok": true, "path": ..., "template": ..., "created": bool,
-            "sources": {...}}, plus "next_steps" if the config was just created
-  failure: {"ok": false, "path": ..., "template": ..., "created": bool,
-            "errors": ["...", ...], "next_steps": "..."}
-           (exit code 1)
-
-The config may hold only what the template lists, with the same types, but may
-leave things out: a missing group or source counts as disabled, and a missing
-output setting as not set, so configs keep working when the template gains new
-ones. The user only switches "enabled" and fills in settings; an enabled source
-must have every text setting filled in, while a list setting, which the
-template holds as an empty list, and output settings are optional.
-
-"next_steps" tells the agent what to do about the config, so no skill repeats
-it: the agent only changes the config to create it when it is missing, and only
-if the user agrees; for every other problem it explains the fix and the user
-makes it. The config is only ever written by --init, and never overwritten.
-
-"sources" lists every source of the template by group, enabled or not, so the
-calling skill decides what it needs. A source named "<tool>-<channel>" (e.g.
-"jira-api") comes already split into tool and channel, so skills never parse
-the name; a script splits it with config.tool_channel(). A disabled source has "setup": how to enable it. Setting values are
-never returned: they can hold secrets, which a script reads from the config
-itself.
+The config may hold only what the template lists, but may leave things out, so
+configs keep working when the template gains new ones. It is only ever written
+by --init, never overwritten; "next_steps" tells the agent what to do about it,
+so no skill repeats it. Every source comes by group, enabled or not, so the
+calling skill decides what it needs, with its name split into tool and channel,
+and never a setting's value: those can be secrets, which a script reads itself.
 """
 
 import json
@@ -48,6 +23,21 @@ from agentic_manager.config import CONFIG_PATH, is_filled, is_text_list, load_js
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "config-template.json")
+
+HELP = """Validates the user's AgenticManager config against its template.
+
+Usage: check_config.py [--init]
+  --init  copies the template to the config path first, if no config exists yet.
+  --help  prints this.
+
+Prints one line of JSON:
+  success: {"ok": true, "path": ..., "template": ..., "created": bool,
+            "sources": {group: {source: {"tool", "channel", "enabled",
+                                         "setup" when disabled}}}},
+           plus "next_steps" if the config was just created
+  failure: {"ok": false, "path": ..., "template": ..., "created": bool,
+            "errors": ["...", ...], "next_steps": "..."}
+           (exit code 1)"""
 
 # What the user does to the config once it exists.
 EDIT = ("edit the config at `path`: enable the sources they use, fill in their "
@@ -96,7 +86,9 @@ def _check_sources(groups, template_groups):
     return errors
 
 
-# Returns the problems with one source; empty if it is valid.
+# Returns the problems with one source; empty if it is valid. Each setting has
+# the template's type; an enabled source must fill in every text setting, while
+# a list setting, which the template holds as an empty list, is optional.
 def _check_source(where, settings, template_settings):
     if not isinstance(settings, dict):
         return [f"{where} must be an object"]
@@ -179,7 +171,7 @@ def _quoted(keys):
 def main():
     args = sys.argv[1:]
     if args in (["-h"], ["--help"]):
-        print(__doc__)
+        print(HELP)
         return
     init = "--init" in args
     result = {"path": CONFIG_PATH, "template": TEMPLATE_PATH}

@@ -2,30 +2,21 @@
 library shares: how many things in one call, and how many calls at a time,
 and gather(), which makes many calls that way.
 
-A batch is what a call sends, such as the tickets whose changelogs it asks for
-or the pull requests whose times it reads; a page is how a service splits its
-answer, and each client asks for the largest page its service allows, since a
-smaller one only adds calls for the same answer. A batch keeps each call light
-and limits what one failed call takes down, and one size for every client
-keeps the rule simple.
-
-Calls run WORKERS at a time: Jira's internal Development-panel endpoint drops
-connections under more, and GitHub discourages concurrent requests (its
-secondary rate limit), while batches leave few calls to make.
-
-A call that still fails once retry.py's rule gives up stops gather(), and the
-skill's script with it, for Jira and GitHub alike: a partial answer is easy
-to take for a whole one, such as a pull request it couldn't read for work
-without times, so no call starts after a failure and the failure is raised.
-A thing the service says isn't there is an answer, not a failure
-(failures.py).
+A batch keeps each call light and limits what one failed call takes down; a
+page, how a service splits its answer, is the largest it allows, as a smaller
+one only adds calls. A call that still fails once retry.py gives up stops
+gather(), and the skill with it: a partial answer is easy to take for a whole
+one. A thing the service says isn't there is an answer (failures.py).
 """
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 
-# Things asked about in one call.
+# Things asked about in one call, the same for every client to keep the rule
+# simple.
 BATCH_SIZE = 100
-# Calls to one service made at a time.
+# Calls to one service made at a time: Jira's internal Development-panel
+# endpoint drops connections under more, and GitHub discourages concurrent
+# requests (its secondary rate limit), while batches leave few calls to make.
 WORKERS = 4
 
 

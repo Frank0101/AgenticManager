@@ -8,7 +8,7 @@ description: Python code shared by the other AgenticManager skills, such as chec
 
 This skill holds no instructions of its own. Its `agentic_manager` Python package is shared by the other AgenticManager skills, whose scripts and prerequisites find it next to their own folder, so it must be installed alongside them.
 
-Its modules, and every public function in them with what it is for, are listed by `agentic_manager/code_map.py`, which builds the map from their header comments and docstrings; each module's header comment says how to call it and why it works that way.
+Its modules, and every public function in them with what it is for, are listed by `agentic_manager/code_map.py`, which builds the map from their header comments and docstrings; each module's header comment says why it works that way, and a script's `--help` how to call it.
 
 ## Config sources
 

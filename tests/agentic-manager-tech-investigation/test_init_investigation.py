@@ -19,7 +19,6 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_report  # noqa: E402
 import init_investigation  # noqa: E402
-import output_diagram  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from investigation_fixture import temp_output  # noqa: E402
 from agentic_manager import config  # noqa: E402
@@ -30,14 +29,6 @@ TODAY = date(2026, 10, 5)
 class InitTest(unittest.TestCase):
     def setUp(self):
         self.folder = temp_output(self)
-
-    def test_asks_for_node_before_creating_anything(self):
-        # The sequences need Node.js, so the first script asks for it
-        # before any research is done, not when the report is built.
-        with mock.patch.object(output_diagram.shutil, "which", return_value=None):
-            with self.assertRaisesRegex(SystemExit, "Node.js 22.13 or newer is needed"):
-                init_investigation.main(["--topic", "Acme-Search"])
-        self.assertFalse(os.path.exists(self.folder))
 
     def test_new_investigation_then_a_rerun_replaces_it(self):
         # A new investigation starts with a ledger skeleton that passes the
@@ -78,46 +69,56 @@ class InitTest(unittest.TestCase):
             json.dump(settings, f)
 
     def test_first_actions_and_sources(self):
-        # One search of the topic per group with a usable source, in the
-        # sources' order of authority; an api or fs source of documentation or
-        # code, and any tracker but jira-api, isn't usable.
+        # One question about the topic per group, the documentation first; a
+        # source of another group, such as a local vault, is not used.
         signed_in = mock.Mock(return_value=mock.Mock(returncode=0))
         cases = [
             ("every group", {"documentation": ["notion-mcp"], "workflow": ["jira-api"],
                              "source_control": ["github-cli"], "local_vault": ["logseq-fs"]},
              {"code": ["github-cli"], "tracker": ["jira-api"],
-                 "documentation": ["notion-mcp"]}, [],
-             [("Q01", "Search the code for Acme Search", "github-cli"),
-              ("Q02", "Search the tracker for Acme Search",
+                 "documentation": ["notion-mcp"]},
+             [("Q01", "What does the documentation say about Acme Search?", "notion-mcp"),
+              ("Q02", "What does the tracker say about Acme Search?",
                "jira-api (tickets.py search)"),
-              ("Q03", "Search the documentation for Acme Search", "notion-mcp")],
-             "Sources used: code: github-cli; tracker: jira-api; documentation: notion-mcp."),
-            ("no tracker", {"documentation": ["notion-fs"], "source_control": ["github-cli"]},
-             {"code": ["github-cli"], "tracker": [],
-                 "documentation": []}, ["tracker", "documentation"],
-             [("Q01", "Search the code for Acme Search", "github-cli")],
-             "Sources used: code: github-cli. No usable source for: tracker, documentation."),
+              ("Q03", "What does the code say about Acme Search?", "github-cli")]),
         ]
-        for name, enabled, sources, missing, actions, boundary in cases:
+        for name, enabled, sources, actions in cases:
             with self.subTest(name):
                 self.sources(**enabled)
                 result = init_investigation.init(
                     "Acme-Search", today=TODAY, run=signed_in)
-                self.assertEqual(
-                    (result["sources"], result["missing"]), (sources, missing))
+                self.assertEqual(result["sources"], sources)
                 ledger = Path(result["investigation_dir"]) / "ledger.md"
                 body = ledger.read_text(encoding="utf-8")
                 rows = check_report.ledger_rows(body, "### Ready")
                 self.assertEqual([(row[0], row[2], row[3])
                                  for row in rows], actions)
+                # The boundary is the user's, written after the ledger exists.
                 self.assertIn(
-                    f"## Boundary, method and access\n\n{boundary}\n", body)
+                    "## Boundary\n\nNone yet.\n", body)
                 self.assertEqual(check_report.check_ledger(ledger), ([], []))
         self.assertEqual(signed_in.call_args.args[0], [
                          "gh", "auth", "status"])
 
+    def test_every_group_needs_a_usable_source_before_anything_is_created(self):
+        # An api or fs source of documentation or code, and any tracker but
+        # jira-api, isn't usable; gh isn't asked when a group has none.
+        unused = mock.Mock()
+        cases = [("no tracker", {"documentation": ["notion-mcp"], "source_control": ["github-cli"]}, "tracker"),
+                 ("unusable channels", {"documentation": ["notion-fs"], "workflow": ["linear-api"],
+                                        "source_control": ["github-api"]}, "code, tracker, documentation")]
+        for name, enabled, missing in cases:
+            with self.subTest(name):
+                self.sources(**enabled)
+                with self.assertRaisesRegex(SystemExit, f"No usable source for: {missing}\\."):
+                    init_investigation.init(
+                        "Acme-Search", today=TODAY, run=unused)
+                self.assertFalse(os.path.exists(self.folder))
+        unused.assert_not_called()
+
     def test_gh_must_be_usable_before_anything_is_created(self):
-        self.sources(source_control=["github-cli"])
+        every = {"documentation": ["notion-mcp"], "workflow": ["jira-api"]}
+        self.sources(source_control=["github-cli"], **every)
         cases = [("not signed in", mock.Mock(return_value=mock.Mock(returncode=1)), "gh isn't signed in"),
                  ("not installed", mock.Mock(side_effect=FileNotFoundError), "gh can't be run")]
         for name, run, expected in cases:
@@ -127,7 +128,7 @@ class InitTest(unittest.TestCase):
                         "Acme-Search", today=TODAY, run=run)
                 self.assertFalse(os.path.exists(self.folder))
         # Without github-cli, gh isn't asked.
-        self.sources(source_control=["gitlab-cli"])
+        self.sources(source_control=["gitlab-cli"], **every)
         unused = mock.Mock()
         init_investigation.init("Acme-Search", today=TODAY, run=unused)
         unused.assert_not_called()
@@ -144,12 +145,12 @@ class InitTest(unittest.TestCase):
         with open(os.path.join(example, "Acme-Search_Report.md"), "w", encoding="utf-8") as f:
             f.write("x")
         with open(os.path.join(example, "description.md"), "w", encoding="utf-8") as f:
-            f.write("# Acme-Search_26-09-01\n\n**Why it's good:** Clear milestone.\n")
+            f.write("# Acme-Search_26-09-01\n\n**Why it's good:** Clear status.\n")
         result = init_investigation.init("Acme-Search", today=TODAY)
         self.assertEqual([(os.path.basename(e["folder"]), e["documents"], e["note"]) for e in result["examples"]],
                          [("Acme-Search_26-09-01--2", [], ""),
                           ("Acme-Search_26-09-01",
-                           ["Acme-Search_Report.md"], "Clear milestone."),
+                           ["Acme-Search_Report.md"], "Clear status."),
                           ("Other_26-08-02", [], "")])
 
     def test_topic_names(self):

@@ -1,25 +1,11 @@
 """Checks a finished deck, <Name>_Slides.html, against the slides.json it was
 built from, read-only.
 
-    python3 check_deck.py --deck <Name>_<YY-MM-DD>
-
 It shares only common.py with make_deck.py: it reads the page back as a
-browser would and counts what slides.json says must be there (the slides,
-each chart with its data, each ring with its segments), so a generator bug
-can't pass by agreeing with itself. It also checks the page's fixed parts
-(the toolbar, zoom, the print rules), that it loads nothing but the pinned
-Chart.js, only when a slide holds a chart, that every image it
-links is in _assets, as slides.json places them, that every slide showing a
-downloaded image shows its credit, and that the folder holds only the deck's
-files.
-
-Placeholders, such as [IMAGE: team photo], aren't errors: they are content the
-user hasn't given yet, listed so the agent can say what is missing. Neither
-are stand-ins, drawings marked as waiting for a real image, listed so the
-agent can offer to find them.
-
-Prints one line of JSON: "ok", "errors", "placeholders" and "stand_ins". Exits
-1 if any check fails.
+browser would and counts what slides.json says must be there, so a generator
+bug can't pass by agreeing with itself. Placeholders, such as [IMAGE: team
+photo], and stand-ins, drawings waiting for a real image, aren't errors: they
+are listed, so the agent can say what is missing and offer to find them.
 """
 import argparse
 import json
@@ -200,7 +186,10 @@ class PageReader(HTMLParser):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Check a finished deck against its slides.json.")
+        description="Check a finished deck against its slides.json: its slides, charts, rings, images "
+        "and their credits, the page's fixed parts, that it loads nothing but the pinned Chart.js, and "
+        "that the folder holds only the deck's files. Prints one line of JSON: ok, errors, "
+        "placeholders and stand_ins. Exits 1 if any check fails.")
     parser.add_argument("--deck", required=True,
                         help="the deck's folder, <Name>_<YY-MM-DD>, inside slides-decks")
     result = check_deck(parser.parse_args(argv).deck)

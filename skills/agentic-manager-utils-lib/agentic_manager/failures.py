@@ -1,21 +1,12 @@
-"""How a script's entry point stops on a service's failure: Jira's
-(JiraError) or GitHub's (GhError), shown on stderr with what to do, and an
-exit code that isn't zero.
+"""How a script's entry point stops on a service's failure, Jira's (JiraError)
+or GitHub's (GhError): on stderr, with what to do, and a non-zero exit code.
 
-One rule for every service: a thing asked for that isn't there is an
-answer, and no answer from the service is a failure. The service saying it
-has no such ticket, pull request, commit or repository, or none the account
-can see, is returned with why, a line the skill prints where the thing would
-have been, and the skill carries on with the rest. A failure, such as a
-rate limit, a bad login or the service down once retry.py gives up, is
-raised and stops the skill: output with a gap in it is easy to read as
-whole.
-
-The library raises and never stops the program itself, so a skill's code
-can tell an answer from a failure; only a script's main stops, and this one
-place words the stop, so every skill shows a failure alike. Its own module,
-not batch.py's: it needs both clients' errors, and both clients import
-batch.py.
+One rule for every service: a thing it says isn't there, or none the account
+can see, is an answer, returned with why for the skill to print and carry on;
+no answer, such as a rate limit once retry.py gives up, is a failure that stops
+the skill, as output with a gap in it is easy to read as whole. The library
+only raises, so a skill can tell the two apart, and this one place words the
+stop for every skill, in a module of its own, as it needs both clients' errors.
 """
 from contextlib import contextmanager
 

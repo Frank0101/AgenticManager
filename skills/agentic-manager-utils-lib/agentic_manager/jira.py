@@ -1,55 +1,12 @@
 """Jira Cloud REST client, using only the standard library.
 
-Credentials come from the user's AgenticManager config
-(~/.config/agentic-manager/config.json), source "sources.workflow.jira-api": its
-`base-url`, `email` and `api-token`. Jira Cloud authenticates an API token with
-Basic auth (email + token). The token is never printed or written to any file;
-errors name a setting, never its value. If you add debug output here, print
-URLs and status codes only, never headers.
-
-A request that fails, once retry.py's rule gives up, raises JiraError, as
-github.py raises GhError: the library never stops the program, a script's
-entry point does. "Jira has none" is an answer, not a failure, as
-failures.py sets out: issue() returns why it read nothing, project() None,
-and batched_field_changes() why for an issue it has none of, so a skill
-tells "Jira answered no" from "Jira failed" without sorting errors.
-
-Its `excluded-projects` lists the projects the user's organisation doesn't
-allow AI agents to read. The client enforces it, so no skill has to: an
-excluded key given to issue() or project() is answered as one Jira doesn't
-have, with why; any other request for an excluded project or ticket is
-refused, unsent, with a JiraError; excluded projects are left out of every
-search (those the account can see: JQL refuses a project it can't, whose
-tickets no search returns anyway), and dropped from the parent, links and
-sub-tasks of the issues it returns, as if they didn't exist.
-
-The greenhopper endpoints (board estimation field, sprint report) are internal,
-not part of Atlassian's documented API, so they could change without notice. The
-sprint report is still required: it is the only source of `puntedIssues`
-(issues removed from a sprint). Once an issue leaves a sprint its own Sprint
-field no longer mentions it, so the public API can't find it. If its shape
-changes, sprint_report() fails rather than return a sprint report with its
-removals missing. The dev-status endpoints, behind an issue's Development
-panel, are internal too: they are the only way to the pull requests a code
-host's integration links to an issue.
-
-Jira drops connections and answers 5xx when a skill reads many issues at
-once: such a request is passing, tried again on retry.py's waits before the
-skill is stopped. A 429, too many requests, is a rate limit, final as every
-service's is, with the advice to wait a minute. A POST is tried again too: the
-only one, the batched changelog read, reads and changes nothing. The line
-each wait prints names the request's path, never its query, which can hold
-JQL, and the kind of failure by its error's type, never the error's text.
-
-Many issues' changelogs are read in batches, through Jira's "bulk fetch"
-endpoint: one request for each batch of issues (batch.py) rather than one per
-issue, each answer in pages of the 10000 change histories Jira allows. It is
-asked for every field, not only the tracked ones: a field logged without an
-id, such as IssueParentAssociation, can't be named in its `fieldIds`. It
-gives no entry both for an issue never changed and for one Jira doesn't
-have or the account can't see, so the issues left without one are looked
-up with one search by id, as github.py's batched read tells a pull request
-that isn't there from one it read.
+Its settings are the user's `jira-api` source. The API token, sent with the
+email as Basic auth, is never printed or written anywhere, and errors name a
+setting, never its value: debug output added here shows URLs and status
+codes only, never headers. A request that fails once retry.py gives up raises JiraError, while
+"Jira has none" is an answer (failures.py), so a skill tells "Jira answered
+no" from "Jira failed" without sorting errors. The client enforces the
+source's `excluded-projects`, so no skill has to.
 """
 import base64
 import json
@@ -79,6 +36,8 @@ EXCLUDED = "excluded-projects"
 STORY_POINT_FIELD_NAMES = ("Story Points", "Story point estimate")
 
 PAGE_SIZE = 100
+# Jira's "bulk fetch" of many issues' changelogs: a request for each batch of
+# issues (batch.py) rather than one per issue.
 BATCH_CHANGELOG = "/rest/api/3/changelog/bulkfetch"
 # Change histories a page of the batched changelog's answer holds: the most
 # Jira allows.
@@ -86,13 +45,17 @@ BATCH_CHANGELOG_PAGE = 10000
 # Why a ticket isn't read when Jira answers it has none: it says the same of
 # one the account can't see.
 NO_SUCH_TICKET = "Jira has no such ticket, or this account can't see it"
-# The answers that mean Jira is busy or briefly unwell, not that the request is wrong.
+# The answers that mean Jira is busy or briefly unwell, not that the request
+# is wrong, as when a skill reads many issues at once.
 TRANSIENT_CODES = {500, 502, 503, 504}
 # The kind of a connection that failed, for the line a retry prints, by the
 # type of its error, never its text, which can echo the request or a secret;
 # the first that matches, so a subclass comes before its base.
 FAILURE_KINDS = ((ConnectionResetError, "connection reset"), (ConnectionRefusedError, "connection refused"),
                  (socket.gaierror, "name not resolved"), (TimeoutError, "timed out"))
+# The endpoints behind an issue's Development panel: internal, not part of
+# Atlassian's documented API, but the only way to the pull requests a code
+# host's integration links to an issue.
 DEV_STATUS = "/rest/dev-status/latest/issue"
 # The type of Jira Software's Sprint field. A site can have other fields named
 # Sprint, so the field is found by its type.
@@ -111,7 +74,14 @@ ADF_BLOCKS = {"paragraph", "heading", "listItem", "codeBlock",
 
 
 class JiraClient:
-    """The client for the user's Jira site, which never reads a project `excluded-projects` lists."""
+    """The client for the user's Jira site, which never reads a project `excluded-projects` lists.
+
+    Those are the projects the user's organisation doesn't allow AI agents
+    to read. An excluded key given to issue() or project() is answered as
+    one Jira doesn't have, with why; any other request about an excluded
+    project or ticket is refused, unsent, with a JiraError; and excluded
+    projects are left out of every search and dropped from the parent,
+    links and sub-tasks of the issues returned, as if they didn't exist."""
 
     def __init__(self):
         settings = read_source(GROUP, NAME, SETTINGS, lists=(EXCLUDED,))
@@ -131,7 +101,9 @@ class JiraClient:
             raise JiraError(excluded_reason(key))
 
     def _visible_excluded(self):
-        """The excluded projects the account can see, looked up once."""
+        """The excluded projects the account can see, looked up once: those a
+        search leaves out, as JQL refuses a project the account can't see,
+        whose tickets no search returns anyway."""
         if self._visible is None:
             visible = []
             for key in sorted(self.excluded):
@@ -276,7 +248,12 @@ class JiraClient:
                 self._paginate(f"/rest/agile/1.0/sprint/{sprint_id}/issue", params, "issues")]
 
     def sprint_report(self, board_id, sprint_id):
-        """Jira's own sprint report, the only source of removed issues."""
+        """Jira's own sprint report, the only source of removed issues
+        (`puntedIssues`): once an issue leaves a sprint its own Sprint field no
+        longer mentions it, so the public API can't find it. The endpoint is
+        internal (greenhopper), not part of Atlassian's documented API, so a
+        changed shape fails rather than return a report without its
+        removals."""
         data = self._get("/rest/greenhopper/1.0/rapid/charts/sprintreport",
                          {"rapidViewId": board_id, "sprintId": sprint_id})
         contents = nested(data, ["contents"])
@@ -301,7 +278,7 @@ class JiraClient:
     def board_estimation_field(self, board_id):
         """The field the board sums as story points (Board settings >
         Estimation), or None if it estimates by issue count or Jira doesn't
-        find the setting (404).
+        find the setting (404), read from an internal (greenhopper) endpoint.
         A site can have several points-like fields and boards may use
         different ones, so the board's own setting comes first."""
         data = self._found("/rest/greenhopper/1.0/rapidviewconfig/editmodel.json",
@@ -406,12 +383,16 @@ class JiraClient:
         issues a request, every page of each; and gone as {key: why, a line
         naming the key} of those Jira has no such ticket of, or none the
         account can see. The answer names issues by id, which `issues` turns
-        back into keys. An issue with no change can come back without an
-        entry or with an empty one: either gives [], once a search by id
-        finds the issues left without one. Refuses, before any request, an
-        issue of an excluded project. The batched read gives a change's time
-        in milliseconds, so it is written as the per-issue changelog writes
-        it, in the account's time zone, and the two give the same changes."""
+        back into keys. Jira gives no entry both for an issue never changed
+        and for one it doesn't have or the account can't see, so the issues
+        left without one are looked up with one search by id: one found gives
+        [], as an empty entry does. Every field is asked for, not only the
+        tracked ones: a field logged without an id, such as
+        IssueParentAssociation, can't be named in `fieldIds`. Refuses, before
+        any request, an issue of an excluded project. The batched read gives
+        a change's time in milliseconds, so it is written as the per-issue
+        changelog writes it, in the account's time zone, and the two give the
+        same changes."""
         for issue in issues:
             self._refuse_excluded(issue["key"])
         zone = ZoneInfo(self.whoami().get("timeZone")
@@ -461,7 +442,9 @@ class JiraClient:
         return self._send(path, Request(url, headers=self._headers()))
 
     def _post(self, path, body):
-        """Jira's answer to `body` sent as JSON to `path`."""
+        """Jira's answer to `body` sent as JSON to `path`, tried again as a GET
+        is: the only POST, the batched changelog read, reads and changes
+        nothing."""
         return self._send(path, Request(f"{self.base_url}{path}", data=json.dumps(body).encode(), method="POST",
                                         headers={**self._headers(), "Content-Type": "application/json"}))
 
@@ -550,8 +533,9 @@ def tracked_changes(histories, fields):
 
 def passing(error):
     """Whether a failed request is passing, to retry.retried(): a dropped
-    connection, a timeout or an answer of TRANSIENT_CODES; any other answer,
-    a 429 included, is final."""
+    connection, a timeout or an answer of TRANSIENT_CODES; any other answer
+    is final, a 429 included: a rate limit, as every service's is, with the
+    advice to wait a minute."""
     if isinstance(error, HTTPError):
         return error.code in TRANSIENT_CODES
     return isinstance(error, (URLError, TimeoutError, ConnectionError))

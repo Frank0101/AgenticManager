@@ -1,28 +1,12 @@
 """Writes the investigation's <Topic>_Report.md from <investigation>/content.json,
 then checks it with check_report.py.
 
-    python3 make_report.py --investigation <Topic>_<YY-MM-DD>
-
-The report has one fixed template; this script owns it: the title and evidence
-snapshot line, every ## and ### heading, table headers, the fixed opening
-sentences, each architect section's layout (text, then a titled flow: the
-components it crosses, drawn by flow_components.py, and its sequence) and the
-References labels and ledger links. content.json holds only what needs
-judgment; its fields, with their length targets, are in SKILL.md (The report).
-
-Text is Markdown. Link to the ledger as [text](ledger:F03): the script resolves
-the ID to the anchor ledger.py gives its row or finding, or else to the heading
-or section that defines it. Ticket keys and owner/repo#123 are linked from the
-ledger's links: a ticket of a project the ledger doesn't link is written as
-code, and a pull request that can't be linked is a problem in content.json. A
-sequence's lines are its body: the script adds `sequenceDiagram` and
-`autonumber`, and renders both diagrams with the Mermaid CLI to check their
-syntax.
-
-Prints one line of JSON: the report's path, whether the folder is temporary,
-whether the report passes the check ("ok"), its errors and warnings, and the
-titles of its sequences. Exits 1 if content.json is invalid (writing nothing)
-or the written report fails the check.
+The script owns the template: headings, tables, fixed sentences, the title, the
+evidence date and the references, which it reads from the ledger, so content.json
+holds only the sections that need judgment. A claim links the ledger as
+[text](ledger:F03), resolved to the record's anchor; ticket keys and
+owner/repo#123 are linked from the ledger's links, and a key it can't link is
+written as code rather than guessed.
 """
 import argparse
 from datetime import date
@@ -30,17 +14,14 @@ import json
 import os
 import re
 
-from common import (CONTENT, FENCE, FOLDER_NAME, HEADING, HEADINGS, INVENTORY, LEDGER, RECORD_DEFINITION, REPORT_SUFFIX, SKIPS, anchor_tag, component_rows,
-                    autolink, headings, investigation_dir, link_definitions, markdown, read_json, heading_anchor, table,
-                    topic_of, unresolved_message, word_count, write_output_file)
+from common import (CONTENT, FENCE, INVESTIGATION, REFERENCE_LINK, TABLE_HEADINGS, ledger_rows, reference_key, FOLDER_NAME, HEADING, HEADINGS, LEDGER, RECORD_DEFINITION,
+                    REPORT_SUFFIX, anchor_tag, autolink, headings, investigation_dir, link_definitions, markdown, read_json, table, topic_of, unresolved_message, word_count, write_output_file)
 import check_report
-import flow_components
-import output_diagram
 
 # Approximate prose lengths, in words: room to articulate, not quotas. Warn above
 # one and a half times, or far below, under a third, which is a stub.
-TARGETS = {"problem": 150, "current_status": 200,
-           "next_steps": 200, "summary": 300}
+TARGETS = {"purpose": 150, "current_status": 200,
+           "direction": 200, "summary": 300}
 
 LEDGER_LINK = re.compile(r"\]\(ledger:([A-Za-z]+\d+)?\)")
 # A decisions table's fields in content.json, and its columns after the first,
@@ -58,8 +39,8 @@ def make_report(relative):
     folder, _, temporary = investigation_dir(relative)
     topic = topic_of(folder)
     content = Content(read_json(os.path.join(folder, CONTENT)),
-                      Ledger(os.path.join(folder, LEDGER)))
-    text, flows = build(content)
+                      Ledger(os.path.join(folder, LEDGER)), folder)
+    text = build(content)
     if content.errors:
         raise SystemExit("content.json has problems, so nothing was written:\n  - "
                          + "\n  - ".join(content.errors))
@@ -67,16 +48,16 @@ def make_report(relative):
         FOLDER_NAME, f"{relative}/{topic}{REPORT_SUFFIX}", text.encode("utf-8"))
     check = check_report.check_report(path)
     return {"path": path, "temporary": temporary, "ok": check["ok"], "errors": check["errors"],
-            "warnings": content.warnings + check["warnings"],
-            "sequences": [s.title for s in flows]}
+            "warnings": content.warnings + check["warnings"]}
 
 
 class Content:
     """content.json, checked as it is read: problems collect in `errors`."""
 
-    def __init__(self, data, ledger):
+    def __init__(self, data, ledger, folder):
         self.data = data if isinstance(data, dict) else {}
         self.ledger = ledger
+        self.folder = folder
         self.errors, self.warnings = [], []
         if not isinstance(data, dict):
             self.errors.append("content.json must be a JSON object")
@@ -94,7 +75,7 @@ class Content:
                 f"{where}: no # to ### headings; the template sets them (#### is fine)")
         if FENCE.search(value) or re.search(r"<div\b", value, re.I):
             self.errors.append(
-                f"{where}: no code fences or <div> wrappers; a sequence goes in \"sequence\"")
+                f"{where}: no code fences or <div> wrappers")
         if inline and "\n" in value.strip():
             self.errors.append(
                 f"{where}: one line, for a table cell or list item")
@@ -135,8 +116,8 @@ class Content:
 
 
 class Ledger:
-    """The ledger's anchors, link definitions and components, to resolve links
-    and draw flows."""
+    """The ledger's anchors, link definitions and sources, to resolve links and
+    write the evidence date and the references."""
 
     def __init__(self, path):
         try:
@@ -147,8 +128,14 @@ class Ledger:
         self.headings = headings(self.text)
         self.prose = markdown(self.text)[0]
         self.definitions = link_definitions(self.prose)
-        self.components = flow_components.components(
-            component_rows(self.prose))
+        self.sources = ledger_rows(self.text, TABLE_HEADINGS["sources"])
+
+    def inlined(self, text):
+        """`text` with its reference links, as the ledger stores them, written inline."""
+        def inline(match):
+            url = self.definitions.get(reference_key(match))
+            return f"{match[1]}[{match[2]}]({url})" if url else match[0]
+        return REFERENCE_LINK.sub(inline, text)
 
     def anchor(self, ident):
         if anchor_tag(ident) in self.text:
@@ -166,90 +153,57 @@ class Ledger:
 
 
 def build(content):
-    """(report text, [Sequence])."""
+    """The report's text."""
     data = content.data
-    skip = skipped(content)
-    if "evolution" in skip and "next_steps" in data:
-        content.errors.append(
-            "next_steps: evolution is skipped, so the report has no Next steps and evolution")
-    problem = content.paragraphs(data.get("problem"), "problem")
-    content.length(problem, TARGETS["problem"], "problem")
+    purpose = content.paragraphs(data.get("purpose"), "purpose")
+    content.length(purpose, TARGETS["purpose"], "purpose")
     current_status = content.paragraphs(
         data.get("current_status"), "current_status")
     content.length(current_status,
                    TARGETS["current_status"], "current_status")
-    next_steps = []
-    if "evolution" not in skip:
-        next_steps = content.paragraphs(data.get("next_steps"), "next_steps")
-        content.length(next_steps, TARGETS["next_steps"], "next_steps")
-    architect = "architecture" not in skip
-    for key in ("architecture", "decisions_and_gaps"):
-        if not architect and key in data:
-            content.errors.append(
-                f"{key}: architecture is skipped, so the report has no Architect summary")
-    decisions = data.get("decisions_and_gaps") if architect else []
-    if architect and (not isinstance(decisions, list) or not decisions):
+    direction = content.paragraphs(data.get("direction"), "direction")
+    content.length(direction, TARGETS["direction"], "direction")
+    decisions = data.get("open_choices_and_gaps")
+    if not isinstance(decisions, list):
         content.errors.append(
-            "decisions_and_gaps: needs a list of decisions and gaps")
+            "open_choices_and_gaps: needs a list, empty when no choice or gap is open")
         decisions = []
-    rows = decision_rows(content, "decisions_and_gaps", decisions)
-    shown = ["current"] + ([] if "evolution" in skip else ["next"])
-    sections, flows = {}, []
-    if architect:
-        architecture = data.get("architecture")
-        architecture = architecture if isinstance(architecture, dict) else {}
-        if not architecture:
+    shown = ["today", "target"]
+    sections = {}
+    architecture = data.get("architecture")
+    architecture = architecture if isinstance(architecture, dict) else {}
+    if not architecture:
+        content.errors.append("architecture: needs today and target")
+    for key in architecture:
+        if key not in shown:
             content.errors.append(
-                "architecture: needs current" + ("" if "evolution" in skip else " and next"))
-        for key in architecture:
-            if key not in shown:
-                content.errors.append(f"architecture.{key}: the report doesn't show this section"
-                                      + (", as evolution is skipped" if key == "next" else ""))
-        for key in shown:
-            stage = architecture.get(key)
-            if not isinstance(stage, dict):
-                if architecture:
-                    content.errors.append(f"architecture.{key}: missing")
-                continue
-            sections[key], flow = architect_section(content, key, stage)
-            if flow:
-                flows.append(flow)
-    # Rendering takes a while: only when the content is otherwise valid.
-    if not content.errors:
-        render_check(content, flows)
-    parts = [f"# {content.text(data.get('title'), 'title', inline=True)}",
-             f"Evidence snapshot: {snapshot(content, data.get('evidence_snapshot'))}. Code links pin inspected "
+                f"architecture.{key}: the report doesn't show this section")
+    for key in shown:
+        stage = architecture.get(key)
+        if not isinstance(stage, dict):
+            if architecture:
+                content.errors.append(f"architecture.{key}: missing")
+            continue
+        sections[key] = architect_section(content, key, stage)
+    parts = [f"# {topic_of(content.folder).replace('-', ' ')}",
+             f"Evidence snapshot: {snapshot(content)}. Code links pin inspected "
              "commits; ticket, PR and document links may display later changes. Evidence revisions and "
              f"access limits are recorded in the [Research ledger]({LEDGER}).",
-             HEADING_LINE["exec"], HEADING_LINE["exec.problem"], *problem]
+             HEADING_LINE["exec"], HEADING_LINE["exec.purpose"], *purpose]
     parts += [HEADING_LINE["exec.current"], *current_status]
-    if "evolution" not in skip:
-        parts += [HEADING_LINE["exec.next"], *next_steps]
+    parts += [HEADING_LINE["exec.direction"], *direction]
     parts += [HEADING_LINE["exec.decisions"], *key_decisions(content)]
-    if architect:
-        parts.append(HEADING_LINE["arch"])
-        for key in shown:
-            parts.append(HEADING_LINE[f"arch.{key}"])
-            parts += sections.get(key, [])
-        parts += [HEADING_LINE["arch.decisions"],
-                  "The table records source-backed decisions and evidence gaps. It does not select an option.",
-                  table(["Decision or gap"] + DECISION_COLUMNS, rows)]
+    parts.append(HEADING_LINE["arch"])
+    for key in shown:
+        parts.append(HEADING_LINE[f"arch.{key}"])
+        parts += sections.get(key, [])
+    parts.append(HEADING_LINE["arch.decisions"])
+    parts += ["The table records source-backed decisions and evidence gaps. It does not select an option.",
+              table(["Decision or gap"] + DECISION_COLUMNS,
+                    decision_rows(content, "open_choices_and_gaps", decisions))] if decisions else [
+        "No technical choice or evidence gap is open in the inspected evidence."]
     parts += [HEADING_LINE["references"], *references(content)]
-    return "\n\n".join(parts) + "\n", flows
-
-
-def skipped(content):
-    """The dimensions content.json skips, checked."""
-    skip = content.data.get("skip", [])
-    if not isinstance(skip, list) or not all(isinstance(d, str) for d in skip):
-        content.errors.append(
-            "skip: must list the dimensions left out, architecture or evolution")
-        return []
-    for dimension in skip:
-        if dimension not in SKIPS:
-            content.errors.append(
-                f"skip: only {' or '.join(SKIPS)} can be skipped, not {dimension!r}")
-    return [d for d in SKIPS if d in skip]
+    return "\n\n".join(parts) + "\n"
 
 
 def decision_rows(content, key, items):
@@ -265,114 +219,36 @@ def decision_rows(content, key, items):
 
 
 def architect_section(content, key, stage):
-    """([lines], Sequence or None) under one Architect summary heading: the
-    text, then its titled flow (caption, components diagram, sequence), or a
-    flow gap saying why there is none."""
+    """The lines under one Architect summary heading: its text. Diagrams
+    are left out until they are designed again."""
     where = f"architecture.{key}"
-    unknown = [k for k in stage if k not in (
-        "summary", "sequence", "flow_gap")]
-    if unknown:
-        content.errors.append(f"{where}: unknown {', '.join(unknown)}; a section has only "
-                              "summary, sequence and flow_gap")
     summary = content.paragraphs(stage.get("summary"), f"{where}.summary")
     content.length(summary, TARGETS["summary"], f"{where}.summary")
-    flow = sequence_of(content, stage, where)
-    lines = summary[:]
-    if flow:
-        lines += [f"#### {flow.title}", flow.caption,
-                  f"```mermaid\n{flow.design}```", f"```mermaid\n{flow.source}```"]
-    if stage.get("flow_gap"):
-        lines.append("**Flow evidence gap:** " +
-                     content.text(stage["flow_gap"], f"{where}.flow_gap", trace=True))
-    elif not flow:
-        content.errors.append(f"{where}: needs a sequence, or a flow_gap")
-    return lines, flow
+    return summary
 
 
-def sequence_of(content, stage, where):
-    """The stage's Sequence, checked for the template's rules, or None."""
-    item = stage.get("sequence")
-    if item is None:
-        return None
-    at = f"{where}.sequence"
-    if not isinstance(item, dict):
-        content.errors.append(
-            f"{at}: must be an object with a title and lines")
-        return None
-    title = item.get("title")
-    if not isinstance(title, str) or not title.strip() or "\n" in title:
-        content.errors.append(f"{at}: needs a one-line title")
-        title = str(title)
-    lines = item.get("lines")
-    if not isinstance(lines, list) or not lines or not all(isinstance(line, str) for line in lines):
-        content.errors.append(f"{at}: lines must be a list of Mermaid lines")
-        return None
-    lines = [semicolons_escaped(line.rstrip()) for item in lines for line in item.splitlines()
-             if line.strip() and line.strip() not in ("sequenceDiagram", "autonumber")]
-    for line in lines:
-        message = flow_components.MESSAGE.match(line)
-        if message and re.match(r"\s*\d+[.)]\s", message[4]):
-            content.errors.append(
-                f"{title}: {line.strip()!r} numbers its step; autonumber does")
-    sequence = Sequence(title.strip(), lines, content.ledger)
-    for label in flow_components.unknown_participants(sequence.flow, content.ledger.components):
-        content.errors.append(f"{title}: {label!r} is no component of the ledger; name it as in the "
-                              "component inventory, or declare a person with actor")
-    return sequence
-
-
-def semicolons_escaped(line):
-    """`line` with each raw semicolon written as #59;, since Mermaid would
-    read it as the end of a statement; an entity such as #quot; stays."""
-    return "".join(part if re.fullmatch(r"#\w+;", part) else part.replace(";", "#59;")
-                   for part in re.split(r"(#\w+;)", line))
-
-
-class Sequence:
-    """A titled sequence and the design view of the components it crosses."""
-
-    def __init__(self, title, lines, ledger):
-        self.title = title
-        self.source = "sequenceDiagram\n    autonumber\n" + \
-            "".join(f"    {line}\n" for line in lines)
-        self.flow = flow_components.Flow(lines)
-        self.design = flow_components.flowchart(
-            self.flow, ledger.components)
-        statuses = ", ".join(flow_components.marks(
-            self.flow, ledger.components))
-        people = any(actor for _, actor, _ in self.flow.participants.values())
-        self.caption = (f"The components this flow crosses, coloured by their status in the "
-                        f"[component inventory]({LEDGER}#{heading_anchor(INVENTORY)})"
-                        + (f": {statuses}" if statuses else "") + "."
-                        + (" A person is drawn rounded." if people else "")
-                        + " Arrows are its requests; the sequence below shows them in order.")
-
-
-def render_check(content, flows):
-    """Renders every flow's two diagrams in one run, to check their syntax."""
-    if not flows:
-        return
-    try:
-        output_diagram.render_many(
-            [source for s in flows for source in (s.design, s.source)])
-    except SystemExit as error:
-        number, _, message = str(error).partition(": ")
-        if not number.startswith("diagram "):
-            content.errors.append(str(error))
-            return
-        index = int(number.split()[-1]) - 1
-        which = "the components diagram" if index % 2 == 0 else "the sequence"
-        content.errors.append(
-            f"{flows[index // 2].title}: {which} doesn't render: {message or error}")
-
-
-def snapshot(content, value):
-    try:
-        day = date.fromisoformat(str(value))
-    except ValueError:
-        content.errors.append("evidence_snapshot: must be a date, YYYY-MM-DD")
-        return str(value)
+def snapshot(content):
+    """The day the evidence was last checked: the latest date a source of the
+    ledger records, or the investigation's own day when none records one."""
+    days = [date.fromisoformat(day) for row in content.ledger.sources if len(row) > 3
+            for day in re.findall(r"\b\d{4}-\d{2}-\d{2}\b", row[3]) if valid_day(day)]
+    if days:
+        day = max(days)
+    else:
+        match = INVESTIGATION.fullmatch(
+            os.path.basename(os.path.normpath(content.folder)))
+        assert match, "make_report checked the folder's name with topic_of"
+        yy, mm, dd = match["date"].split("-")
+        day = date(2000 + int(yy), int(mm), int(dd))
     return f"{day.day} {day:%B %Y}"
+
+
+def valid_day(text):
+    try:
+        date.fromisoformat(text)
+    except ValueError:
+        return False
+    return True
 
 
 def key_decisions(content):
@@ -388,30 +264,24 @@ def key_decisions(content):
 
 
 def references(content):
-    refs = content.data.get("references")
-    if not isinstance(refs, dict):
-        content.errors.append(
-            "references: needs implementation, delivery and vision lists")
-        refs = {}
+    """Every source of the ledger with a link, by its group: code, tracker and
+    documentation. A source with access limits or a replacement is historical."""
     lines = []
-    for key, label in (("implementation", "Implementation and configuration"), ("delivery", "Delivery"),
-                       ("vision", "Vision, rationale and reported operational gaps")):
-        items = refs.get(key, [])
-        if not isinstance(items, list):
-            content.errors.append(f"references.{key}: needs a list")
-            items = []
-        lines.append(f"**{label}**")
-        if not items:
-            lines.append("None in the inspected sources.")
-            continue
+    for group, label in (("source_control", "Implementation and configuration"), ("workflow", "Delivery"),
+                         ("documentation", "Vision, rationale and reported operational gaps")):
         entries = []
-        for index, item in enumerate(items, 1):
-            text, historical = (item.get("text"), item.get(
-                "historical")) if isinstance(item, dict) else (item, False)
-            text = content.text(text, f"references.{key} {index}", inline=True)
-            entries.append(
-                f"- {text}" + (" (historical)" if historical else ""))
-        lines.append("\n".join(entries))
+        for row in content.ledger.sources:
+            if len(row) < 6 or not row[1].strip().casefold().startswith(group):
+                continue
+            reference = content.ledger.inlined(row[2].strip())
+            if "](" not in reference:
+                continue
+            entry = f"- {reference}" + \
+                ("" if row[5].strip() in ("", "None") else " (historical)")
+            if entry not in entries:
+                entries.append(entry)
+        lines += [f"**{label}**",
+                  "\n".join(entries) if entries else "None in the inspected sources."]
     lines.append(f"The [research ledger]({LEDGER}) holds the full validation trail: revisions, searches, "
                  "the component inventory, reconciled findings, decisions and limitations.")
     return lines

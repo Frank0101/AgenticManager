@@ -1,21 +1,12 @@
 """Keeps a slide of a deck the user is happy with as an example for later
-decks, exactly as it is.
-
-    python3 save_example.py --deck <Name>_<YY-MM-DD> --slide <n> --title "<title>" --use-for "<what it is good for>"
-
-Writes the example's folder, _examples/<name>/, beside the decks: slides.json,
-holding only that slide (1 for the first) with the deck's CSS and the charts
-and rings it places; slide.html, its page, built as make_deck.py builds a
-deck; and description.md, which the example list reads, with the title and
-what it is good for, which the agent writes. <name> comes from the title, with
--2, -3... when it is taken, never overwriting an earlier example. Its images
-stay in _assets, which the page links as a deck does.
+decks, exactly as it is, in _examples/<name>/ beside the decks.
 
 The user's examples are their real slides, content included, kept in their own
-output folder; the skill's built-in examples are layout-only wireframes.
-
-Prints one line of JSON: the example's name, its folder, its page and whether
-the output folder is temporary.
+output folder; the skill's built-in examples are layout-only wireframes. The
+example's slides.json holds only that slide, with the deck's CSS and the charts
+and rings it places, and its page is built as make_deck.py builds a deck, its
+images still linked in _assets. A taken name gets the next number, so an
+earlier example is never overwritten.
 """
 import argparse
 import json
@@ -73,7 +64,9 @@ def example_name(folder, title):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Keep a deck's slide as an example.")
+        description="Keep a deck's slide as an example: writes _examples/<name>/ with its slides.json, "
+        "its page, slide.html, and description.md, <name> coming from the title. Prints one line of "
+        "JSON: the example's name, its folder, its page and whether the output folder is temporary.")
     parser.add_argument("--deck", required=True,
                         help="the deck's folder, <Name>_<YY-MM-DD>")
     parser.add_argument("--slide", required=True, type=int,

@@ -1,74 +1,12 @@
-"""
-Build <report_dir>/data.json from the _raw files fetch_sprint.py wrote.
-
-Usage:
-    python3 build_sprint_data.py --report-dir <report_dir>
+"""Build <report_dir>/data.json from the _raw files fetch_sprint.py wrote: the
+one model every part of the report is built from.
 
 No network and no clock: the report date comes from the saved fetch time, so the
 same raw files always give the same figures and can be audited against them.
-
-One model for the whole report, built in two steps: each ticket's events from
-the raw files, then its spells from its events.
-
-  * A ticket's events (`ticket_events`) are its history, in time order:
-    Jira's creation, with each tracked field's value then, and every change
-    of a tracked field. They are kept per ticket, not per spell: a ticket has
-    one history however often it left and came back.
-  * Its time in the sprint is split into spells, each with its dated events
-    (committed or joined, completed, reopened, reestimated, removed), worked
-    out once from those events, never from the raw files again, so a ticket's
-    history and its spells can't tell different stories; check_report.py
-    checks each spell against its ticket's events.
-
-Every figure is built from the spells: the history (timeline, burndown) shows
-every event, the final situation (charts, header, epic table) counts each spell
-by how it ended. check_report.py replays the events and fails any part that
-disagrees. Separate calculations per view drifted apart before; one model can't.
-
-Decisions behind the model:
-
-  * Figures and events are as at the end (the close, or the fetch for a
-    running sprint), rebuilt from changelogs, never as Jira shows them today,
-    so a report run later gives the same figures: later events are left out.
-    Descriptions are the exception: Jira keeps no usable history of them.
-  * The pull request data (_raw/pull_requests.json) is fetched for a later
-    use; the build leaves it out until then.
-  * The commitment is what was in the sprint at its start instant, Done or not,
-    as Jira's sprint report counts it.
-  * A ticket that leaves ends its spell as descoped; one that joins later, even
-    coming back the same day, starts an extra spell. An extra spell that ends
-    descoped was never part of the plan, so the history shows it but the final
-    situation doesn't count it (`counted` false).
-  * Completed means Jira's Done category, Duplicates and Won't Do included, to
-    match Jira's own report; `non_delivery_closures` names them as a caveat.
-  * Carried over means in the previous sprint at the instant it closed, not
-    merely in it at some point.
-  * The epic commentary groups (`scope_groups`) leave out work the sprint didn't
-    do (`left_out`): Duplicates, Won't Do, and work already Done when its spell
-    began that stayed in the sprint. The figures still count it; the AI text
-    mustn't describe it. Descoped work is always in the descoped group, even
-    if it was already Done, as the figures count it as descoped.
-
-Jira logs no change for a field's initial value, so a ticket's creation holds
-each field's old value in its first change, read from the whole changelog, and
-a ticket whose sprint changes don't start with an add was in the sprint from
-its creation.
-
-The result is cross-checked against Jira's own sprint report, and nothing is
-written on a discrepancy. That report shows today's membership, so tickets moved
-after the end are left out of the comparison
-(`membership_cross_check_excluded_keys`). The membership it compares and the
-blocker candidates come from the ticket events too, like the spells; only the
-moves after the end, which the events leave out by design, and the check that
-Jira's removed tickets were removed at some point read the changelogs.
-fetch_sprint.py picks the blocker candidates whose comments it fetches from
-the changelogs, as no events exist then, by the same rule
-(common.is_blocker_candidate).
-
-The blocker candidates' comments (`blocker_comments`) are those written and
-last edited by the end, as plain text: a later edit hides the text the comment
-had then, which Jira doesn't keep. Their authors are left out, as no part of
-the report names colleagues.
+Each ticket's events come from the raw files, and its spells from its events
+alone, so its history and its spells can't tell different stories; every figure
+is built from the spells, and check_report.py replays the events. Separate
+calculations per view drifted apart before; one model can't.
 """
 import argparse
 import os
@@ -83,7 +21,9 @@ from common import (CHANGELOGS_DIR, COMMENTS_DIR, DATA_FILE, META_FILE, OUTCOME_
 
 # Terms meaning an issue was closed without delivering it (duplicate, won't do,
 # cancelled...), matched against both the status and the resolution: a
-# "Duplicate" status can carry the default "Done" resolution.
+# "Duplicate" status can carry the default "Done" resolution. Completed means
+# Jira's Done category, these included, to match Jira's own report;
+# non_delivery_closures names them as a caveat.
 NON_DELIVERY_MARKERS = {
     "won't do", "wont do", "won’t do",
     "won't fix", "wont fix", "won’t fix",
@@ -133,7 +73,8 @@ def epic_descriptions(parents):
 
 def description(fields):
     """An issue's description as plain text, whole, so its every chunk can be
-    read, not only the first."""
+    read, not only the first. It is today's, unlike every other field: Jira
+    keeps no usable history of descriptions."""
     return plain_text((fields or {}).get("description"))
 
 
@@ -153,9 +94,13 @@ def load_changelogs(changelog_dir, raw_issues):
 
 
 def ticket_events(raw, changes, context, moment):
-    """A ticket's events up to `moment`, in time order: its creation, with
-    each tracked field's value then, and every change of a tracked field.
-    Changes at one instant keep the changelog's order."""
+    """A ticket's events up to `moment`, the end (the close, or the fetch for
+    a running sprint), in time order: its creation, with each tracked field's
+    value then, and every change of a tracked field. Later events are left
+    out, never read as Jira shows the ticket today, so a report run later
+    gives the same figures. They are kept per ticket, not per spell: a ticket
+    has one history however often it left and came back. Changes at one
+    instant keep the changelog's order."""
     cutoff, zone = parse_ts(moment), context.reporting_zone
     tracked = {name for name, ident in history_fields(
         context.flagged_field, context.points_field).items() if ident}
@@ -250,7 +195,10 @@ def ticket_event(at, source, kind, zone, **extra):
 
 def spells_from_events(raw, events, context, moment):
     """The ticket's spells during the reported period, or [] if it had none,
-    worked out from its events (ticket_events) alone."""
+    worked out from its events (ticket_events) alone. The commitment is what
+    was in the sprint at its start instant, Done or not, as Jira's sprint
+    report counts it. A ticket that leaves ends its spell as descoped; one
+    that joins later, even coming back the same day, starts an extra spell."""
     cutoff, key = parse_ts(moment), raw["key"]
     moves = [m for m in sprint_moves_of(
         events, context.sprint_id) if m[0] <= cutoff]
@@ -314,17 +262,18 @@ def sprint_moves_of(events, sprint_id):
 
 def in_sprint_when_closed(events, sprint):
     """Whether the ticket was in `sprint`, a closed sprint, at the instant it
-    closed, from its events. Jira keeps a closed sprint in the Sprint field of
-    the issues it held, so a ticket whose changes never name the sprint was
-    never in it."""
+    closed, not merely at some point, from its events. Jira keeps a closed
+    sprint in the Sprint field of the issues it held, so a ticket whose
+    changes never name the sprint was never in it."""
     if not sprint:
         return False
     return in_sprint_at(sprint_moves_of(events, str(sprint["id"])), parse_ts(sprint["completeDate"]))
 
 
 def spell_events(key, events, moves, start_ts, in_at_start, cutoff, zone):
-    """A ticket's spells in the sprint, as lists of events (see the module
-    docstring), from the start to the cutoff."""
+    """A ticket's spells in the sprint, as lists of dated events (committed or
+    joined, then completed, reopened, reestimated and removed), from the start
+    to the cutoff."""
     start = parse_ts(start_ts)
     spells, inside, points, done = [], False, None, False
 
@@ -484,8 +433,11 @@ def build_epics(spells, descriptions=None):
 
 def scope_group(spell):
     """(the commentary group of a counted spell, or None, why it is left out).
-    Descoped work is always described as descoped, even if it was already
-    Done, since the figures count it as descoped."""
+    Work the sprint didn't do is left out: Duplicates, Won't Do, and work
+    already Done when its spell began that stayed in the sprint. The figures
+    still count it, but the AI text mustn't describe it. Descoped work is
+    always described as descoped, even if it was already Done, since the
+    figures count it as descoped."""
     if spell["outcome"] == "removed":
         return "descoped", None
     if spell["outcome"] == "not_completed":
@@ -611,7 +563,9 @@ def membership_sets(events_of, sprint_id, moment):
 def blocker_candidates(events_of, sprint_id, moment):
     """The keys of the tickets in the sprint at the cutoff that were flagged,
     blocked or high priority and not done then (common.is_blocker_candidate),
-    from their events (`events_of`, {key: ticket_events()}), in its order."""
+    from their events (`events_of`, {key: ticket_events()}), in its order:
+    the tickets whose comments the fetch read, as it picks them from the
+    changelogs by the same rule."""
     cutoff, keys = parse_ts(moment), []
     for key, events in events_of.items():
         if not in_sprint_at(sprint_moves_of(events, sprint_id), cutoff):
@@ -626,8 +580,9 @@ def blocker_comments(comment_dir, keys, moment, zone):
     """{key: its comments} of each blocker candidate of `keys`, from the
     comment files in `comment_dir`: those comments_as_of() keeps, each as
     {at, date, text}, its creation, local date (None without one) and plain
-    text, without a blank one. A candidate whose comments weren't fetched
-    has none."""
+    text, without a blank one. Their authors are left out, as no part of the
+    report names colleagues. A candidate whose comments weren't fetched has
+    none."""
     found = {}
     for key in keys:
         path = os.path.join(comment_dir, f"{key}.json")
@@ -639,7 +594,8 @@ def blocker_comments(comment_dir, keys, moment, zone):
 
 
 def comments_as_of(comments, moment):
-    """The comments whose creation and latest edit do not follow `moment`.
+    """The comments whose creation and latest edit do not follow `moment`: a
+    later edit hides the text the comment had then, which Jira doesn't keep.
     Without an updated timestamp, creation alone decides."""
     return [c for c in comments
             if all(not c.get(field) or parse_ts(c[field]) <= moment
@@ -648,7 +604,10 @@ def comments_as_of(comments, moment):
 
 def main():
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+        description=(__doc__ or "").split("\n\n")[0],
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="Prints a summary of the spells. Writes nothing, and exits non-zero, when the raw files\n"
+        "disagree with each other or with Jira's sprint report.")
     parser.add_argument("--report-dir", required=True,
                         help="report folder created by fetch_sprint.py")
     args = parser.parse_args()
@@ -677,6 +636,8 @@ def main():
     complete = sprint_date(sprint.get("completeDate"), zone)
 
     parents = read_json(os.path.join(raw_dir, PARENTS_FILE))
+    # The pull request data (PULL_REQUESTS_FILE) is fetched for a later use:
+    # nothing reads it yet.
     changes = load_changelogs(os.path.join(
         raw_dir, CHANGELOGS_DIR), current_raw + removed_raw)
     context = Context(sprint_id, sprint["startDate"],
@@ -692,7 +653,10 @@ def main():
 
     all_raw = current_raw + removed_raw
     # Moves after the end, which the events leave out: Jira's sprint report
-    # shows today's membership, so it can't vouch for these tickets.
+    # shows today's membership, so it can't vouch for these tickets. These
+    # moves, and the check that Jira's removed tickets were removed, are the
+    # only reads of the changelogs: membership and blocker candidates come
+    # from the ticket events, like the spells.
     later_moves = sorted({raw["key"] for raw in all_raw
                           for events in add_and_remove_events(changes[raw["key"]], sprint_id)
                           for ts in events if parse_ts(ts) > parse_ts(moment)},
@@ -709,6 +673,8 @@ def main():
             raise SystemExit(f"{raw['key']} is in Jira's removed list but its changelog has no removal "
                              f"from sprint {sprint_id}; inspect it before reporting")
 
+    # Cross-checked against Jira's own sprint report, which buckets the same
+    # issues independently: nothing is written on a discrepancy.
     in_scope, completed, removed = membership_sets(
         events_of, sprint_id, moment)
     problems = cross_check(report, in_scope, completed, removed, later_moves)

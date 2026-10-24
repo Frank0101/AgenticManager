@@ -1,35 +1,12 @@
-"""Writes one file in a skill's output folder (see output_folder.py), so an agent
-that writes a skill's files itself does it through a command the skill
-pre-approves, rather than through its own file tools. read_json() reads such a
-file back for a script.
+"""Writes one file in a skill's output folder (see output_folder.py) through a
+command the skill pre-approves, rather than the agent's own file tools;
+read_json() reads such a file back for a script.
 
-    python3 output_file.py --name <folder name> --path <relative path> [--patch] < content
-    python3 output_file.py --name <folder name> --path <relative path> --set "<field>=<text>" ...
-
---name is the name of the skill's output folder, as for output_folder.py.
---path is where the file goes inside it, such as
-"Payments-Retry_26-03-29/content.json": missing folders on the way are created,
-and an existing file is replaced. The content is read from standard input as
-UTF-8.
-
-With --patch, stdin is a nonempty JSON array of {"old": "...", "new": "..."}
-replacements for an existing UTF-8 file, applied in sequence, each old string
-nonempty and matching exactly once. A patch whose expected text a concurrent
-edit changed is rejected rather than merged.
-
-With --set, each "field=text" sets one text field of an existing JSON file,
-the field named by its path, keys and list positions joined by dots, such as
-architecture.current.summary.0, with no JSON escaping to get right. The parent
-must exist; a key may be new, a list position must be there.
-
-It never writes outside the skill's output folder: an absolute path, a ".."
-step or a symbolic link leading out of it is refused. Only output.root is read
-from the config.
-
-Prints one line of JSON: {"path": ..., "temporary": bool}, the file's absolute
-path and whether the folder is the temporary one. Fails with a message on
-stderr, writing nothing, if the path isn't inside the folder, the content isn't
-UTF-8, a patch or a --set doesn't apply or the config can't be read.
+It never writes outside the folder: an absolute path, a ".." step or a link
+leading out of it is refused. A patch's old text must match exactly once, so
+one a concurrent edit changed is rejected rather than merged, and --set takes
+plain text, with no JSON escaping to get right. Only output.root is read from
+the config.
 """
 import argparse
 import json
@@ -177,19 +154,28 @@ def target(folder, relative):
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Write a file in a skill's output folder, or change part of one.",
+        description="Write a file in a skill's output folder, its content read from standard input\n"
+        "as UTF-8, or change part of one.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="write a whole file, its content in a quoted here-document:\n" + _WRITE_EXAMPLE
         + "\n\nreplace exact text in an existing file, each old matching exactly once:\n" + _PATCH_EXAMPLE
-        + "\n\nset text fields of an existing JSON file, one --set per field:\n" + _SET_EXAMPLE)
+        + "\n\nset text fields of an existing JSON file, one --set per field:\n" + _SET_EXAMPLE
+        + '\n\nPrints one line of JSON, {"path": ..., "temporary": bool}: the file\'s absolute path and\n'
+        "whether the folder is the temporary one. Fails with a message on stderr, writing\n"
+        "nothing, if the path isn't inside the folder, the content isn't UTF-8, a patch or\n"
+        "a --set doesn't apply or the config can't be read.")
     add_name_argument(parser)
     parser.add_argument("--path", required=True,
-                        help="where the file goes inside that folder")
+                        help="where the file goes inside that folder, such as <subject>/content.json: "
+                        "missing folders on the way are created, and an existing file is replaced")
     change = parser.add_mutually_exclusive_group()
     change.add_argument("--patch", action="store_true",
-                        help="apply exact JSON replacements from standard input")
+                        help="apply the replacements standard input holds, a nonempty JSON array of "
+                        "{old, new}, in sequence, to an existing UTF-8 file")
     change.add_argument("--set", action="append", default=[], metavar="FIELD=TEXT",
-                        help="set one text field of an existing JSON file, named by its dotted path; repeat for more")
+                        help="set one text field of an existing JSON file, named by its path, keys and list "
+                        "positions joined by dots; its parent must exist, and a list position too; "
+                        "repeat for more")
     return parser.parse_args(argv)
 
 
