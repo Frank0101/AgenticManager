@@ -15,7 +15,7 @@ import re
 from datetime import date
 from typing import cast
 
-from common import (browse_url, epic_title, SENTENCE_BREAK, CHART_FILES, COMMENTARY_WORDS, CONTENT_FILE, DATA_FILE, EPIC_COMMENTARY_WORDS, ISSUE_KEY,
+from common import (browse_url, epic_title, SENTENCE_BREAK, CHART_FILES, COMMENTARY_WORDS, CONTENT_FILE, DATA_FILE, EPIC_COMMENTARY_WORDS, FIELD_TABLE_HEAD, ISSUE_KEY,
                     NO_EPIC, OUTCOME_COLOURS, RETRO_NOTES, SCOPE_GROUPS, SUMMARY_WORDS, ai, allowed_verdicts,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty, ratio,
                     report_file, scope_group_label, text_rule_problems, ticket_ref, unit, whole_percentage,
@@ -33,6 +33,13 @@ TAGS = {
     "removed": ("Descoped", *OUTCOME_COLOURS["removed"]),
     "reestimated": ("Re-estimated", "#9c27b0", "#ffffff"),
 }
+
+
+# Phrases of the commentary, each with the shorter form used when the text is
+# over its word limit: one place for both, so they can't drift apart.
+RETURNED = ("counting as descoped and then as extra", "descoped, then extra")
+UNESTIMATED = ("of them without an estimate", "unestimated")
+FROM_COMMITMENT = ("of them from the commitment", "from the commitment")
 
 
 def strip_em_dashes(value):
@@ -472,14 +479,7 @@ class Report:
 
 def field_table(rows):
     """The report's two-column table of (label, value) rows."""
-    return "| Field | Detail |\n|---|---|\n" + "\n".join(f"| {label} | {value} |" for label, value in rows)
-
-
-# Phrases of the commentary, each with the shorter form used when the text is
-# over its word limit: one place for both, so they can't drift apart.
-RETURNED = ("counting as descoped and then as extra", "descoped, then extra")
-UNESTIMATED = ("of them without an estimate", "unestimated")
-FROM_COMMITMENT = ("of them from the commitment", "from the commitment")
+    return FIELD_TABLE_HEAD + "\n".join(f"| {label} | {value} |" for label, value in rows)
 
 
 def tag(kind, suffix=""):

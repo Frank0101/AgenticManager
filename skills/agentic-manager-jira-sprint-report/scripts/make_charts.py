@@ -44,6 +44,13 @@ OUTCOME_MIN_BAR_SHARE = 0.5
 OUTCOME_MARGIN = 20
 OUTCOME_SEGMENTS = [(outcome, *OUTCOME_COLOURS[outcome])
                     for outcome in OUTCOMES]
+# Character widths in em, after Helvetica and Arial; anything else counts as a
+# lower-case letter.
+CHAR_WIDTHS = {**dict.fromkeys("ijl|", 0.23), **dict.fromkeys(" ftI.,:;'!/", 0.28),
+               **dict.fromkeys("r()-", 0.34), **dict.fromkeys("cksvxyz", 0.5),
+               **dict.fromkeys("FTZ", 0.61), **dict.fromkeys("ABEKPSVXY", 0.67),
+               **dict.fromkeys("CDHNRUw", 0.72), **dict.fromkeys("GOQ", 0.78),
+               **dict.fromkeys("mM", 0.84), "%": 0.89, "W": 0.95, "→": 1.0}
 
 
 # --- outcome charts
@@ -227,15 +234,6 @@ def text(x, y, content, size=12, color=INK, anchor="start", bold=False, extra=""
 
 def esc(text):
     return html.escape(str(text), quote=True)
-
-
-# Character widths in em, after Helvetica and Arial; anything else counts as a
-# lower-case letter.
-CHAR_WIDTHS = {**dict.fromkeys("ijl|", 0.23), **dict.fromkeys(" ftI.,:;'!/", 0.28),
-               **dict.fromkeys("r()-", 0.34), **dict.fromkeys("cksvxyz", 0.5),
-               **dict.fromkeys("FTZ", 0.61), **dict.fromkeys("ABEKPSVXY", 0.67),
-               **dict.fromkeys("CDHNRUw", 0.72), **dict.fromkeys("GOQ", 0.78),
-               **dict.fromkeys("mM", 0.84), "%": 0.89, "W": 0.95, "→": 1.0}
 
 
 def text_width(text, size, bold=False):

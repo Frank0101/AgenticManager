@@ -46,6 +46,169 @@ PLACED_ASSET = re.compile(
     rf"""\b(?:{"|".join(URL_ATTRIBUTES)})\s*=\s*(["'])\{{\{{asset:[^{{}}]*\}}\}}\1""", re.I)
 
 
+BASE_CSS = f"""      * {{
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }}
+
+      body {{
+        background: #e8e8e8;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        padding: 40px 20px;
+      }}
+
+      .slide {{
+        background: #fff;
+        position: relative;
+        width: {SLIDE_WIDTH}px;
+        height: {SLIDE_HEIGHT}px;
+        margin: 0 auto 40px;
+        padding: 48px 56px;
+        box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12);
+        overflow: hidden;
+      }}
+
+      .asset-credit {{
+        position: absolute;
+        right: 14px;
+        bottom: 8px;
+        max-width: 60%;
+        font-size: 10px;
+        line-height: 1.3;
+        text-align: right;
+        color: #6b7280;
+      }}
+
+      .chart {{
+        position: relative;
+        width: 100%;
+        height: 100%;
+      }}
+
+      .toolbar {{
+        position: fixed;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 8px 6px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        z-index: 100;
+      }}
+      .toolbar button {{
+        width: 32px;
+        height: 32px;
+        border: none;
+        background: none;
+        border-radius: 6px;
+        font-size: 1rem;
+        cursor: pointer;
+        color: #444;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s;
+      }}
+      .toolbar button:hover {{
+        background: #f0f0f0;
+      }}
+      .toolbar .divider {{
+        height: 1px;
+        background: #eee;
+        margin: 2px 0;
+      }}
+
+      @media print {{
+        @page {{
+          size: {SLIDE_WIDTH}px {SLIDE_HEIGHT}px;
+          margin: 0;
+        }}
+        * {{
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }}
+        html,
+        body {{
+          margin: 0;
+          padding: 0;
+          background: white;
+        }}
+        .toolbar {{
+          display: none;
+        }}
+        .slides-wrapper {{
+          transform: none !important;
+        }}
+        .slide {{
+          width: {SLIDE_WIDTH}px;
+          height: {SLIDE_HEIGHT}px;
+          page-break-after: always;
+          break-after: page;
+          box-shadow: none;
+          margin: 0 !important;
+          overflow: hidden;
+        }}
+      }}"""
+
+TOOLBAR = """    <div class="toolbar">
+      <button onclick="zoom(1)" title="Zoom in">+</button>
+      <button onclick="zoom(-1)" title="Zoom out">−</button>
+      <div class="divider"></div>
+      <button onclick="window.print()" title="Export PDF">⎙</button>
+    </div>"""
+
+ZOOM_SCRIPT = """    <script>
+      let scale = 1;
+      function zoom(dir) {
+        scale = Math.min(2, Math.max(0.4, scale + dir * 0.1));
+        const w = document.querySelector(".slides-wrapper");
+        w.style.transform = `scale(${scale})`;
+        w.style.transformOrigin = "top center";
+      }
+    </script>"""
+
+# Charts are drawn without animation, so a PDF never catches one half drawn.
+# Their settings are data, never code: how values read ("£3.5m") is a
+# `format`, which the page's script turns into the label functions Chart.js
+# needs.
+CHART_SCRIPT = """    <script src="{src}"></script>
+    <script>
+      Chart.defaults.animation = false;
+      Chart.defaults.maintainAspectRatio = false;
+      const charts = {charts};
+      // A chart's format: its values, on the value axis and in tooltips, as
+      // prefix + number + suffix, with a fixed number of decimals if set.
+      const formatted = (format, value) => (format.prefix || "") + Number(value).toLocaleString(undefined,
+        format.decimals === undefined ? {{}} : {{ minimumFractionDigits: format.decimals,
+          maximumFractionDigits: format.decimals }}) + (format.suffix || "");
+      for (const [id, {{ format, ...config }}] of Object.entries(charts)) {{
+        if (format) {{
+          const options = (config.options ??= {{}});
+          const axis = ["radar", "polarArea"].includes(config.type) ? "r"
+            : options.indexAxis === "y" ? "x" : "y";
+          const tooltip = ((options.plugins ??= {{}}).tooltip ??= {{}});
+          (tooltip.callbacks ??= {{}}).label = (item) =>
+            (item.dataset.label || item.label || "") + ": "
+            + formatted(format, typeof item.parsed === "number" ? item.parsed : item.parsed[axis]);
+          if (!["pie", "doughnut"].includes(config.type)) {{
+            const scale = ((options.scales ??= {{}})[axis] ??= {{}});
+            (scale.ticks ??= {{}}).callback = (value) => formatted(format, value);
+          }}
+        }}
+        new Chart(document.getElementById("chart-" + id), config);
+      }}
+    </script>"""
+
+
 def make_deck(deck, open_page=False):
     """Writes the deck and checks it, opening it in the default browser when
     `open_page` and it passes; returns the JSON result, or exits with the
@@ -415,168 +578,6 @@ def segment_path(cx, cy, outer, inner, start, end):
     R, r = number(outer), number(inner)
     return (f"M{ox1},{oy1} A{R},{R},0,{large},1,{ox2},{oy2} "
             f"L{ix2},{iy2} A{r},{r},0,{large},0,{ix1},{iy1} Z")
-
-
-BASE_CSS = f"""      * {{
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }}
-
-      body {{
-        background: #e8e8e8;
-        font-family:
-          system-ui,
-          -apple-system,
-          sans-serif;
-        padding: 40px 20px;
-      }}
-
-      .slide {{
-        background: #fff;
-        position: relative;
-        width: {SLIDE_WIDTH}px;
-        height: {SLIDE_HEIGHT}px;
-        margin: 0 auto 40px;
-        padding: 48px 56px;
-        box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12);
-        overflow: hidden;
-      }}
-
-      .asset-credit {{
-        position: absolute;
-        right: 14px;
-        bottom: 8px;
-        max-width: 60%;
-        font-size: 10px;
-        line-height: 1.3;
-        text-align: right;
-        color: #6b7280;
-      }}
-
-      .chart {{
-        position: relative;
-        width: 100%;
-        height: 100%;
-      }}
-
-      .toolbar {{
-        position: fixed;
-        left: 12px;
-        top: 50%;
-        transform: translateY(-50%);
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        background: #fff;
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        padding: 8px 6px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        z-index: 100;
-      }}
-      .toolbar button {{
-        width: 32px;
-        height: 32px;
-        border: none;
-        background: none;
-        border-radius: 6px;
-        font-size: 1rem;
-        cursor: pointer;
-        color: #444;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: background 0.15s;
-      }}
-      .toolbar button:hover {{
-        background: #f0f0f0;
-      }}
-      .toolbar .divider {{
-        height: 1px;
-        background: #eee;
-        margin: 2px 0;
-      }}
-
-      @media print {{
-        @page {{
-          size: {SLIDE_WIDTH}px {SLIDE_HEIGHT}px;
-          margin: 0;
-        }}
-        * {{
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
-        }}
-        html,
-        body {{
-          margin: 0;
-          padding: 0;
-          background: white;
-        }}
-        .toolbar {{
-          display: none;
-        }}
-        .slides-wrapper {{
-          transform: none !important;
-        }}
-        .slide {{
-          width: {SLIDE_WIDTH}px;
-          height: {SLIDE_HEIGHT}px;
-          page-break-after: always;
-          break-after: page;
-          box-shadow: none;
-          margin: 0 !important;
-          overflow: hidden;
-        }}
-      }}"""
-
-TOOLBAR = """    <div class="toolbar">
-      <button onclick="zoom(1)" title="Zoom in">+</button>
-      <button onclick="zoom(-1)" title="Zoom out">−</button>
-      <div class="divider"></div>
-      <button onclick="window.print()" title="Export PDF">⎙</button>
-    </div>"""
-
-ZOOM_SCRIPT = """    <script>
-      let scale = 1;
-      function zoom(dir) {
-        scale = Math.min(2, Math.max(0.4, scale + dir * 0.1));
-        const w = document.querySelector(".slides-wrapper");
-        w.style.transform = `scale(${scale})`;
-        w.style.transformOrigin = "top center";
-      }
-    </script>"""
-
-# Charts are drawn without animation, so a PDF never catches one half drawn.
-# Their settings are data, never code: how values read ("£3.5m") is a
-# `format`, which this script turns into the label functions Chart.js needs.
-CHART_SCRIPT = """    <script src="{src}"></script>
-    <script>
-      Chart.defaults.animation = false;
-      Chart.defaults.maintainAspectRatio = false;
-      const charts = {charts};
-      // A chart's format: its values, on the value axis and in tooltips, as
-      // prefix + number + suffix, with a fixed number of decimals if set.
-      const formatted = (format, value) => (format.prefix || "") + Number(value).toLocaleString(undefined,
-        format.decimals === undefined ? {{}} : {{ minimumFractionDigits: format.decimals,
-          maximumFractionDigits: format.decimals }}) + (format.suffix || "");
-      for (const [id, {{ format, ...config }}] of Object.entries(charts)) {{
-        if (format) {{
-          const options = (config.options ??= {{}});
-          const axis = ["radar", "polarArea"].includes(config.type) ? "r"
-            : options.indexAxis === "y" ? "x" : "y";
-          const tooltip = ((options.plugins ??= {{}}).tooltip ??= {{}});
-          (tooltip.callbacks ??= {{}}).label = (item) =>
-            (item.dataset.label || item.label || "") + ": "
-            + formatted(format, typeof item.parsed === "number" ? item.parsed : item.parsed[axis]);
-          if (!["pie", "doughnut"].includes(config.type)) {{
-            const scale = ((options.scales ??= {{}})[axis] ??= {{}});
-            (scale.ticks ??= {{}}).callback = (value) => formatted(format, value);
-          }}
-        }}
-        new Chart(document.getElementById("chart-" + id), config);
-      }}
-    </script>"""
 
 
 def main(argv=None):

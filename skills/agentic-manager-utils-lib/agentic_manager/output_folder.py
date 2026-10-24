@@ -24,9 +24,12 @@ from agentic_manager.config import is_filled, load_config  # noqa: E402
 
 # Where skills write their files when the config sets no output root.
 TEMP_ROOT = os.path.join(tempfile.gettempdir(), "agentic-manager")
-# The file in an example's folder that says what the example is, named here so
-# every skill names it the same way.
+# The file that says what a folder of the user's own material holds, such as
+# an example or an image, named here so every skill names it the same way.
 EXAMPLE_DESCRIPTION = "description.md"
+# A description's title, and its labelled lines, such as **Shows:** text.
+DESCRIPTION_TITLE = re.compile(r"# (.+)")
+LABELLED_LINE = re.compile(r"^\*\*([^*\n]+):\*\* (.+)$", re.M)
 # The name day_folder() gives, read back: its subject and its YY-MM-DD date.
 DAY_FOLDER = re.compile(r"(?P<subject>.+)_(?P<date>\d\d-\d\d-\d\d)")
 
@@ -83,6 +86,18 @@ def clear_folder(path):
     else:
         shutil.rmtree(path)
     return True
+
+
+def read_description(path):
+    """(title, {label: text}) of the description.md at `path`, such as an
+    example's or an image's: empty when there is none."""
+    text = ""
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    title = DESCRIPTION_TITLE.match(text)
+    return (title[1].strip() if title else "",
+            {label: value.strip() for label, value in LABELLED_LINE.findall(text)})
 
 
 def parse_args(argv=None):

@@ -16,11 +16,16 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
-from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, clear_folder, day_folder, output_folder  # noqa: E402,F401
+from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.text import NAME, SLUG, free_name, slug  # noqa: E402,F401
 from agentic_manager.web import ssl_context  # noqa: E402,F401
 
+# The skill's output folder, and a deck folder's files in it: the slides the
+# agent writes and the deck built from them, <Name>_Slides.html.
 FOLDER_NAME = "slides-decks"
+SLIDES = "slides.json"
+DECK_SUFFIX = "_Slides.html"
+
 # Images (logos, screenshots, photos) live once in _assets, next to the decks,
 # and every deck links to them rather than holding a copy, so the HTML stays
 # small; a deck shared on its own is exported to PDF, which carries them. Each
@@ -38,15 +43,9 @@ ASSET_IMAGE = re.compile(r"image\.(?:" + "|".join(IMAGE_TYPES) + ")")
 SHOWS = "Shows"
 CREDIT_FIELDS = {"credit": "Credit", "license": "License",
                  "source": "Source", "image": "Image"}
-# A description, an example's or an image's: its title, then labelled lines
-# such as **Use for:** or **Shows:**.
-TITLE = re.compile(r"# (.+)")
-LABELLED_LINE = re.compile(r"^\*\*([A-Za-z ]+):\*\* (.+)$", re.M)
 # A drawing standing in for a real image still to find, by what that image
 # shows, such as <figure data-image='the Earth seen from space'>.
 STAND_IN = "data-image"
-SLIDES = "slides.json"
-DECK_SUFFIX = "_Slides.html"
 
 # Every slide is this size; content that doesn't fit is clipped.
 SLIDE_WIDTH, SLIDE_HEIGHT = 1100, 618
@@ -76,6 +75,18 @@ REMOTE = re.compile(r"(?:https?:)?//", re.I)
 PLACEHOLDER = re.compile(
     r"\[(?:CHART|IMAGE|DIAGRAM|TABLE|PLACEHOLDER): [^\]\n]+\]")
 
+# The examples, each a folder of its own: the skill's, real slides each kept as
+# a description and a layout-only wireframe, and the user's, slides of their
+# decks kept in _examples beside the decks as a description, the slide's
+# slides.json and its page. Their list is read from the descriptions each
+# time, so it can't go stale as examples are added or removed; a name that
+# starts with _ is a note, not an example.
+EXAMPLES_DIR = os.path.join(os.path.dirname(
+    os.path.realpath(__file__)), "..", "examples")
+USER_EXAMPLES = "_examples"
+WIREFRAME, EXAMPLE_PAGE = "wireframe.svg", "slide.html"
+USE_FOR = "Use for"
+
 
 def expected_files(deck):
     """The closed set of files the deck folder `deck` holds."""
@@ -104,19 +115,6 @@ def deck_dir(deck):
     return path
 
 
-# The examples, each a folder of its own: the skill's, real slides each kept as
-# a description and a layout-only wireframe, and the user's, slides of their
-# decks kept in _examples beside the decks as a description, the slide's
-# slides.json and its page. Their list is read from the descriptions each
-# time, so it can't go stale as examples are added or removed; a name that
-# starts with _ is a note, not an example.
-EXAMPLES_DIR = os.path.join(os.path.dirname(
-    os.path.realpath(__file__)), "..", "examples")
-USER_EXAMPLES = "_examples"
-WIREFRAME, EXAMPLE_PAGE = "wireframe.svg", "slide.html"
-USE_FOR = "Use for"
-
-
 def examples():
     """[{folder, source, title, use_for}] of every example, the skill's then
     the user's, each by name: its folder's absolute path, "built-in" or
@@ -133,17 +131,6 @@ def examples():
             found.append({"folder": os.path.realpath(example), "source": source,
                           "title": title, "use_for": fields.get(USE_FOR, "")})
     return found
-
-
-def read_description(path):
-    """(title, {label: text}) of the description.md at `path`, an example's or
-    an image's: empty if there is none."""
-    text = ""
-    if os.path.isfile(path):
-        with open(path, encoding="utf-8") as f:
-            text = f.read()
-    title = TITLE.match(text)
-    return title[1].strip() if title else "", dict(LABELLED_LINE.findall(text))
 
 
 def user_examples_dir():

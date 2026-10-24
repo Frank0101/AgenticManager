@@ -156,6 +156,25 @@ class DayFolderTest(unittest.TestCase):
                     self.assertEqual(os.listdir(target), ["kept"])
 
 
+class DescriptionTest(unittest.TestCase):
+    def test_read_description(self):
+        # (text, or None for no file, expected): the title, and every labelled
+        # line, a label holding any character but * such as an apostrophe.
+        cases = [(None, ("", {})),
+                 ("No title.\n", ("", {})),
+                 ("# A slide  \n\n**Use for:** a cover\n\n**Why it's good:** clear  \n",
+                  ("A slide", {"Use for": "a cover", "Why it's good": "clear"})),
+                 ("# Title\n\nSome **bold** text.\n", ("Title", {}))]
+        for text, expected in cases:
+            with self.subTest(text), tempfile.TemporaryDirectory() as folder:
+                path = os.path.join(folder, output_folder.EXAMPLE_DESCRIPTION)
+                if text is not None:
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(text)
+                self.assertEqual(
+                    output_folder.read_description(path), expected)
+
+
 class TempRootTest(unittest.TestCase):
     def test_temp_root_is_in_the_system_temp_folder(self):
         self.assertTrue(output_folder.TEMP_ROOT.startswith(

@@ -16,7 +16,7 @@ import re
 import subprocess
 
 from common import (DESIGN, DESIGN_SUBSECTIONS, EXAMPLE_DESCRIPTION, EXAMPLES, GITHUB_CLI, GROUPS, JIRA_API, JIRA_GROUP, QUEUE, REGISTER,
-                    WHY_GOOD, TABLE_HEADINGS, FOLDER_NAME, INVESTIGATION, LEDGER, LEDGER_SECTIONS, QUEUE_HEADER,
+                    WHY_GOOD, read_description, TABLE_HEADINGS, FOLDER_NAME, INVESTIGATION, LEDGER, LEDGER_SECTIONS, QUEUE_HEADER,
                     QUEUE_SUBSECTIONS, SOURCE_HEADER, TOPIC, GhError, anchored, clear_folder, day_folder,
                     enabled_sources, gh_signed_in, output_folder, table, tool_channel, write_output_file)
 
@@ -50,11 +50,14 @@ def init(topic, today=None, run=subprocess.run):
 
 
 def usable_sources():
-    """{group: its enabled sources this skill can use}, in GROUPS' order: an
-    mcp or cli source for the documentation and the code, which the agent
-    uses directly, and jira-api for the tracker, which tickets.py reads."""
+    """{group: its enabled sources this skill can use}, in GROUPS' order: a
+    cli source for the code, whose repositories the agent clones and reads
+    with git and its CLI; an mcp or cli source for the documentation, which the
+    agent uses directly; and jira-api for the tracker, which tickets.py reads."""
     def usable(group, name):
-        return name == JIRA_API if group == JIRA_GROUP else tool_channel(name)[1] in ("mcp", "cli")
+        if group == JIRA_GROUP:
+            return name == JIRA_API
+        return tool_channel(name)[1] in (("cli",) if group == "source_control" else ("mcp", "cli"))
     return {group: [name for name in enabled_sources(group) if usable(group, name)] for group in GROUPS}
 
 
@@ -118,11 +121,8 @@ def examples(folder):
         if match and os.path.isdir(path):
             documents = sorted(f for f in os.listdir(path)
                                if f.endswith(".md") and f != EXAMPLE_DESCRIPTION)
-            note = ""
-            if os.path.isfile(os.path.join(path, EXAMPLE_DESCRIPTION)):
-                with open(os.path.join(path, EXAMPLE_DESCRIPTION), encoding="utf-8") as f:
-                    why = WHY_GOOD.search(f.read())
-                note = why[1] if why else ""
+            note = read_description(os.path.join(path, EXAMPLE_DESCRIPTION))[
+                1].get(WHY_GOOD, "")
             found.append(((match["date"], int(match["copy"] or 1)),
                           {"folder": path, "documents": documents, "note": note}))
     return [example for _, example in sorted(found, key=lambda item: item[0], reverse=True)]

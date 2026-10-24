@@ -258,7 +258,7 @@ class ClientTest(unittest.TestCase):
              "Jira returned 500 for /rest/api/3/myself.", False),
             # A missing resource says so, so the client can answer None for it.
             ("404", None, None,
-             "Jira returned 404 Not Found for /rest/api/3/myself", True),
+             "Jira returned 404 Not Found for /rest/api/3/myself.", True),
             ("unreachable site", None, "http://127.0.0.1:9",
              "could not reach Jira, after trying 4 times. Check your `base-url` setting in "
              "sources.workflow.jira-api and the connection.", False),
@@ -447,6 +447,7 @@ class ClientTest(unittest.TestCase):
 
     BATCH = "/rest/api/3/changelog/bulkfetch"
     MYSELF = "/rest/api/3/myself"
+    SEARCH = "/rest/api/3/search/jql"
     # The account's profile, read for its time zone by the batched changelog.
     ZONE = {"timeZone": "Europe/Berlin"}
     # The fields of the changelog tests: the Sprint field by name, the status
@@ -469,8 +470,6 @@ class ClientTest(unittest.TestCase):
                 # 08:00+01:00 is 09:00+02:00: earlier than the first entry despite the string.
                 entry("2026-03-29T08:00:00.000+0100",
                       {"field": "IssueParentAssociation", "to": "1001", "toString": "PROJ-100"})]
-
-    SEARCH = "/rest/api/3/search/jql"
 
     def search_by_id(self, *known):
         """A search route that answers `id in (...)` with the issues of the
@@ -495,6 +494,11 @@ class ClientTest(unittest.TestCase):
                 page["nextPageToken"] = f"t{index + 1}"
             return page
         return answer
+
+    def batch_requests(self):
+        """The requests to the batched changelog endpoint, the profile read for
+        the account's time zone left out."""
+        return [r for r in FakeJira.requests if r[0] == self.BATCH]
 
     def test_field_changes_reads_every_page_names_fields_and_sorts_by_instant(self):
         # 08:00+01:00 is 09:00+02:00: the parent's change sorts between the
@@ -613,11 +617,6 @@ class ClientTest(unittest.TestCase):
                                                     {"status": "status", "resolution": "resolution"})[0]["PROJ-1"]
         self.assertEqual([(c["created"], c["field"]) for c in changes],
                          [("2026-10-07T09:53:16.961+0100", "resolution"), ("2026-10-07T09:53:16.961+0100", "status")])
-
-    def batch_requests(self):
-        """The requests to the batched changelog endpoint, the profile read for
-        the account's time zone left out."""
-        return [r for r in FakeJira.requests if r[0] == self.BATCH]
 
     def test_batched_field_changes_failures(self):
         # A busy Jira is tried again; an answer that is final names the

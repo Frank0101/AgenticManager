@@ -14,6 +14,21 @@ import os
 from common import ASSETS, FOLDER_NAME, NAME, SLIDES, USER_EXAMPLES, assets, clear_folder, day_folder, examples, output_folder
 
 
+OUTPUT = """Prints one line of JSON:
+  folder, temporary   the skill's output folder, and whether it is temporary
+  deck                the folder's name, for --deck and the slides' path
+  deck_dir            its absolute path
+  slides_path         where slides.json goes, relative to `folder`
+  replaced            whether a folder of the same name and day was deleted
+  examples            every example, the skill's and the user's: its folder,
+                      source, title and what it is good for, so the agent
+                      picks which to read
+  assets              every image in _assets: its name, title, what it shows
+                      and, if downloaded, its license, so the agent reuses one
+                      before drawing or searching for another
+"""
+
+
 def init(name, today=None):
     if not NAME.fullmatch(name):
         raise SystemExit(f"{name!r} must be words of letters and digits joined by hyphens, "
@@ -30,21 +45,6 @@ def init(name, today=None):
             "assets": [{"name": asset["name"], "title": asset["title"], "shows": asset["shows"],
                         "license": asset["credit"]["license"] if asset["credit"] else None}
                        for asset in assets()]}
-
-
-OUTPUT = """Prints one line of JSON:
-  folder, temporary   the skill's output folder, and whether it is temporary
-  deck                the folder's name, for --deck and the slides' path
-  deck_dir            its absolute path
-  slides_path         where slides.json goes, relative to `folder`
-  replaced            whether a folder of the same name and day was deleted
-  examples            every example, the skill's and the user's: its folder,
-                      source, title and what it is good for, so the agent
-                      picks which to read
-  assets              every image in _assets: its name, title, what it shows
-                      and, if downloaded, its license, so the agent reuses one
-                      before drawing or searching for another
-"""
 
 
 def main(argv=None):

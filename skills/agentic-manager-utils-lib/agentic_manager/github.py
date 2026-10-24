@@ -77,12 +77,12 @@ def pull_events(urls, run=subprocess.run):
     (else mergedAt is None), with state OPEN, CLOSED or MERGED; and gone as
     {url: GitHub's words} of those GitHub says don't exist, in the order of
     `urls`. Raises GhError for any other that gh couldn't read, such as one
-    GitHub can't resolve or a URL whose parts aren't safe to ask about. Read
-    in a GraphQL call for each batch (batch.py) of one host's pull requests,
-    as a call per pull request spent hundreds of requests of a sprint's
-    hourly limit: each is a single object, not a connection, so a call costs
-    one point of GraphQL's hourly 5,000 and stays far below its node
-    limit."""
+    in a repository GitHub can't find (see batch_events()) or a URL whose
+    parts aren't safe to ask about. Read in a GraphQL call for each batch
+    (batch.py) of one host's pull requests, as a call per pull request spent
+    hundreds of requests of a sprint's hourly limit: each is a single object,
+    not a connection, so a call costs one point of GraphQL's hourly 5,000 and
+    stays far below its node limit."""
     urls = list(dict.fromkeys(urls))
     hosts = {}
     for url in urls:

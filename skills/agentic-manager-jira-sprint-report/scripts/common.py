@@ -67,6 +67,91 @@ NO_EPIC = "__no_epic__"
 NO_EPIC_NAME = "(no epic)"
 
 
+# Blocker candidates: flagged, in a blocked-type status, or high priority and
+# still open. Teams mark impediments in different ways, often with a workflow
+# status rather than Jira's Flagged field, so status names count too.
+HIGH_PRIORITIES = {"highest", "high"}
+BLOCKED_STATUSES = {"blocked", "impeded",
+                    "on hold", "waiting", "waiting for support"}
+
+# Where a sentence ends, for the commentary and the agent's one-sentence texts.
+SENTENCE_BREAK = re.compile(r"(?<=[.!?]) +(?=[A-Z0-9])")
+
+# The words the report's vocabulary bans (see "The report's vocabulary and
+# formats" below), with what to write instead.
+BANNED_WORDS = (("story or stories", r"\bstor(?:y|ies)\b"), ("issue or issues", r"\bissues?\b"),
+                ("points (write pts)", r"\bpoints?\b"),
+                ("spelled-out numbers (write digits)",
+                 r"\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|"
+                 r"fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b"),
+                ("closed (write completed, or at the close)", r"\bclosed\b"))
+
+# The formats the report's vocabulary sets for prose, each named as the final
+# check reports it.
+PERCENT_RULE = "whole percentages only"
+RATIO_RULE = "ratios only as N/M tickets (N/M pts)"
+AMOUNT_RULE = "amounts only as N tickets (N pts)"
+BOLD_RULE = "bold only for labels"
+DATE_RULE = "no ISO dates"
+ESTIMATE_RULE = "a single ticket reads KEY (N pts), its latest estimate"
+
+# The format rules, in the order they are reported.
+FORMAT_RULES = (PERCENT_RULE, RATIO_RULE, AMOUNT_RULE, BOLD_RULE, DATE_RULE)
+
+# A ticket key with the estimate that may follow it: "KEY (N pts)", "KEY
+# (old → N pts)" or "KEY (– pts)"; group 1 is the key, group 2 the estimate
+# shown, None for a bare key.
+TICKET_ESTIMATE = re.compile(r"(" + ISSUE_KEY.pattern +
+                             r")(?: \((?:(?:\d+(?:\.\d+)?|–) → )?((?:\d+(?:\.\d+)?)|–) pts?\))?")
+
+# Ticket keys in brackets, such as "(PROJ-2, PROJ-3)": a list names tickets
+# without their estimates; group 1 is the keys.
+KEY_LIST = re.compile(
+    r"\((" + ISSUE_KEY.pattern + r"(?:, " + ISSUE_KEY.pattern + r")*)\)")
+
+# The goal verdicts the agent chooses from, word for word. A running sprint
+# can't be judged before its halfway day: too little is done to tell.
+GOAL_VERDICTS = {"closed": ("Fully met", "Partially met", "Not met"),
+                 "early": ("Too early to tell",),
+                 "active": ("On track", "At risk"),
+                 "no_goal": ("No goal set in Jira for this sprint",)}
+
+# How each piece of work in the outcome charts ended, and their rows: the
+# original commitment, split into carry-over and new work, and the extra scope.
+OUTCOMES = ("completed", "not_completed", "removed")
+OUTCOME_ROWS = ("original", "carried_in", "new", "extra")
+
+# Each outcome's (background, text) colours, shared by the outcome charts and
+# the timeline's tags, so an outcome looks the same wherever it shows.
+OUTCOME_COLOURS = {"completed": ("#0ca30c", "#ffffff"), "not_completed": ("#fab219", "#1a1a1a"),
+                   "removed": ("#b5b2aa", "#1a1a1a")}
+
+# The groups of an epic's commentary, in the order it shows them (see
+# build_sprint_data.py's scope_group).
+SCOPE_GROUPS = ("completed", "in_review", "not_completed", "descoped")
+
+# A description reaches the agent in pieces of at most this many characters, so
+# the brief stays small and the rest is read only when it could matter.
+DESCRIPTION_CHUNK_CHARS = 2000
+
+# Word limits, so the report stays short enough for an exec to read: the
+# timeline's commentary before its caveats, each epic's commentary, and the
+# Key Achievements and Blockers & Risks paragraphs; and the most retro notes.
+# Words are counted as the library's word_count counts them.
+COMMENTARY_WORDS = 100
+EPIC_COMMENTARY_WORDS = 60
+SUMMARY_WORDS = 100
+RETRO_NOTES = 5
+
+# Marks the parts of the report the agent writes, on their heading or label;
+# everything else is generated from data.json and checked.
+AI_LABEL = "[AI Gen.]"
+
+# The head of the report's two-column tables of (label, value) rows: the one at
+# the top and the one under Sprint Metrics.
+FIELD_TABLE_HEAD = "| Field | Detail |\n|---|---|\n"
+
+
 def spell_epic(spell):
     """(key, name) of a spell's epic, NO_EPIC and NO_EPIC_NAME without one."""
     return (spell["parentKey"], spell["parentSummary"]) if spell["parentKey"] else (NO_EPIC, NO_EPIC_NAME)
@@ -89,14 +174,6 @@ def report_timezone(name):
         raise SystemExit("reporting timezone is unavailable: check the Jira API account's timezone, "
                          "install timezone data with python3 -m pip install tzdata if needed, "
                          "and fetch the sprint again")
-
-
-# Blocker candidates: flagged, in a blocked-type status, or high priority and
-# still open. Teams mark impediments in different ways, often with a workflow
-# status rather than Jira's Flagged field, so status names count too.
-HIGH_PRIORITIES = {"highest", "high"}
-BLOCKED_STATUSES = {"blocked", "impeded",
-                    "on hold", "waiting", "waiting for support"}
 
 
 def blocker_candidate_keys(issues, changes, categories, flagged_field, sprint_id, moment):
@@ -351,9 +428,6 @@ def report_label(project_key, sprint_name):
 #               dashes. Copied Jira text (the goal, sprint and epic names) keeps
 #               its own wording and is exempt from these rules.
 
-# Where a sentence ends, for the commentary and the agent's one-sentence texts.
-SENTENCE_BREAK = re.compile(r"(?<=[.!?]) +(?=[A-Z0-9])")
-
 
 def known_sum(estimates):
     """The sum of the estimates that are set, or None if none is, so work with
@@ -449,15 +523,6 @@ def text_rule_problems(text, latest=None):
     return found + [(rule, items) for rule, items in formats if items]
 
 
-# The words the rules above ban, with what to write instead.
-BANNED_WORDS = (("story or stories", r"\bstor(?:y|ies)\b"), ("issue or issues", r"\bissues?\b"),
-                ("points (write pts)", r"\bpoints?\b"),
-                ("spelled-out numbers (write digits)",
-                 r"\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|"
-                 r"fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b"),
-                ("closed (write completed, or at the close)", r"\bclosed\b"))
-
-
 def banned_words(text):
     """[(rule, words found)] for each banned word the text uses."""
     found = []
@@ -468,39 +533,9 @@ def banned_words(text):
     return found
 
 
-# The formats the rules above set for prose, each named as the final check
-# reports it.
-PERCENT_RULE = "whole percentages only"
-RATIO_RULE = "ratios only as N/M tickets (N/M pts)"
-AMOUNT_RULE = "amounts only as N tickets (N pts)"
-BOLD_RULE = "bold only for labels"
-DATE_RULE = "no ISO dates"
-ESTIMATE_RULE = "a single ticket reads KEY (N pts), its latest estimate"
-# The format rules, in the order they are reported.
-FORMAT_RULES = (PERCENT_RULE, RATIO_RULE, AMOUNT_RULE, BOLD_RULE, DATE_RULE)
-
-# A ticket key with the estimate that may follow it: "KEY (N pts)", "KEY
-# (old → N pts)" or "KEY (– pts)"; group 1 is the key, group 2 the estimate
-# shown, None for a bare key.
-TICKET_ESTIMATE = re.compile(r"(" + ISSUE_KEY.pattern +
-                             r")(?: \((?:(?:\d+(?:\.\d+)?|–) → )?((?:\d+(?:\.\d+)?)|–) pts?\))?")
-# Ticket keys in brackets, such as "(PROJ-2, PROJ-3)": a list names tickets
-# without their estimates; group 1 is the keys.
-KEY_LIST = re.compile(
-    r"\((" + ISSUE_KEY.pattern + r"(?:, " + ISSUE_KEY.pattern + r")*)\)")
-
-
 def estimate(points):
     """An estimate for display: "–" when there is none."""
     return "–" if points is None else number(points)
-
-
-# The goal verdicts the agent chooses from, word for word. A running sprint
-# can't be judged before its halfway day: too little is done to tell.
-GOAL_VERDICTS = {"closed": ("Fully met", "Partially met", "Not met"),
-                 "early": ("Too early to tell",),
-                 "active": ("On track", "At risk"),
-                 "no_goal": ("No goal set in Jira for this sprint",)}
 
 
 def allowed_verdicts(data):
@@ -513,25 +548,6 @@ def allowed_verdicts(data):
         "sprint_start", "sprint_end", "today"))
     early = today < start + (end - start) / 2
     return GOAL_VERDICTS["early" if early else "active"]
-
-
-# How each piece of work in the outcome charts ended, and their rows: the
-# original commitment, split into carry-over and new work, and the extra scope.
-OUTCOMES = ("completed", "not_completed", "removed")
-OUTCOME_ROWS = ("original", "carried_in", "new", "extra")
-# Each outcome's (background, text) colours, shared by the outcome charts and
-# the timeline's tags, so an outcome looks the same wherever it shows.
-OUTCOME_COLOURS = {"completed": ("#0ca30c", "#ffffff"), "not_completed": ("#fab219", "#1a1a1a"),
-                   "removed": ("#b5b2aa", "#1a1a1a")}
-
-
-# The groups of an epic's commentary, in the order it shows them (see
-# build_sprint_data.py's scope_group).
-SCOPE_GROUPS = ("completed", "in_review", "not_completed", "descoped")
-
-# A description reaches the agent in pieces of at most this many characters, so
-# the brief stays small and the rest is read only when it could matter.
-DESCRIPTION_CHUNK_CHARS = 2000
 
 
 def chunks(text, size=DESCRIPTION_CHUNK_CHARS):
@@ -548,20 +564,6 @@ def chunks(text, size=DESCRIPTION_CHUNK_CHARS):
         pieces.append(text[:cut].rstrip())
         text = text[cut:].lstrip()
     return [*pieces, text]
-
-
-# Word limits, so the report stays short enough for an exec to read: the
-# timeline's commentary before its caveats, each epic's commentary, and the
-# Key Achievements and Blockers & Risks paragraphs; and the most retro notes.
-# Words are counted as the library's word_count counts them.
-COMMENTARY_WORDS = 100
-EPIC_COMMENTARY_WORDS = 60
-SUMMARY_WORDS = 100
-RETRO_NOTES = 5
-
-# Marks the parts of the report the agent writes, on their heading or label;
-# everything else is generated from data.json and checked.
-AI_LABEL = "[AI Gen.]"
 
 
 def ai(title):

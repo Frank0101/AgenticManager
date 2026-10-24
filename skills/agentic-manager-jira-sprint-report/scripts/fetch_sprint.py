@@ -43,7 +43,7 @@ folder is temporary; progress goes to stderr. Only an active or closed sprint ca
 be reported."""
 
 
-def prepare_report_dir(report_dir, sprint_id, log):
+def prepare_report_dir(report_dir, sprint_id):
     """Delete the report already in the destination folder (the same sprint and
     day), then return a new, empty _raw folder. Every run starts from scratch,
     so there is no stale state to reuse; earlier days' folders are left, since
@@ -269,7 +269,7 @@ def main():
         out_root, temporary = output_folder(REPORTS_FOLDER)
         report_dir = os.path.join(out_root, day_folder(
             label, parse_ts(fetched_at).astimezone(reporting_zone)))
-        raw_dir = prepare_report_dir(report_dir, sprint_id, log)
+        raw_dir = prepare_report_dir(report_dir, sprint_id)
 
         write_json(os.path.join(raw_dir, SPRINT_FILE), sprint)
         write_json(os.path.join(raw_dir, PREVIOUS_SPRINT_FILE), previous)

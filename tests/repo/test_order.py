@@ -3,7 +3,8 @@ top-down: each module-level function or class comes below the first one that
 uses it, and `main` comes last. An agent reading from the top then meets what
 a module does before the details it rests on. Uses from `main` don't count,
 since it is last, and neither does a function that module-level code calls,
-which Python needs defined first.
+which Python needs defined first. Constants come above every function, unless
+built from one, which Python needs defined first.
 Run with: python3 tests/run.py repo
 """
 
@@ -66,6 +67,23 @@ def out_of_order(source):
     return wrong
 
 
+def late_constants(source):
+    """The module-level names of `source` assigned below its first function or
+    class without being built from one of the module's definitions."""
+    tree = ast.parse(source)
+    definitions = {n.name for n in tree.body if isinstance(n, DEFINITIONS)}
+    first = next((i for i, n in enumerate(tree.body)
+                 if isinstance(n, DEFINITIONS)), len(tree.body))
+    late = []
+    for node in tree.body[first:]:
+        if isinstance(node, (ast.Assign, ast.AnnAssign)) and not used(node, definitions):
+            targets = node.targets if isinstance(
+                node, ast.Assign) else [node.target]
+            late += [n.id for target in targets for n in ast.walk(
+                target) if isinstance(n, ast.Name)]
+    return late
+
+
 class OrderTest(unittest.TestCase):
     def test_every_module_reads_top_down(self):
         for skill, folder in code_map.folders().items():
@@ -74,6 +92,24 @@ class OrderTest(unittest.TestCase):
                     with self.subTest(f"{skill}/{name}"), open(os.path.join(folder, name), encoding="utf-8") as f:
                         self.assertEqual(out_of_order(f.read()), [],
                                          f"{skill}/{name}: move each below the first function that uses it")
+
+    def test_constants_come_first(self):
+        for skill, folder in code_map.folders().items():
+            for name in sorted(os.listdir(folder)):
+                if name.endswith(".py"):
+                    with self.subTest(f"{skill}/{name}"), open(os.path.join(folder, name), encoding="utf-8") as f:
+                        self.assertEqual(late_constants(f.read()), [],
+                                         f"{skill}/{name}: move these constants above the first function")
+
+    def test_late_constants(self):
+        cases = [("X = 1\n\ndef f():\n    return X\n", []),
+                 ("def f():\n    return 1\n\nX = 1\n", ["X"]),
+                 # Built from a function of the module, so it follows it.
+                 ("def f():\n    return 1\n\nX = f()\n", []),
+                 ("def f():\n    pass\n\nif __name__ == '__main__':\n    f()\n", [])]
+        for source, expected in cases:
+            with self.subTest(source):
+                self.assertEqual(late_constants(source), expected)
 
     def test_out_of_order(self):
         cases = [

@@ -1,5 +1,6 @@
 """An invented deck shared by the tests: its slides.json, with a chart, a ring,
-an SVG diagram and a placeholder, and an output folder of the test's own."""
+an SVG diagram and a placeholder, images for _assets, one of them downloaded
+with its credit, and an output folder of the test's own."""
 import copy
 import json
 import os
@@ -29,6 +30,12 @@ CONTENT = {
                          "segments": [{"color": "#3e9c8f"}, {"color": "#7b5ea7", "value": 2},
                                       {"color": "#3a8a50"}]}},
 }
+
+CREDIT = {"credit": "Example Agency", "license": "CC BY 4.0",
+          "source": "https://example.org/wiki/File:Earth.jpg", "image": "https://example.org/files/earth.jpg"}
+CREDITED = ("# The Earth\n\n**Shows:** the Earth from space\n\n**Credit:** Example Agency\n\n"
+            "**License:** CC BY 4.0\n\n**Source:** https://example.org/wiki/File:Earth.jpg\n\n"
+            "**Image:** https://example.org/files/earth.jpg\n")
 
 
 def content():
@@ -68,13 +75,6 @@ def write_slides(folder, data, deck=DECK):
     os.makedirs(os.path.join(folder, deck), exist_ok=True)
     with open(os.path.join(folder, deck, "slides.json"), "w", encoding="utf-8") as f:
         json.dump(data, f)
-
-
-CREDIT = {"credit": "Example Agency", "license": "CC BY 4.0",
-          "source": "https://example.org/wiki/File:Earth.jpg", "image": "https://example.org/files/earth.jpg"}
-CREDITED = ("# The Earth\n\n**Shows:** the Earth from space\n\n**Credit:** Example Agency\n\n"
-            "**License:** CC BY 4.0\n\n**Source:** https://example.org/wiki/File:Earth.jpg\n\n"
-            "**Image:** https://example.org/files/earth.jpg\n")
 
 
 def write_credited_asset(folder, name="earth"):

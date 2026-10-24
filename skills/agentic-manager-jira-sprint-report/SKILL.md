@@ -51,7 +51,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py <selector>
 
 If the user names no sprint, project or board, ask; don't guess. If they name only a sprint, run it alone first, and ask for the project or board only when the script says it couldn't find the sprint. If the script fails, report its message and follow any fix it gives; when it asks for another board, keep the sprint by passing its `--sprint-id` with the `--board`.
 
-Read the `brief`: the sprint and its goal, the verdicts you can choose from, each epic's tickets with their commentary `group`, `carried_in` (still in the previous sprint when it closed), `scope` (`original` is the commitment, `extra` was added later), latest `points`, `status`, `flagged`, description and, for blocker candidates, their comments, `report_facts`, the report's own figures in its exact wording, and `ticket_events`: each listed ticket's status changes.
+Read the `brief`: the sprint and its goal, with the verdicts you can choose from; each epic's tickets with their commentary `group`, `carried_in` (still in the previous sprint when it closed), `scope` (`original` is the commitment, `extra` was added later), latest `points`, `status`, `flagged`, description and, for blocker candidates, their comments; `report_facts`, the report's own figures in its exact wording; and `ticket_events`, each listed ticket's status changes.
 
 A description comes as its first chunk, with `description_chunks` when there are more; read another chunk only when it could change a sentence, with `python3 ${CLAUDE_SKILL_DIR}/scripts/read_description.py --report-dir <report_dir> --key KEY --chunk N`.
 

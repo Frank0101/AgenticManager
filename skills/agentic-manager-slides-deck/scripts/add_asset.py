@@ -27,6 +27,32 @@ SIGNATURES = [(b"\x89PNG\r\n\x1a\n", "png"), (b"\xff\xd8\xff", "jpg"), (b"GIF87a
 NOT_AN_IMAGE = "is not a PNG, JPEG, GIF, WebP or SVG image"
 
 
+EXAMPLES = """
+<name>, the image's folder, is lowercase words joined by hyphens; without
+--name it comes from the file's or the address's own name. An image of the
+same name is replaced: every deck that links it shows the new one from then
+on. A downloaded image's description also holds its credit line, its license,
+the page that states the license and its own address; an image the user gave
+has no credit: it is theirs.
+
+Prints one line of JSON: the image's `asset` name, its `path` and whether it
+`replaced` one of the same name.
+
+add an image the user gave:
+  python3 add_asset.py --file ~/Downloads/acme-logo.svg --title 'Acme logo' \\
+    --shows 'the Acme logo, dark blue lettering on a transparent background, wide'
+
+add an image from the internet, with what its page states:
+  python3 add_asset.py --url 'https://example.org/files/earth.jpg' \\
+    --page 'https://example.org/wiki/File:Earth.jpg' --license 'Public domain' \\
+    --credit 'Example Agency' --title 'The Earth from space' \\
+    --shows 'the whole Earth on a black background, a square photo' --name earth-from-space
+
+describe an image already in _assets:
+  python3 add_asset.py --name acme-logo --title 'Acme logo' --shows '...'
+"""
+
+
 def add_asset(path, title, shows, name=None):
     """Copies the user's image at `path` into _assets as `name`, described by
     `title` and `shows`."""
@@ -133,32 +159,6 @@ def checked_name(name):
         raise SystemExit(f"{name!r} must be lowercase words joined by hyphens, such as acme-logo: "
                          "give another with --name")
     return name
-
-
-EXAMPLES = """
-<name>, the image's folder, is lowercase words joined by hyphens; without
---name it comes from the file's or the address's own name. An image of the
-same name is replaced: every deck that links it shows the new one from then
-on. A downloaded image's description also holds its credit line, its license,
-the page that states the license and its own address; an image the user gave
-has no credit: it is theirs.
-
-Prints one line of JSON: the image's `asset` name, its `path` and whether it
-`replaced` one of the same name.
-
-add an image the user gave:
-  python3 add_asset.py --file ~/Downloads/acme-logo.svg --title 'Acme logo' \\
-    --shows 'the Acme logo, dark blue lettering on a transparent background, wide'
-
-add an image from the internet, with what its page states:
-  python3 add_asset.py --url 'https://example.org/files/earth.jpg' \\
-    --page 'https://example.org/wiki/File:Earth.jpg' --license 'Public domain' \\
-    --credit 'Example Agency' --title 'The Earth from space' \\
-    --shows 'the whole Earth on a black background, a square photo' --name earth-from-space
-
-describe an image already in _assets:
-  python3 add_asset.py --name acme-logo --title 'Acme logo' --shows '...'
-"""
 
 
 def main(argv=None):

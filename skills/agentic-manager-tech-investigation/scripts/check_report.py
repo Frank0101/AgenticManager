@@ -175,7 +175,7 @@ def check_ledger(path, handover=False):
         if any(row[0].startswith("Q") for table in ("queue-ready", "queue-in-progress")
                for row in ledger_rows(body, TABLE_HEADINGS[table])):
             errors.append(
-                f"{LEDGER}: actions are still ready or in progress; finish, block or reject them before handover")
+                f"{LEDGER}: actions are still ready or in progress; answer or block them before handover")
         # The trail from a claim to its source ends in a link, or, for a search, which has
         # no URL to pin, in its exact query between backticks.
         register = failing_rows(body, TABLE_HEADINGS["sources"], 2,

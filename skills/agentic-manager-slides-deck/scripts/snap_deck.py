@@ -139,8 +139,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Picture each slide of the deck with headless Chrome. Prints one line of JSON: the "
         "`sheet`, every slide numbered at a third of its size, then `slides`, the picture of each slide in "
-        "order, all in a new temporary folder. Exits 1, saying to skip the check, if Chrome isn't installed "
-        "or takes over 60 seconds on a picture, and exits if Chrome makes no picture.")
+        "order, all in a new temporary folder. Exits 1 if Chrome makes no picture, saying to skip the check "
+        "when it isn't installed or takes over 60 seconds on a picture.")
     parser.add_argument("--deck", required=True,
                         help="the deck's folder, <Name>_<YY-MM-DD>, inside slides-decks")
     sheet, pictures = snap(parser.parse_args(argv).deck)

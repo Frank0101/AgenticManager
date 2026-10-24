@@ -31,7 +31,7 @@ An investigation's folder holds only these files, and the final check fails on a
 
 Run the config check, `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py`, pre-approved in the frontmatter. If it fails, stop here and follow its `next_steps`. If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ as `python3`; if the script is missing, tell them to reinstall every skill.
 
-This skill reads three kinds of source (see [Sources and evidence](#sources-and-evidence)): the code, from any enabled `source_control` source; the tracker, from the `jira-api` source, which this skill's client reads; and the documentation, from any enabled `documentation` source.
+This skill reads three kinds of source (see [Sources and evidence](#sources-and-evidence)): the code, from any enabled `source_control` source with a command-line tool, such as `github-cli`, since repositories are cloned and read with git and that tool; the tracker, from the `jira-api` source, which this skill's client reads; and the documentation, from any enabled `documentation` source.
 
 All three are required. If any of them isn't enabled, stop and tell the user how to enable it, showing its `setup` and the config `path`.
 

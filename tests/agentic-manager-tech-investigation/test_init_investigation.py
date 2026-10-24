@@ -101,10 +101,13 @@ class InitTest(unittest.TestCase):
                          "gh", "auth", "status"])
 
     def test_every_group_needs_a_usable_source_before_anything_is_created(self):
-        # An api or fs source of documentation or code, and any tracker but
-        # jira-api, isn't usable; gh isn't asked when a group has none.
+        # A code source other than a cli one, an api or fs source of the
+        # documentation, and any tracker but jira-api, isn't usable; gh isn't
+        # asked when a group has none.
         unused = mock.Mock()
         cases = [("no tracker", {"documentation": ["notion-mcp"], "source_control": ["github-cli"]}, "tracker"),
+                 ("code through an mcp source", {"documentation": ["notion-mcp"], "workflow": ["jira-api"],
+                                                 "source_control": ["github-mcp"]}, "code"),
                  ("unusable channels", {"documentation": ["notion-fs"], "workflow": ["linear-api"],
                                         "source_control": ["github-api"]}, "code, tracker, documentation")]
         for name, enabled, missing in cases:

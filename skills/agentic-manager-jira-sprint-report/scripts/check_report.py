@@ -13,12 +13,35 @@ import re
 import sys
 from datetime import date, timedelta
 
-from common import (INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, ISSUE_KEY,
+from common import (INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, FIELD_TABLE_HEAD, ISSUE_KEY,
                     BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, KEY_LIST, TICKET_ESTIMATE,
                     TICKET_EVENT_TYPES,
                     NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai, text_rule_problems,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty,
                     ratio, report_file, report_timezone, scope_group_label, spell_epic, whole_percentage, word_count)
+
+
+# The event kinds of a spell.
+EVENT_KINDS = {"committed", "joined", "completed",
+               "reopened", "reestimated", "removed"}
+
+# What each kind of ticket event holds besides its instant, date, source and type.
+TICKET_EVENT_FIELDS = {"created": ("values",), "status_changed": ("from", "to", "fromCategory", "toCategory"),
+                       "parent_changed": ("from", "to", "fromId", "toId")}
+
+# The values a ticket's creation holds, one per tracked field and the status's
+# category and the parent's id.
+CREATED_VALUES = {"sprint", "status", "statusCategory", "resolution", "priority", "parent", "parentId", "points",
+                  "flagged"}
+
+# The rows of the report's field tables, in order: the table at the top, then
+# the one under Sprint Metrics.
+HEADER_LABELS = ["Dates", "Goal", ai("Goal outcome"), ai("Key Achievements"),
+                 ai("Blockers & Risks"), "Sprint target completion"]
+
+# The commentary's caveats, which its word limit doesn't count.
+CAVEATS = ("resolved as Duplicate or Won't Do",
+           "is reconstructed from changelogs")
 
 
 def run_checks(md, data, report_dir):
@@ -77,11 +100,6 @@ def rows_of(table):
 
 def strip_tags(text):
     return re.sub(r"<[^>]+>", " ", text).strip()
-
-
-# The event kinds of a spell.
-EVENT_KINDS = {"committed", "joined", "completed",
-               "reopened", "reestimated", "removed"}
 
 
 def check_model(c, data):
@@ -241,15 +259,6 @@ def check_ticket_events(c, data):
                 f"{spell['key']}'s spell events are what its ticket events give {wrong[:2] or ''}".strip())
 
 
-# What each kind of ticket event holds besides its instant, date, source and type.
-TICKET_EVENT_FIELDS = {"created": ("values",), "status_changed": ("from", "to", "fromCategory", "toCategory"),
-                       "parent_changed": ("from", "to", "fromId", "toId")}
-# The values a ticket's creation holds, one per tracked field and the status's
-# category and the parent's id.
-CREATED_VALUES = {"sprint", "status", "statusCategory", "resolution", "priority", "parent", "parentId", "points",
-                  "flagged"}
-
-
 def ticket_event_problems(events, zone, cutoff):
     """What is wrong with a ticket's events, as short descriptions: an
     unknown source or type, a missing field, a date that isn't its instant's
@@ -339,11 +348,6 @@ def ticket_state(events, instant):
     return done, points
 
 
-HEADER_START = "| Field | Detail |\n|---|---|\n"
-HEADER_LABELS = ["Dates", "Goal", ai("Goal outcome"), ai("Key Achievements"),
-                 ai("Blockers & Risks"), "Sprint target completion"]
-
-
 def check_header(c, md, data):
     rows = header_rows(md)
     if not c.check(rows is not None, "header", "table at the top found") or rows is None:
@@ -378,27 +382,22 @@ def check_header(c, md, data):
         + f" completed{so_far}")
     c.check(values["Sprint target completion"] == target,
             "header", f"Sprint target completion is {target!r}")
-    c.check(f"## Sprint Metrics\n\n{HEADER_START}| Sprint target completion |" in md,
+    c.check(f"## Sprint Metrics\n\n{FIELD_TABLE_HEAD}| Sprint target completion |" in md,
             "header", "Sprint target completion is a table of its own under Sprint Metrics")
 
 
 def header_rows(md):
     """[(label, value)] of the report's tables of fields, the one at the top
     and the one under Sprint Metrics, in order, or None if there are none."""
-    if HEADER_START not in md:
+    if FIELD_TABLE_HEAD not in md:
         return None
     rows = []
-    for table in md.split(HEADER_START)[1:]:
+    for table in md.split(FIELD_TABLE_HEAD)[1:]:
         for line in table.split("\n\n", 1)[0].splitlines():
             cells = re.fullmatch(r"\| (.+?) \| (.*) \|", line)
             rows.append((cells.group(1), cells.group(2))
                         if cells else (line, None))
     return rows
-
-
-# The commentary's caveats, which its word limit doesn't count.
-CAVEATS = ("resolved as Duplicate or Won't Do",
-           "is reconstructed from changelogs")
 
 
 def check_commentary(c, md, data):

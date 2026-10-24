@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import check_report  # noqa: E402
 import init_investigation  # noqa: E402
 import ledger  # noqa: E402
-from common import JiraError  # noqa: E402
+from common import ID_LETTERS, JiraError  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from investigation_fixture import INVESTIGATION, temp_output  # noqa: E402
 
@@ -60,7 +60,7 @@ class LedgerTest(unittest.TestCase):
     def plain(self):
         """The ledger without the anchors and ID links the script adds, for
         tests about something else."""
-        return re.sub(r"\[([SQFCDG]\d+)\]\(#[a-z]+\d+\)", r"\1", re.sub(r'<a id="[^"]+"></a>', "", self.text()))
+        return re.sub(rf"\[([{ID_LETTERS}]\d+)\]\(#[a-z]+\d+\)", r"\1", re.sub(r'<a id="[^"]+"></a>', "", self.text()))
 
     def rows(self, heading):
         """The first column of the data rows of the first table under `heading`."""
@@ -906,7 +906,7 @@ class LedgerTest(unittest.TestCase):
 
     def test_a_completed_action_names_its_answer(self):
         self.records("F01", "F02", "G01", "D02")
-        for outcome in ("F01, F02", "G01", "D02", "Rejected by the user: not needed, 2026-10-05"):
+        for outcome in ("F01, F02", "G01", "D02"):
             with self.subTest(outcome):
                 self.run_ledger("row", "--table", "queue-completed",
                                 "--id", "Q01", cells=QUEUE_ROW[:-1] + [outcome])

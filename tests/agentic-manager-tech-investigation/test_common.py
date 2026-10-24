@@ -159,7 +159,7 @@ class ReferencesTest(unittest.TestCase):
     def test_closing_values(self):
         # (function, value, accepted)
         cases = [(common.outcome_problem, "F01, F02", True), (common.outcome_problem, "G03", True),
-                 (common.outcome_problem, "Rejected by the user: not needed", True),
+                 (common.outcome_problem, "Rejected by the user: not needed", False),
                  (common.outcome_problem, "Answered within scope",
                   False), (common.outcome_problem, "", False),
                  (common.status_problem,

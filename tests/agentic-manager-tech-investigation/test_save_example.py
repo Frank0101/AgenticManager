@@ -18,10 +18,9 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import init_investigation  # noqa: E402
 import save_example  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from investigation_fixture import temp_output  # noqa: E402
+from investigation_fixture import INVESTIGATION, temp_output  # noqa: E402
 
 TODAY = date(2026, 10, 5)
-INVESTIGATION = "Acme-Search_26-10-05"
 REPORT = "Acme-Search_Report.md"
 
 

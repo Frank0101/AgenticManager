@@ -21,7 +21,7 @@ from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
 from agentic_manager.jira import GROUP as JIRA_GROUP, NAME as JIRA_API, PROJECT_KEY, JiraClient, JiraError, browse_url, plain_text, project_of  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
-from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, clear_folder, day_folder, output_folder  # noqa: E402,F401
+from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.text import DEFINITION, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, free_name, headings, link_definitions, link_text, links, local_link, markdown, reference_key, slug, word_count  # noqa: E402,F401
 from agentic_manager.ticket_pulls import pulls_by_ticket  # noqa: E402,F401
 
@@ -29,8 +29,8 @@ FOLDER_NAME = "tech-investigations"
 EXAMPLES = "_examples"
 # An example's own description, beside its copied documents: what makes it
 # good, as the agent wrote it when the user approved it.
-WHY_GOOD_LABEL = "**Why it's good:**"
-WHY_GOOD = re.compile(rf"^{re.escape(WHY_GOOD_LABEL)} (.+)$", re.M)
+WHY_GOOD = "Why it's good"
+WHY_GOOD_LABEL = f"**{WHY_GOOD}:**"
 LEDGER = "ledger.md"
 CONTENT = "content.json"
 REPORT_SUFFIX = "_Report.md"
@@ -103,11 +103,9 @@ DECISION_HEADER = ["ID", "Decision", "Established position or unresolved choice"
                    "Candidates, constraints", "Source authority and status",
                    "Owner and next check"]
 # What a gap can be blocked by. Anything else is work the agent can do, so it is
-# a ready action in the queue and not a gap. A question the user was asked and
-# didn't answer is a valid blocker: what to leave out is theirs to decide, so
-# the agent leaves the gap open and says it asked.
-BLOCKERS = ("No access", "Waiting on decision",
-            "Out of scope, approved by the user", "Asked the user, no answer")
+# a ready action in the queue and not a gap; scope is settled with the user in
+# Define, so no gap waits on them.
+BLOCKERS = ("No access", "Waiting on decision")
 GAP_HEADER = ["ID", "Gap", "What is established and what is missing",
               "What would close it", "Blocked by", "Source authority and status",
               "Owner and next check",
@@ -136,10 +134,6 @@ CODE_STATUSES = ("🟩", "🟦")
 DEPTHS = ["full", "entrypoints and routes",
           "partial", "README", "listing", "search hit"]
 READ_DEPTHS = ("full", "entrypoints and routes")
-# What closes a research action: the findings, decision or gap that answer it,
-# or the user's explicit choice not to pursue it. "Out of scope" on its own is
-# not an answer.
-REJECTED = "Rejected by the user:"
 # The independent review is recorded as a completed action with this question,
 # by `ledger.py review`; it answers with the actions it raised, or with
 # REVIEW_NONE. Its row is what shows the review took place. A strict reviewer
@@ -191,8 +185,7 @@ ANY_REFERENCE = re.compile(
 SOURCE_LINK_FIX = ("link the Exact reference at its pinned revision, or, for a search, give it as "
                    '{"query": "<the exact query>"} and the script writes it')
 GAP_FIX = ("Blocked by starts with one of: " + "; ".join(BLOCKERS) + ". A gap nothing blocks is a ready action in "
-           "the queue: do it. Never write a blocker that is not true: write 'approved by the user' only after the "
-           "user has said so, and 'Asked the user, no answer' only after you asked")
+           "the queue: do it")
 # A link, inline or by reference, or a bare URL: where a claim's trail ends.
 LINK = re.compile(r"\]\(https?://[^)\s]+\)|\]\[[^\]]*\]|https?://\S+")
 # A search has no URL to pin, so its exact query, between backticks, stands in.
@@ -360,11 +353,11 @@ def outcome_problem(row_id, outcome, question=""):
             return None
         return (f"{row_id}: the review's outcome names the actions it raised (Q14, Q15), is '{REVIEW_NONE}' "
                 f"or starts '{REVIEW_STOPPED}'")
-    if re.search(r"\b[FDG]\d{2,}\b", outcome) or outcome.strip().startswith(REJECTED):
+    # A question closes answered, by what answers it; never by a choice not to pursue it.
+    if re.search(r"\b[FDG]\d{2,}\b", outcome):
         return None
     return (f"{row_id}: a completed action names the findings, decision or gap that answer it "
-            f"(F01, D01, G01) in Outcome / finding IDs, or starts '{REJECTED} <what they said>' "
-            "when the user chose not to pursue it. Ask the user before writing that")
+            "(F01, D01, G01) in Outcome / finding IDs; a question you can't answer is blocked instead")
 
 
 def claim_length_warning(ident, claim):

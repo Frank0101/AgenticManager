@@ -470,7 +470,7 @@ class JiraClient:
                     f"Jira returned 403 Forbidden for {path}: the account lacks permission.")
             if e.code == 404:
                 raise JiraError(
-                    f"Jira returned 404 Not Found for {path}", not_found=True)
+                    f"Jira returned 404 Not Found for {path}.", not_found=True)
             if e.code == 429:
                 raise JiraError(
                     f"Jira returned 429 Too Many Requests for {path}.", RATE_LIMITED)

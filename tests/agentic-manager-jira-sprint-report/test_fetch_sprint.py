@@ -96,7 +96,6 @@ class ReportDirTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = self.tmp.name
-        self.logged = []
 
     def report(self, name, sprint):
         """A report folder in the root whose sprint.json holds `sprint`: an
@@ -105,8 +104,11 @@ class ReportDirTest(unittest.TestCase):
                              sprint if isinstance(sprint, str) else {"id": sprint})
 
     def prepare(self, name, sprint_id):
-        return fetch_sprint.prepare_report_dir(os.path.join(self.root, name), sprint_id,
-                                               self.logged.append)
+        """(the _raw folder made, what went to stderr)."""
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            raw = fetch_sprint.prepare_report_dir(
+                os.path.join(self.root, name), sprint_id)
+        return raw, err.getvalue()
 
     def test_stored_sprint_id(self):
         # A folder that isn't a readable report is never taken for one.
@@ -121,11 +123,11 @@ class ReportDirTest(unittest.TestCase):
                     fetch_sprint.stored_sprint_id(folder), expected)
 
     def test_new_folder(self):
-        raw = self.prepare("PROJ_Sprint_7_26-03-16", 7)
+        raw, said = self.prepare("PROJ_Sprint_7_26-03-16", 7)
         self.assertEqual(raw, os.path.join(
             self.root, "PROJ_Sprint_7_26-03-16", "_raw"))
         self.assertEqual(os.listdir(raw), [])
-        self.assertEqual(self.logged, [])
+        self.assertEqual(said, "")
 
     def test_only_the_report_of_the_same_sprint_and_day_is_deleted(self):
         # Earlier days' reports of the sprint stay, as does every other
@@ -138,7 +140,7 @@ class ReportDirTest(unittest.TestCase):
         linked = report_folder(os.path.join(
             outside.name, "PROJ_Sprint_7_26-03-01"), {"id": 7})
         os.symlink(linked, os.path.join(self.root, "link"))
-        self.prepare("PROJ_Sprint_7_26-03-16", 7)
+        _, said = self.prepare("PROJ_Sprint_7_26-03-16", 7)
         self.assertTrue(os.path.exists(earlier_day))
         self.assertTrue(os.path.exists(other))
         self.assertTrue(os.path.islink(os.path.join(self.root, "link")))
@@ -146,7 +148,7 @@ class ReportDirTest(unittest.TestCase):
             os.path.join(linked, RAW_DIR, SPRINT_FILE)))
         self.assertEqual(os.listdir(os.path.join(same_day, "_raw")), [])
         self.assertEqual(
-            self.logged, [f"replacing the report of the same sprint and day: {same_day}"])
+            said, f"replacing the report of the same sprint and day: {same_day}\n")
 
     def test_refuses_to_delete_another_sprints_report(self):
         self.report("PROJ_Sprint_7_26-03-16", 6)

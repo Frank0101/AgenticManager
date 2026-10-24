@@ -18,7 +18,7 @@ from common import (ID, ID_LETTERS, BOUNDARY_HEADER, CONNECTION_HEADER, DESIGN_T
                     COMPONENT_HEADER, DECISION_HEADER, DEFINITION, DEPTHS, EVIDENCE_LINE, FILE_HEADER, FINDINGS,
                     FINDING_FIELDS, FINDING_OPTIONAL, FINDING_START, FOLDER_NAME, GAP_FIX, GAP_HEADER, GROUPS, ID_ANCHOR,
                     INLINE_LINK, LEDGER, LINKS, QUEUE_HEADER, QUEUE_TABLES, READ_DEPTHS, REFERENCE_LINK,
-                    REJECTED, REVIEW_NONE, REVIEW_QUESTION, REVIEW_STOPPED, ROW_START,
+                    REVIEW_NONE, REVIEW_QUESTION, REVIEW_STOPPED, ROW_START,
                     SOURCE_FINDINGS, SOURCE_HEADER, SOURCE_LINK_FIX, STATUSES, TABLE_HEADINGS, anchor_tag, anchored,
                     areas_of, areas_problem, autolink, backtick_error, cited_sources, free_name, coverage_material_missing,
                     depth_problem, finding_blocks, gap_problem, id_order, investigation_dir, ledger_rows,
@@ -119,7 +119,7 @@ ALLOWED = {
               "Evidence": "the findings it rests on (F01), or the gap that explains it (G01)"},
     "queue-blocked": {"Depends on": "the gap or decision that blocks it, such as G01 or D01, or the blocked "
                       "question it needs, as ledger.py writes it when it blocks the question with that one"},
-    "queue-completed": {"Outcome / finding IDs": f"names F, D or G IDs, or starts '{REJECTED} <what they said>'; "
+    "queue-completed": {"Outcome / finding IDs": "names F, D or G IDs; "
                         "the review's own row, written by `review`, names the actions it raised"},
 }
 PLACEHOLDERS = {"None yet.", "None."}
@@ -147,6 +147,26 @@ PATH = re.compile(
 SITES = {}
 # A recorded ID's citation as stored: a link to its anchor.
 ID_CITATION = re.compile(r"\[([A-Z]\d+)\]\(#[a-z]\d+\)")
+
+
+# The research loop, one move per step, with the command each uses: SKILL.md
+# says what the moves are for, so the commands live here alone.
+LOOP = "\n".join([
+    "loop: the research loop, one question at a time in the queue's order, and the commands each step uses",
+    "  0. take the next question, or up to 4 to work in parallel, and move each to in-progress",
+    f"     {CALL} next --investigation <investigation> --max 4",
+    f"     {CALL} move --investigation <investigation> --id Q01 --to in-progress",
+    "  1. read: find --text <source or term> first shows what the ledger already holds",
+    f"     {CALL} find --investigation <investigation> --text server.py",
+    "  2. record, before reading anything else: the source (row --table sources), each file or folder of code "
+    "read (row --table file-coverage), then each finding (finding), citing the source; records that cite each "
+    "other go in one batch",
+    "  3. add: each new question as a ready action (row --table queue-ready), its Depends on naming the open "
+    "questions it needs, or None",
+    "  4. close: completed with what answers it, or blocked on the gap or decision that stops you; every question "
+    "that depends on a blocked one is blocked with it",
+    f'     {CALL} move --investigation <investigation> --id Q01 --to completed --set "Outcome / finding IDs=F03, F04"',
+    f'     {CALL} move --investigation <investigation> --id Q01 --to blocked --set "Depends on=G01"'])
 
 
 def heredoc(command, body):
@@ -226,26 +246,6 @@ COMMAND_HELP = {
         f"  {CALL} remove --investigation <investigation> --table findings --id F07",
         f"  {CALL} remove --investigation <investigation> --table file-coverage --match server.py"]),
 }
-
-
-# The research loop, one move per step, with the command each uses: SKILL.md
-# says what the moves are for, so the commands live here alone.
-LOOP = "\n".join([
-    "loop: the research loop, one question at a time in the queue's order, and the commands each step uses",
-    "  0. take the next question, or up to 4 to work in parallel, and move each to in-progress",
-    f"     {CALL} next --investigation <investigation> --max 4",
-    f"     {CALL} move --investigation <investigation> --id Q01 --to in-progress",
-    "  1. read: find --text <source or term> first shows what the ledger already holds",
-    f"     {CALL} find --investigation <investigation> --text server.py",
-    "  2. record, before reading anything else: the source (row --table sources), each file or folder of code "
-    "read (row --table file-coverage), then each finding (finding), citing the source; records that cite each "
-    "other go in one batch",
-    "  3. add: each new question as a ready action (row --table queue-ready), its Depends on naming the open "
-    "questions it needs, or None",
-    "  4. close: completed with what answers it, or blocked on the gap or decision that stops you; every question "
-    "that depends on a blocked one is blocked with it",
-    f'     {CALL} move --investigation <investigation> --id Q01 --to completed --set "Outcome / finding IDs=F03, F04"',
-    f'     {CALL} move --investigation <investigation> --id Q01 --to blocked --set "Depends on=G01"'])
 
 
 def full_help():
@@ -1095,7 +1095,7 @@ def record_review(lines, raised="none", stopped=None):
         missing = [i for i in ids if i not in queued]
         if missing:
             raise SystemExit(f"--raised names actions not in the queue: {', '.join(missing)}. "
-                             "Add each doable real issue as a ready action first")
+                             "Add each issue the review raised to the queue as a ready action first")
         by = "Subagent given the skill's brief"
         outcome = "Raised " + ", ".join(ids) if ids else REVIEW_NONE
     row_id = next_id("\n".join(lines), "Q")

@@ -70,7 +70,7 @@ class HelpTest(unittest.TestCase):
                     self.assertEqual(run.returncode, 0,
                                      run.stdout + run.stderr)
                     self.assertTrue(run.stdout.strip(),
-                                    f"{where}: --help prints nothing")
+                                    f"{where}: --help prints nothing; make it print what the script does and its arguments")
                     if run.stdout.startswith("usage:"):
                         self.assertEqual(undescribed(run.stdout), [],
                                          f"{where}: describe these in --help")
