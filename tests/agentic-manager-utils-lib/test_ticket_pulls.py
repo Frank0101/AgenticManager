@@ -93,7 +93,7 @@ class TicketPullsTest(unittest.TestCase):
         for name, pulls, expected in cases:
             with self.subTest(name):
                 client = Panels(pulls, subtasks)
-                found = ticket_pulls.pulls_by_ticket(client, issues, True)
+                found = ticket_pulls.pulls_by_ticket(client, issues)
                 self.assertEqual({key: [(int(pr["url"].rsplit("/", 1)[1]), pr["via"]) for pr in prs]
                                   for key, prs in found.items()}, expected)
                 self.assertEqual(list(found), ["PROJ-1", "PROJ-2", "PROJ-3"])
@@ -103,14 +103,11 @@ class TicketPullsTest(unittest.TestCase):
                                  [("search", "parent in (PROJ-1,PROJ-2,PROJ-3) AND issuetype in subTaskIssueTypes()")])
                 self.assertEqual({r[1] for r in client.read if r[0] == "pulls"},
                                  {"1", "2", "3", "PROJ-11", "PROJ-12", "PROJ-21"})
-        # Not read: nothing asked of Jira; no tickets: no search.
-        # name: (issues, read)
-        for name, given, read in [("not read", issues, False), ("no tickets", [], True)]:
-            with self.subTest(name):
-                client = Panels({"1": [{"url": PR.format(41)}]}, subtasks)
-                self.assertEqual(ticket_pulls.pulls_by_ticket(
-                    client, given, read), {})
-                self.assertEqual(client.read, [])
+        # No tickets: no search.
+        with self.subTest("no tickets"):
+            client = Panels({"1": [{"url": PR.format(41)}]}, subtasks)
+            self.assertEqual(ticket_pulls.pulls_by_ticket(client, []), {})
+            self.assertEqual(client.read, [])
 
     def test_first_found(self):
         first = [{"url": PR.format(41), "via": "PROJ-1"}]

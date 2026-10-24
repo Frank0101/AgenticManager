@@ -16,7 +16,7 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
-from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
+from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, KEPT_EXAMPLES, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.text import NAME, SLUG, free_name, slug  # noqa: E402,F401
 from agentic_manager.web import ssl_context  # noqa: E402,F401
 
@@ -83,7 +83,6 @@ PLACEHOLDER = re.compile(
 # starts with _ is a note, not an example.
 EXAMPLES_DIR = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "..", "examples")
-USER_EXAMPLES = "_examples"
 WIREFRAME, EXAMPLE_PAGE = "wireframe.svg", "slide.html"
 USE_FOR = "Use for"
 
@@ -136,7 +135,7 @@ def examples():
 def user_examples_dir():
     """The absolute path of _examples, the slides the user kept, in the skill's
     output folder; it may not exist yet."""
-    return os.path.join(output_folder(FOLDER_NAME)[0], USER_EXAMPLES)
+    return os.path.join(output_folder(FOLDER_NAME)[0], KEPT_EXAMPLES)
 
 
 def asset_link(name, depth=1):
@@ -151,6 +150,18 @@ def asset_image(name):
     folder = os.path.join(assets_dir(), name)
     files = sorted(os.listdir(folder)) if os.path.isdir(folder) else []
     return next((file for file in files if ASSET_IMAGE.fullmatch(file)), None)
+
+
+def link_kind(value):
+    """What a file-loading attribute's value links to: "remote" for a URL
+    leading off the page, "file" for a local path, None for nothing or inline
+    data."""
+    value = (value or "").strip()
+    if REMOTE.match(value):
+        return "remote"
+    if value and not value.startswith("data:"):
+        return "file"
+    return None
 
 
 def assets_dir():

@@ -13,7 +13,7 @@ import re
 import subprocess
 import sys
 
-from common import (PROJECT_KEY, JiraClient, pull_parts, browse_url, gather, gh_available, gh_found, nested, plain_text,
+from common import (GH_UNAVAILABLE, PROJECT_KEY, JiraClient, pull_parts, browse_url, gather, gh_available, gh_found, nested, plain_text,
                     pulls_by_ticket, stops_on_failure)
 
 FIELDS = ["summary", "status", "issuetype", "parent", "created", "updated", "resolutiondate",
@@ -29,7 +29,7 @@ GH_PR_FIELDS = "mergeCommit,mergedAt,changedFiles,files,commits"
 GH_DISCUSSION_FIELDS = ("title,state,author,body,reviews,comments,createdAt,mergedAt,baseRefName,"
                         "headRefName,mergeCommit,url")
 # What --prs prints without gh.
-NO_GH = "gh isn't available or github-cli isn't enabled, so pull requests weren't read"
+NO_GH = f"{GH_UNAVAILABLE}, so pull requests weren't read"
 
 
 def ticket(client, key, site, prs, gh, run=subprocess.run):
@@ -126,7 +126,7 @@ def pull_section(client, issue, gh, run=subprocess.run):
     panel is read either, and the lines say so."""
     if not gh:
         return ["Pull requests (not read):", f"  {NO_GH}"]
-    pulls = pulls_by_ticket(client, [issue], True)[issue["key"]]
+    pulls = pulls_by_ticket(client, [issue])[issue["key"]]
     return [f"Pull requests ({len(pulls)}):", *(f"  {entry}" for entry in pr_lines(pulls, view(pulls, run), issue["key"]))]
 
 
@@ -302,8 +302,8 @@ def main(argv=None):
     with stops_on_failure():
         if args.command == "pr":
             if not gh_available():
-                raise SystemExit("gh isn't available or github-cli isn't enabled: a pull request's discussion "
-                                 "is read with it")
+                raise SystemExit(
+                    f"{GH_UNAVAILABLE}: a pull request's discussion is read with it")
             print("\n\n".join(gather(args.urls, pr_discussion)))
             return
         client = JiraClient()

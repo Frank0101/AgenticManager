@@ -17,12 +17,12 @@ import sys
 from common import (ID, ID_LETTERS, BOUNDARY_HEADER, CONNECTION_HEADER, DESIGN_TABLES, FLOW_HEADER, IDENTITY_HEADER, design_problem, JIRA_API, JIRA_GROUP, JiraClient, is_enabled, stops_on_failure, AREAS, BLOCKERS, BOUNDARY, CODE_STATUSES, claim_length_warning,
                     COMPONENT_HEADER, DECISION_HEADER, DEFINITION, DEPTHS, EVIDENCE_LINE, FILE_HEADER, FINDINGS,
                     FINDING_FIELDS, FINDING_OPTIONAL, FINDING_START, FOLDER_NAME, GAP_FIX, GAP_HEADER, GROUPS, ID_ANCHOR,
-                    INLINE_LINK, LEDGER, LINKS, QUEUE_HEADER, QUEUE_TABLES, READ_DEPTHS, REFERENCE_LINK,
+                    INLINE_LINK, LEDGER, LINKS, QUEUE_HEADER, QUEUE_TABLES, READ_DEPTHS,
                     REVIEW_NONE, REVIEW_QUESTION, REVIEW_STOPPED, ROW_START,
                     SOURCE_FINDINGS, SOURCE_HEADER, SOURCE_LINK_FIX, STATUSES, TABLE_HEADINGS, anchor_tag, anchored,
                     areas_of, areas_problem, autolink, backtick_error, cited_sources, free_name, coverage_material_missing,
                     depth_problem, finding_blocks, gap_problem, id_order, investigation_dir, ledger_rows,
-                    link_definitions, link_text, linked_ids, outcome_problem, read_in_full, recorded_ids, reference_key,
+                    link_definitions, link_text, linked_ids, outcome_problem, read_in_full, recorded_ids, has_limits, ids, inline_links,
                     h2_span, section_span, slug, source_reference_missing, status_problem,
                     strip_anchors, table_cells, table_row, ticket_sites, unlinked_backticks, unread_components,
                     unread_message, unrecorded_citations, unresolved_message, upgraded_tickets, write_output_file)
@@ -210,7 +210,7 @@ COMMAND_HELP = {
     "brief": "\n".join([
         "brief: prints what writing the report reads, from the ledger as it stands: the boundary, "
         "each source's exact reference with its limits, every finding, the components, the system design, "
-        "decisions and gaps; not the queue, the file coverage or the sources' reading notes",
+        "decisions and gaps, and the findings resting on a partial read; not the queue, the file coverage or the sources' reading notes",
         f"  {CALL} brief --investigation <investigation>"]),
     "text": "\n".join([
         f"text: replaces a section's text, read as Markdown from standard input; --section is "
@@ -219,7 +219,7 @@ COMMAND_HELP = {
                 "The topic covers ...\nThe sibling service X: mention only."),
     ]),
     "move": "\n".join([
-        'move: moves an question to ready, in-progress, blocked or completed; each --set "Column=value" sets a cell',
+        'move: moves a question to ready, in-progress, blocked or completed; each --set "Column=value" sets a cell',
         f'  {CALL} move --investigation <investigation> --id Q05 --to in-progress',
         f'  {CALL} move --investigation <investigation> --id Q05 --to completed --set "Outcome / finding IDs=F03, G01"']),
     "review": "\n".join([
@@ -293,8 +293,7 @@ def brief(lines):
             plain("\n".join(lines[start + 1:end]).strip()), ""]
     out += ["## Sources: exact references", ""]
     # A source's limits or what supersedes it decides a historical reference.
-    out += [f"{row[0]}: {as_written(lines, row[2])}" + ("" if row[5].strip() in ("", "None") else
-                                                        f" ({plain(row[5])})")
+    out += [f"{row[0]}: {as_written(lines, row[2])}" + (f" ({plain(row[5])})" if has_limits(row) else "")
             for row in table_rows(lines, "sources")] or ["None."]
     blocks, _, _ = findings_of(lines)
     out += ["", FINDINGS_HEADING, ""]
@@ -314,12 +313,7 @@ def as_written(lines, text):
     """`text` in the form it was written in: IDs plain and links inline, as
     the writing commands read them. Writing it back stores it unchanged, so an
     edit needs no undoing of the stored form by hand."""
-    definitions = links_section(lines)
-
-    def inline(match):
-        url = definitions.get(reference_key(match))
-        return f"{match[1]}[{match[2]}]({url})" if url else match[0]
-    return REFERENCE_LINK.sub(inline, ID_CITATION.sub(r"\1", strip_anchors(text)))
+    return inline_links(ID_CITATION.sub(r"\1", strip_anchors(text)), links_section(lines))
 
 
 def show(lines, ident, name):
@@ -419,6 +413,20 @@ def status(lines):
                    ", ".join(unread))
     out += partial_lines(lines)
     return "\n".join(out)
+
+
+def next_questions(lines, maximum):
+    """The next ready questions to work, in the queue's order, up to `maximum`:
+    those whose dependencies are all completed; a blocked one isn't."""
+    completed = {row[0] for row in table_rows(lines, "queue-completed")}
+    waiting = table_rows(lines, "queue-ready")
+    ready = [row for row in waiting if set(depends_on(row)) <= completed]
+    out = [f"{row[0]} {row[2]}" for row in ready[:maximum]]
+    if out:
+        return "\n".join(out)
+    if waiting:
+        return "none ready: " + "; ".join(f"{row[0]} waits on {', '.join(depends_on(row))}" for row in waiting)
+    return "none ready: the queue has no ready question"
 
 
 def partial_lines(lines):
@@ -594,7 +602,7 @@ def put_row(lines, name, row_id, match, cells):
             "the input must be a JSON list of strings, the row's cells:\n" + table_help(name))
     written = linked(lines, [c.replace("\n", " ") for c in cells])
     set_row(lines, name, row_id, written, match)
-    # An question is in one part of the queue: writing it in one takes it out of the others.
+    # A question is in one part of the queue: writing it in one takes it out of the others.
     for other in QUEUE_TABLES if name in QUEUE_TABLES else ():
         if other != name and any(row[0] == row_id for row in table_rows(lines, other)):
             write_rows(lines, other, [row for row in table_rows(lines, other) if row[0] != row_id],
@@ -768,7 +776,7 @@ def check_dependencies(lines):
 
 def depends_on(row):
     """The questions a queue row waits for: the Q IDs of its Depends on cell."""
-    return [ident for ident in ID.findall(row[QUEUE_HEADER.index("Depends on")]) if ident.startswith("Q")]
+    return ids(row[QUEUE_HEADER.index("Depends on")], "Q")
 
 
 def block_dependents(lines):
@@ -786,20 +794,6 @@ def block_dependents(lines):
         for ident in stuck:
             move_row(lines, ident, "queue-blocked", [])
         moved += stuck
-
-
-def next_questions(lines, maximum):
-    """The next ready questions to work, in the queue's order, up to `maximum`:
-    those whose dependencies are all completed; a blocked one isn't."""
-    completed = {row[0] for row in table_rows(lines, "queue-completed")}
-    waiting = table_rows(lines, "queue-ready")
-    ready = [row for row in waiting if set(depends_on(row)) <= completed]
-    out = [f"{row[0]} {row[2]}" for row in ready[:maximum]]
-    if out:
-        return "\n".join(out)
-    if waiting:
-        return "none ready: " + "; ".join(f"{row[0]} waits on {', '.join(depends_on(row))}" for row in waiting)
-    return "none ready: the queue has no ready question"
 
 
 def move_row(lines, row_id, target, sets):
@@ -1039,7 +1033,7 @@ def cited_outside_records(lines, ident):
 
 def mentions(lines, ident):
     """The records, other than `ident`'s own, whose text names `ident`: when
-    an question closes, what they say while it was open, such as "not
+    a question closes, what they say while it was open, such as "not
     established yet: see Q06", may need its answer; while any does, `ident`
     can't be removed."""
     found = [table_row_id for table in TABLES if TABLES[table][2]
@@ -1176,7 +1170,7 @@ def main(argv=None):
         "next-id": "print the next free ID of a kind",
         "row": "write a table's row, its cells on standard input",
         "batch": "write many rows and findings in one call, all or nothing",
-        "move": "move an question between ready, in progress, blocked and completed",
+        "move": "move a question between ready, in progress, blocked and completed",
         "remove": "delete a row or a finding",
         "finding": "add or replace a finding, read from standard input",
         "link": "add a link definition under Links",
@@ -1345,7 +1339,7 @@ def main(argv=None):
             written = linked(lines, [text])
             check_backticks(lines, written, args.section)
             set_text(lines, args.section, written[0])
-        # An question closed by this call: the records naming it may need its answer.
+        # A question closed by this call: the records naming it may need its answer.
         closed = ([args.id] if (args.command == "move" and args.to == "completed")
                   or (args.command == "row" and args.table == "queue-completed") else
                   [item["id"] for item in read_batch if isinstance(

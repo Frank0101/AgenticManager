@@ -97,6 +97,8 @@ class MakeReportTest(unittest.TestCase):
                 "```mermaid\nflowchart LR\n```"), "no code fences"),
             ("multi-line cell",
              lambda d: d["key_decisions"][0].update(decision="a\nb"), "one line"),
+            ("unlinked backticks", lambda d: d["direction"].append("The `worker` retries [F01](ledger:F01)."),
+             "direction paragraph 2: references in backticks without a link: `worker`"),
             ("claim without a ledger link", lambda d: d["direction"].append("A claim with no trace."),
              "direction paragraph 2: needs a ledger link"),
             ("a source link is not a ledger link", lambda d: d["key_decisions"][0].update(
@@ -158,29 +160,26 @@ class MakeReportTest(unittest.TestCase):
                         self.assertEqual(ledger.anchor("G99"),
                                          "actual-gap" if genuine else None)
 
-    def test_key_decisions_sentence(self):
-        cases = [
-            (["Cost"], "These items describe implications of the linked evidence.\n\n| Decision or risk | Why it matters |"),
-            ([], "No decision, blocker or risk in the inspected evidence warrants technical-leadership attention."),
-        ]
-        for items, expected in cases:
-            with self.subTest(items=items):
-                data = content()
-                data["key_decisions"] = [
-                    {"decision": item, "why": "Cost", "position": "Open",
-                        "evidence": "[F01](ledger:F01)"}
-                    for item in items]
-                self.make(data)
-                self.assertIn(expected, self.report())
-
-    def test_every_section_is_always_in_the_report(self):
+    def test_list_sections_say_when_they_are_empty(self):
         # Nothing is skipped: a section with nothing to say says so.
-        data = content()
-        data["open_choices_and_gaps"] = []
-        result = self.make(data)
-        self.assertTrue(result["ok"], result)
-        self.assertIn("### Open technical choices and gaps\n\nNo technical choice or evidence gap is open",
-                      self.report())
+        decision = {"decision": "Cost", "why": "Cost",
+                    "position": "Open", "evidence": "[F01](ledger:F01)"}
+        # (field, its items, expected in the report)
+        cases = [
+            ("key_decisions", [decision],
+             "These items describe implications of the linked evidence.\n\n| Decision or risk | Why it matters |"),
+            ("key_decisions", [],
+             "No decision, blocker or risk in the inspected evidence warrants technical-leadership attention."),
+            ("open_choices_and_gaps", [],
+             "### Open technical choices and gaps\n\nNo technical choice or evidence gap is open"),
+        ]
+        for field, items, expected in cases:
+            with self.subTest(field=field, items=len(items)):
+                data = content()
+                data[field] = items
+                result = self.make(data)
+                self.assertTrue(result["ok"], result)
+                self.assertIn(expected, self.report())
 
     def test_word_count_warnings(self):
         data = content()

@@ -5,6 +5,7 @@ Run with: python3 tests/run.py agentic-manager-jira-sprint-report
 
 import copy
 import os
+import re
 import sys
 import unittest
 
@@ -109,7 +110,7 @@ class BriefTest(unittest.TestCase):
         self.assertEqual(list(self.brief["ticket_events"]), [
                          "PROJ-1", "PROJ-2", "PROJ-6", "PROJ-3"])
         self.assertEqual(self.brief["ticket_events"]["PROJ-1"], [
-            {"date": "04/03/2026", "type": "status_changed", "from": "In Progress", "to": "Done"}])
+            {"date": "04/03/2026", "from": "In Progress", "to": "Done"}])
 
     def test_epics_in_order_of_completed_pts(self):
         # Commitment and extra together: the order Key Achievements takes.
@@ -145,6 +146,19 @@ class BriefTest(unittest.TestCase):
         self.assertEqual(facts[2:], ["PROJ-100: Login <beta> completed 60%, 3/5 tickets (6/10 pts) of its commitment",
                                      "PROJ-100: Login <beta> completed 0/1 ticket (0/2 pts) of its extra work",
                                      "(no epic) completed 1/1 ticket (1/1 pts) of its extra work"])
+
+    def test_skill_md_lists_every_part_of_the_brief(self):
+        # The agent learns what the brief holds from this table, so it must
+        # follow the brief when a part is added, renamed or dropped.
+        path = os.path.join(fixture.REPO_ROOT, "skills",
+                            os.path.basename(fixture.TEST_DIR), "SKILL.md")
+        with open(path) as f:
+            text = f.read()
+        section = text.split("### What's in the brief", 1)[
+            1].split("\n#", 1)[0]
+        listed = re.findall(r"^\| `(\w+)`", section, re.MULTILINE)
+        self.assertEqual(sorted(listed), sorted(self.brief),
+                         "update the table under \"What's in the brief\" in SKILL.md to list the brief's parts")
 
 
 class HelpersTest(unittest.TestCase):

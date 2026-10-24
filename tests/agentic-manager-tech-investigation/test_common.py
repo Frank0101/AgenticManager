@@ -124,7 +124,7 @@ class ReferencesTest(unittest.TestCase):
             ("a connection with no identity", "connections", connection[:6] + [""] + connection[7:],
              "Identity names"),
             ("a connection with no state", "connections", connection[:7] + ["live"] + connection[8:],
-             "Status starts with"),
+             "E01: State starts with"),
             ("a boundary", "boundaries", [
              "B01", "Production cluster", "network", "F04"], None),
             ("an identity resting on nothing", "identities", ["I01", "token", "token", "the API", "-"],

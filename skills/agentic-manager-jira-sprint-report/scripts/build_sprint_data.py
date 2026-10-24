@@ -16,7 +16,7 @@ from common import (CHANGELOGS_DIR, COMMENTS_DIR, DATA_FILE, META_FILE, OUTCOME_
                     PREVIOUS_SPRINT_FILE, PUNTED_ISSUES_FILE, RAW_DIR, SPRINT_FILE,
                     SPRINT_ISSUES_FILE, SPRINT_REPORT_FILE, STATUSES_FILE, SCOPE_GROUPS, add_and_remove_events, as_of,
                     in_sprint_at, history_fields, is_blocker_candidate, key_order, read_json, nested, outcome_total,
-                    parse_ts, plain_text, points_value, report_timezone, spell_epic, split_ids, standard_issues,
+                    parse_ts, plain_text, points_value, report_timezone, set_at_creation, spell_epic, split_ids, standard_issues,
                     status_categories, status_category, write_json)
 
 # Terms meaning an issue was closed without delivering it (duplicate, won't do,
@@ -139,17 +139,13 @@ def created_event(raw, changes, context, category):
 
 def initial_sprints(changes, sprint_id):
     """The sprints the ticket was in when it was created, as sorted ids: each
-    sprint its changes name whose first move isn't an add (a removal comes
-    first at one instant), and the reported sprint when no change names it,
-    since it is in it now (see common.sprint_moves)."""
+    sprint its changes name that was set at creation, and the reported sprint
+    when no change names it, since it is in it now."""
     named = {sprint_id}.union(*(split_ids(c["from"]) | split_ids(c["to"])
                                 for c in changes if c["field"] == "sprint"))
     initial = []
     for sprint in named:
-        added, removed = add_and_remove_events(changes, sprint)
-        first = min([(parse_ts(t), 1) for t in added] +
-                    [(parse_ts(t), -1) for t in removed], default=None)
-        if first is None or first[1] < 0:
+        if set_at_creation(*add_and_remove_events(changes, sprint)):
             initial.append(sprint)
     return field_value("sprint", ", ".join(initial), None)
 

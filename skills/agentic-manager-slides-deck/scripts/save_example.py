@@ -12,7 +12,7 @@ import argparse
 import json
 import os
 
-from common import (EXAMPLE_DESCRIPTION, EXAMPLE_PAGE, FOLDER_NAME, SLIDES, TOKEN, USE_FOR, USER_EXAMPLES, asset_names, credits,
+from common import (EXAMPLE_DESCRIPTION, EXAMPLE_PAGE, FOLDER_NAME, SLIDES, TOKEN, USE_FOR, KEPT_EXAMPLES, asset_names, credits,
                     deck_dir, free_name, read_json, slug, user_examples_dir, write_output_file)
 from make_deck import build, problems
 
@@ -35,7 +35,7 @@ def save(deck, number, title, use_for):
     paths, temporary = {}, False
     for file, text in files.items():
         paths[file], temporary = write_output_file(
-            FOLDER_NAME, f"{USER_EXAMPLES}/{name}/{file}", text.encode("utf-8"))
+            FOLDER_NAME, f"{KEPT_EXAMPLES}/{name}/{file}", text.encode("utf-8"))
     page = paths[EXAMPLE_PAGE]
     return {"example": name, "folder": os.path.dirname(page), "page": page, "temporary": temporary}
 

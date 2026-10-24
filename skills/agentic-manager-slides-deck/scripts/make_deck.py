@@ -21,7 +21,7 @@ from typing import TypeIs
 
 from common import (CHART_JS, ELEMENT_ID, FOLDER_NAME, PAGE, REMOTE, SLIDE_HEIGHT, SLIDE_WIDTH,
                     SLIDES, TOKEN, URL_ATTRIBUTES, VOID, asset_link, asset_names, credit_line, credits,
-                    deck_dir, deck_file, placed_images, read_json, write_output_file)
+                    deck_dir, deck_file, link_kind, placed_images, read_json, write_output_file)
 import check_deck
 
 FIELDS = {"title", "style", "slides", "charts", "rings"}
@@ -302,7 +302,7 @@ def problems(content, assets=frozenset()):
         if "{{" in bare:
             errors.append(
                 f"{where}.html: `{{{{` starts no token: write {{{{chart:<id>}}}}, {{{{ring:<id>}}}}, "
-                "{{{{asset:<name>}}}} or {{{{page}}}}")
+                "{{asset:<name>}} or {{page}}")
         problem = read_slide(bare)
         if problem:
             errors.append(f"{where}.html: {problem}")
@@ -452,12 +452,13 @@ class SlideParser(HTMLParser):
         # diagram is inline SVG in the deck's own look, never Mermaid, whose
         # look a deck can't match and which would load another library.
         for name, value in attrs:
+            kind = link_kind(value) if name in URL_ATTRIBUTES else None
             value = (value or "").strip()
-            if name in URL_ATTRIBUTES and REMOTE.match(value):
+            if kind == "remote":
                 self.fail(f"<{tag} {name}> loads a remote file, which an offline deck can't show: "
                           "add the image with add_asset.py and write {{asset:<name>}}, or use an "
                           "[IMAGE: ...] placeholder or inline SVG")
-            elif name in URL_ATTRIBUTES and value and not value.startswith("data:"):
+            elif kind == "file":
                 self.fail(f"<{tag} {name}> loads {value!r}: add the image with add_asset.py "
                           "and write {{asset:<name>}}")
             elif name == "style" and REMOTE_CSS.search(value):

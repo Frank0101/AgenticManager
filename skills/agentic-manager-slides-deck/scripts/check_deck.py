@@ -13,9 +13,9 @@ import os
 import re
 from html.parser import HTMLParser
 
-from common import (ASSETS, CHART_JS, PAGE, PLACEHOLDER, REMOTE, SLIDE_HEIGHT, SLIDE_WIDTH, SLIDES, STAND_IN,
+from common import (ASSETS, CHART_JS, PAGE, PLACEHOLDER, SLIDE_HEIGHT, SLIDE_WIDTH, SLIDES, STAND_IN,
                     TOKEN, URL_ATTRIBUTES, VOID, asset_link, asset_names, credit_line, credits, deck_dir, deck_file,
-                    expected_files, placed_images, read_json)
+                    expected_files, link_kind, placed_images, read_json)
 
 TOOLBAR_BUTTONS = ["Zoom in", "Zoom out", "Export PDF"]
 CHARTS_DATA = re.compile(r"const charts = (.*);\n")
@@ -81,7 +81,7 @@ def check(folder, deck, content):
                       f"slides.json has {wanted_rings}")
     placed = sorted(match[2] for slide in content["slides"]
                     for match in TOKEN.finditer("\n".join(slide["html"])) if match[1] == "asset")
-    if sorted(page.files) != [asset_link(name) for name in placed]:
+    if sorted(page.files) != sorted(asset_link(name) for name in placed):
         errors.append(
             f"the page links the images {page.files}; slides.json places {placed} from {ASSETS}")
     missing = sorted(set(placed) - asset_names())
@@ -153,11 +153,11 @@ class PageReader(HTMLParser):
             self.links += 1
         else:
             for name in URL_ATTRIBUTES:
-                value = (attrs.get(name) or "").strip()
-                if REMOTE.match(value):
+                kind = link_kind(attrs.get(name))
+                if kind == "remote":
                     self.remote.append(f"<{tag} {name}>")
-                elif value and not value.startswith("data:"):
-                    self.files.append(value)
+                elif kind == "file":
+                    self.files.append(attrs[name].strip())
         if tag == "canvas":
             self.canvases.append(attrs.get("id"))
         if tag == "path" and parent and parent[0] == "svg" and "ring" in parent[1]:

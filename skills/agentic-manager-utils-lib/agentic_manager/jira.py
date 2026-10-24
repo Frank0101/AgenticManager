@@ -179,7 +179,7 @@ class JiraClient:
         guessed = False
         if name and not board_id and not project:
             project, guessed = name.split()[0], True
-        note = (f" ({project!r} is the first word of the sprint name; "
+        hint = (f" ({project!r} is the first word of the sprint name; "
                 "give a project or a board)") if guessed else ""
 
         if board_id:
@@ -196,7 +196,7 @@ class JiraClient:
             board_ids = [b["id"] for b in boards if b.get("type") == "scrum"]
             if not board_ids:
                 raise JiraError(
-                    f"no scrum board found for project {project}{note}")
+                    f"no scrum board found for project {project}{hint}")
 
         # A named sprint is matched in any state: the user named it, and it is most
         # often the one in progress.
@@ -214,7 +214,7 @@ class JiraClient:
         if not candidates:
             wanted = f"named {name!r}" if name else state
             raise JiraError(
-                f"no sprint {wanted} found on board(s) {board_ids}{note}")
+                f"no sprint {wanted} found on board(s) {board_ids}{hint}")
         if name or active:
             if len(candidates) > 1:
                 raise JiraError(f"{len(candidates)} sprints match (ids {[c['id'] for c in candidates]}); "

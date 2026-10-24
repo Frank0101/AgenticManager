@@ -101,6 +101,16 @@ class CheckDeckTest(unittest.TestCase):
         shutil.rmtree(os.path.join(self.folder, "_assets", "acme-logo"))
         self.assertIn("_assets has no acme-logo", self.errors_of(page))
 
+    def test_images_whose_names_share_a_start_pass(self):
+        # acme sorts before acme-logo, but its link sorts after it.
+        data = content()
+        for name in ("acme", "acme-logo"):
+            write_asset(self.folder, name)
+            data["slides"][0]["html"].append(
+                f"<img src='{{{{asset:{name}}}}}'>")
+        write_slides(self.folder, data)
+        self.assertTrue(make_deck.make_deck(DECK)["ok"])
+
     def test_a_downloaded_image_needs_its_credit_on_its_slide(self):
         write_credited_asset(self.folder)
         data = content()

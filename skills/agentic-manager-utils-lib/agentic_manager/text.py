@@ -82,6 +82,15 @@ def links(prose, definitions):
             yield match.start(), match.end(), bool(match[1]), definitions[match[2].casefold()]
 
 
+def inline_links(text, definitions):
+    """`text` with each reference link that `definitions` (as link_definitions()
+    returns them) defines written inline; the others stay as they are."""
+    def inline(match):
+        url = definitions.get(reference_key(match))
+        return f"{match[1]}[{match[2]}]({url})" if url else match[0]
+    return REFERENCE_LINK.sub(inline, text)
+
+
 def reference_key(match):
     """The key a REFERENCE_LINK match names, in lower case as link_definitions()
     stores it: its own, or its text for a collapsed reference, [text][]."""

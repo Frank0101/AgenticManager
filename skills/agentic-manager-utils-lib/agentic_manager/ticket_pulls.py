@@ -19,16 +19,12 @@ from agentic_manager.json_path import nested
 SUB_TASKS = "issuetype in subTaskIssueTypes()"
 
 
-def pulls_by_ticket(client, issues, read):
+def pulls_by_ticket(client, issues):
     """{key: its pull requests} of each of `issues` (Jira issues, with id and
     key), in their order: those the Development panels of the ticket and of
     its sub-tasks list, each once, through the ticket before its sub-tasks,
     those in key order, with `via`, the key of the issue it came through.
-    With `read` false, {} and nothing asked of Jira: a skill reads them only
-    on request, or only when GitHub can be read, as the panel alone gives no
-    dates or changes. Raises JiraError when Jira can't answer."""
-    if not read:
-        return {}
+    Raises JiraError when Jira can't answer."""
     children = sub_tasks(client, [issue["key"] for issue in issues])
     # Each ticket, then its sub-tasks: (the ticket's key, the issue looked at).
     looked = [(issue["key"], seen) for issue in issues

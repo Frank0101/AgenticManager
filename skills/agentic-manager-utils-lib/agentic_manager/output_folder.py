@@ -27,6 +27,8 @@ TEMP_ROOT = os.path.join(tempfile.gettempdir(), "agentic-manager")
 # The file that says what a folder of the user's own material holds, such as
 # an example or an image, named here so every skill names it the same way.
 EXAMPLE_DESCRIPTION = "description.md"
+# The folder beside a skill's runs that holds the examples the user kept.
+KEPT_EXAMPLES = "_examples"
 # A description's title, and its labelled lines, such as **Shows:** text.
 DESCRIPTION_TITLE = re.compile(r"# (.+)")
 LABELLED_LINE = re.compile(r"^\*\*([^*\n]+):\*\* (.+)$", re.M)

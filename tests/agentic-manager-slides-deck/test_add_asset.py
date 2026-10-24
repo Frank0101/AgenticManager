@@ -135,7 +135,7 @@ class AddAssetTest(unittest.TestCase):
         cases = [(PNG, "png"), (b"\xff\xd8\xff\xe0rest", "jpg"), (b"GIF89a rest", "gif"),
                  (b"RIFF\0\0\0\0WEBPVP8 ",
                   "webp"), (b"<?xml version='1.0'?>\n<SVG xmlns=''>", "svg"),
-                 (b"<html><body>", None), (b"", None)]
+                 (b"<html><body>", None), (b"<!doctype html><html><body><svg></svg>", None), (b"", None)]
         for data, kind in cases:
             with self.subTest(data[:8]):
                 self.assertEqual(add_asset.image_type(data), kind)

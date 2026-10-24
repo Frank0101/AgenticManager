@@ -11,7 +11,7 @@ from datetime import date
 import json
 import os
 
-from common import ASSETS, FOLDER_NAME, NAME, SLIDES, USER_EXAMPLES, assets, clear_folder, day_folder, examples, output_folder
+from common import ASSETS, FOLDER_NAME, NAME, SLIDES, KEPT_EXAMPLES, assets, clear_folder, day_folder, examples, output_folder
 
 
 OUTPUT = """Prints one line of JSON:
@@ -38,7 +38,7 @@ def init(name, today=None):
     path = os.path.join(folder, deck)
     replaced = clear_folder(path)
     os.makedirs(path)
-    for shared in (USER_EXAMPLES, ASSETS):
+    for shared in (KEPT_EXAMPLES, ASSETS):
         os.makedirs(os.path.join(folder, shared), exist_ok=True)
     return {"folder": folder, "temporary": temporary, "deck": deck, "deck_dir": path,
             "slides_path": f"{deck}/{SLIDES}", "replaced": replaced, "examples": examples(),

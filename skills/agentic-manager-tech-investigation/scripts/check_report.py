@@ -16,7 +16,8 @@ from common import (COMPONENT_HEADER, DESIGN_TABLES, design_problem, CELL_PIPE, 
 
 
 def check_report(report, handover=False):
-    """Return actionable JSON-compatible errors/warnings without modifying files."""
+    """The result of checking `report` and its ledger, {ok, errors, warnings};
+    with `handover`, the handover rules too."""
     report = Path(report)
     errors, warnings = [], []
     result = {"ok": False, "errors": errors, "warnings": warnings}

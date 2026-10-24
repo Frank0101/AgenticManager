@@ -674,7 +674,7 @@ class FinishReportTest(ReportTest):
                 self.assertIn("(4/12.5 pts)", md)
 
     def test_outcomes(self):
-        # Charts come first, so each case draws them. A report from content
+        # A report from content
         # the agent must fix is never written, so a stale or half-right one
         # isn't left to be shared; a crash isn't a content.json problem, so
         # it is shown whole, without that advice.
@@ -688,7 +688,7 @@ class FinishReportTest(ReportTest):
             # A field only the check reads, so the report is still written.
             del data["as_of_instant"]
         # name: (changes to content.json, change to data.json, exit code,
-        # stdout as a regex, whether the report is written)
+        # stdout as a regex, whether the report and charts are written)
         cases = [
             ("passing", {}, None, 0, rf"all \d+ checks passed\nreport: {path}\n", True),
             ("bad content", {"key_achievements": "PROJ-1 shipped."}, None, 1,
@@ -717,11 +717,13 @@ class FinishReportTest(ReportTest):
                 self.assertEqual(proc.returncode, code,
                                  proc.stdout + proc.stderr)
                 self.assertTrue(re.fullmatch(stdout, proc.stdout), proc.stdout)
-                for chart in CHARTS:
+                # The charts are drawn only once the report is written.
+                for name in (REPORT, *CHARTS):
+                    self.assertEqual(os.path.exists(
+                        os.path.join(self.dir, name)), written, name)
+                for chart in CHARTS if written else ():
                     with open(os.path.join(self.dir, chart), encoding="utf-8") as f:
                         self.assertTrue(f.read().startswith("<svg "), chart)
-                self.assertEqual(os.path.exists(
-                    os.path.join(self.dir, REPORT)), written)
 
 
 class CheckReportTest(ReportTest):

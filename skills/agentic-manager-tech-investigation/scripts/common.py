@@ -15,18 +15,17 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.batch import gather  # noqa: E402,F401
-from agentic_manager.config import enabled_sources, is_enabled, tool_channel  # noqa: E402,F401
-from agentic_manager.github import NAME as GITHUB_CLI, GhError, gh_available, gh_found, gh_signed_in, pull_parts  # noqa: E402,F401
+from agentic_manager.config import enabled_sources, is_enabled  # noqa: E402,F401
+from agentic_manager.github import NAME as GITHUB_CLI, GH_UNAVAILABLE, GhError, gh_available, gh_found, gh_signed_in, pull_parts  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
 from agentic_manager.jira import GROUP as JIRA_GROUP, NAME as JIRA_API, PROJECT_KEY, JiraClient, JiraError, browse_url, plain_text, project_of  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
-from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
-from agentic_manager.text import DEFINITION, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, free_name, headings, link_definitions, link_text, links, local_link, markdown, reference_key, slug, word_count  # noqa: E402,F401
+from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, KEPT_EXAMPLES, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
+from agentic_manager.text import DEFINITION, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, free_name, headings, inline_links, link_definitions, link_text, links, local_link, markdown, reference_key, slug, word_count  # noqa: E402,F401
 from agentic_manager.ticket_pulls import pulls_by_ticket  # noqa: E402,F401
 
 FOLDER_NAME = "tech-investigations"
-EXAMPLES = "_examples"
 # An example's own description, beside its copied documents: what makes it
 # good, as the agent wrote it when the user approved it.
 WHY_GOOD = "Why it's good"
@@ -66,7 +65,7 @@ GAPS = "Evidence gaps"
 LINKS = "Links"
 LEDGER_SECTIONS = [QUEUE, BOUNDARY, REGISTER, FINDINGS,
                    INVENTORY, DESIGN, DECISIONS, GAPS, LINKS]
-# An question is ready until someone starts it, so that after a break, or with
+# A question is ready until someone starts it, so that after a break, or with
 # work shared out, what is under way shows apart from what is waiting.
 QUEUE_SUBSECTIONS = ["Ready", "In progress", "Blocked", "Completed"]
 QUEUE_TABLES = ["queue-ready", "queue-in-progress",
@@ -344,21 +343,32 @@ def unresolved_message(unresolved):
             "after linking any page of that host once")
 
 
+# The rules below are each defined once: ledger.py applies them to a row as it
+# is written, and check_report.py to the whole ledger, which also catches a
+# ledger edited without the script.
+
+
 def outcome_problem(row_id, outcome, question=""):
     """Why a completed question's outcome doesn't close it, or None. The review's
     own row is answered by the questions it raised."""
     if question == REVIEW_QUESTION:
-        if re.search(r"\bQ\d{2,}\b", outcome) or outcome.strip() == REVIEW_NONE \
+        if ids(outcome, "Q") or outcome.strip() == REVIEW_NONE \
                 or outcome.strip().startswith(REVIEW_STOPPED):
             return None
         return (f"{row_id}: the review's outcome names the questions it raised (Q14, Q15), is '{REVIEW_NONE}' "
                 f"or starts '{REVIEW_STOPPED}'")
     # A question is completed by the findings that answer it; one a gap or a
     # decision stops is blocked, never completed.
-    if re.search(r"\bF\d{2,}\b", outcome):
+    if ids(outcome, "F"):
         return None
     return (f"{row_id}: a completed question names the findings that answer it (F01, F02) in Outcome / finding "
             "IDs; a question a gap or a decision stops is blocked by it instead")
+
+
+def ids(text, letters):
+    """The IDs in `text` of the kinds `letters` names, such as "Q" or "GD", in
+    order."""
+    return re.findall(rf"\b[{letters}]\d{{2,}}\b", text)
 
 
 def claim_length_warning(ident, claim):
@@ -395,11 +405,6 @@ def reviewed(completed):
     return outcome is not None and (outcome == REVIEW_NONE or outcome.startswith(REVIEW_STOPPED))
 
 
-# The rules below are each defined once: ledger.py applies them to a row as it
-# is written, and check_report.py to the whole ledger, which also catches a
-# ledger edited without the script.
-
-
 def backtick_error(where, spans):
     """The error for references in backticks outside a link."""
     return (f"{where}: references in backticks without a link: {listed([f'`{s}`' for s in spans])}. "
@@ -418,7 +423,7 @@ def gap_problem(row):
         (b for b in BLOCKERS if row[4].lower().startswith(b.lower())), None)
     if blocker is None:
         return f"{row[0]} is blocked by '{row[4]}'"
-    if blocker == "Waiting on decision" and not re.search(r"\bD\d{2,}\b", row[4]):
+    if blocker == "Waiting on decision" and not ids(row[4], "D"):
         return f"{row[0]} waits on a decision but names none (D01...)"
     return None
 
@@ -545,6 +550,11 @@ def recorded_ids(body):
     return set(RECORD_DEFINITION.findall(body)) | set(FINDING_HEADING.findall(body))
 
 
+def has_limits(row):
+    """Whether a source row names its access limits or what supersedes it."""
+    return row[5].strip().casefold() not in ("", "none")
+
+
 def cited_sources(body):
     """{source number: the findings whose Evidence line names it} in the ledger `body`."""
     cited = {}
@@ -588,36 +598,35 @@ def design_problem(name, row):
     None: each row rests on findings or a gap, an unverified one on the gap
     that explains it, a connection joins two components with a state and an
     identity, a flow walks connections, and a component sits in a boundary."""
-    def names(cell, letter):
-        return re.findall(rf"\b{letter}\d{{2,}}\b", cell)
     header = {"components": COMPONENT_HEADER, "boundaries": BOUNDARY_HEADER, "connections": CONNECTION_HEADER,
               "identities": IDENTITY_HEADER, "flows": FLOW_HEADER}[name]
     cell = dict(zip(header, row))
     evidence = cell["Evidence"]
-    if not (names(evidence, "F") or names(evidence, "G")):
+    if not ids(evidence, "FG"):
         return f"{row[0]}: Evidence names the findings it rests on (F01), or the gap that explains it (G01)"
     state = cell.get("Status") or cell.get("State")
-    if state and state.startswith("⬜") and not names(evidence, "G"):
+    if state and state.startswith("⬜") and not ids(evidence, "G"):
         return f"{row[0]}: an unverified row names the gap that explains it (G01) in Evidence"
-    if name == "components" and not (names(cell["Boundary"], "B") or cell["Boundary"].strip() == "None"):
+    if name == "components" and not (ids(cell["Boundary"], "B") or cell["Boundary"].strip() == "None"):
         return f"{row[0]}: Boundary names the boundary it sits in (B01), or None"
     if name == "connections":
         for end in ("From", "To"):
-            if len(names(cell[end], "C")) != 1:
+            if len(ids(cell[end], "C")) != 1:
                 return f"{row[0]}: {end} names one component (C01)"
-        if not (names(cell["Identity"], "I") or cell["Identity"].strip() in ("None", "Unknown")):
+        if not (ids(cell["Identity"], "I") or cell["Identity"].strip() in ("None", "Unknown")):
             return f"{row[0]}: Identity names the identity it uses (I01), None or Unknown"
-        return status_problem(row[0], state)
-    if name == "flows" and not names(cell["Connections in order"], "E"):
+        return status_problem(row[0], state, "State")
+    if name == "flows" and not ids(cell["Connections in order"], "E"):
         return f"{row[0]}: Connections in order names the connections it uses (E01, E02)"
     return None
 
 
-def status_problem(row_id, status):
-    """Why a component's Status cell isn't one of STATUSES, or None."""
+def status_problem(row_id, status, column="Status"):
+    """Why a component's Status cell, or a connection's State, isn't one of
+    STATUSES, or None."""
     if any(status.startswith(label) for label, _ in STATUSES):
         return None
-    return (f"{row_id}: Status starts with one of: "
+    return (f"{row_id}: {column} starts with one of: "
             + "; ".join(f"{label} ({meaning})" for label, meaning in STATUSES))
 
 

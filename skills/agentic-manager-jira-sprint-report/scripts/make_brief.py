@@ -70,7 +70,7 @@ def brief_events(events):
     everything: how the work moved, which the spells don't show. The other
     changes are left out: the spells and report_facts give its sprint moves
     and estimates, and the rest doesn't tell how the work went."""
-    return [{"date": display_date(e["date"]), "type": e["type"], "from": e["from"], "to": e["to"]}
+    return [{"date": display_date(e["date"]), "from": e["from"], "to": e["to"]}
             for e in events if e["type"] == "status_changed"]
 
 

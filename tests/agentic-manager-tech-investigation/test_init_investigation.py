@@ -68,35 +68,27 @@ class InitTest(unittest.TestCase):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(settings, f)
 
-    def test_first_actions_and_sources(self):
+    def test_first_questions_and_sources(self):
         # One question about the topic per group, the documentation first; a
         # source of another group, such as a local vault, is not used.
         signed_in = mock.Mock(return_value=mock.Mock(returncode=0))
-        cases = [
-            ("every group", {"documentation": ["notion-mcp"], "workflow": ["jira-api"],
-                             "source_control": ["github-cli"], "local_vault": ["logseq-fs"]},
-             {"code": ["github-cli"], "tracker": ["jira-api"],
-                 "documentation": ["notion-mcp"]},
-             [("Q01", "What does the documentation say about Acme Search?", "notion-mcp"),
-              ("Q02", "What does the tracker say about Acme Search?",
-               "jira-api (tickets.py search)"),
-              ("Q03", "What does the code say about Acme Search?", "github-cli")]),
-        ]
-        for name, enabled, sources, actions in cases:
-            with self.subTest(name):
-                self.sources(**enabled)
-                result = init_investigation.init(
-                    "Acme-Search", today=TODAY, run=signed_in)
-                self.assertEqual(result["sources"], sources)
-                ledger = Path(result["investigation_dir"]) / "ledger.md"
-                body = ledger.read_text(encoding="utf-8")
-                rows = check_report.ledger_rows(body, "### Ready")
-                self.assertEqual([(row[0], row[2], row[3])
-                                 for row in rows], actions)
-                # The boundary is the user's, written after the ledger exists.
-                self.assertIn(
-                    "## Boundary\n\nNone yet.\n", body)
-                self.assertEqual(check_report.check_ledger(ledger), ([], []))
+        self.sources(documentation=["notion-mcp"], workflow=["jira-api"],
+                     source_control=["github-cli"], local_vault=["logseq-fs"])
+        result = init_investigation.init(
+            "Acme-Search", today=TODAY, run=signed_in)
+        self.assertEqual(result["sources"], {"code": ["github-cli"], "tracker": ["jira-api"],
+                                             "documentation": ["notion-mcp"]})
+        ledger = Path(result["investigation_dir"]) / "ledger.md"
+        body = ledger.read_text(encoding="utf-8")
+        rows = check_report.ledger_rows(body, "### Ready")
+        self.assertEqual([(row[0], row[2], row[3]) for row in rows], [
+            ("Q01", "What does the documentation say about Acme Search?", "notion-mcp"),
+            ("Q02", "What does the tracker say about Acme Search?",
+             "jira-api (tickets.py search)"),
+            ("Q03", "What does the code say about Acme Search?", "github-cli")])
+        # The boundary is the user's, written after the ledger exists.
+        self.assertIn("## Boundary\n\nNone yet.\n", body)
+        self.assertEqual(check_report.check_ledger(ledger), ([], []))
         self.assertEqual(signed_in.call_args.args[0], [
                          "gh", "auth", "status"])
 

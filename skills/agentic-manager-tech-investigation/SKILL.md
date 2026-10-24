@@ -35,7 +35,7 @@ All three are required. If any of them isn't enabled, stop and tell the user how
 
 ## Sources and evidence
 
-The investigation reads three kinds of source. Each tells you something different:
+Each kind of source tells you something different:
 
 | Source        | What it tells you                                      |
 | ------------- | ------------------------------------------------------ |
@@ -51,6 +51,7 @@ A component or capability is in the state its strongest evidence shows:
 | Planned        | In the tracker, with no code.                                |
 | In development | Code written but not merged: an open pull request or branch. |
 | Implemented    | Merged to the main branch.                                   |
+| Unverified     | Not established: the gap that explains it is recorded.       |
 
 When sources disagree about a fact, such as which queue a service uses, code wins over the tracker, and the tracker wins over the documentation. A ticket marked Done with no merged code is still only planned: the tracker reports it as done, but no implementation was found.
 
@@ -87,7 +88,7 @@ Agree what is being investigated, then create the investigation's folder.
 
 ## 2. Research
 
-Build the ledger, methodically, until it covers the three aims this skill exists for: the vision, purpose and impact; the current status, what is done, how it works (its system design today) and what is in progress; and the direction, with the system design it targets. Every answer rests on evidence the ledger holds.
+Build the ledger, methodically, until it covers the three aims at the top of this skill. Every answer rests on evidence the ledger holds.
 
 Use those three aims as your compass. Before you add a question to the queue, ask whether its answer would change what the ledger says about one of them. If it would, add it; if not, leave it.
 
@@ -120,7 +121,7 @@ A question you can't answer is blocked by a gap or a decision. A source you can'
 
 ### Reading the documentation
 
-Read the documentation through its enabled source, with no special procedure: search for what the question needs, and read the pages it leads to. The rules in [Sources and evidence](#sources-and-evidence) apply: it is vision, the newer of two documents wins, and messages are left out.
+Read the documentation through its enabled source, with no special procedure: search for what the question needs, and read the pages it leads to, under the rules in [Sources and evidence](#sources-and-evidence).
 
 ### Reading the tracker
 
@@ -150,7 +151,7 @@ Collect enough to draw an accurate diagram of the system, as it is today and as 
 3. **Boundaries:** what groups components, such as a network, an environment, a trust zone or the team that owns them.
 4. **Identities:** the credentials or accounts connections use, and what each can reach; several connections often share one.
 5. **Main flows:** for each entry point that matters, the connections it uses, in order.
-6. **Unknowns:** a component or connection you can't establish is recorded with the state Unverified, linked to the gap that explains it; a caller you can't identify is a component of unknown type. Never guess one.
+6. **Unknowns:** a component or connection you can't establish is Unverified, linked to the gap that explains it; a caller you can't identify is a component of unknown type. Never guess one.
 
 ### When research is finished
 
@@ -197,9 +198,9 @@ The report has two layers, which don't repeat each other. The executive layer, f
 
 **Report, don't recommend.** The report describes what the evidence shows. It never adds your own recommendations, preferred options, plans or owners; what the sources don't settle is reported as open.
 
-### The executive layer
-
 Approximate lengths are room to explain, not quotas: write less when the point is simple or the evidence thin.
+
+### The executive layer
 
 - **Problem and purpose** (`purpose`, about 150 words): the problem, who it affects, why it matters and the intended outcome, in plain language. End with each topic the boundary marked mention only, in one line on how it connects.
 - **Current status** (`current_status`, about 200 words): what is done, what is in progress, and the gap between them, keeping implemented, in development and planned apart, as the [states](#sources-and-evidence) do. Name the evidence limits that matter, such as a source you couldn't read.
@@ -220,6 +221,6 @@ To decide: drawn from the ledger's system design, or written by hand.
 
 ## 5. Hand over
 
-1. Run `python3 ${CLAUDE_SKILL_DIR}/scripts/check_report.py --report '<absolute report path>' --handover`, and fix every error it reports.
+1. Run `python3 ${CLAUDE_SKILL_DIR}/scripts/check_report.py --report '<path>' --handover`, with the `path` `make_report.py` printed, and fix every error it reports.
 2. Tell the user the report is ready, with Markdown links to the full paths of the report and the ledger. Don't recap the report; add only a doubt about your own judgment that it doesn't show, and, if `make_report.py` reported `temporary` as true, that the folder is temporary and setting `output.root` in the config keeps investigations.
 3. Offer to keep the report as an example for future investigations. If the user says they're happy with it, keep it with `python3 ${CLAUDE_SKILL_DIR}/scripts/save_example.py --investigation <investigation> --note '<one line on what makes it good>'`.

@@ -1,5 +1,5 @@
-"""Everything after the agent writes content.json: draw the charts, write the
-report and check it.
+"""Everything after the agent writes content.json: write the report, draw the
+charts and check it.
 
 It prints only what needs attention, as the agent would otherwise read hundreds
 of passing checks to find the one to fix.
@@ -21,7 +21,7 @@ def main():
     parser.add_argument("--report-dir", required=True,
                         help="report folder holding data.json and content.json")
     args = parser.parse_args()
-    for script in ("make_charts.py", "make_report.py"):
+    for script in ("make_report.py", "make_charts.py"):
         result = run_script(script, "--report-dir",
                             args.report_dir, stderr=subprocess.STDOUT)
         if result.returncode:

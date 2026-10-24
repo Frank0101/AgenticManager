@@ -311,14 +311,18 @@ class GithubTest(unittest.TestCase):
                 self.assertTrue(all(is_graphql(c) for c in calls))
 
     def test_unsafe_address(self):
-        # Never asked about: it raises before any call.
-        unsafe = "https://github.com/acme/api$x/pull/1"
-        run = Runner()
-        with self.assertRaises(github.GhError) as raised:
-            github.pull_events([PR.format(41), unsafe], run)
-        self.assertEqual((raised.exception.command, raised.exception.message),
-                         (["api", "graphql"], f"{unsafe}: not a pull request's address gh can be asked about"))
-        self.assertEqual(run.calls, [])
+        # Anything that could change the query or a variable's meaning is
+        # never asked about: it raises before any call.
+        for unsafe in ("https://github.com/acme/api$x/pull/1", "https://github.com/acme/api/pull/4x",
+                       "https://github.com/ac{me}/api/pull/1", 'https://github.com/acme/a"pi/pull/1',
+                       "https://github.com/acme/api/issues/1"):
+            with self.subTest(unsafe):
+                run = Runner()
+                with self.assertRaises(github.GhError) as raised:
+                    github.pull_events([PR.format(41), unsafe], run)
+                self.assertEqual((raised.exception.command, raised.exception.message),
+                                 (["api", "graphql"], f"{unsafe}: not a pull request's address gh can be asked about"))
+                self.assertEqual(run.calls, [])
 
     def test_events_query(self):
         # Aliases r<i> for each repository and p<j> for each pull request;
@@ -335,11 +339,6 @@ class GithubTest(unittest.TestCase):
                                   "-f", "o1=acme", "-f", "n1=web", "-F", "p2=7"])
         self.assertEqual(aliases, {("r0", "p0"): PR.format(41), ("r0", "p1"): PR.format(42),
                                    ("r1", "p2"): "https://github.com/acme/web/pull/7"})
-        # Anything that could change the query or a variable's meaning.
-        for url in ("https://github.com/acme/api/pull/4x", "https://github.com/ac{me}/api/pull/1",
-                    'https://github.com/acme/a"pi/pull/1', "https://github.com/acme/api/issues/1"):
-            with self.subTest(url), self.assertRaises(ValueError):
-                github._events_query([url])
 
     def test_graphql_failures(self):
         # The call as a whole failing raises, with gh's words; an answer

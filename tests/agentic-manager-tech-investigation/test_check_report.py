@@ -182,7 +182,7 @@ class CheckReportTest(unittest.TestCase):
                 self.assertIn("cannot read research ledger", " ".join(errors))
 
     def test_handover_gaps_need_a_valid_blocker_and_areas(self):
-        # A gap nothing blocks is work to do, so it must be an action in the
+        # A gap nothing blocks is work to do, so it must be a question in the
         # queue and not a gap; its Areas are some of the allowed ones.
         ledger = self.folder / "ledger.md"
         gap = "| G01 | Gap | Missing | Read it | {} | Code | Owner | {} |\n"
@@ -217,12 +217,12 @@ class CheckReportTest(unittest.TestCase):
                   " | No issue raised |\n")
         raised = ("| Q02 | Independent review | Independent review of the ledger | Subagent | None"
                   " | Raised Q03 |\n| Q03 | Q02 | Read the job | Code | None | F01 |\n")
-        open_action = ["Q01", "Start", "Read code", "Code", "—", "—"]
+        open_question = ["Q01", "Start", "Read code", "Code", "—", "—"]
         cases = [
-            ("an action, reviewed", LEDGER, None),
-            ("a ready question", with_queue(LEDGER, "Ready", [open_action]),
+            ("a question, reviewed", LEDGER, None),
+            ("a ready question", with_queue(LEDGER, "Ready", [open_question]),
              "still ready or in progress"),
-            ("an action in progress", with_queue(LEDGER, "In progress", [open_action]),
+            ("a question in progress", with_queue(LEDGER, "In progress", [open_question]),
              "still ready or in progress"),
             ("no review recorded", LEDGER.replace(review, ""),
              "no independent review is recorded"),
@@ -356,14 +356,12 @@ class CheckReportTest(unittest.TestCase):
         coverage = ("### File reading coverage\n\n| Source | Material | Depth |\n| --- | --- | --- |\n"
                     "| S01 | [routes](https://github.com/acme/app/blob/abc/services/search/{}) | {} |\n")
         cases = [
-            ("an answered action", "F01", "⬜ Unverified",
-             ("README.md", "README"), None),
             # A question a gap stops is blocked, never completed.
-            ("an action closed on a gap", "G01", "⬜ Unverified",
+            ("a question closed on a gap", "G01", "⬜ Unverified",
              ("README.md", "README"), "Q01: a completed question"),
-            ("an action closed on its finding", "F01", "⬜ Unverified",
+            ("a question closed on its finding", "F01", "⬜ Unverified",
              ("README.md", "README"), None),
-            ("an action with no answer", "—", "⬜ Unverified",
+            ("a question with no answer", "—", "⬜ Unverified",
              ("README.md", "README"), "Q01: a completed question"),
             # A question closes answered, never by a choice not to pursue it.
             ("a user rejection", "Rejected by the user: not needed", "⬜ Unverified",

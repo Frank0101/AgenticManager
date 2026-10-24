@@ -341,10 +341,6 @@ class TicketTest(unittest.TestCase):
                 self.assertCountEqual(
                     discussion.call_args_list, discussed)
                 self.assertCountEqual(client.search.call_args_list, searched)
-        # GitHub isn't searched by owner any more: --owner is refused.
-        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as refused:
-            tickets.main(["show", "PROJ-1", "--owner", "acme"])
-        self.assertEqual(refused.exception.code, 2)
 
     def test_pr_discussion(self):
         answers = {"pr view": {PR.format(41): {

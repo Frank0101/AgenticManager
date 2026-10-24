@@ -25,8 +25,8 @@ from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order,  # noqa: E402,F401
                                   parse_ts, plain_text, project_of, value_at)
 from agentic_manager.batch import gather  # noqa: E402,F401
-from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
-from agentic_manager.github import gh_available  # noqa: E402,F401
+from agentic_manager.failures import GITHUB_FAILED, stops_on_failure  # noqa: E402,F401
+from agentic_manager.github import GH_UNAVAILABLE, gh_available  # noqa: E402,F401
 from agentic_manager.ticket_pulls import pulls_by_ticket, read_events  # noqa: E402,F401
 
 # The skill's output folder, which holds the report folders (see output_folder.py).
@@ -164,7 +164,8 @@ def epic_title(epic):
 
 
 def report_timezone(name):
-    """The named timezone saved from the Jira API account's profile."""
+    """The reporting timezone named by the Jira API account's profile, as
+    fetched or as saved in the raw files and data.json."""
     if not isinstance(name, str) or not name.strip():
         raise SystemExit(
             "no reporting timezone: check the Jira API account's timezone and fetch the sprint again")
@@ -250,9 +251,18 @@ def sprint_moves(added, removed, created):
     value, so the creation counts as the first add."""
     moves = sorted([(parse_ts(t), 1, t) for t in added] +
                    [(parse_ts(t), -1, t) for t in removed])
-    if not moves or moves[0][1] < 0:
+    if set_at_creation(added, removed):
         moves.insert(0, (parse_ts(created), 1, created))
     return moves
+
+
+def set_at_creation(added, removed):
+    """Whether the sprint was set when the issue was created: its first move,
+    of the timestamps `added` and `removed`, isn't an add, a removal coming
+    first at one instant."""
+    first = min([(parse_ts(t), 1) for t in added] +
+                [(parse_ts(t), -1) for t in removed], default=None)
+    return first is None or first[1] < 0
 
 
 class History:

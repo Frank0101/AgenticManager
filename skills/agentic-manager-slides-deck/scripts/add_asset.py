@@ -11,6 +11,7 @@ it is and nothing else; an image of the same name is replaced, folder and all.
 import argparse
 import json
 import os
+import re
 import urllib.request
 from urllib.parse import unquote, urlparse
 
@@ -24,6 +25,8 @@ MAX_BYTES = 20 * 1024 * 1024
 # an image is refused rather than saved; SVG is text, found by its root element.
 SIGNATURES = [(b"\x89PNG\r\n\x1a\n", "png"), (b"\xff\xd8\xff", "jpg"), (b"GIF87a", "gif"),
               (b"GIF89a", "gif")]
+SVG_ROOT = re.compile(
+    rb"\s*(?:<\?xml[^>]*\?>\s*)?(?:<!--.*?-->\s*|<!DOCTYPE[^>]*>\s*)*<svg\b", re.I | re.S)
 NOT_AN_IMAGE = "is not a PNG, JPEG, GIF, WebP or SVG image"
 
 
@@ -149,7 +152,7 @@ def image_type(data):
             return kind
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "webp"
-    if b"<svg" in data[:2048].lower():
+    if SVG_ROOT.match(data[:2048]):
         return "svg"
     return None
 

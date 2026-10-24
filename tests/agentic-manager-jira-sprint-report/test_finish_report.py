@@ -56,7 +56,7 @@ class FinishReportTest(unittest.TestCase):
 
     def test_outcomes(self):
         # name: (each script's code and output, exit code, what is printed, scripts run)
-        everything = ["make_charts.py", "make_report.py", "check_report.py"]
+        everything = ["make_report.py", "make_charts.py", "check_report.py"]
         cases = [
             ("passing", {"check_report.py": (0, PASSED)}, 0,
              f"all 1 checks passed\nreport: {self.report}\n", everything),
@@ -69,9 +69,9 @@ class FinishReportTest(unittest.TestCase):
                 1, CRASHED)}, 1, CRASHED, everything),
             # content.json's problems stop the run before the report is checked.
             ("bad content", {"make_report.py": (1, "content.json:\n  - problem\n")}, 1,
-             "content.json:\n  - problem\n", ["make_charts.py", "make_report.py"]),
+             "content.json:\n  - problem\n", ["make_report.py"]),
             ("charts fail", {"make_charts.py": (1, "burndown check failed\n")}, 1,
-             "burndown check failed\n", ["make_charts.py"]),
+             "burndown check failed\n", ["make_report.py", "make_charts.py"]),
         ]
         for name, results, code, printed, runs in cases:
             with self.subTest(name):

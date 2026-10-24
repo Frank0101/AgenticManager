@@ -35,7 +35,7 @@ class LedgerTest(unittest.TestCase):
         self.folder = temp_output(self)
         init_investigation.init("Acme-Search", today=date(2026, 10, 5))
         self.path = Path(self.folder) / INVESTIGATION / "ledger.md"
-        # The commands are tested on an empty ledger; init's own first actions
+        # The commands are tested on an empty ledger; init's own first questions
         # are tested in test_init_investigation.py.
         self.path.write_text(init_investigation.ledger_skeleton(
             "Acme-Search"), encoding="utf-8")
@@ -826,8 +826,8 @@ class LedgerTest(unittest.TestCase):
                 self.assertNotIn("  F02:", output)
                 self.assertNotIn("  F03:", output)
 
-    def test_closing_an_action_lists_the_records_that_name_it(self):
-        # What a record said while the action was open may need its answer.
+    def test_closing_a_question_lists_the_records_that_name_it(self):
+        # What a record said while the question was open may need its answer.
         self.records("Q06", "S01")
         self.finding(
             "Config", evidence="S01; whether it is set is not established yet: Q06")
@@ -842,7 +842,7 @@ class LedgerTest(unittest.TestCase):
             "move", "--id", "Q07", "--to", "in-progress"))
         self.assertNotIn("update_if_needed", self.run_ledger("move", "--id", "Q07", "--to", "completed",
                                                              "--set", "Outcome / finding IDs=F01"))
-        # An action may be written straight as completed, and is then in that part only.
+        # A question may be written straight as completed, and is then in that part only.
         self.records("Q08")
         result = self.run_ledger("batch", cells=[{"table": "queue-completed", "id": "Q08",
                                                   "cells": QUEUE_ROW[:-1] + ["F01"]},
@@ -904,7 +904,7 @@ class LedgerTest(unittest.TestCase):
             "show", "--table", "sources"))
         self.assertEqual(check_report.check_ledger(self.path), ([], []))
 
-    def test_a_completed_action_names_its_answer(self):
+    def test_a_completed_question_names_its_answer(self):
         self.records("F01", "F02", "G01", "D02")
         for outcome in ("F01, F02", "F02"):
             with self.subTest(outcome):
@@ -1004,7 +1004,7 @@ class LedgerTest(unittest.TestCase):
                       " Subagent given the skill's brief | None | Raised Q01 |", self.plain())
         self.run_ledger("review", "--raised", "none")
         self.assertIn("| No issue raised |", self.text())
-        # Its row closes on actions raised, not on findings.
+        # Its row closes on questions raised, not on findings.
         with self.assertRaisesRegex(SystemExit, "the review's outcome names the questions it raised"):
             self.run_ledger("row", "--table", "queue-completed", "--id", "Q09", cells=[
                 "Independent review", "Independent review of the ledger", "s", "None", "F01"])

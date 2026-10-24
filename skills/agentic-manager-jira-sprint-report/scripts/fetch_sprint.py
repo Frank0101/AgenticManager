@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 from common import (CHANGELOGS_DIR, COMMENTS_DIR, META_FILE, PARENTS_FILE, PREVIOUS_SPRINT_FILE, PULL_REQUESTS_FILE,
                     PUNTED_ISSUES_FILE, RAW_DIR, REPORTS_FOLDER, SPRINT_FILE, SPRINT_ISSUES_FILE,
-                    SPRINT_REPORT_FILE, STATUSES_FILE, JiraClient, as_of, blocker_candidate_keys,
+                    SPRINT_REPORT_FILE, STATUSES_FILE, GH_UNAVAILABLE, GITHUB_FAILED, JiraClient, as_of, blocker_candidate_keys,
                     clear_folder, day_folder, gather, gh_available, history_fields, nested, output_folder, parse_ts,
                     project_of, pulls_by_ticket, read_events, report_label, report_timezone,
                     standard_issues, status_categories, stops_on_failure, write_json)
@@ -28,7 +28,7 @@ BASE_FIELDS = [
     "description",
 ]
 # What a GitHub failure's message starts with.
-NO_REPORT = "GitHub couldn't be read, so no report was written"
+NO_REPORT = f"{GITHUB_FAILED}, so no report was written"
 # How the sprint is named on the command line, shown in --help.
 SELECTOR_EXAMPLES = """examples, with exactly one sprint selector:
   %(prog)s --sprint-id 123 [--board 42]
@@ -122,9 +122,9 @@ def pull_requests(client, issues, gh, run=subprocess.run):
     other failure stops the fetch, as a pull request it couldn't read would
     otherwise be taken for work without times. The report doesn't use this
     data yet: it is fetched for a later use."""
-    found = pulls_by_ticket(client, issues, gh)
     if not gh:
         return {"github_read": False, "tickets": {}, "events": {}, "skipped": []}
+    found = pulls_by_ticket(client, issues)
     every = [pr for prs in found.values() for pr in prs]
     events, gone = read_events(every, run)
     skipped = [{"url": url, "via": list(dict.fromkeys(pr["via"] for pr in every if pr["url"] == url)),
@@ -262,7 +262,7 @@ def main():
         pulls = pull_requests(client, standard_issues(
             sprint_issues + punted_issues), gh)
         log(f"{sum(map(len, pulls['tickets'].values()))} pull request(s) found" if gh
-            else "gh isn't available or github-cli isn't enabled, so pull requests weren't read")
+            else f"{GH_UNAVAILABLE}, so pull requests weren't read")
 
         project_key = project_key_of(args, sprint_issues + punted_issues)
         label = report_label(project_key, sprint.get("name"))

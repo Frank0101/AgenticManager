@@ -57,6 +57,8 @@ NOT_FOUND_SIGNS = ("could not resolve to a ", "http 404")
 # RATE_LIMITED): gh's own setup, or the user goes on without GitHub.
 GH_BROKEN = ("Check that gh works (gh auth status) and run it again, or disable the github-cli source to go on "
              "without GitHub.")
+# Why gh_available() is false, for a skill's message about what it skipped.
+GH_UNAVAILABLE = "gh isn't available or github-cli isn't enabled"
 
 
 def gh_available():
@@ -145,13 +147,11 @@ def _batch_events(host, urls, run=subprocess.run):
 def _events_query(urls):
     """(query, gh's field arguments, {(repository alias, pull alias): url})
     that read the events of the pull requests at `urls`, grouped by
-    repository. Raises ValueError for a URL that isn't a pull request's, so
-    nothing unchecked reaches the call."""
+    repository; pull_events() has checked every URL."""
     repositories = {}
     for url in urls:
         parts = pull_parts(url)
-        if not parts:
-            raise ValueError(f"not a pull request's address: {url}")
+        assert parts
         repositories.setdefault(
             (parts["owner"], parts["name"]), []).append((url, parts["number"]))
     declared, fields, lines, aliases = [], [], [], {}

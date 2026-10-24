@@ -15,7 +15,7 @@ import os
 import re
 import subprocess
 
-from common import (DESIGN, DESIGN_SUBSECTIONS, EXAMPLE_DESCRIPTION, EXAMPLES, GITHUB_CLI, GROUPS, JIRA_API, JIRA_GROUP, QUEUE, REGISTER,
+from common import (DESIGN, DESIGN_SUBSECTIONS, EXAMPLE_DESCRIPTION, KEPT_EXAMPLES, GITHUB_CLI, GROUPS, JIRA_API, JIRA_GROUP, QUEUE, REGISTER,
                     WHY_GOOD, read_description, TABLE_HEADINGS, FOLDER_NAME, INVESTIGATION, LEDGER, LEDGER_SECTIONS, QUEUE_HEADER,
                     QUEUE_SUBSECTIONS, SOURCE_HEADER, TOPIC, GhError, anchored, clear_folder, day_folder,
                     enabled_sources, gh_signed_in, output_folder, table, write_output_file)
@@ -40,7 +40,7 @@ def init(topic, today=None, run=subprocess.run):
     relative = day_folder(topic, today or date.today())
     path = os.path.join(folder, relative)
     replaced = clear_folder(path)
-    os.makedirs(os.path.join(folder, EXAMPLES), exist_ok=True)
+    os.makedirs(os.path.join(folder, KEPT_EXAMPLES), exist_ok=True)
     write_output_file(FOLDER_NAME, f"{relative}/{LEDGER}",
                       ledger_skeleton(topic, first_questions(topic, sources)).encode("utf-8"))
     return {"folder": folder, "temporary": temporary, "investigation": relative,
@@ -109,7 +109,7 @@ def ledger_skeleton(topic, ready=()):
 def examples(folder):
     """[{folder, documents, note}] of the approved examples, newest first: by
     date, then by copy."""
-    root = os.path.join(folder, EXAMPLES)
+    root = os.path.join(folder, KEPT_EXAMPLES)
     found = []
     for name in os.listdir(root) if os.path.isdir(root) else []:
         match = EXAMPLE.fullmatch(name)

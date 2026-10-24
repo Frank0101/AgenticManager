@@ -98,6 +98,17 @@ class TextTest(unittest.TestCase):
         self.assertEqual(list(text.links(prose, {})), [])
         self.assertEqual(blocks[0][3], "[Ignored](gone.md)")
 
+    def test_inline_links(self):
+        definitions = {"proof": "asset.svg"}
+        cases = [("full", "[Asset][proof]", "[Asset](asset.svg)"),
+                 ("collapsed", "[Proof][]", "[Proof](asset.svg)"),
+                 ("image", "![Asset][proof]", "![Asset](asset.svg)"),
+                 ("undefined", "[Asset][gone]", "[Asset][gone]")]
+        for name, written, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(text.inline_links(
+                    written, definitions), expected)
+
     def test_local_link(self):
         # (target, what it resolves to): a path beside the document, the
         # document itself for a bare anchor, and None for a web page.

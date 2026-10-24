@@ -14,8 +14,8 @@ import json
 import os
 import re
 
-from common import (CONTENT, FENCE, INVESTIGATION, REFERENCE_LINK, TABLE_HEADINGS, ledger_rows, reference_key, FOLDER_NAME, HEADING, HEADINGS, LEDGER, RECORD_DEFINITION,
-                    REPORT_SUFFIX, anchor_tag, autolink, headings, investigation_dir, link_definitions, markdown, read_json, table, topic_of, unresolved_message, word_count, write_output_file)
+from common import (CONTENT, FENCE, backtick_error, INVESTIGATION, TABLE_HEADINGS, inline_links, ledger_rows, FOLDER_NAME, HEADING, has_limits, HEADINGS, LEDGER, RECORD_DEFINITION,
+                    REPORT_SUFFIX, anchor_tag, autolink, headings, investigation_dir, link_definitions, markdown, read_json, table, topic_of, unlinked_backticks, unresolved_message, word_count, write_output_file)
 import check_report
 
 # Approximate prose lengths, in words: room to articulate, not quotas. Warn above
@@ -79,7 +79,11 @@ class Content:
         if inline and "\n" in value.strip():
             self.errors.append(
                 f"{where}: one line, for a table cell or list item")
-        return self.links(self.linked(value.strip(), where), where)
+        value = self.links(self.linked(value.strip(), where), where)
+        # The handover check's backtick rule, applied here so it fails first.
+        if spans := unlinked_backticks(value, self.ledger.text):
+            self.errors.append(backtick_error(where, spans))
+        return value
 
     def linked(self, value, where):
         """`value` with its tickets and pull requests linked from the ledger's links."""
@@ -132,10 +136,7 @@ class Ledger:
 
     def inlined(self, text):
         """`text` with its reference links, as the ledger stores them, written inline."""
-        def inline(match):
-            url = self.definitions.get(reference_key(match))
-            return f"{match[1]}[{match[2]}]({url})" if url else match[0]
-        return REFERENCE_LINK.sub(inline, text)
+        return inline_links(text, self.definitions)
 
     def anchor(self, ident):
         if anchor_tag(ident) in self.text:
@@ -277,7 +278,7 @@ def references(content):
             if "](" not in reference:
                 continue
             entry = f"- {reference}" + \
-                ("" if row[5].strip() in ("", "None") else " (historical)")
+                (" (historical)" if has_limits(row) else "")
             if entry not in entries:
                 entries.append(entry)
         lines += [f"**{label}**",

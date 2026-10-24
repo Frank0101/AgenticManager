@@ -88,7 +88,7 @@ class ProblemsTest(unittest.TestCase):
             ("unknown token", set_slide("{{chart:sales}}"),
              "slides[0].html: {{chart:sales}} names no chart in `charts`"),
             ("stray braces", set_slide("<p>{{revenue}}</p>"),
-             "`{{` starts no token"),
+             "slides[0].html: `{{` starts no token: write {{chart:<id>}}, {{ring:<id>}}, {{asset:<name>}} or {{page}}"),
             ("image not in _assets", set_slide("<img src='{{asset:logo.svg}}'>"),
              "slides[0].html: {{asset:logo.svg}} names no image in _assets"),
             # An image placed where the page links nothing, as a CSS

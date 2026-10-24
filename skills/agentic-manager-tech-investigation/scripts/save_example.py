@@ -13,7 +13,7 @@ import json
 import os
 import shutil
 
-from common import (EXAMPLE_DESCRIPTION, EXAMPLES, FOLDER_NAME, REPORT_SUFFIX, WHY_GOOD_LABEL, free_name, topic_of, investigation_dir, link_definitions, links, local_link, markdown,
+from common import (EXAMPLE_DESCRIPTION, KEPT_EXAMPLES, FOLDER_NAME, REPORT_SUFFIX, WHY_GOOD_LABEL, free_name, topic_of, investigation_dir, link_definitions, links, local_link, markdown,
                     target, write_output_file)
 
 
@@ -26,18 +26,18 @@ def save(relative, note):
         raise SystemExit(
             f"{relative} has no {document}: run make_report.py first")
     name = free_name(os.path.basename(os.path.normpath(source)),
-                     lambda name: os.path.exists(os.path.join(folder, EXAMPLES, name)), "--")
+                     lambda name: os.path.exists(os.path.join(folder, KEPT_EXAMPLES, name)), "--")
     copied = []
     for path in local_links(source, document):
-        destination = target(folder, f"{EXAMPLES}/{name}/{path}")
+        destination = target(folder, f"{KEPT_EXAMPLES}/{name}/{path}")
         os.makedirs(os.path.dirname(destination), exist_ok=True)
         shutil.copyfile(os.path.join(source, path), destination)
         copied.append(path)
     description = (f"# {name}\n\n{WHY_GOOD_LABEL} {note.strip()}\n\n"
                    f"The approved report: [{document}]({document}).\n")
     write_output_file(
-        FOLDER_NAME, f"{EXAMPLES}/{name}/{EXAMPLE_DESCRIPTION}", description.encode("utf-8"))
-    return {"example": os.path.join(folder, EXAMPLES, name), "files": copied, "temporary": temporary}
+        FOLDER_NAME, f"{KEPT_EXAMPLES}/{name}/{EXAMPLE_DESCRIPTION}", description.encode("utf-8"))
+    return {"example": os.path.join(folder, KEPT_EXAMPLES, name), "files": copied, "temporary": temporary}
 
 
 def local_links(folder, relative):
