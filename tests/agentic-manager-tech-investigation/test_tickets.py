@@ -226,7 +226,7 @@ class TicketTest(unittest.TestCase):
         cases = [("without --prs", False, True, web),
                  ("without --prs or gh", False, False, web),
                  ("--prs without gh", True, False,
-                  [*web, "Pull requests (not read):", f"  {tickets.NO_GH}", ""])]
+                  [*web, "Pull requests (not read):", f"  {tickets.PULLS_UNREAD}", ""])]
         for name, prs, with_gh, expected in cases:
             with self.subTest(name):
                 run, client = gh(GH), FakeClient()

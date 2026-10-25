@@ -16,7 +16,7 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
-from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, KEPT_EXAMPLES, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
+from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, KEPT_EXAMPLES, description, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.text import NAME, SLUG, free_name, slug  # noqa: E402,F401
 from agentic_manager.web import ssl_context  # noqa: E402,F401
 
@@ -173,10 +173,9 @@ def assets_dir():
 def describe_asset(title, shows, credit=None):
     """The description.md of an image titled `title` that shows `shows`, with
     its `credit` ({"credit", "license", "source", "image"}) if downloaded."""
-    lines = [f"# {title}", f"**{SHOWS}:** {shows}"]
-    lines += [f"**{label}:** {credit[key]}" for key,
-              label in CREDIT_FIELDS.items()] if credit else []
-    return "\n\n".join(lines) + "\n"
+    labelled = {SHOWS: shows, **
+                ({label: credit[key] for key, label in CREDIT_FIELDS.items()} if credit else {})}
+    return description(title, labelled)
 
 
 def credits():

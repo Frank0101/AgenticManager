@@ -59,6 +59,7 @@ GH_BROKEN = ("Check that gh works (gh auth status) and run it again, or disable 
              "without GitHub.")
 # Why gh_available() is false, for a skill's message about what it skipped.
 GH_UNAVAILABLE = "gh isn't available or github-cli isn't enabled"
+PULLS_UNREAD = f"{GH_UNAVAILABLE}, so pull requests weren't read"
 
 
 def gh_available():

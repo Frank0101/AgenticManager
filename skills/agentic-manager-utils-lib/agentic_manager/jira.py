@@ -68,6 +68,11 @@ ORDER_BY = re.compile(r"\border\s+by\b", re.I)
 # a skill builds on when it needs the key's parts or its own context around it.
 PROJECT_KEY = r"[A-Z][A-Z0-9]+"
 ISSUE_KEY = re.compile(rf"\b{PROJECT_KEY}-\d+\b")
+# An issue's page, as browse_url() writes it: the site, as group 1, which
+# may sit under a path, then /browse/ and the key, whose project is group 2.
+BROWSE = "/browse/"
+BROWSE_URL = re.compile(
+    rf"(https?://[^\s()<>\[\]]+?){BROWSE}({PROJECT_KEY})-\d+")
 # Atlassian Document Format nodes that end a line of text.
 ADF_BLOCKS = {"paragraph", "heading", "listItem", "codeBlock",
               "blockquote", "tableRow", "rule", "mediaGroup"}
@@ -583,7 +588,7 @@ class JiraError(Exception):
 
 def browse_url(base, key):
     """The page of issue `key` on the Jira site at `base`."""
-    return f"{base}/browse/{key}"
+    return f"{base}{BROWSE}{key}"
 
 
 def key_order(key):

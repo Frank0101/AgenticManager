@@ -13,7 +13,7 @@ import json
 import os
 
 from common import (EXAMPLE_DESCRIPTION, EXAMPLE_PAGE, FOLDER_NAME, SLIDES, TOKEN, USE_FOR, KEPT_EXAMPLES, asset_names, credits,
-                    deck_dir, free_name, read_json, slug, user_examples_dir, write_output_file)
+                    deck_dir, description, free_name, read_json, slug, user_examples_dir, write_output_file)
 from make_deck import build, problems
 
 
@@ -30,8 +30,8 @@ def save(deck, number, title, use_for):
     name = example_name(user_examples_dir(), title)
     files = {SLIDES: json.dumps(content, ensure_ascii=False, indent=2) + "\n",
              EXAMPLE_PAGE: build(content, texts, credits(), depth=2),
-             EXAMPLE_DESCRIPTION: f"# {title}\n\n**{USE_FOR}:** {use_for}\n\nThe slide: [{SLIDES}]({SLIDES}), "
-             f"shown in [{EXAMPLE_PAGE}]({EXAMPLE_PAGE}).\n"}
+             EXAMPLE_DESCRIPTION: description(title, {USE_FOR: use_for}, f"The slide: [{SLIDES}]({SLIDES}), "
+                                              f"shown in [{EXAMPLE_PAGE}]({EXAMPLE_PAGE}).")}
     paths, temporary = {}, False
     for file, text in files.items():
         paths[file], temporary = write_output_file(

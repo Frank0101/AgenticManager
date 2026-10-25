@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 import re
 
-from common import (COMPONENT_HEADER, DESIGN_TABLES, design_problem, CELL_PIPE, DEFINITION, claim_length_warning, FINDING_FIELDS, FINDING_HEADING, FINDINGS, GAP_FIX, HEADING, LEDGER, LEDGER_SECTIONS, LINKS, QUERY, QUEUE, QUEUE_SUBSECTIONS, REFERENCE_LINK, SOURCE_FINDINGS, SOURCE_LINK_FIX, TABLE_HEADINGS, anchor_ids, areas_problem, backtick_error, cited_sources, component_rows, coverage_material_missing,
+from common import (COMPONENT_HEADER, DESIGN_TABLES, blocked_problem, design_problem, ids, group_problem, limits_problem, CELL_PIPE, DEFINITION, claim_length_warning, FINDING_FIELDS, FINDING_HEADING, FINDINGS, GAP_FIX, HEADING, LEDGER, LEDGER_SECTIONS, LINKS, QUERY, QUEUE, QUEUE_SUBSECTIONS, REFERENCE_LINK, SOURCE_FINDINGS, SOURCE_LINK_FIX, TABLE_HEADINGS, anchor_ids, areas_problem, backtick_error, cited_sources, component_rows, coverage_material_missing,
                     depth_problem, expected_files, finding_blocks, gap_problem, h2_span, headings, id_order, ledger_rows, link_definitions, link_text, links, listed, local_link, markdown, outcome_problem, reference_key, report_headings, review_problem, section_span, source_reference_missing, status_problem, strip_anchors, table_cells, unlinked_backticks, unlinked_references, unread_components, unread_message, unrecorded_ids)
 
 
@@ -106,8 +106,9 @@ def check_ledger(path, handover=False):
     """(errors, warnings) of the ledger's structure: its sections and the
     queue's in order, one heading per finding with its fields, every ticket and
     pull request linked, and, at handover, a queue with nothing left ready or in
-    progress, the review finished, completed questions answered, allowed
-    statuses, depths and areas, the system design's rules, code read for every
+    progress, the review finished, completed questions answered, blocked ones
+    naming what blocks them, allowed source groups and limits, statuses,
+    depths and areas, the system design's rules, code read for every
     component claiming it, and linked sources."""
     errors, warnings = [], []
     try:
@@ -280,8 +281,9 @@ def reference_error(where, found):
 
 def closing_problems(body):
     """The independent review not yet finished, completed questions with no
-    answer, coverage depths, component statuses and source or gap areas that
-    are not allowed ones, and components claiming code nobody read."""
+    answer, blocked questions that don't say what blocks them, source groups
+    and limits, coverage depths, component statuses and source or gap areas
+    that are not allowed ones, and components claiming code nobody read."""
     problems = []
     completed = ledger_rows(body, TABLE_HEADINGS["queue-completed"])
     problems.append(review_problem(completed))
@@ -289,6 +291,10 @@ def closing_problems(body):
         if re.fullmatch(r"Q\d+", row[0]):
             problems.append(outcome_problem(
                 row[0], row[-1], row[2] if len(row) > 2 else ""))
+    blocked = ledger_rows(body, TABLE_HEADINGS["queue-blocked"])
+    blocked_ids = {ident for row in blocked for ident in ids(row[0], "Q")}
+    problems += [blocked_problem(row[0], row[4] if len(row) > 4 else "", blocked_ids)
+                 for row in blocked]
     coverage = [row for row in ledger_rows(body, TABLE_HEADINGS["file-coverage"])
                 if len(row) > 2]
     problems += [depth_problem(row[2]) for row in coverage]
@@ -299,6 +305,8 @@ def closing_problems(body):
                  for row in components if len(row) == len(COMPONENT_HEADER)]
     problems += [design_problem(table, row) for table in DESIGN_TABLES
                  for row in ledger_rows(body, TABLE_HEADINGS[table]) if re.fullmatch(r"[BEIP]\d+", row[0])]
+    problems += [group_problem(row) or limits_problem(row) for row in ledger_rows(body, TABLE_HEADINGS["sources"])
+                 if re.fullmatch(r"S\d+", row[0]) and len(row) > 5]
     problems += [areas_problem(row) for table in ("sources", "gaps")
                  for row in ledger_rows(body, TABLE_HEADINGS[table]) if re.fullmatch(r"[SG]\d+", row[0])]
     definitions = link_definitions(body)

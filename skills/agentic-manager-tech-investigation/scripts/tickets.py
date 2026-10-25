@@ -13,7 +13,7 @@ import re
 import subprocess
 import sys
 
-from common import (GH_UNAVAILABLE, PROJECT_KEY, JiraClient, pull_parts, browse_url, gather, gh_available, gh_found, nested, plain_text,
+from common import (GH_UNAVAILABLE, PROJECT_KEY, PULLS_UNREAD, JiraClient, pull_parts, browse_url, gather, gh_available, gh_found, nested, plain_text,
                     pulls_by_ticket, stops_on_failure)
 
 FIELDS = ["summary", "status", "issuetype", "parent", "created", "updated", "resolutiondate",
@@ -28,8 +28,6 @@ GH_PR_FIELDS = "mergeCommit,mergedAt,changedFiles,files,commits"
 # What a pull request's discussion is read with.
 GH_DISCUSSION_FIELDS = ("title,state,author,body,reviews,comments,createdAt,mergedAt,baseRefName,"
                         "headRefName,mergeCommit,url")
-# What --prs prints without gh.
-NO_GH = f"{GH_UNAVAILABLE}, so pull requests weren't read"
 
 
 def ticket(client, key, site, prs, gh, run=subprocess.run):
@@ -125,7 +123,7 @@ def pull_section(client, issue, gh, run=subprocess.run):
     commits nor GitHub's pull requests naming the key are read. Without gh, no
     panel is read either, and the lines say so."""
     if not gh:
-        return ["Pull requests (not read):", f"  {NO_GH}"]
+        return ["Pull requests (not read):", f"  {PULLS_UNREAD}"]
     pulls = pulls_by_ticket(client, [issue])[issue["key"]]
     return [f"Pull requests ({len(pulls)}):", *(f"  {entry}" for entry in pr_lines(pulls, view(pulls, run), issue["key"]))]
 

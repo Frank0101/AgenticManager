@@ -24,8 +24,10 @@ from agentic_manager.config import is_filled, load_config  # noqa: E402
 
 # Where skills write their files when the config sets no output root.
 TEMP_ROOT = os.path.join(tempfile.gettempdir(), "agentic-manager")
-# The file that says what a folder of the user's own material holds, such as
-# an example or an image, named here so every skill names it the same way.
+# A folder beside the runs whose name starts with _, such as the kept examples,
+# is the user's own material: every run may read it and none deletes it. The
+# file that says what such a folder holds, such as an example or an image, is
+# named, written and read here, so every skill does it the same way.
 EXAMPLE_DESCRIPTION = "description.md"
 # The folder beside a skill's runs that holds the examples the user kept.
 KEPT_EXAMPLES = "_examples"
@@ -88,6 +90,15 @@ def clear_folder(path):
     else:
         shutil.rmtree(path)
     return True
+
+
+def description(title, labelled, *more):
+    """The text of a description.md that read_description() reads back: the
+    `title`, each of `labelled` ({label: text}) as a **Label:** text line, then
+    the paragraphs `more`."""
+    lines = [f"# {title}", *(f"**{label}:** {text}" for label,
+                             text in labelled.items()), *more]
+    return "\n\n".join(lines) + "\n"
 
 
 def read_description(path):

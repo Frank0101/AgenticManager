@@ -16,20 +16,19 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.config import enabled_sources, is_enabled  # noqa: E402,F401
-from agentic_manager.github import NAME as GITHUB_CLI, GH_UNAVAILABLE, GhError, gh_available, gh_found, gh_signed_in, pull_parts  # noqa: E402,F401
+from agentic_manager.github import NAME as GITHUB_CLI, GH_UNAVAILABLE, PULLS_UNREAD, GhError, gh_available, gh_found, gh_signed_in, pull_parts  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
-from agentic_manager.jira import GROUP as JIRA_GROUP, NAME as JIRA_API, PROJECT_KEY, JiraClient, JiraError, browse_url, plain_text, project_of  # noqa: E402,F401
+from agentic_manager.jira import BROWSE_URL as TICKET_URL, GROUP as JIRA_GROUP, NAME as JIRA_API, PROJECT_KEY, JiraClient, JiraError, browse_url, plain_text, project_of  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
-from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, KEPT_EXAMPLES, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
-from agentic_manager.text import DEFINITION, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, free_name, headings, inline_links, link_definitions, link_text, links, local_link, markdown, reference_key, slug, word_count  # noqa: E402,F401
+from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, KEPT_EXAMPLES, description, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
+from agentic_manager.text import DEFINITION, DISPLAY_DATE, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, free_name, headings, inline_links, link_definitions, link_text, links, local_link, markdown, reference_key, slug, word_count  # noqa: E402,F401
 from agentic_manager.ticket_pulls import pulls_by_ticket  # noqa: E402,F401
 
 FOLDER_NAME = "tech-investigations"
 # An example's own description, beside its copied documents: what makes it
 # good, as the agent wrote it when the user approved it.
 WHY_GOOD = "Why it's good"
-WHY_GOOD_LABEL = f"**{WHY_GOOD}:**"
 LEDGER = "ledger.md"
 CONTENT = "content.json"
 REPORT_SUFFIX = "_Report.md"
@@ -93,6 +92,9 @@ AREAS = ["Architecture", "Delivery", "Implementation", "Security and data",
 # and the output give it: when two disagree, the earlier one wins.
 GROUPS = {"source_control": "code", "workflow": "tracker",
           "documentation": "documentation"}
+# A source's Access limits / superseded by cell, when it isn't None, starts
+# with one of these, so the report marks it as limited or as superseded.
+LIMITED, SUPERSEDED = "Limited:", "Superseded by"
 SOURCE_HEADER = ["Source ID", "Group / evidence kind", "Exact reference",
                  "Revision / environment / date checked",
                  "Material read and findings", "Access limits / superseded by",
@@ -170,8 +172,6 @@ TICKET = re.compile(rf"(?<![\w/\[-])({PROJECT_KEY})-\d+(?![\w\]-])")
 REPO_PR = re.compile(
     r"(?<![\w/.\[-])([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#(\d{1,6})\b")
 BARE_PR = re.compile(r"(?<![\w/&#\[])#\d{1,6}\b")
-TICKET_URL = re.compile(
-    rf"(https?://[^/\s()<>]+)/browse/({PROJECT_KEY})-\d+")
 REPO_URL = re.compile(
     r"^(https?://[^/\s]+)/([\w.-]+/[\w.-]+)/(?:pull|issues|blob|tree|commit|commits)\b")
 # What a reference inside them is already part of: code, links and bare URLs.
@@ -365,6 +365,15 @@ def outcome_problem(row_id, outcome, question=""):
             "IDs; a question a gap or a decision stops is blocked by it instead")
 
 
+def blocked_problem(row_id, depends_on, blocked):
+    """Why a blocked question's Depends on doesn't name what blocks it, or None:
+    a gap, a decision, or a question of `blocked`, the IDs of the blocked ones."""
+    if ids(depends_on, "GD") or set(ids(depends_on, "Q")) & blocked:
+        return None
+    return (f"{row_id}: a blocked question names what blocks it in Depends on: the gap (G01), the decision "
+            "(D01) or the blocked question it needs (Q03)")
+
+
 def ids(text, letters):
     """The IDs in `text` of the kinds `letters` names, such as "Q" or "GD", in
     order."""
@@ -550,11 +559,6 @@ def recorded_ids(body):
     return set(RECORD_DEFINITION.findall(body)) | set(FINDING_HEADING.findall(body))
 
 
-def has_limits(row):
-    """Whether a source row names its access limits or what supersedes it."""
-    return row[5].strip().casefold() not in ("", "none")
-
-
 def cited_sources(body):
     """{source number: the findings whose Evidence line names it} in the ledger `body`."""
     cited = {}
@@ -577,6 +581,39 @@ def unrecorded_citations(values, body):
     doesn't record yet."""
     cited = {i for v in values for i in ID.findall(v)}
     return sorted(cited - recorded_ids(body), key=id_order)
+
+
+def group_problem(row):
+    """Why a source row's Group / evidence kind cell doesn't start with one of
+    GROUPS, or None."""
+    if group_of(row):
+        return None
+    return f"{row[0]}: Group / evidence kind starts with one of: {', '.join(GROUPS)}"
+
+
+def group_of(row):
+    """The group of GROUPS a source row's Group / evidence kind cell starts
+    with, or None."""
+    return next((g for g in GROUPS if row[1].strip().casefold().startswith(g)), None)
+
+
+def limits_problem(row):
+    """Why a source row's Access limits / superseded by cell is neither None nor
+    starts with LIMITED or SUPERSEDED, or None."""
+    if row[5].strip().casefold() in ("", "none") or limit_mark(row):
+        return None
+    return (f"{row[0]}: Access limits / superseded by is None, or starts with '{LIMITED}' or "
+            f"'{SUPERSEDED}', such as '{LIMITED} only lines 1-200 read'")
+
+
+def limit_mark(row):
+    """The report's mark for a source row's Access limits / superseded by
+    cell: "limited", "superseded", or None."""
+    value = row[5].strip().casefold()
+    for start, mark in ((LIMITED, "limited"), (SUPERSEDED, "superseded")):
+        if value.startswith(start.casefold()):
+            return mark
+    return None
 
 
 def areas_problem(row):

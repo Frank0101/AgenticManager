@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 from common import (CHANGELOGS_DIR, COMMENTS_DIR, META_FILE, PARENTS_FILE, PREVIOUS_SPRINT_FILE, PULL_REQUESTS_FILE,
                     PUNTED_ISSUES_FILE, RAW_DIR, REPORTS_FOLDER, SPRINT_FILE, SPRINT_ISSUES_FILE,
-                    SPRINT_REPORT_FILE, STATUSES_FILE, GH_UNAVAILABLE, GITHUB_FAILED, JiraClient, as_of, blocker_candidate_keys,
+                    SPRINT_REPORT_FILE, STATUSES_FILE, GITHUB_FAILED, PULLS_UNREAD, JiraClient, as_of, blocker_candidate_keys,
                     clear_folder, day_folder, gather, gh_available, history_fields, nested, output_folder, parse_ts,
                     project_of, pulls_by_ticket, read_events, report_label, report_timezone,
                     standard_issues, status_categories, stops_on_failure, write_json)
@@ -262,7 +262,7 @@ def main():
         pulls = pull_requests(client, standard_issues(
             sprint_issues + punted_issues), gh)
         log(f"{sum(map(len, pulls['tickets'].values()))} pull request(s) found" if gh
-            else f"{GH_UNAVAILABLE}, so pull requests weren't read")
+            else PULLS_UNREAD)
 
         project_key = project_key_of(args, sprint_issues + punted_issues)
         label = report_label(project_key, sprint.get("name"))

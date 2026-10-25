@@ -26,7 +26,7 @@ from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order, 
                                   parse_ts, plain_text, project_of, value_at)
 from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.failures import GITHUB_FAILED, stops_on_failure  # noqa: E402,F401
-from agentic_manager.github import GH_UNAVAILABLE, gh_available  # noqa: E402,F401
+from agentic_manager.github import PULLS_UNREAD, gh_available  # noqa: E402,F401
 from agentic_manager.ticket_pulls import pulls_by_ticket, read_events  # noqa: E402,F401
 
 # The skill's output folder, which holds the report folders (see output_folder.py).

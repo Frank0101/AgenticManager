@@ -55,7 +55,7 @@ COMPONENTS = table(COMPONENT_HEADER, [
                                  "🟨 Planned"),
                                 ("C04", "Embedding API (external product)", "⬜ Unverified"))])
 # The sources the report's references and evidence date come from: code read
-# on the day, and a ticket since replaced, so historical.
+# on the day, and a ticket since replaced, so superseded.
 SOURCES_READ = table(SOURCE_HEADER, [
     ["S01", "source_control", "[Search API](https://example.com/code)", "abc, 2026-10-05", "Routes read.", "None",
      "Implementation"],

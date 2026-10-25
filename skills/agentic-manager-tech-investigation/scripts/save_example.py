@@ -13,7 +13,7 @@ import json
 import os
 import shutil
 
-from common import (EXAMPLE_DESCRIPTION, KEPT_EXAMPLES, FOLDER_NAME, REPORT_SUFFIX, WHY_GOOD_LABEL, free_name, topic_of, investigation_dir, link_definitions, links, local_link, markdown,
+from common import (EXAMPLE_DESCRIPTION, KEPT_EXAMPLES, FOLDER_NAME, REPORT_SUFFIX, WHY_GOOD, description, free_name, topic_of, investigation_dir, link_definitions, links, local_link, markdown,
                     target, write_output_file)
 
 
@@ -33,10 +33,10 @@ def save(relative, note):
         os.makedirs(os.path.dirname(destination), exist_ok=True)
         shutil.copyfile(os.path.join(source, path), destination)
         copied.append(path)
-    description = (f"# {name}\n\n{WHY_GOOD_LABEL} {note.strip()}\n\n"
-                   f"The approved report: [{document}]({document}).\n")
+    text = description(name, {WHY_GOOD: note.strip()},
+                       f"The approved report: [{document}]({document}).")
     write_output_file(
-        FOLDER_NAME, f"{KEPT_EXAMPLES}/{name}/{EXAMPLE_DESCRIPTION}", description.encode("utf-8"))
+        FOLDER_NAME, f"{KEPT_EXAMPLES}/{name}/{EXAMPLE_DESCRIPTION}", text.encode("utf-8"))
     return {"example": os.path.join(folder, KEPT_EXAMPLES, name), "files": copied, "temporary": temporary}
 
 

@@ -14,7 +14,7 @@ import json
 import os
 import re
 
-from common import (CONTENT, FENCE, backtick_error, INVESTIGATION, TABLE_HEADINGS, inline_links, ledger_rows, FOLDER_NAME, HEADING, has_limits, HEADINGS, LEDGER, RECORD_DEFINITION,
+from common import (CONTENT, DISPLAY_DATE, FENCE, backtick_error, INVESTIGATION, TABLE_HEADINGS, inline_links, ledger_rows, FOLDER_NAME, HEADING, group_of, limit_mark, HEADINGS, LEDGER, RECORD_DEFINITION,
                     REPORT_SUFFIX, anchor_tag, autolink, headings, investigation_dir, link_definitions, markdown, read_json, table, topic_of, unlinked_backticks, unresolved_message, word_count, write_output_file)
 import check_report
 
@@ -241,7 +241,7 @@ def snapshot(content):
         assert match, "make_report checked the folder's name with topic_of"
         yy, mm, dd = match["date"].split("-")
         day = date(2000 + int(yy), int(mm), int(dd))
-    return f"{day.day} {day:%B %Y}"
+    return day.strftime(DISPLAY_DATE)
 
 
 def valid_day(text):
@@ -266,19 +266,19 @@ def key_decisions(content):
 
 def references(content):
     """Every source of the ledger with a link, by its group: code, tracker and
-    documentation. A source with access limits or a replacement is historical."""
+    documentation, each marked limited or superseded as its limits say."""
     lines = []
     for group, label in (("source_control", "Implementation and configuration"), ("workflow", "Delivery"),
                          ("documentation", "Vision, rationale and reported operational gaps")):
         entries = []
         for row in content.ledger.sources:
-            if len(row) < 6 or not row[1].strip().casefold().startswith(group):
+            if len(row) < 6 or group_of(row) != group:
                 continue
             reference = content.ledger.inlined(row[2].strip())
             if "](" not in reference:
                 continue
             entry = f"- {reference}" + \
-                (" (historical)" if has_limits(row) else "")
+                (f" ({mark})" if (mark := limit_mark(row)) else "")
             if entry not in entries:
                 entries.append(entry)
         lines += [f"**{label}**",

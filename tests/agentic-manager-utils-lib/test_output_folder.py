@@ -174,6 +174,18 @@ class DescriptionTest(unittest.TestCase):
                 self.assertEqual(
                     output_folder.read_description(path), expected)
 
+    def test_a_written_description_reads_back(self):
+        text = output_folder.description("A slide", {"Use for": "a cover", "Why it's good": "clear"},
+                                         "The slide: [slides.json](slides.json).")
+        self.assertEqual(text, "# A slide\n\n**Use for:** a cover\n\n**Why it's good:** clear\n\n"
+                               "The slide: [slides.json](slides.json).\n")
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, output_folder.EXAMPLE_DESCRIPTION)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+            self.assertEqual(output_folder.read_description(path),
+                             ("A slide", {"Use for": "a cover", "Why it's good": "clear"}))
+
 
 class TempRootTest(unittest.TestCase):
     def test_temp_root_is_in_the_system_temp_folder(self):

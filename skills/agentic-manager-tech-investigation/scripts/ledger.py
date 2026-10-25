@@ -16,13 +16,13 @@ import sys
 
 from common import (ID, ID_LETTERS, BOUNDARY_HEADER, CONNECTION_HEADER, DESIGN_TABLES, FLOW_HEADER, IDENTITY_HEADER, design_problem, JIRA_API, JIRA_GROUP, JiraClient, is_enabled, stops_on_failure, AREAS, BLOCKERS, BOUNDARY, CODE_STATUSES, claim_length_warning,
                     COMPONENT_HEADER, DECISION_HEADER, DEFINITION, DEPTHS, EVIDENCE_LINE, FILE_HEADER, FINDINGS,
-                    FINDING_FIELDS, FINDING_OPTIONAL, FINDING_START, FOLDER_NAME, GAP_FIX, GAP_HEADER, GROUPS, ID_ANCHOR,
+                    FINDING_FIELDS, FINDING_OPTIONAL, FINDING_START, FOLDER_NAME, GAP_FIX, GAP_HEADER, GROUPS, ID_ANCHOR, LIMITED, SUPERSEDED,
                     INLINE_LINK, LEDGER, LINKS, QUEUE_HEADER, QUEUE_TABLES, READ_DEPTHS,
                     REVIEW_NONE, REVIEW_QUESTION, REVIEW_STOPPED, ROW_START,
                     SOURCE_FINDINGS, SOURCE_HEADER, SOURCE_LINK_FIX, STATUSES, TABLE_HEADINGS, anchor_tag, anchored,
                     areas_of, areas_problem, autolink, backtick_error, cited_sources, free_name, coverage_material_missing,
                     depth_problem, finding_blocks, gap_problem, id_order, investigation_dir, ledger_rows,
-                    link_definitions, link_text, linked_ids, outcome_problem, read_in_full, recorded_ids, has_limits, ids, inline_links,
+                    link_definitions, link_text, linked_ids, outcome_problem, read_in_full, recorded_ids, blocked_problem, group_of, group_problem, limit_mark, limits_problem, ids, inline_links,
                     h2_span, section_span, slug, source_reference_missing, status_problem,
                     strip_anchors, table_cells, table_row, ticket_sites, unlinked_backticks, unread_components,
                     unread_message, unrecorded_citations, unresolved_message, upgraded_tickets, write_output_file)
@@ -74,7 +74,8 @@ ROW_EXAMPLES = {
 }
 # What each table is for, printed by `help` under its columns.
 QUEUE_PURPOSE = ("the research questions: every one still to answer, by state. A blocked one names the gap "
-                 "or decision that blocks it; a completed one, the findings, decision or gap that answer it")
+                 "or decision that blocks it, or the blocked question it needs; a completed one, the findings "
+                 "that answer it")
 PURPOSES = {
     **{table: QUEUE_PURPOSE for table in QUEUE_TABLES},
     "sources": "every source read, with an exact reference: a link pinned to a revision for code, the exact query "
@@ -94,8 +95,13 @@ PURPOSES = {
 ALLOWED = {
     **{table: {"Depends on": "None, or the open questions it needs, such as Q04, Q07: ledger.py next returns it "
                "once they are all completed"} for table in QUEUE_TABLES},
-    "sources": {"Exact reference": 'a link at the pinned revision, or for a search {"query": "<the exact query>"}, '
+    "sources": {"Group / evidence kind": "starts with one of: " + ", ".join(GROUPS),
+                "Exact reference": 'a link at the pinned revision, or for a search {"query": "<the exact query>"}, '
                                    "which is written as the query between backticks",
+                "Access limits / superseded by": f"None, or starts with '{LIMITED}' (such as '{LIMITED} only "
+                f"lines 1-200 read') or '{SUPERSEDED}' (such as '{SUPERSEDED} "
+                "the 2026 design'); the report marks the source as limited "
+                "or superseded",
                 "Areas": "comma separated, from: " + ", ".join(AREAS)},
     "gaps": {"Areas": "comma separated, from: " + ", ".join(AREAS),
              "Blocked by": "starts with one of: " + "; ".join(BLOCKERS)
@@ -292,8 +298,8 @@ def brief(lines):
     out += [f"## {BOUNDARY}", "",
             plain("\n".join(lines[start + 1:end]).strip()), ""]
     out += ["## Sources: exact references", ""]
-    # A source's limits or what supersedes it decides a historical reference.
-    out += [f"{row[0]}: {as_written(lines, row[2])}" + (f" ({plain(row[5])})" if has_limits(row) else "")
+    # A source's limits or what supersedes it, in the agent's words.
+    out += [f"{row[0]}: {as_written(lines, row[2])}" + (f" ({plain(row[5])})" if limit_mark(row) else "")
             for row in table_rows(lines, "sources")] or ["None."]
     blocks, _, _ = findings_of(lines)
     out += ["", FINDINGS_HEADING, ""]
@@ -463,8 +469,7 @@ def coverage(lines):
     tally = {a: {g: 0 for g in GROUPS} for a in AREAS}
     untagged = []
     for row in sources:
-        group = next(
-            (g for g in GROUPS if row[1].casefold().startswith(g)), None)
+        group = group_of(row)
         tagged = [a for a in areas_of(row) if a in AREAS]
         if group and not tagged:
             untagged.append(row[0])
@@ -912,11 +917,14 @@ def check_cells(lines, name, row):
             coverage_material_missing(row) and f"for {row[0]}: link the material read in Material")
     elif name == "queue-completed":
         problem = outcome_problem(row[0], row[-1], row[2])
+    elif name == "queue-blocked":
+        problem = blocked_problem(
+            row[0], row[4], {r[0] for r in table_rows(lines, "queue-blocked")})
     elif name == "gaps":
         problem = areas_problem(row) or (
             (blocked := gap_problem(row)) and f"{blocked}. {GAP_FIX}")
     elif name == "sources":
-        problem = areas_problem(row) or (
+        problem = group_problem(row) or limits_problem(row) or areas_problem(row) or (
             source_reference_missing(row) and f"{row[0]}: {SOURCE_LINK_FIX}")
     if problem:
         raise SystemExit(f"{name} {problem}")

@@ -55,7 +55,7 @@ class MakeReportTest(unittest.TestCase):
         self.make()
         text = self.report()
         for expected in [
-            "# Acme Search\n\nEvidence snapshot: 5 October 2026. Code links pin inspected commits;",
+            "# Acme Search\n\nEvidence snapshot: 05/10/2026. Code links pin inspected commits;",
             "These items describe implications of the linked evidence.\n\n"
             "| Decision or risk | Why it matters | Established position | Evidence |\n| --- | --- | --- | --- |\n"
             "| Index choice | Affects cost | Unresolved | [proposal](https://example.com/p)",
@@ -67,7 +67,7 @@ class MakeReportTest(unittest.TestCase):
             "not select an option.\n\n| Decision or gap | Why it matters | Established position | Evidence |\n"
             "| --- | --- | --- | --- |\n| Index | Sets the cost | Unresolved | [gap](ledger.md#evidence-gaps) |",
             "\n\n## References\n\n**Implementation and configuration**\n\n- [Search API](https://example.com/code)\n\n",
-            "**Delivery**\n\n- [PROJ-1](https://example.com/PROJ-1) (historical)",
+            "**Delivery**\n\n- [PROJ-1](https://example.com/PROJ-1) (superseded)",
             "**Vision, rationale and reported operational gaps**\n\nNone in the inspected sources.",
             "The [research ledger](ledger.md) holds the full validation trail",
         ]:

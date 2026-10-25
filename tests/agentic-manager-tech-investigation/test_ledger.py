@@ -88,9 +88,9 @@ class LedgerTest(unittest.TestCase):
         self.assertEqual(self.run_ledger(
             "next-id", "--kind", "S")["id"], "S01")
         self.run_ledger("row", "--table", "sources", "--id",
-                        "S01", cells=["a", "[x][x]", "c", "d", "e", "Architecture"])
+                        "S01", cells=["source_control", "[x][x]", "c", "d", "None", "Architecture"])
         self.run_ledger("row", "--table", "sources", "--id",
-                        "S02", cells=["a", "[x][x]", "c", "d", "e", ""])
+                        "S02", cells=["source_control", "[x][x]", "c", "d", "None", ""])
         self.run_ledger("row", "--table", "gaps", "--id",
                         "G01", cells=["a", "b", "c", "No access", "d", "e", "Delivery"])
         for kind, expected in (("S", "S03"), ("G", "G02"), ("D", "D01"), ("Q", "Q01"), ("C", "C01"), ("F", "F01")):
@@ -99,13 +99,13 @@ class LedgerTest(unittest.TestCase):
                     "next-id", "--kind", kind)["id"], expected)
 
     def test_rows_are_added_replaced_and_sorted(self):
-        for row_id, kind in (("S10", "x"), ("S02", "y"), ("S10", "z")):
+        for row_id, kind in (("S10", "workflow"), ("S02", "documentation"), ("S10", "source_control")):
             self.run_ledger("row", "--table", "sources", "--id",
-                            row_id, cells=[kind, "[r][r]", "v", "m", "l", ""])
+                            row_id, cells=[kind, "[r][r]", "v", "m", "None", ""])
         self.assertEqual(
             self.rows("## Revisions and source register"), ["S02", "S10"])
-        self.assertIn("| S10 | z |", self.plain())
-        self.assertNotIn("| S10 | x |", self.plain())
+        self.assertIn("| S10 | source_control |", self.plain())
+        self.assertNotIn("| S10 | workflow |", self.plain())
 
     def test_a_table_is_created_where_there_was_a_placeholder(self):
         self.assertIn("## Open decisions\n\nNone yet.", self.text())
@@ -260,7 +260,7 @@ class LedgerTest(unittest.TestCase):
                  (["row", "--table", "sources"], ["a"], "needs --id"),
                  (["row", "--table", "file-coverage",
                   "--id", "S01"], ["a"], "has no IDs"),
-                 (["row", "--table", "sources", "--id", "S01"], ["a", "acme/api", "c", "d", "e", ""],
+                 (["row", "--table", "sources", "--id", "S01"], ["source_control", "acme/api", "c", "d", "None", ""],
                   "S01: link the Exact reference"),
                  (["row", "--table", "file-coverage"], ["S01", "server.py", "full"],
                   "for S01: link the material read"),
@@ -369,7 +369,7 @@ class LedgerTest(unittest.TestCase):
             self.assertEqual(self.text(), before)
 
     def test_move_a_queue_row_between_subsections(self):
-        self.records("F01")
+        self.records("F01", "G01")
         self.run_ledger("row", "--table", "queue-ready",
                         "--id", "Q01", cells=QUEUE_ROW)
         self.run_ledger("row", "--table", "queue-ready",
@@ -379,7 +379,11 @@ class LedgerTest(unittest.TestCase):
         self.assertEqual(self.rows("### Ready"), ["Q02"])
         self.assertEqual(self.rows("### Completed"), ["Q01"])
         self.assertIn("| [F01](#f01) |", self.text())
-        self.run_ledger("move", "--id", "Q02", "--to", "blocked")
+        # A blocked question names what blocks it.
+        with self.assertRaisesRegex(SystemExit, "Q02: a blocked question names what blocks it"):
+            self.run_ledger("move", "--id", "Q02", "--to", "blocked")
+        self.run_ledger("move", "--id", "Q02", "--to",
+                        "blocked", "--set", "Depends on=G01")
         self.assertEqual(self.rows("### Ready"), [])
         self.assertIn("### Ready", self.text())
         ready = self.text().split(
@@ -466,7 +470,7 @@ class LedgerTest(unittest.TestCase):
     def test_rows_findings_and_links_are_removed(self):
         for row_id in ("S01", "S02"):
             self.run_ledger("row", "--table", "sources", "--id",
-                            row_id, cells=["a", "[x][x]", "c", "d", "e", ""])
+                            row_id, cells=["source_control", "[x][x]", "c", "d", "None", ""])
         self.run_ledger("remove", "--table", "sources", "--id", "S01")
         self.assertEqual(
             self.rows("## Revisions and source register"), ["S02"])
@@ -512,7 +516,7 @@ class LedgerTest(unittest.TestCase):
     def test_sources_take_their_findings_from_the_evidence_lines(self):
         for row_id in ("S01", "S02", "S03"):
             self.run_ledger("row", "--table", "sources", "--id",
-                            row_id, cells=["a", "[x][x]", "d", "Read.", "e", ""])
+                            row_id, cells=["source_control", "[x][x]", "d", "Read.", "None", ""])
         self.finding("One", evidence="S01 and S02: [doc][doc]")
         self.finding("Two", evidence="S02: [doc][doc]")
         self.run_ledger("sync-sources")
@@ -533,12 +537,12 @@ class LedgerTest(unittest.TestCase):
     def test_removing_a_record_still_cited_is_refused(self):
         # Removing it would leave a citation of a record that isn't there.
         self.run_ledger("row", "--table", "sources", "--id", "S01",
-                        cells=["a", "[x][x]", "d", "Read.", "e", ""])
+                        cells=["source_control", "[x][x]", "d", "Read.", "None", ""])
         self.finding("One", evidence="S01: [doc][doc]")
         self.run_ledger("row", "--table", "components", "--id", "C01",
                         cells=["n", "r", "p", "🟨 Planned", "d", "F01", "next", "None"])
         self.run_ledger("row", "--table", "sources", "--id", "S02",
-                        cells=["a", "[y][y]", "d", "Read.", "e", ""])
+                        cells=["source_control", "[y][y]", "d", "Read.", "None", ""])
         self.run_ledger("text", "--section", "Boundary",
                         text="Searched as S02 says.")
         before = self.text()
@@ -559,10 +563,10 @@ class LedgerTest(unittest.TestCase):
     def test_inline_links_become_reference_links(self):
         # A URL keeps one key, however many times it is written inline.
         self.run_ledger("row", "--table", "sources", "--id", "S01", cells=[
-            "a", "[Spec doc](https://example.com/spec)", "d",
-            "Read [Spec doc](https://example.com/spec) and [Other](https://example.com/spec).", "e", ""])
+            "documentation", "[Spec doc](https://example.com/spec)", "d",
+            "Read [Spec doc](https://example.com/spec) and [Other](https://example.com/spec).", "None", ""])
         self.run_ledger("row", "--table", "sources", "--id", "S02", cells=[
-            "a", "[Spec](https://example.com/other)", "d", "Read.", "e", ""])
+            "documentation", "[Spec](https://example.com/other)", "d", "Read.", "None", ""])
         text = self.text()
         self.assertIn("| [Spec doc][spec-doc] |", text)
         self.assertIn("[Other][spec-doc]", text)
@@ -684,10 +688,14 @@ class LedgerTest(unittest.TestCase):
 
     def test_areas_are_checked_and_counted(self):
         for row_id, group, areas in (("S01", "documentation: vision", "Architecture, Delivery"),
-                                     ("S02", "source_control: code", "Architecture"),
-                                     ("S03", "reported context", "")):
+                                     ("S02", "source_control: code", "Architecture")):
             self.run_ledger("row", "--table", "sources", "--id", row_id,
-                            cells=[group, "[x][x]", "d", "Read.", "e", areas])
+                            cells=[group, "[x][x]", "d", "Read.", "None", areas])
+        # A source of no group would drop out of the counts and the References.
+        with self.assertRaisesRegex(SystemExit, "S03: Group / evidence kind starts with one of: "
+                                    "source_control, workflow, documentation"):
+            self.run_ledger("row", "--table", "sources", "--id", "S03",
+                            cells=["code", "[x][x]", "d", "Read.", "e", ""])
         self.run_ledger("row", "--table", "gaps", "--id", "G01",
                         cells=["a", "b", "c", "No access", "d", "e", "Architecture"])
         status = self.read_ledger("status")
@@ -697,11 +705,11 @@ class LedgerTest(unittest.TestCase):
             "Delivery: 0 / 0 / 1, 0 gaps  (none from code, tracker)", status)
         self.assertNotIn("sources with no Areas", status)
         self.run_ledger("row", "--table", "sources", "--id", "S04",
-                        cells=["workflow: ticket", "[x][x]", "d", "Read.", "e", ""])
+                        cells=["workflow: ticket", "[x][x]", "d", "Read.", "None", ""])
         self.assertIn("sources with no Areas: S04", self.read_ledger("status"))
         with self.assertRaisesRegex(SystemExit, "Areas must be some of.*not Billing"):
             self.run_ledger("row", "--table", "sources", "--id", "S05",
-                            cells=["workflow", "[x][x]", "d", "Read.", "e", "Delivery, Billing"])
+                            cells=["workflow", "[x][x]", "d", "Read.", "None", "Delivery, Billing"])
 
     def test_reading_commands_show_find_and_summarise(self):
         status = self.read_ledger("status")
@@ -757,9 +765,9 @@ class LedgerTest(unittest.TestCase):
         # A ticket links once the ledger links one of its project, else it is code;
         # a pull request links from a page of its host, linked once.
         self.run_ledger("row", "--table", "sources", "--id", "S01", cells=[
-            "workflow", "[PROJ-1](https://acme.example/browse/PROJ-1)", "d", "Read.", "e", ""])
+            "workflow", "[PROJ-1](https://acme.example/browse/PROJ-1)", "d", "Read.", "None", ""])
         self.run_ledger("row", "--table", "sources", "--id", "S02", cells=[
-            "source_control", "[api](https://git.example/acme/api/tree/abc)", "d", "Read.", "e", ""])
+            "source_control", "[api](https://git.example/acme/api/tree/abc)", "d", "Read.", "None", ""])
         cases = [("PROJ-7 is open", "[PROJ-7][proj-7] is open",
                   "[proj-7]: https://acme.example/browse/PROJ-7"),
                  ("OPS-1 and SHA-256", "`OPS-1` and `SHA-256`", None),
@@ -794,12 +802,12 @@ class LedgerTest(unittest.TestCase):
         # A search's query is the one backticked reference allowed without a link,
         # and is given as its own field, so no backtick is typed in a shell.
         self.run_ledger("row", "--table", "sources", "--id", "S01",
-                        cells=["a", {"query": 'gh search code "acme api"'}, "c", "d", "e", ""])
+                        cells=["source_control", {"query": 'gh search code "acme api"'}, "c", "d", "None", ""])
         self.assertIn('| `gh search code "acme api"` |', self.text())
         for query in ({"query": ""}, {"query": "a `b`"}, {"query": "a", "url": "b"}):
             with self.subTest(query=query), self.assertRaisesRegex(SystemExit, "is {\"query\""):
                 self.run_ledger("row", "--table", "sources", "--id",
-                                "S02", cells=["a", query, "c", "d", "e", ""])
+                                "S02", cells=["source_control", query, "c", "d", "None", ""])
 
     def test_findings_resting_on_a_partial_read_are_listed(self):
         # A finding whose evidence names a file its source read only in part is
@@ -865,7 +873,7 @@ class LedgerTest(unittest.TestCase):
                 "a", "b", "c", "Waiting on decision (D01)", "S02", "e", ""]},
             {"table": "decisions", "id": "D01",
                 "cells": ["a", "G01", "c", "d", "e"]},
-            {"table": "sources", "id": "S02", "cells": ["a", "[x](https://example.com/x)", "c", "d", "e", ""]}])
+            {"table": "sources", "id": "S02", "cells": ["documentation", "[x](https://example.com/x)", "c", "d", "None", ""]}])
         self.assertEqual(self.rows("## Evidence gaps"), ["G01"])
 
     def test_a_ticket_written_as_code_is_linked_once_its_project_is(self):
@@ -873,16 +881,16 @@ class LedgerTest(unittest.TestCase):
                         text="PROJ-7 is open")
         self.assertIn("\n`PROJ-7` is open\n", self.text())
         self.run_ledger("row", "--table", "sources", "--id", "S01", cells=[
-            "workflow", "[PROJ-1](https://acme.example/browse/PROJ-1)", "d", "Read.", "e", ""])
+            "workflow", "[PROJ-1](https://acme.example/browse/PROJ-1)", "d", "Read.", "None", ""])
         self.assertIn("\n[PROJ-7][proj-7] is open\n", self.text())
         self.assertIn(
             "[proj-7]: https://acme.example/browse/PROJ-7", self.text())
 
     def test_every_recorded_id_is_anchored_and_its_citations_link_to_it(self):
         self.run_ledger("row", "--table", "sources", "--id", "S01", cells=[
-            "workflow", "[PROJ-1](https://acme.example/browse/PROJ-1)", "d", "Read.", "e", ""])
+            "workflow", "[PROJ-1](https://acme.example/browse/PROJ-1)", "d", "Read.", "None", ""])
         self.run_ledger("row", "--table", "sources", "--id", "S02", cells=[
-            "workflow", "[PROJ-2](https://acme.example/browse/PROJ-2)", "d", "Read.", "e", ""])
+            "workflow", "[PROJ-2](https://acme.example/browse/PROJ-2)", "d", "Read.", "None", ""])
         self.finding("Search is slow", evidence="S01 and S02")
         text = self.text()
         self.assertIn('| <a id="s01"></a>S01 | workflow |', text)
@@ -1013,7 +1021,7 @@ class LedgerTest(unittest.TestCase):
         folder = Path(self.folder)
         cells, fields, text = folder / "row.json", folder / \
             "finding.json", folder / "resume.txt"
-        cells.write_text(json.dumps(["a", "[x](https://example.com/x)", "d", "It's \"quoted\".", "e", ""]),
+        cells.write_text(json.dumps(["documentation", "[x](https://example.com/x)", "d", "It's \"quoted\".", "None", ""]),
                          encoding="utf-8")
         fields.write_text(json.dumps({"title": "From a file", "Claim": "c", "Evidence": "S01",
                                       "Validation and limits": "v"}), encoding="utf-8")

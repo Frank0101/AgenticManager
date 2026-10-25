@@ -21,7 +21,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_report  # noqa: E402
-from common import HEADINGS  # noqa: E402
+from common import HEADINGS, SOURCE_HEADER, TABLE_HEADINGS, table  # noqa: E402
 from init_investigation import ledger_skeleton  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from investigation_fixture import with_queue  # noqa: E402
@@ -264,20 +264,20 @@ class CheckReportTest(unittest.TestCase):
                   "| --- | --- | --- | --- | --- | --- | --- |\n")
         coverage = "### File reading coverage\n\n| Source | Material | Depth |\n| --- | --- | --- |\n"
         cases = [
-            ("linked rows", "| S01 | source_control / implementation | [repo](https://github.com/acme/app/tree/abc123) | abc123 | x | y | Implementation |\n"
-             "| S02 | source_control / search | `gh search code --repo acme/app PROJ-1` | today | x | y | Implementation |\n",
+            ("linked rows", "| S01 | source_control / implementation | [repo](https://github.com/acme/app/tree/abc123) | abc123 | x | None | Implementation |\n"
+             "| S02 | source_control / search | `gh search code --repo acme/app PROJ-1` | today | x | None | Implementation |\n",
              "| S01 | [`a.md`](https://github.com/acme/app/blob/abc123/a.md) | Full |\n", None),
-            ("a search described in words", "| S01 | source_control / search | a GitHub code search | today | x | y | Implementation |\n",
+            ("a search described in words", "| S01 | source_control / search | a GitHub code search | today | x | None | Implementation |\n",
              "| S01 | [`a.md`](https://github.com/acme/app/blob/abc123/a.md) | Full |\n", "register rows without a link"),
-            ("an unlinked source", "| S01 | source_control / implementation | acme/app | abc123 | x | y | Implementation |\n",
+            ("an unlinked source", "| S01 | source_control / implementation | acme/app | abc123 | x | None | Implementation |\n",
              "| S01 | [`a.md`](https://github.com/acme/app/blob/abc123/a.md) | Full |\n", "register rows without a link"),
-            ("an unlinked file", "| S01 | source_control / implementation | [repo](https://github.com/acme/app/tree/abc123) | abc123 | x | y | Implementation |\n",
+            ("an unlinked file", "| S01 | source_control / implementation | [repo](https://github.com/acme/app/tree/abc123) | abc123 | x | None | Implementation |\n",
              "| S01 | `a.md` | Full |\n", "File reading coverage rows without a link"),
             # Rows as ledger.py writes them: anchored IDs and linked citations.
-            ("an anchored search", '| <a id="s02"></a>S02 | source_control / search | `gh search code --repo acme/app PROJ-1` | today | x | y | Implementation |\n',
+            ("an anchored search", '| <a id="s02"></a>S02 | source_control / search | `gh search code --repo acme/app PROJ-1` | today | x | None | Implementation |\n',
              "| [S02](#s02) | [`a.md`](https://github.com/acme/app/blob/abc123/a.md) | Full |\n", None),
             ("a linked citation with no material link",
-             '| <a id="s01"></a>S01 | source_control / implementation | [repo](https://github.com/acme/app/tree/abc123) | abc123 | x | y | Implementation |\n',
+             '| <a id="s01"></a>S01 | source_control / implementation | [repo](https://github.com/acme/app/tree/abc123) | abc123 | x | None | Implementation |\n',
              "| [S01](#s01) | a.md | Full |\n", "File reading coverage rows without a link to the material read: S01"),
         ]
         for name, register, files, expected in cases:
@@ -345,6 +345,32 @@ class CheckReportTest(unittest.TestCase):
                     if expected:
                         self.assertEqual(
                             sum("without a link" in e and expected in e for e in result["errors"]), 2, result)
+
+    def test_handover_rechecks_blocked_questions_and_sources(self):
+        # A ledger edited without the script is checked again at handover.
+        def sources(group, limits):
+            rows = [
+                ["S01", group, "[x](https://example.com/x)", "d", "Read.", limits, "Implementation"]]
+            empty = f"{TABLE_HEADINGS['sources']}\n\n{table(SOURCE_HEADER, [])}"
+            assert empty in LEDGER
+            return LEDGER.replace(empty, f"{TABLE_HEADINGS['sources']}\n\n{table(SOURCE_HEADER, rows)}")
+        # name: (ledger, expected problem, or None)
+        cases = [("allowed sources", sources("workflow", "Limited: one page read"), None),
+                 ("a source of no group", sources("code", "None"),
+                  "S01: Group / evidence kind starts with"),
+                 ("free text limits", sources("workflow", "one page read"),
+                  "S01: Access limits / superseded by is None, or starts with"),
+                 ("a question blocked by nothing", with_queue(LEDGER, "Blocked", [
+                     ["Q09", "Start", "Read billing", "Code", "None", "—"]]),
+                  "Q09: a blocked question names what blocks it")]
+        for name, ledger, expected in cases:
+            with self.subTest(name):
+                problems = check_report.closing_problems(ledger)
+                if expected is None:
+                    self.assertEqual(problems, [])
+                else:
+                    self.assertTrue(
+                        any(expected in p for p in problems), problems)
 
     def test_handover_closing_rules(self):
         # A completed question names its answer; a component's status is an allowed one, and one claiming

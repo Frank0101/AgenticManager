@@ -95,6 +95,10 @@ class HelpersTest(unittest.TestCase):
         for base, key, expected in cases:
             with self.subTest(key=key):
                 self.assertEqual(jira.browse_url(base, key), expected)
+                # BROWSE_URL reads back the site and the project.
+                match = jira.BROWSE_URL.fullmatch(expected)
+                self.assertEqual(match and match.groups(),
+                                 (base, key.split("-")[0]))
 
     def test_key_order(self):
         keys = ["PROJ-10", "ABC-3", "PROJ-2", "PROJ-x"]
@@ -563,8 +567,9 @@ class ClientTest(unittest.TestCase):
     def test_batched_field_changes_an_issue_jira_has_none_of(self):
         # An issue left without an entry that the search by id doesn't find
         # either is Jira's answer: no changes, and why, worded as issue()
-        # words it. The search asks only for those issues, a batch at a
-        # time, and isn't made when every issue has an entry.
+        # words it. The changelogs are asked for a batch of issues at a time;
+        # the search asks only for the issues left out, a batch at a time, and
+        # isn't made when every issue has an entry.
         FakeJira.routes[self.MYSELF] = self.ZONE
         FakeJira.routes[self.SEARCH] = self.search_by_id("2", "4")
         why = "Jira has no such ticket, or this account can't see it"
@@ -584,24 +589,12 @@ class ClientTest(unittest.TestCase):
                 self.assertEqual(list(changes), [i["key"]
                                  for i in issues if i["key"] not in gone])
                 self.assertEqual(self.searches(), searches)
+                self.assertEqual([body["issueIdsOrKeys"] for _, body in self.batch_requests()],
+                                 [["1", "2"], ["3", "4"], ["5"]])
+                self.assertTrue(
+                    all(len(changes[f"PROJ-{i}"]) == 3 for i in logged))
         _, unread = self.client.issue("PROJ-9", ["summary"])
         self.assertEqual(unread, f"PROJ-9: {why}")
-
-    def test_batched_field_changes_ask_for_a_batch_of_issues_at_a_time(self):
-        def answer(body):
-            return {"issueChangeLogs": [{"issueId": issue_id, "changeHistories": self.histories()}
-                                        for issue_id in body["issueIdsOrKeys"]]}
-        FakeJira.routes[self.BATCH] = answer
-        FakeJira.routes[self.MYSELF] = self.ZONE
-        issues = [{"id": str(n), "key": f"PROJ-{n}"} for n in range(1, 6)]
-        with mock.patch.object(batch, "BATCH_SIZE", 2):
-            changes, gone = self.client.batched_field_changes(
-                issues, self.TRACKED)
-        self.assertEqual(gone, {})
-        self.assertEqual([body["issueIdsOrKeys"] for _, body in self.batch_requests()],
-                         [["1", "2"], ["3", "4"], ["5"]])
-        self.assertEqual(list(changes), [f"PROJ-{n}" for n in range(1, 6)])
-        self.assertTrue(all(len(c) == 3 for c in changes.values()))
 
     def test_batched_field_changes_times_and_order(self):
         # The batched read gives times in milliseconds: they are written as the

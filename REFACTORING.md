@@ -8,6 +8,8 @@ Fix only real issues: something wrong, unclear, inconsistent with another file, 
 
 After changing anything, read the pass's files again in full, not only what you changed: a change that is right locally can contradict another file. A pass ends when a full read finds no real issue; it never keeps going to find something small.
 
+The reading can be split across reviewers working in parallel, such as one for the Markdown and one per skill. Check every issue they report against the code yourself before acting on it, and drop any that isn't real. Prove a fixed bug with a test that fails on the code before the fix.
+
 A change that alters what a skill does for the user, or what its output contains, is a behavior change: describe it and ask before making it. Fix everything else directly. When the developer's answer states a general principle, consider adding it to AGENTS.md, so the next run applies it to every file.
 
 ## 1. Markdown
@@ -49,4 +51,9 @@ Format every file you changed, Markdown included (see Formatting in AGENTS.md).
 
 ## 5. Report
 
-Tell the developer, file by file, what you changed and why, in a line each. Then list what you noticed but left alone because it needs their decision, such as a behavior change. Don't commit.
+Tell the developer, file by file, what you changed and why, in a line each. Then list, numbered:
+
+- each behavior change, with a concrete case of what goes wrong today and the fix you propose;
+- each real issue you left alone, such as one whose fix gains little, and why.
+
+When the developer asks about an item, explain it plainly: what it is, the fix and why you left it, with your recommendation. Then wait for their answer. Don't commit.

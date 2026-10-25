@@ -166,12 +166,47 @@ class ReferencesTest(unittest.TestCase):
                   "🟦 In development (on a branch)", True),
                  (common.status_problem, "Implemented", False),
                  (common.depth_problem, "partial: lines 1-70 of 474", True),
-                 (common.depth_problem, "Full", True), (common.depth_problem, "skimmed", False)]
+                 (common.depth_problem, "Full",
+                  True), (common.depth_problem, "skimmed", False)]
         for function, value, accepted in cases:
             with self.subTest(function=function.__name__, value=value):
                 problem = function(
                     value) if function is common.depth_problem else function("X01", value)
                 self.assertEqual(problem is None, accepted, problem)
+
+    def test_a_blocked_question_names_what_blocks_it(self):
+        # Q03 is blocked; Q04 is still open, so it blocks nothing.
+        # (Depends on, accepted)
+        cases = [("G01", True), ("D02", True), ("Q03", True),
+                 ("Q04", False), ("None", False), ("", False)]
+        for depends_on, accepted in cases:
+            with self.subTest(depends_on):
+                problem = common.blocked_problem("Q09", depends_on, {"Q03"})
+                self.assertEqual(problem is None, accepted, problem)
+
+    def test_a_sources_group_is_one_of_the_groups(self):
+        # (Group / evidence kind, group, accepted)
+        cases = [("source_control", "source_control", True), ("documentation: vision", "documentation", True),
+                 ("Workflow", "workflow", True), ("code", None, False), ("", None, False)]
+        for value, group, accepted in cases:
+            with self.subTest(value):
+                row = ["S01", value,
+                       "[x](https://example.com/x)", "d", "Read.", "None", ""]
+                self.assertEqual(common.group_of(row), group)
+                self.assertEqual(common.group_problem(row) is None, accepted)
+
+    def test_a_sources_limits_give_its_mark(self):
+        # (Access limits / superseded by, mark, accepted)
+        cases = [("None", None, True), ("", None, True),
+                 ("Limited: only lines 1-200 read", "limited", True),
+                 ("superseded by the 2026 design", "superseded", True),
+                 ("only lines 1-200 read", None, False)]
+        for value, mark, accepted in cases:
+            with self.subTest(value):
+                row = ["S01", "documentation",
+                       "[x](https://example.com/x)", "d", "Read.", value, ""]
+                self.assertEqual(common.limit_mark(row), mark)
+                self.assertEqual(common.limits_problem(row) is None, accepted)
 
     def test_unread_components(self):
         # A component claiming code needs coverage, at a reading depth, of its
