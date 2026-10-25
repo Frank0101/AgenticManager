@@ -6,7 +6,7 @@ import os
 import tempfile
 from unittest import mock
 
-from common import COMPONENT_HEADER, FINDING_FIELDS, QUEUE_HEADER, SOURCE_HEADER, table
+from common import COMPONENT_HEADER, FINDING_HEADER, QUEUE_HEADER, REVIEW_HEADER, SOURCE_HEADER, anchored, table
 from agentic_manager import config, output_folder
 from init_investigation import ledger_skeleton
 
@@ -23,6 +23,13 @@ def with_queue(ledger, subsection, rows):
     empty = f"### {subsection}\n\n{table(QUEUE_HEADER, [])}\n\nNone."
     assert empty in ledger, subsection
     return ledger.replace(empty, f"### {subsection}\n\n{table(QUEUE_HEADER, rows)}", 1)
+
+
+def with_reviews(ledger, rounds):
+    """`ledger` with its empty reviews section holding `rounds`, as [round, raised]."""
+    empty = "## Independent reviews\n\nNone yet."
+    assert empty in ledger
+    return ledger.replace(empty, "## Independent reviews\n\n" + table(REVIEW_HEADER, rounds), 1)
 
 
 def words(count):
@@ -43,8 +50,9 @@ CONTENT = {
                                "evidence": "[gap](ledger:G01)"}],
 }
 
-FINDING = ("### F01 — Search API is merged\n\n"
-           + "\n".join(f"**{field}:** text." for field in FINDING_FIELDS))
+# The fixture's one finding, read in the code source.
+FINDINGS = table(FINDING_HEADER, [
+    [anchored("F01"), "The search API is merged.", "S01", "Routes read in full."]])
 # The fixture's components.
 COMPONENTS = table(COMPONENT_HEADER, [
     [ident, name, "Role", "—", status, "None", "G01" if status.startswith("⬜") else "F01", "Unchanged",
@@ -54,21 +62,21 @@ COMPONENTS = table(COMPONENT_HEADER, [
                                 ("C03", "Publish job (job)",
                                  "🟨 Planned"),
                                 ("C04", "Embedding API (external product)", "⬜ Unverified"))])
-# The sources the report's references and evidence date come from: code read
-# on the day, and a ticket since replaced, so superseded.
+# The sources the report's references come from: code read in full, a ticket
+# replaced by a newer one, so superseded, and the newer one read in part, so
+# limited. None records a date, so the evidence date is the investigation's.
 SOURCES_READ = table(SOURCE_HEADER, [
-    ["S01", "source_control", "[Search API](https://example.com/code)", "abc, 2026-10-05", "Routes read.", "None",
-     "Implementation"],
-    ["S02", "workflow", "[PROJ-1](https://example.com/PROJ-1)", "read 2026-10-04", "Read in full.",
-     "Superseded by a newer ticket", "Delivery"]])
-LEDGER = (with_queue(ledger_skeleton("Acme-Search"), "Completed", [
-    ["Q01", "Start", "Read code", "Code", "—", "F01"],
-    ["Q02", "Independent review", "Independent review of the ledger", "Subagent", "None", "No issue raised"]])
-    .replace(table(SOURCE_HEADER, []), SOURCES_READ, 1)
-    .replace("## Findings and validation chains\n\nNone yet.",
-             "## Findings and validation chains\n\n" + FINDING)
-    .replace("## Component inventory and evolution\n\nNone yet.",
-             "## Component inventory and evolution\n\n" + COMPONENTS)
+    ["S01", "code",
+        "[Search API](https://example.com/code)", "abc", "full", "F01", "None"],
+    ["S02", "tracker",
+        "[PROJ-1](https://example.com/PROJ-1)", "Done", "full", "None", "S03"],
+    ["S03", "tracker", "[PROJ-2](https://example.com/PROJ-2)", "In progress", "partial: description only",
+     "None", "None"]])
+LEDGER = (with_reviews(with_queue(ledger_skeleton("Acme-Search"), "Completed", [
+    ["Q01", "Start", "Read code", "—", "F01"]]), [["1", "No issue raised"]])
+    .replace("## Sources\n\nNone yet.", "## Sources\n\n" + SOURCES_READ, 1)
+    .replace("## Findings\n\nNone yet.", "## Findings\n\n" + FINDINGS)
+    .replace("### Components\n\nNone yet.", "### Components\n\n" + COMPONENTS)
     .replace("## Evidence gaps\n\nNone yet.",
              "## Evidence gaps\n\n- **G01** Billing callers unverified."))
 

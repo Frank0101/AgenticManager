@@ -109,6 +109,38 @@ class TextTest(unittest.TestCase):
                 self.assertEqual(text.inline_links(
                     written, definitions), expected)
 
+    def test_same_document(self):
+        # (one link, another, whether they reach the same document)
+        page = "0123456789abcdef0123456789abcdef"
+        cases = [(f"https://app.notion.com/p/{page}?pvs=204", f"https://www.notion.so/Search-Design-{page}", True),
+                 (f"https://www.notion.so/{page}",
+                  "https://notion.so/01234567-89ab-cdef-0123-456789abcdef", True),
+                 (f"https://www.notion.so/{page}",
+                  "https://www.notion.so/" + "1" * 32, False),
+                 ("https://github.com/acme/api/tree/abc/services/", "https://GitHub.com/acme/api/blob/abc/services",
+                  True),
+                 ("https://github.com/acme/api/blob/abc/a.py#L1-L9",
+                  "https://github.com/acme/api/blob/abc/a.py", True),
+                 ("https://github.com/acme/api/blob/abc/a.py",
+                  "https://github.com/acme/api/blob/def/a.py", False),
+                 ("https://api.github.com/repos/a/b/contents/x?ref=abc",
+                  "https://api.github.com/repos/a/b/contents/x?ref=def", False),
+                 ("https://x.example/browse/AI-1?utm_source=mail",
+                  "https://x.example/browse/AI-1", True),
+                 ("https://x.example/browse/AI-1",
+                  "https://x.example/browse/AI-2", False),
+                 # A database row opened in a side peek: the row is the p= page, not the database.
+                 (f"https://www.notion.so/acme/{page}?v=1&p={'a' * 32}&pm=s",
+                  f"https://www.notion.so/acme/{page}?v=1&p={'b' * 32}&pm=s", False),
+                 (f"https://www.notion.so/acme/{page}?v=1&p={'a' * 32}&pm=s",
+                  f"https://www.notion.so/{'a' * 32}", True),
+                 # A code host other than github.com, such as GitHub Enterprise.
+                 ("https://git.acme.test/a/b/tree/main/src", "https://git.acme.test/a/b/blob/main/src", True)]
+        for one, other, same in cases:
+            with self.subTest(one=one, other=other):
+                self.assertEqual(text.same_document(one) ==
+                                 text.same_document(other), same)
+
     def test_local_link(self):
         # (target, what it resolves to): a path beside the document, the
         # document itself for a bare anchor, and None for a web page.

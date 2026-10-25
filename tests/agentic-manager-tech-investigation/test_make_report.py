@@ -61,13 +61,14 @@ class MakeReportTest(unittest.TestCase):
             "| Index choice | Affects cost | Unresolved | [proposal](https://example.com/p)",
             "## Architect summary\n\n### How it works today\n\n",
             "### Target design\n\n",
-            "[code](ledger.md#f01--search-api-is-merged)",
+            "[code](ledger.md#f01)",
             "[gap](ledger.md#evidence-gaps)",
             "### Open technical choices and gaps\n\nThe table records source-backed decisions and evidence gaps. It does "
             "not select an option.\n\n| Decision or gap | Why it matters | Established position | Evidence |\n"
             "| --- | --- | --- | --- |\n| Index | Sets the cost | Unresolved | [gap](ledger.md#evidence-gaps) |",
             "\n\n## References\n\n**Implementation and configuration**\n\n- [Search API](https://example.com/code)\n\n",
-            "**Delivery**\n\n- [PROJ-1](https://example.com/PROJ-1) (superseded)",
+            "**Delivery**\n\n- [PROJ-1](https://example.com/PROJ-1) (superseded)\n"
+            "- [PROJ-2](https://example.com/PROJ-2) (limited)\n\n",
             "**Vision, rationale and reported operational gaps**\n\nNone in the inspected sources.",
             "The [research ledger](ledger.md) holds the full validation trail",
         ]:
@@ -76,6 +77,19 @@ class MakeReportTest(unittest.TestCase):
         for heading in ("### Current status\n", "### Direction\n", "### How it works today\n",
                         "### Target design\n"):
             self.assertEqual(text.count(heading), 1, heading)
+
+    def test_evidence_date(self):
+        # The latest date in the sources' Revision cells, such as a page's last
+        # edit, else the investigation's day.
+        # (S01's Revision, the date the report gives)
+        cases = [("abc", "05/10/2026"), ("2026-09-30", "30/09/2026"),
+                 ("edited 2026-08-01, then 2026-09-12", "12/09/2026"), ("2026-13-40", "05/10/2026")]
+        for revision, expected in cases:
+            with self.subTest(revision):
+                self.write("ledger.md", LEDGER.replace(
+                    "| abc |", f"| {revision} |", 1))
+                self.make()
+                self.assertIn(f"Evidence snapshot: {expected}.", self.report())
 
     def test_deterministic(self):
         self.make()

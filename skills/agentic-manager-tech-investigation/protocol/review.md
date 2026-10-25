@@ -1,0 +1,5 @@
+Have the ledger reviewed by someone who didn't build it: a subagent given only the brief below. Change nothing while it runs.
+
+> Read the research ledger at `{{ledger}}` in full. It must cover three aims: {{aims}}. Judge whether it does, and list only significant issues: a question that should have been asked and wasn't, or a finding that claims more than its sources show: open the sources of the findings the three aims rest on most, and check them. An issue is significant only if settling it could change what the ledger says about one of the three aims. Leave out completeness for its own sake, cosmetic points and improbable cases. For each issue, say what would settle it.
+
+Judge each issue yourself by the same test, and drop any that couldn't change what the ledger says about an aim. Submit every one left as a question, naming in depends_on the open questions it can't be answered without; research then resumes for them, and the review runs again once it is done. A round that raises nothing ends the review: submit {"raised": []}.

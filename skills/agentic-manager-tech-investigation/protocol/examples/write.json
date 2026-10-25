@@ -1,0 +1,29 @@
+{
+  "purpose": ["Paragraph [F01](ledger:F01)."],
+  "current_status": ["Paragraph [F02](ledger:F02)."],
+  "direction": ["Paragraph [F07](ledger:F07)."],
+  "key_decisions": [
+    {
+      "decision": "Which queue to use",
+      "why": "It sets the replay cost",
+      "position": "Unresolved",
+      "evidence": "[D01](ledger:D01)"
+    }
+  ],
+  "architecture": {
+    "today": {
+      "summary": ["Paragraph [C01](ledger:C01) [E01](ledger:E01)."]
+    },
+    "target": {
+      "summary": ["Paragraph [F07](ledger:F07)."]
+    }
+  },
+  "open_choices_and_gaps": [
+    {
+      "decision": "Retry limit",
+      "why": "Sets how long a payment can hang",
+      "position": "Not decided",
+      "evidence": "[G01](ledger:G01)"
+    }
+  ]
+}

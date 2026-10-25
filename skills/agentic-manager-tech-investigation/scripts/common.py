@@ -22,7 +22,7 @@ from agentic_manager.jira import BROWSE_URL as TICKET_URL, GROUP as JIRA_GROUP, 
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, KEPT_EXAMPLES, description, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
-from agentic_manager.text import DEFINITION, DISPLAY_DATE, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, free_name, headings, inline_links, link_definitions, link_text, links, local_link, markdown, reference_key, slug, word_count  # noqa: E402,F401
+from agentic_manager.text import DEFINITION, DISPLAY_DATE, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, free_name, headings, inline_links, link_definitions, link_text, links, local_link, markdown, reference_key, same_document, slug, word_count  # noqa: E402,F401
 from agentic_manager.ticket_pulls import pulls_by_ticket  # noqa: E402,F401
 
 FOLDER_NAME = "tech-investigations"
@@ -54,63 +54,73 @@ HEADINGS = [
 # named once, here: one typed differently elsewhere would leave a check reading
 # an empty section.
 QUEUE = "Research questions"
+REVIEWS = "Independent reviews"
 BOUNDARY = "Boundary"
-REGISTER = "Revisions and source register"
-FINDINGS = "Findings and validation chains"
-INVENTORY = "Component inventory and evolution"
+SOURCES = "Sources"
+FINDINGS = "Findings"
 DESIGN = "System design"
 DECISIONS = "Open decisions"
 GAPS = "Evidence gaps"
 LINKS = "Links"
-LEDGER_SECTIONS = [QUEUE, BOUNDARY, REGISTER, FINDINGS,
-                   INVENTORY, DESIGN, DECISIONS, GAPS, LINKS]
+LEDGER_SECTIONS = [QUEUE, BOUNDARY, REVIEWS, SOURCES, FINDINGS,
+                   DESIGN, DECISIONS, GAPS, LINKS]
 # A question is ready until someone starts it, so that after a break, or with
 # work shared out, what is under way shows apart from what is waiting.
-QUEUE_SUBSECTIONS = ["Ready", "In progress", "Blocked", "Completed"]
+QUEUE_SUBSECTIONS = ["Ready", "In progress", "Completed", "Blocked"]
 QUEUE_TABLES = ["queue-ready", "queue-in-progress",
-                "queue-blocked", "queue-completed"]
-# The system design beside the components, one table each under its own
-# heading, so the design is recorded as rows, never pieced together from prose.
-DESIGN_SUBSECTIONS = ["Boundaries", "Connections", "Identities", "Flows"]
+                "queue-completed", "queue-blocked"]
+# The system design: its components, then what joins and groups them, one
+# table each under its own heading, so the design is recorded as rows, never
+# pieced together from prose. DESIGN_TABLES are those beside the components.
+DESIGN_SUBSECTIONS = ["Components", "Boundaries",
+                      "Connections", "Identities", "Flows"]
 DESIGN_TABLES = ["boundaries", "connections", "identities", "flows"]
-# The heading each of the ledger's tables sits under, by the name ledger.py's
-# commands use: one place, since a heading typed differently elsewhere would
+# The heading each of the ledger's tables sits under, by the name ledger.py
+# gives it: one place, since a heading typed differently elsewhere would
 # leave a check reading an empty table.
 TABLE_HEADINGS = {**{table: f"### {title}" for table, title in zip(QUEUE_TABLES, QUEUE_SUBSECTIONS)},
-                  "sources": f"## {REGISTER}", "file-coverage": "### File reading coverage",
+                  "reviews": f"## {REVIEWS}", "sources": f"## {SOURCES}", "findings": f"## {FINDINGS}",
                   "decisions": f"## {DECISIONS}", "gaps": f"## {GAPS}",
-                  "components": f"## {INVENTORY}",
-                  **{table: f"### {title}" for table, title in zip(DESIGN_TABLES, DESIGN_SUBSECTIONS)}}
-QUEUE_HEADER = ["ID", "Trigger / linked finding", "Question or check",
-                "Sources and validation required", "Depends on",
-                "Outcome / finding IDs"]
-# The evidence areas a source or a gap is tagged with; `ledger.py status` counts
-# them across the source groups, so no table of its own holds that grid.
-AREAS = ["Architecture", "Delivery", "Implementation", "Security and data",
-         "Identity and credentials", "Runtime and operations"]
-# The source groups in their order of authority, each with the name the ledger
-# and the output give it: when two disagree, the earlier one wins.
+                  **{table: f"### {title}" for table, title in zip(["components", *DESIGN_TABLES],
+                                                                   DESIGN_SUBSECTIONS)}}
+# A question, what raised it, the questions it waits for, and the findings that answer it.
+QUEUE_HEADER = ["ID", "Trigger", "Question", "Depends on", "Findings"]
+# A question only the user can answer starts with USER_QUESTION: whether the
+# investigation covers something research has reached. Research raises it there,
+# rather than settling scope or reading on, and the user's answer closes it,
+# starting its Findings with USER_DECIDED.
+USER_QUESTION = "For the user: "
+USER_DECIDED = "Decided by the user: "
+# A research question the user's scope decision leaves out is closed by it:
+# its Findings start with OUTSIDE_SCOPE and cite the question that decided it.
+OUTSIDE_SCOPE = "Outside the scope the user decided in "
+# The source groups, each with the name the ledger and the output give it.
 GROUPS = {"source_control": "code", "workflow": "tracker",
           "documentation": "documentation"}
-# A source's Access limits / superseded by cell, when it isn't None, starts
-# with one of these, so the report marks it as limited or as superseded.
-LIMITED, SUPERSEDED = "Limited:", "Superseded by"
-SOURCE_HEADER = ["Source ID", "Group / evidence kind", "Exact reference",
-                 "Revision / environment / date checked",
-                 "Material read and findings", "Access limits / superseded by",
-                 "Areas"]
-FILE_HEADER = ["Source", "Material", "Depth"]
+# A source is one thing read, at the grain it was read, so its Coverage says
+# how much of it the findings rest on. Its Findings are the script's, from the
+# findings that cite it.
+SOURCE_HEADER = ["ID", "Kind", "Reference", "Revision", "Coverage", "Findings",
+                 "Superseded by"]
+SOURCE_FINDINGS_COLUMN = SOURCE_HEADER.index("Findings")
+# How much of a source was read: its Coverage starts with one of these. A
+# listing, a search hit or a partial read says what the authors meant or where
+# to look, not what the code does, so only the first two count as read; the
+# report marks every source not read in full as limited.
+COVERAGE = ["full", "entry points", "partial",
+            "listing", "search hit", "no access"]
+READ_COVERAGE = ("full", "entry points")
+FINDING_HEADER = ["ID", "Claim", "Sources", "Limits"]
 DECISION_HEADER = ["ID", "Decision", "Established position or unresolved choice",
                    "Candidates, constraints", "Source authority and status",
                    "Owner and next check"]
 # What a gap can be blocked by. Anything else is work the agent can do, so it is
-# a ready question in the queue and not a gap; scope is settled with the user in
-# Define, so no gap waits on them.
+# a ready question in the queue and not a gap; whether the investigation covers
+# something is a question for the user in the queue, so no gap waits on them.
 BLOCKERS = ("No access", "Waiting on decision")
 GAP_HEADER = ["ID", "Gap", "What is established and what is missing",
               "What would close it", "Blocked by", "Source authority and status",
-              "Owner and next check",
-              "Areas"]
+              "Owner and next check"]
 COMPONENT_HEADER = ["ID", "Name and type", "Responsibility", "Repository, paths, revision",
                     "Status", "How much was read",
                     "Evidence", "Current → next steps", "Boundary"]
@@ -121,7 +131,7 @@ IDENTITY_HEADER = ["ID", "Name", "Kind", "What it can reach", "Evidence"]
 FLOW_HEADER = ["ID", "Entry point", "Connections in order", "Evidence"]
 # A component's implementation status: the Status cell starts with one of these.
 # Code is the source of truth, so the two that claim code exists need the code
-# read (READ_DEPTHS below); the others say what the evidence can't establish.
+# read (READ_COVERAGE above); the others say what the evidence can't establish.
 STATUSES = [("🟩 Implemented", "merged to the main branch"),
             ("🟦 In development",
              "code written but not merged: an open pull request or a branch"),
@@ -129,34 +139,20 @@ STATUSES = [("🟩 Implemented", "merged to the main branch"),
             ("🟪 Vision", "only in the documentation"),
             ("⬜ Unverified", "not established: name the gap that explains it")]
 CODE_STATUSES = ("🟩", "🟦")
-# How deeply a file or folder was read: the Depth cell of file coverage starts
-# with one of these. A README or a listing says what the authors meant, not
-# what the code does.
-DEPTHS = ["full", "entrypoints and routes",
-          "partial", "README", "listing", "search hit"]
-READ_DEPTHS = ("full", "entrypoints and routes")
-# The independent review is recorded as a completed question with this question,
-# by `ledger.py review`; it answers with the questions it raised, or with
-# REVIEW_NONE. Its row is what shows the review took place. A strict reviewer
+# Each independent review round is a row of its own table, written when its
+# task is submitted: the questions it raised, or REVIEW_NONE. A strict reviewer
 # can keep finding something, so after a few rounds the user decides whether to
 # go on; their choice to stop ends the review like a round that raised nothing,
-# as a review row answered REVIEW_STOPPED.
-REVIEW_QUESTION = "Independent review of the ledger"
+# as a round whose Raised starts REVIEW_STOPPED.
+REVIEW_HEADER = ["Round", "Raised"]
 REVIEW_NONE = "No issue raised"
 REVIEW_STOPPED = "Stopped by the user:"
-FINDING_FIELDS = ["Claim", "Evidence", "Validation and limits"]
 # A finding holds one claim, of about 80 words; a claim far past that, here
 # about twice it, usually bundles several, which are then cited and corrected
 # as one. It is a warning, never a refusal: a single claim can need the room.
 # Warning when the finding is written, not only at the end, splits it before
 # other rows cite it.
 CLAIM_WORDS_MAX = 150
-FINDING_OPTIONAL = ["Supersedes or contradicted by"]
-FINDING_HEADING = re.compile(r"^### (F\d+) — \S.*$", re.M)
-# Where a finding's block starts, whatever its title.
-FINDING_START = re.compile(r"^### (F\d+) ", re.M)
-# A finding's Evidence line: what follows its label.
-EVIDENCE_LINE = re.compile(r"- \*\*Evidence:\*\*(.*)")
 # A pipe that separates table cells: one escaped as \| stays inside its cell.
 CELL_PIPE = re.compile(r"(?<!\\)\|")
 # Ticket keys and pull requests, written as links. A ticket key is linked to
@@ -181,7 +177,7 @@ ANY_REFERENCE = re.compile(
     rf"{REPO_PR.pattern}|{TICKET.pattern}|{BARE_PR.pattern}")
 # How to fix a row that breaks a rule, worded once for ledger.py's refusal and
 # check_report.py's error.
-SOURCE_LINK_FIX = ("link the Exact reference at its pinned revision, or, for a search, give it as "
+SOURCE_LINK_FIX = ("link the Reference at its pinned revision, or, for a search, give it as "
                    '{"query": "<the exact query>"} and the script writes it')
 GAP_FIX = ("Blocked by starts with one of: " + "; ".join(BLOCKERS) + ". A gap nothing blocks is a ready question in "
            "the queue: do it")
@@ -195,19 +191,21 @@ QUERY = re.compile(r"`[^`\n]+`")
 ID_LETTERS = "SQFCDGBEIP"
 # Every recorded ID has an anchor, so any citation of it can link to it: a
 # table row carries an HTML anchor in its ID cell, which Markdown viewers such
-# as VS Code and GitHub render, and a finding one under its heading. A heading's
-# own anchor would change with its title; these don't.
+# as VS Code and GitHub render. A heading's anchor would change with its title;
+# these don't.
 ID = re.compile(rf"\b[{ID_LETTERS}]\d{{2,}}\b")
 ANCHOR_ID = r"[a-z]+\d+"
 ID_ANCHOR = re.compile(rf'<a id="{ANCHOR_ID}"></a>')
 # The start of a table row, before its ID and the anchor that may precede it.
 ROW_START = rf"^\|\s*(?:{ID_ANCHOR.pattern})?"
-# The IDs recorded in a table row or under a bold label: all but findings.
-RECORD = re.compile(rf"\b[{ID_LETTERS.replace('F', '')}]\d{{2,}}\b")
+# Where an ID is recorded: a table row, a bold label or a heading.
 RECORD_DEFINITION = re.compile(
-    rf"(?:{ROW_START}|^[-*]\s+\*\*|^#{{3}}\s+)({RECORD.pattern})", re.M)
-# The Findings a source row lists, which ledger.py writes and check_report.py reads.
-SOURCE_FINDINGS = re.compile(r"\s*Findings: ([^.]*)\.\s*$")
+    rf"(?:{ROW_START}|^[-*]\s+\*\*|^#{{3}}\s+)({ID.pattern})", re.M)
+# A citation of a record, as the ledger stores it: a link to the record's
+# anchor, which the script writes from a submission's [[F07]]. Only a citation
+# refers to a record: an ID-shaped word written bare, such as P95 in "P95
+# latency", is prose.
+CITATION = re.compile(r"\[([A-Z]\d{2,})\]\(#[a-z]+\d+\)")
 
 
 def report_headings():
@@ -349,20 +347,20 @@ def unresolved_message(unresolved):
 
 
 def outcome_problem(row_id, outcome, question=""):
-    """Why a completed question's outcome doesn't close it, or None. The review's
-    own row is answered by the questions it raised."""
-    if question == REVIEW_QUESTION:
-        if ids(outcome, "Q") or outcome.strip() == REVIEW_NONE \
-                or outcome.strip().startswith(REVIEW_STOPPED):
+    """Why a completed question's outcome doesn't close it, or None: the
+    findings that answer it, the user's scope decision that leaves it out, or
+    for a question for the user, their decision."""
+    if question.startswith(USER_QUESTION):
+        if outcome.startswith(USER_DECIDED):
             return None
-        return (f"{row_id}: the review's outcome names the questions it raised (Q14, Q15), is '{REVIEW_NONE}' "
-                f"or starts '{REVIEW_STOPPED}'")
-    # A question is completed by the findings that answer it; one a gap or a
-    # decision stops is blocked, never completed.
-    if ids(outcome, "F"):
+        return f"{row_id}: a question for the user is closed by their decision ({USER_DECIDED}include)"
+    # A question is completed by the findings that answer it, or by the user's
+    # scope decision that leaves it out; one a gap or a decision stops is
+    # blocked, never completed.
+    if ids(outcome, "F") or (outcome.startswith(OUTSIDE_SCOPE) and ids(outcome, "Q")):
         return None
-    return (f"{row_id}: a completed question names the findings that answer it (F01, F02) in Outcome / finding "
-            "IDs; a question a gap or a decision stops is blocked by it instead")
+    return (f"{row_id}: a completed question names the findings that answer it (F01, F02) in Findings; a "
+            "question a gap or a decision stops is blocked by it instead")
 
 
 def blocked_problem(row_id, depends_on, blocked):
@@ -388,29 +386,27 @@ def claim_length_warning(ident, claim):
     return f"{ident}'s claim is {words} words; split it into findings of one claim each"
 
 
-def review_problem(completed):
-    """What the review still needs, or None once a round raised no question."""
-    if last_review(completed) is None:
-        return "no independent review is recorded: run it, then record it with ledger.py review"
-    if not reviewed(completed):
-        return ("the last review round raised questions: once they are done, run another round with the same "
-                "brief, until one raises no question or the user chooses to stop")
+def review_problem(rounds):
+    """What the review still needs, or None once a round raised no question;
+    `rounds` are the review table's rows."""
+    if last_review(rounds) is None:
+        return "no independent review is recorded: investigate.py next hands it out once research is finished"
+    if not reviewed(rounds):
+        return ("the last review round raised questions: once they are done, investigate.py next hands out "
+                "the next round, until one raises no question or the user chooses to stop")
     return None
 
 
-def last_review(completed):
-    """The outcome of the latest independent review among the completed
-    rows, or None."""
-    outcomes = [row[-1].strip() for row in completed
-                if len(row) > 2 and row[2] == REVIEW_QUESTION]
-    return outcomes[-1] if outcomes else None
+def last_review(rounds):
+    """What the latest review round raised, or None when no round is recorded."""
+    return rounds[-1][-1].strip() if rounds else None
 
 
-def reviewed(completed):
+def reviewed(rounds):
     """Whether the review is finished: rounds repeat until one raises no
     question, since the questions a round raises change the ledger the next round
     reads. The user's choice to stop also ends it."""
-    outcome = last_review(completed)
+    outcome = last_review(rounds)
     return outcome is not None and (outcome == REVIEW_NONE or outcome.startswith(REVIEW_STOPPED))
 
 
@@ -438,13 +434,8 @@ def gap_problem(row):
 
 
 def source_reference_missing(row):
-    """Whether a source row's Exact reference holds neither a link nor a query."""
+    """Whether a source row's Reference holds neither a link nor a query."""
     return not LINK.search(row[2]) and not QUERY.search(row[2])
-
-
-def coverage_material_missing(row):
-    """Whether a file coverage row's Material holds no link to what was read."""
-    return not LINK.search(row[1])
 
 
 def unlinked_backticks(prose, linked_text=""):
@@ -481,7 +472,7 @@ def anchor_ids(text):
 
 
 def component_rows(body):
-    """The component inventory's rows, as cells."""
+    """The system design's component rows, as cells."""
     return [row for row in ledger_rows(body, TABLE_HEADINGS["components"])
             if re.fullmatch(r"C\d+", row[0]) and len(row) > 4]
 
@@ -533,18 +524,15 @@ def strip_anchors(text):
     return ID_ANCHOR.sub("", text)
 
 
-def linked_ids(text, recorded):
-    """`text` with each ID in `recorded` written as a link to its anchor, outside
-    code, links and URLs; headings and link definitions are left alone."""
-    def link(part):
-        return ID.sub(lambda m: f"[{m[0]}](#{m[0].lower()})" if m[0] in recorded else m[0], part)
-    return "\n".join(line if _skipped(line) else _map_open(line, link) for line in text.split("\n"))
+def citation(ident):
+    """The citation of the record `ident`: a link to its anchor."""
+    return f"[{ident}](#{ident.lower()})"
 
 
 def unrecorded_ids(body):
-    """The source, question, decision, gap and component IDs the ledger cites but
-    never records in a table row, a bold label or a heading."""
-    return sorted(set(RECORD.findall(body)) - recorded_ids(body), key=id_order)
+    """The IDs the ledger cites but never records in a table row, a bold label
+    or a heading."""
+    return sorted({m[1] for m in CITATION.finditer(body)} - recorded_ids(body), key=id_order)
 
 
 def id_order(ident):
@@ -554,80 +542,77 @@ def id_order(ident):
 
 
 def recorded_ids(body):
-    """Every ID the ledger `body` records: table rows, bold labels, headings
-    and findings."""
-    return set(RECORD_DEFINITION.findall(body)) | set(FINDING_HEADING.findall(body))
+    """Every ID the ledger `body` records: table rows, bold labels and headings."""
+    return set(RECORD_DEFINITION.findall(body))
 
 
 def cited_sources(body):
-    """{source number: the findings whose Evidence line names it} in the ledger `body`."""
+    """{source number: the findings whose Sources cell names it} in the ledger `body`."""
     cited = {}
-    for ident, block in finding_blocks(body).items():
-        if evidence := EVIDENCE_LINE.search(block):
-            for source in set(re.findall(r"\bS(\d+)\b", evidence[1])):
-                cited.setdefault(int(source), set()).add(ident)
+    for row in ledger_rows(body, TABLE_HEADINGS["findings"]):
+        if len(row) > 2:
+            for source in set(re.findall(r"\bS(\d+)\b", row[2])):
+                cited.setdefault(int(source), set()).add(row[0])
     return cited
 
 
-def finding_blocks(text):
-    """{finding ID: its block, from its heading to the next finding} in `text`."""
-    found = list(FINDING_START.finditer(text))
-    ends = [match.start() for match in found[1:]] + [len(text)]
-    return {match[1]: text[match.start():end].strip("\n") for match, end in zip(found, ends)}
-
-
 def unrecorded_citations(values, body):
-    """The IDs, findings included, that `values` cite and the ledger `body`
-    doesn't record yet."""
-    cited = {i for v in values for i in ID.findall(v)}
+    """The IDs that `values` cite and the ledger `body` doesn't record yet."""
+    cited = {m[1] for v in values for m in CITATION.finditer(v)}
     return sorted(cited - recorded_ids(body), key=id_order)
 
 
 def group_problem(row):
-    """Why a source row's Group / evidence kind cell doesn't start with one of
+    """Why a source row's Kind cell doesn't start with the name of one of
     GROUPS, or None."""
     if group_of(row):
         return None
-    return f"{row[0]}: Group / evidence kind starts with one of: {', '.join(GROUPS)}"
+    return f"{row[0]}: Kind starts with one of: {', '.join(GROUPS.values())}"
 
 
 def group_of(row):
-    """The group of GROUPS a source row's Group / evidence kind cell starts
-    with, or None."""
-    return next((g for g in GROUPS if row[1].strip().casefold().startswith(g)), None)
+    """The group of GROUPS whose name a source row's Kind cell starts with, as
+    the config names it, or None."""
+    return next((g for g, name in GROUPS.items() if row[1].strip().casefold().startswith(name)), None)
 
 
-def limits_problem(row):
-    """Why a source row's Access limits / superseded by cell is neither None nor
-    starts with LIMITED or SUPERSEDED, or None."""
-    if row[5].strip().casefold() in ("", "none") or limit_mark(row):
+def coverage_problem(row):
+    """Why a source row's Coverage doesn't start with one of COVERAGE, or None."""
+    if any(row[4].strip().casefold().startswith(c) for c in COVERAGE):
         return None
-    return (f"{row[0]}: Access limits / superseded by is None, or starts with '{LIMITED}' or "
-            f"'{SUPERSEDED}', such as '{LIMITED} only lines 1-200 read'")
+    return (f"{row[0]}: Coverage starts with one of: {', '.join(COVERAGE)}, then any detail, such as "
+            "'partial: lines 1-80 of 352'")
 
 
-def limit_mark(row):
-    """The report's mark for a source row's Access limits / superseded by
-    cell: "limited", "superseded", or None."""
-    value = row[5].strip().casefold()
-    for start, mark in ((LIMITED, "limited"), (SUPERSEDED, "superseded")):
-        if value.startswith(start.casefold()):
-            return mark
-    return None
-
-
-def areas_problem(row):
-    """Why a source or gap row's Areas cell names something other than AREAS,
+def superseded_problem(row):
+    """Why a source row's Superseded by is neither None nor one other source,
     or None."""
-    wrong = [a for a in areas_of(row) if a not in AREAS]
-    if not wrong:
+    named = ids(row[6], "S")
+    if row[6].strip() == "None" or (len(named) == 1 and named[0] != row[0]):
         return None
-    return f"{row[0]}: Areas must be some of: {', '.join(AREAS)}; not {', '.join(wrong)}"
+    return f"{row[0]}: Superseded by is None, or the one source that replaces it (S07)"
 
 
-def areas_of(row):
-    """The evidence areas a source or gap row names in its last cell, Areas."""
-    return [a for a in (x.strip() for x in row[-1].split(",")) if a]
+def source_mark(row):
+    """The report's mark for a source row: "limited" unless its Coverage is
+    full, "superseded" when another source replaces it, both, or None."""
+    marks = [mark for mark, applies in (("limited", not row[4].strip().casefold().startswith("full")),
+                                        ("superseded", row[6].strip() != "None")) if applies]
+    return ", ".join(marks) or None
+
+
+def finding_problem(row):
+    """Why a finding row breaks a rule, or None: it holds a claim, names the
+    sources it was read in, or the findings an inference rests on, and its
+    limits."""
+    if not row[1].strip():
+        return f"{row[0]}: Claim holds the claim, in your words"
+    if not ids(row[2], "SF"):
+        return (f"{row[0]}: Sources names the sources the claim was read in (S03), or for an inference the "
+                "findings it rests on (F02)")
+    if not row[3].strip():
+        return f"{row[0]}: Limits says how the claim was validated and what it leaves out"
+    return None
 
 
 def design_problem(name, row):
@@ -667,57 +652,50 @@ def status_problem(row_id, status, column="Status"):
             + "; ".join(f"{label} ({meaning})" for label, meaning in STATUSES))
 
 
-def depth_problem(depth):
-    """Why a file coverage Depth cell doesn't start with one of DEPTHS, or None."""
-    if any(depth.casefold().startswith(d.casefold()) for d in DEPTHS):
-        return None
-    return (f"Depth {depth!r} starts with one of: {', '.join(DEPTHS)}, "
-            "then any detail, such as 'partial: lines 1-120 of 400'")
-
-
-def unread_components(components, coverage, definitions):
+def unread_components(components, sources, definitions):
     """{component ID: the paths it links} of the components whose Status
-    claims code (🟩, 🟦) without file coverage read at READ_DEPTHS of one of
+    claims code (🟩, 🟦) without a code source read at READ_COVERAGE of one of
     those paths, of a file or folder under it, or of a folder above it, which
     covers the files in it. `components` are rows (ID, ..., repository cell
-    at 3, status at 4); `coverage` rows (source, material, depth)."""
+    at 3, status at 4); `sources` the sources table's rows."""
     def urls(cell):
         return [url for _, _, _, url in links(cell, definitions) if url]
-    read = [_code_path(url) for row in coverage
-            if read_in_full(row[2])
-            for url in urls(row[1])]
+    read = [same_document(url) for row in sources
+            if group_of(row) == "source_control" and read_enough(row)
+            for url in urls(row[2])]
     found = {}
     for row in components:
         if not row[4].startswith(CODE_STATUSES):
             continue
-        paths = [_code_path(url) for url in urls(row[3])]
+        paths = [same_document(url) for url in urls(row[3])]
         if not any(r == p or r.startswith(p + "/") or p.startswith(r + "/") for p in paths for r in read):
             found[row[0]] = [_shown_path(p) for p in paths]
     return found
 
 
-def read_in_full(depth):
-    """Whether a file coverage Depth cell says the material was read at
-    READ_DEPTHS, enough to establish what the code does."""
-    return any(depth.casefold().startswith(d) for d in READ_DEPTHS)
+def read_in_part(row):
+    """Whether a source row's Coverage says it was read only in part, so a
+    finding citing it must say why the unread part can't change the claim."""
+    return row[4].strip().casefold().startswith("partial")
 
 
-def _code_path(url):
-    """A GitHub-style URL with /tree/ or /blob/ made the same, for prefix matching."""
-    return re.sub(r"/(?:tree|blob)/", "/-/", url.rstrip("/"))
+def read_enough(row):
+    """Whether a source row's Coverage says it was read at READ_COVERAGE,
+    enough to establish what the code does."""
+    return row[4].strip().casefold().startswith(READ_COVERAGE)
 
 
 def _shown_path(path):
     """A code path as a message names it: owner/repo and the path after the revision."""
-    match = re.match(r"https?://[^/]+/([^/]+/[^/]+)/-/[^/]+/?(.*)", path)
+    match = re.match(r"https?://[^/]+/([^/]+/[^/]+)/blob/[^/]+/?(.*)", path)
     return f"{match[1]}: {match[2] or '/'}" if match else path
 
 
 def unread_message(found):
     """What to do about components claiming code with no code read, `found`
     as unread_components returns it."""
-    return (f"a component marked {' or '.join(CODE_STATUSES)} needs its code read, at depth "
-            f"{' or '.join(READ_DEPTHS)}, in a file coverage row of the path it links, of a file under it or "
-            "of a folder above it: " + "; ".join(f"{ident} links {', '.join(paths) or 'no code'}"
-                                                 for ident, paths in found.items())
-            + ". Read it and add the row, then set the status; until then it is ⬜ Unverified")
+    return (f"a component marked {' or '.join(CODE_STATUSES)} needs its code read, with Coverage "
+            f"{' or '.join(READ_COVERAGE)}, in a code source of the path it links, of a file under it "
+            "or of a folder above it: " + "; ".join(f"{ident} links {', '.join(paths) or 'no code'}"
+                                                    for ident, paths in found.items())
+            + ". Read it and record it as a source, then set the status; until then it is ⬜ Unverified")

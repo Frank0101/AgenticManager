@@ -21,21 +21,30 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_report  # noqa: E402
-from common import HEADINGS, SOURCE_HEADER, TABLE_HEADINGS, table  # noqa: E402
+from common import FINDING_HEADER, HEADINGS, SOURCE_HEADER, table  # noqa: E402
 from init_investigation import ledger_skeleton  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from investigation_fixture import with_queue  # noqa: E402
+from investigation_fixture import with_queue, with_reviews  # noqa: E402
 
 # A ledger as handover needs it: a finding, a gap, its queue worked and its
 # review finished.
-LEDGER = with_queue(ledger_skeleton("Acme").replace(
-    "## Findings and validation chains\n\nNone yet.",
-    "## Findings and validation chains\n\n### F01 — Search is merged\n\n"
-    + "\n".join(f"- **{field}:** text." for field in check_report.FINDING_FIELDS)).replace(
+FINDING_ROW = "| F01 | Search is merged. | S01 | Read in full. |"
+UNREVIEWED = with_queue(ledger_skeleton("Acme").replace(
+    "## Findings\n\nNone yet.",
+    "## Findings\n\n" + table(FINDING_HEADER, []) + "\n" + FINDING_ROW).replace(
+    "## Sources\n\nNone yet.",
+    "## Sources\n\n" + table(SOURCE_HEADER, [
+        ["S01", "code", "[app](https://github.com/acme/app/tree/abc)", "abc", "full", "F01", "None"]])).replace(
     "## Evidence gaps\n\nNone yet.",
     "## Evidence gaps\n\n### G01\n\nEvidence unavailable."), "Completed", [
-    ["Q01", "Start", "Read code", "Code", "—", "F01"],
-    ["Q02", "Independent review", "Independent review of the ledger", "Subagent", "None", "No issue raised"]])
+    ["Q01", "Start", "Read code", "—", "F01"]])
+LEDGER = with_reviews(UNREVIEWED, [["1", "No issue raised"]])
+
+
+def with_sources(rows):
+    """LEDGER with its sources table holding `rows`, each source's cells."""
+    old = LEDGER[LEDGER.index("## Sources\n\n"):LEDGER.index("## Findings")]
+    return LEDGER.replace(old, "## Sources\n\n" + table(SOURCE_HEADER, rows) + "\n\n")
 
 
 class CheckReportTest(unittest.TestCase):
@@ -139,31 +148,23 @@ class CheckReportTest(unittest.TestCase):
 
     def test_ledger_structure(self):
         ledger = self.folder / "ledger.md"
-        finding = ("### F01 — Search is merged\n\n" +
-                   "\n".join(f"**{field}:** text." for field in check_report.FINDING_FIELDS))
-        complete = LEDGER.replace("## Findings and validation chains\n\nNone yet.",
-                                  "## Findings and validation chains\n\n" + finding)
         cases = [
-            ("complete", complete, None, None),
-            ("section order", complete.replace("## Links",
-             "## Summary"), "sections must be exactly", None),
-            ("queue subsections", complete.replace(
-                "### Blocked", "### Waiting"), "queue needs exactly", None),
-            ("duplicate finding", complete + "\n" +
-             finding, "duplicate findings: F01", None),
-            ("undefined finding", complete.replace(
-                "None yet.", "See F07.", 1), "never written: F07", None),
-            ("missing fields", complete.replace(
-                "**Evidence:** text.", ""), None, "F01 lacks Evidence"),
+            ("complete", LEDGER, None),
+            ("section order", LEDGER.replace("## Links",
+             "## Summary"), "sections must be exactly"),
+            ("queue subsections", LEDGER.replace(
+                "### Blocked", "### Waiting"), "queue needs exactly"),
+            ("duplicate finding", LEDGER.replace(FINDING_ROW, FINDING_ROW + "\n" + FINDING_ROW),
+             "findings written more than once: F01; keep one row each"),
+            ("undefined finding", LEDGER.replace(
+                "None yet.", "See F07.", 1), "never written: F07"),
         ]
-        for name, text, error, warning in cases:
+        for name, text, error in cases:
             with self.subTest(name=name):
                 ledger.write_text(text, encoding="utf-8")
                 result = self.check()
                 self.assertEqual(any(error in e for e in result["errors"]) if error else result["errors"] == [],
                                  True, result)
-                if warning:
-                    self.assertIn(warning, " ".join(result["warnings"]))
 
     def test_unreadable_ledger_fails(self):
         ledger = self.folder / "ledger.md"
@@ -181,27 +182,23 @@ class CheckReportTest(unittest.TestCase):
                         ledger, handover=handover)
                 self.assertIn("cannot read research ledger", " ".join(errors))
 
-    def test_handover_gaps_need_a_valid_blocker_and_areas(self):
+    def test_handover_gaps_need_a_valid_blocker(self):
         # A gap nothing blocks is work to do, so it must be a question in the
-        # queue and not a gap; its Areas are some of the allowed ones.
+        # queue and not a gap.
         ledger = self.folder / "ledger.md"
-        gap = "| G01 | Gap | Missing | Read it | {} | Code | Owner | {} |\n"
-        cases = [("no access", "No access to the cluster", "Delivery", None),
-                 ("a decision", "Waiting on decision D01", "Delivery", None),
-                 ("a decision with no ID", "Waiting on decision",
-                  "Delivery", "Blocked by"),
-                 # Scope is settled in Define, so no gap waits on the user.
-                 ("a scope cut", "Out of scope, approved by the user",
-                  "Delivery", "Blocked by"),
-                 ("nothing blocks it", "Not done yet", "Delivery", "Blocked by"),
-                 ("empty", "", "Delivery", "Blocked by"),
-                 ("an unknown area", "No access to the cluster", "Delivery, Billing",
-                  "G01: Areas must be some of: Architecture, Delivery")]
-        for name, blocker, areas, expected in cases:
+        gap = "| G01 | Gap | Missing | Read it | {} | Code | Owner |\n"
+        cases = [("no access", "No access to the cluster", None),
+                 ("a decision", "Waiting on decision D01", None),
+                 ("a decision with no ID", "Waiting on decision", "Blocked by"),
+                 # Scope is a question for the user in the queue, so no gap waits on them.
+                 ("a scope cut", "Out of scope, approved by the user", "Blocked by"),
+                 ("nothing blocks it", "Not done yet", "Blocked by"),
+                 ("empty", "", "Blocked by")]
+        for name, blocker, expected in cases:
             with self.subTest(name):
                 text = LEDGER.replace(
                     "## Evidence gaps\n\n", "## Evidence gaps\n\n" +
-                    gap.format(blocker, areas), 1
+                    gap.format(blocker), 1
                 ).replace("## Open decisions\n\nNone yet.",
                           "## Open decisions\n\n| D01 | Choice | Open | A, B | Doc | Owner |")
                 ledger.write_text(text, encoding="utf-8")
@@ -213,25 +210,22 @@ class CheckReportTest(unittest.TestCase):
     def test_handover_needs_the_queue_worked_and_reviewed(self):
         # At handover nothing is left ready or in progress, and the last
         # review round raised nothing, or the user chose to stop.
-        review = ("| Q02 | Independent review | Independent review of the ledger | Subagent | None"
-                  " | No issue raised |\n")
-        raised = ("| Q02 | Independent review | Independent review of the ledger | Subagent | None"
-                  " | Raised Q03 |\n| Q03 | Q02 | Read the job | Code | None | F01 |\n")
-        open_question = ["Q01", "Start", "Read code", "Code", "—", "—"]
+        q01 = "| Q01 | Start | Read code | — | F01 |"
+        with_q03 = UNREVIEWED.replace(
+            q01, q01 + "\n| Q03 | Review round 1 | Read the job | None | F01 |", 1)
+        open_question = ["Q01", "Start", "Read code", "—", "—"]
         cases = [
             ("a question, reviewed", LEDGER, None),
             ("a ready question", with_queue(LEDGER, "Ready", [open_question]),
              "still ready or in progress"),
             ("a question in progress", with_queue(LEDGER, "In progress", [open_question]),
              "still ready or in progress"),
-            ("no review recorded", LEDGER.replace(review, ""),
-             "no independent review is recorded"),
-            ("the last round raised questions", LEDGER.replace(review, raised),
+            ("no review recorded", UNREVIEWED, "no independent review is recorded"),
+            ("the last round raised questions", with_reviews(with_q03, [["1", "Q03"]]),
              "the last review round raised questions"),
-            ("a later round raised nothing", LEDGER.replace(review, raised + review.replace("Q02", "Q04")),
+            ("a later round raised nothing", with_reviews(with_q03, [["1", "Q03"], ["2", "No issue raised"]]),
              None),
-            ("the user chose to stop", LEDGER.replace(review, raised + review.replace("Q02", "Q04").replace(
-                "Subagent", "The user").replace("No issue raised", "Stopped by the user: wrap up")),
+            ("the user chose to stop", with_reviews(with_q03, [["1", "Q03"], ["2", "Stopped by the user: wrap up"]]),
              None)]
         for name, text, expected in cases:
             with self.subTest(name):
@@ -259,34 +253,25 @@ class CheckReportTest(unittest.TestCase):
                 (self.folder / stray).unlink()
 
     def test_handover_needs_links_to_sources(self):
-        # A register row links its exact reference, a coverage row the material read; a search is recorded by its exact query between backticks instead.
-        header = ("| Source ID | Group / evidence kind | Exact reference | Revision | Read | Limits | Areas |\n"
-                  "| --- | --- | --- | --- | --- | --- | --- |\n")
-        coverage = "### File reading coverage\n\n| Source | Material | Depth |\n| --- | --- | --- |\n"
+        # A source links its reference; a search is recorded by its exact query between backticks instead.
+        code = ["S01", "code", "[repo](https://github.com/acme/app/tree/abc123)", "abc123", "full", "F01",
+                "None"]
         cases = [
-            ("linked rows", "| S01 | source_control / implementation | [repo](https://github.com/acme/app/tree/abc123) | abc123 | x | None | Implementation |\n"
-             "| S02 | source_control / search | `gh search code --repo acme/app PROJ-1` | today | x | None | Implementation |\n",
-             "| S01 | [`a.md`](https://github.com/acme/app/blob/abc123/a.md) | Full |\n", None),
-            ("a search described in words", "| S01 | source_control / search | a GitHub code search | today | x | None | Implementation |\n",
-             "| S01 | [`a.md`](https://github.com/acme/app/blob/abc123/a.md) | Full |\n", "register rows without a link"),
-            ("an unlinked source", "| S01 | source_control / implementation | acme/app | abc123 | x | None | Implementation |\n",
-             "| S01 | [`a.md`](https://github.com/acme/app/blob/abc123/a.md) | Full |\n", "register rows without a link"),
-            ("an unlinked file", "| S01 | source_control / implementation | [repo](https://github.com/acme/app/tree/abc123) | abc123 | x | None | Implementation |\n",
-             "| S01 | `a.md` | Full |\n", "File reading coverage rows without a link"),
+            ("linked rows", [code, ["S02", "code: search", "`gh search code --repo acme/app PROJ-1`",
+                                    "today", "search hit", "None", "None"]], None),
+            ("a search described in words", [code, ["S02", "code: search", "a GitHub code search",
+                                                    "today", "search hit", "None", "None"]],
+             "sources without a link to their reference: S02"),
+            ("an unlinked source", [code[:2] + ["acme/app"] + code[3:]],
+             "sources without a link to their reference: S01"),
             # Rows as ledger.py writes them: anchored IDs and linked citations.
-            ("an anchored search", '| <a id="s02"></a>S02 | source_control / search | `gh search code --repo acme/app PROJ-1` | today | x | None | Implementation |\n',
-             "| [S02](#s02) | [`a.md`](https://github.com/acme/app/blob/abc123/a.md) | Full |\n", None),
-            ("a linked citation with no material link",
-             '| <a id="s01"></a>S01 | source_control / implementation | [repo](https://github.com/acme/app/tree/abc123) | abc123 | x | None | Implementation |\n',
-             "| [S01](#s01) | a.md | Full |\n", "File reading coverage rows without a link to the material read: S01"),
+            ("an anchored search", [code, ['<a id="s02"></a>S02', "code: search",
+                                           "`gh search code --repo acme/app PROJ-1`", "today", "search hit",
+                                           "None", "None"]], None),
         ]
-        for name, register, files, expected in cases:
+        for name, rows, expected in cases:
             with self.subTest(name):
-                text = LEDGER.replace("## Revisions and source register\n\n",
-                                      "## Revisions and source register\n\n" + header + register, 1)
-                text = text.replace(
-                    "### File reading coverage\n\nNone yet.", coverage + files)
-                (self.folder / "ledger.md").write_text(text, encoding="utf-8")
+                (self.folder / "ledger.md").write_text(with_sources(rows), encoding="utf-8")
                 self.assertTrue(check_report.check_report(self.report)["ok"])
                 result = check_report.check_report(self.report, handover=True)
                 self.assertEqual(result["ok"], expected is None, result)
@@ -346,22 +331,26 @@ class CheckReportTest(unittest.TestCase):
                         self.assertEqual(
                             sum("without a link" in e and expected in e for e in result["errors"]), 2, result)
 
-    def test_handover_rechecks_blocked_questions_and_sources(self):
+    def test_handover_rechecks_blocked_questions_sources_and_findings(self):
         # A ledger edited without the script is checked again at handover.
-        def sources(group, limits):
-            rows = [
-                ["S01", group, "[x](https://example.com/x)", "d", "Read.", limits, "Implementation"]]
-            empty = f"{TABLE_HEADINGS['sources']}\n\n{table(SOURCE_HEADER, [])}"
-            assert empty in LEDGER
-            return LEDGER.replace(empty, f"{TABLE_HEADINGS['sources']}\n\n{table(SOURCE_HEADER, rows)}")
+        def source(kind="tracker", coverage="partial: one page", superseded="None"):
+            return with_sources([
+                ["S01", "code",
+                    "[app](https://github.com/acme/app/tree/abc)", "abc", "full", "F01", "None"],
+                ["S02", kind, "[x](https://example.com/x)", "d", coverage, "None", superseded]])
         # name: (ledger, expected problem, or None)
-        cases = [("allowed sources", sources("workflow", "Limited: one page read"), None),
-                 ("a source of no group", sources("code", "None"),
-                  "S01: Group / evidence kind starts with"),
-                 ("free text limits", sources("workflow", "one page read"),
-                  "S01: Access limits / superseded by is None, or starts with"),
+        cases = [("allowed sources", source(), None),
+                 ("a superseded source", source(superseded="S01"), None),
+                 ("a source of no group", source(
+                     kind="source_control"), "S02: Kind starts with"),
+                 ("a coverage not allowed", source(coverage="skimmed"),
+                  "S02: Coverage starts with one of"),
+                 ("superseded by words", source(superseded="the 2026 design"),
+                  "S02: Superseded by is None, or the one source that replaces it"),
+                 ("a finding citing no source", LEDGER.replace(FINDING_ROW, "| F01 | Search is merged. | the code | "
+                                                               "Read. |"), "F01: Sources names the sources"),
                  ("a question blocked by nothing", with_queue(LEDGER, "Blocked", [
-                     ["Q09", "Start", "Read billing", "Code", "None", "—"]]),
+                     ["Q09", "Start", "Read billing", "None", "—"]]),
                   "Q09: a blocked question names what blocks it")]
         for name, ledger, expected in cases:
             with self.subTest(name):
@@ -374,36 +363,40 @@ class CheckReportTest(unittest.TestCase):
 
     def test_handover_closing_rules(self):
         # A completed question names its answer; a component's status is an allowed one, and one claiming
-        # code rests on code read under its path.
+        # code rests on a code source read under its path.
         tree = "https://github.com/acme/app/tree/abc/services/search"
-        component = ("## Component inventory and evolution\n\n| ID | Name | Responsibility | Repository | Status |"
+        component = ("### Components\n\n| ID | Name | Responsibility | Repository | Status |"
                      " Read | Evidence | Next |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n"
                      "| C01 | search | Serves | [search][search] | {} | d | G01 | n |\n")
-        coverage = ("### File reading coverage\n\n| Source | Material | Depth |\n| --- | --- | --- |\n"
-                    "| S01 | [routes](https://github.com/acme/app/blob/abc/services/search/{}) | {} |\n")
+
+        def read(path, coverage, kind="code"):
+            return [["S01", kind, f"[routes](https://github.com/acme/app/blob/abc/services/search/{path})", "abc",
+                     coverage, "F01", "None"]]
+        readme = read("README.md", "partial: the README")
         cases = [
             # A question a gap stops is blocked, never completed.
             ("a question closed on a gap", "G01", "⬜ Unverified",
-             ("README.md", "README"), "Q01: a completed question"),
-            ("a question closed on its finding", "F01", "⬜ Unverified",
-             ("README.md", "README"), None),
+             readme, "Q01: a completed question"),
+            ("a question closed on its finding",
+             "F01", "⬜ Unverified", readme, None),
             ("a question with no answer", "—", "⬜ Unverified",
-             ("README.md", "README"), "Q01: a completed question"),
+             readme, "Q01: a completed question"),
             # A question closes answered, never by a choice not to pursue it.
-            ("a user rejection", "Rejected by the user: not needed", "⬜ Unverified",
-             ("README.md", "README"), "Q01: a completed question"),
+            ("a user rejection", "Rejected by the user: not needed", "⬜ Unverified", readme,
+             "Q01: a completed question"),
             ("a status not allowed", "F01", "Done",
-             ("README.md", "README"), "C01: Status starts with"),
-            ("code claimed from a README", "F01", "🟩 Implemented", ("README.md", "README"),
-             "C01 links acme/app: services/search"),
+             readme, "C01: Status starts with"),
+            ("code claimed from a README", "F01", "🟩 Implemented",
+             readme, "C01 links acme/app: services/search"),
             ("code claimed from its routes", "F01", "🟩 Implemented",
-             ("src/routes.py", "entrypoints and routes"), None),
+             read("src/routes.py", "entry points"), None),
+            ("code claimed from a document", "F01", "🟩 Implemented", read("src/routes.py", "full", "documentation"),
+             "C01 links acme/app: services/search"),
         ]
-        for name, outcome, status, (path, depth), expected in cases:
+        for name, outcome, status, sources, expected in cases:
             with self.subTest(name):
-                text = (LEDGER.replace("| — | F01 |", f"| — | {outcome} |")
-                        .replace("## Component inventory and evolution\n\nNone yet.", component.format(status))
-                        .replace("### File reading coverage\n\nNone yet.", coverage.format(path, depth))
+                text = (with_sources(sources).replace("| — | F01 |", f"| — | {outcome} |")
+                        .replace("### Components\n\nNone yet.", component.format(status))
                         .replace("## Links\n\nNone yet.", f"## Links\n\n[search]: {tree}"))
                 (self.folder / "ledger.md").write_text(text, encoding="utf-8")
                 result = check_report.check_report(self.report, handover=True)
@@ -452,12 +445,15 @@ class CheckReportTest(unittest.TestCase):
 
     def test_long_claims_warn_and_unrecorded_ids_fail_at_handover(self):
         ledger = self.folder / "ledger.md"
-        ledger.write_text(LEDGER.replace("- **Claim:** text.", "- **Claim:** " + "word " * 160),
+        ledger.write_text(LEDGER.replace("| Search is merged. |", "| " + "word " * 160 + "|"),
                           encoding="utf-8")
         _, warnings = check_report.check_ledger(ledger)
         self.assertIn("claim is 160 words", " ".join(warnings))
+        # A citation is a link to a record's anchor; a bare ID-shaped word,
+        # such as P95, is prose.
         ledger.write_text(LEDGER.replace("## Boundary\n\nNone yet.",
-                                         "## Boundary\n\nSee S07 and Q03; Q4 is a quarter."), encoding="utf-8")
+                                         "## Boundary\n\nSee [S07](#s07) and [Q03](#q03); P95 is a latency."),
+                          encoding="utf-8")
         self.assertEqual(check_report.check_ledger(
             ledger, handover=False)[0], [])
         errors, _ = check_report.check_ledger(ledger, handover=True)

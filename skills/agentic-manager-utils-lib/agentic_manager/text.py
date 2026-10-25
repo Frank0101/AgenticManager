@@ -1,16 +1,16 @@
 """Helpers for Markdown text, shared by every skill: word counts, names, links,
-headings, fenced code and the date format reports show.
+the document a link reaches, headings, fenced code and the date reports show.
 
-A word count checks AI-written text against its length, so it counts words as
-a reader would, the same in every skill: a link as its text, and only tokens
-with a letter or a digit ("don't", "per-market" and "3.14" are one each). A
-name from free text is a slug, safe as a file name or a link key, numbered
-when taken. An anchor is GitHub's for a heading, so a checked link works where
-it is read; fenced code is blanked first, as a # line in it is no heading.
+A word count counts words as a reader would, the same in every skill: a link
+as its text, and only tokens with a letter or a digit ("don't" and "3.14" are
+one each). A name from free text is a slug, safe as a file name or a link key,
+numbered when taken. An anchor is GitHub's, so a checked link works where it is
+read; fenced code is blanked first. Two links reach one document when they name
+the same page in another form; a link is only compared so, never rewritten.
 """
 import re
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urlsplit
 
 # Markdown links, defined once for every skill: (image mark, text, URL) of an
 # inline link, (image mark, text, key) of a reference link, and (key, URL) of
@@ -28,6 +28,16 @@ NAME = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 # A date as a report shows it, such as 05/03/2026.
 DISPLAY_DATE = "%d/%m/%Y"
+# A Notion page's ID, 32 hexadecimal digits, with or without dashes, in any of
+# the URL forms Notion gives one page.
+NOTION_PAGE = re.compile(
+    r"([0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12})(?![0-9a-f])", re.I)
+NOTION_HOST = re.compile(r"(^|\.)notion\.(so|site|com)$")
+# A repository's folder path, /owner/repo/tree/..., which names the same files
+# as its /blob/ path.
+TREE_PATH = re.compile(r"^(/[^/]+/[^/]+)/tree/")
+# Query parameters that say how a page was reached, not which page it is.
+TRACKING = re.compile(r"^(pvs|utm_\w+)$")
 # A Markdown heading: its # marks and its title.
 HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$", re.M)
 # A line that opens or closes fenced code: its marker, three or more backticks
@@ -95,6 +105,25 @@ def reference_key(match):
     """The key a REFERENCE_LINK match names, in lower case as link_definitions()
     stores it: its own, or its text for a collapsed reference, [text][]."""
     return (match[3] or match[2]).casefold()
+
+
+def same_document(url):
+    """What identifies the document `url` reaches, so two links to one
+    document compare equal: a Notion page by its ID, whatever its URL form,
+    the row opened in a database's side peek (?p=) included; otherwise the URL
+    in lower-case scheme and host, without its #fragment, tracking parameters
+    or a trailing slash, and a repository's tree path as the blob path it names,
+    on any code host."""
+    parts = urlsplit(url.strip())
+    host = parts.netloc.casefold().removeprefix("www.")
+    if NOTION_HOST.search(host.split(":")[0]):
+        peek = dict(parse_qsl(parts.query)).get("p", "")
+        if page := NOTION_PAGE.fullmatch(peek) or NOTION_PAGE.search(parts.path):
+            return "notion:" + page[1].replace("-", "").casefold()
+    path = TREE_PATH.sub(r"\1/blob/", parts.path.rstrip("/"))
+    query = urlencode([(k, v) for k, v in parse_qsl(
+        parts.query, keep_blank_values=True) if not TRACKING.match(k)])
+    return f"{parts.scheme.casefold()}://{host}{path}" + (f"?{query}" if query else "")
 
 
 def local_link(document, target):

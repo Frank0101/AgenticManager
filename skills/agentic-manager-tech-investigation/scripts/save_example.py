@@ -24,7 +24,7 @@ def save(relative, note):
     document = topic_of(source) + REPORT_SUFFIX
     if not os.path.isfile(target(source, document)):
         raise SystemExit(
-            f"{relative} has no {document}: run make_report.py first")
+            f"{relative} has no {document}: finish the investigation with investigate.py first")
     name = free_name(os.path.basename(os.path.normpath(source)),
                      lambda name: os.path.exists(os.path.join(folder, KEPT_EXAMPLES, name)), "--")
     copied = []

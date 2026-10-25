@@ -1,0 +1,1 @@
+When sources disagree about a fact, such as which queue a service uses, code wins over the tracker, and the tracker wins over the documentation; a ticket marked Done with no merged code is still only planned.

@@ -1,0 +1,50 @@
+{
+  "sources": [
+    {
+      "key": "[[s1]]",
+      "kind": "code",
+      "reference": "[api server.py](https://github.com/acme/api/blob/1a2b3c4/server.py)",
+      "revision": "1a2b3c4",
+      "coverage": "partial: routes, lines 1-200 of 900"
+    },
+    {
+      "key": "[[s2]]",
+      "kind": "documentation: design page",
+      "reference": "[Search design](https://docs.example.com/search-design)",
+      "revision": "2026-09-30",
+      "coverage": "full"
+    }
+  ],
+  "findings": [
+    {
+      "key": "[[f1]]",
+      "claim": "The search API answers /search from the index, never the primary database.",
+      "sources": "[[s1]] (lines 120-160)",
+      "limits": "Routes read at the pinned commit; the index build job not read. [[s1]]: the unread lines hold admin routes, which don't serve /search."
+    },
+    {
+      "key": "[[f2]]",
+      "claim": "The design page plans to move search to a managed index.",
+      "sources": "[[s2]]",
+      "limits": "Proposed, not accepted."
+    }
+  ],
+  "new_questions": [
+    {
+      "key": "[[q1]]",
+      "question": "Which job builds the search index, and how often?",
+      "raised_by": "[[f1]]",
+      "depends_on": "None"
+    },
+    {
+      "key": "[[q2]]",
+      "question": "Should the investigation cover the payments gateway the search API calls for paid results?",
+      "raised_by": "[[f1]]",
+      "depends_on": "None",
+      "for": "user"
+    }
+  ],
+  "outcome": {
+    "answered": "[[f1]], [[f2]]"
+  }
+}

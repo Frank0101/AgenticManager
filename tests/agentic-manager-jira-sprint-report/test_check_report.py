@@ -467,15 +467,21 @@ class ChecksTest(unittest.TestCase):
                     self.assert_fails(failure, md)
 
     def test_framing(self):
-        # Only the timeline and epic tables need a heading above them.
+        # Only the timeline and epic tables need a heading directly above them.
+        epics = "<table><tr><th>Epic</th><th>Commentary</th></tr></table>"
         cases = [("an epic table", "<table><tr><th>Epic</th><th>Commentary</th></tr></table>\n\n" + "Prose. " * 10,
                   ["headings: epics table has a heading above it"]),
-                 ("another table", "<table><tr><th>Field</th></tr></table>", [])]
+                 ("another table", "<table><tr><th>Field</th></tr></table>", []),
+                 # The report's title isn't a section heading.
+                 ("only the title above", "# Sprint Summary: S1\n\n" + epics,
+                  ["headings: epics table has a heading above it"]),
+                 ("prose between the heading and the table", "## Delivery by epic\n\nProse.\n\n" + epics,
+                  ["headings: epics table directly follows 'Delivery by epic'"])]
         for name, md, expected in cases:
             with self.subTest(name):
                 c = check_report.Checker()
                 check_report.check_framing(c, md)
-                self.assertEqual((c.failures, c.passes), (expected, []))
+                self.assertEqual(c.failures, expected)
 
 
 if __name__ == "__main__":

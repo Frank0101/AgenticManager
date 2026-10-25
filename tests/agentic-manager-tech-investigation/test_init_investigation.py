@@ -69,7 +69,7 @@ class InitTest(unittest.TestCase):
             json.dump(settings, f)
 
     def test_first_questions_and_sources(self):
-        # One question about the topic per group, the documentation first; a
+        # One narrow question about the topic per group, the documentation first; a
         # source of another group, such as a local vault, is not used.
         signed_in = mock.Mock(return_value=mock.Mock(returncode=0))
         self.sources(documentation=["notion-mcp"], workflow=["jira-api"],
@@ -81,12 +81,23 @@ class InitTest(unittest.TestCase):
         ledger = Path(result["investigation_dir"]) / "ledger.md"
         body = ledger.read_text(encoding="utf-8")
         rows = check_report.ledger_rows(body, "### Ready")
-        self.assertEqual([(row[0], row[2], row[3]) for row in rows], [
-            ("Q01", "What does the documentation say about Acme Search?", "notion-mcp"),
-            ("Q02", "What does the tracker say about Acme Search?",
-             "jira-api (tickets.py search)"),
-            ("Q03", "What does the code say about Acme Search?", "github-cli")])
-        # The boundary is the user's, written after the ledger exists.
+        # The first orients; every other seed waits for it.
+        self.assertEqual([row[:4] for row in rows], [
+            ["Q01", "Seed (documentation)",
+             "What is Acme Search, which documents and systems make it up, and what other projects, platforms or "
+             "names sit next to it?", "None"],
+            ["Q02", "Seed (documentation)",
+             "What problem does Acme Search solve, for whom, and with what impact and success measures?",
+             "[Q01](#q01)"],
+            ["Q03", "Seed (documentation)",
+             "What target design and decisions do the documents record for Acme Search?", "[Q01](#q01)"],
+            ["Q04", "Seed (tracker)",
+             "What is done, in progress and planned for Acme Search, and what evidence backs each Done ticket?",
+             "[Q01](#q01)"],
+            ["Q05", "Seed (code)",
+             "What code for Acme Search is merged or in an open pull request, and how does it work: components, "
+             "connections, identities?", "[Q01](#q01)"]])
+        # The boundary holds the user's decisions, made as research meets them.
         self.assertIn("## Boundary\n\nNone yet.\n", body)
         self.assertEqual(check_report.check_ledger(ledger), ([], []))
         self.assertEqual(signed_in.call_args.args[0], [

@@ -11,8 +11,15 @@ import os
 from pathlib import Path
 import re
 
-from common import (COMPONENT_HEADER, DESIGN_TABLES, blocked_problem, design_problem, ids, group_problem, limits_problem, CELL_PIPE, DEFINITION, claim_length_warning, FINDING_FIELDS, FINDING_HEADING, FINDINGS, GAP_FIX, HEADING, LEDGER, LEDGER_SECTIONS, LINKS, QUERY, QUEUE, QUEUE_SUBSECTIONS, REFERENCE_LINK, SOURCE_FINDINGS, SOURCE_LINK_FIX, TABLE_HEADINGS, anchor_ids, areas_problem, backtick_error, cited_sources, component_rows, coverage_material_missing,
-                    depth_problem, expected_files, finding_blocks, gap_problem, h2_span, headings, id_order, ledger_rows, link_definitions, link_text, links, listed, local_link, markdown, outcome_problem, reference_key, report_headings, review_problem, section_span, source_reference_missing, status_problem, strip_anchors, table_cells, unlinked_backticks, unlinked_references, unread_components, unread_message, unrecorded_ids)
+from common import (CELL_PIPE, COMPONENT_HEADER, DEFINITION, DESIGN_TABLES, GAP_FIX, HEADING, LEDGER, LEDGER_SECTIONS,
+                    LINKS, QUERY, QUEUE, QUEUE_HEADER, QUEUE_SUBSECTIONS, REFERENCE_LINK, SOURCE_FINDINGS_COLUMN,
+                    SOURCE_LINK_FIX, TABLE_HEADINGS, anchor_ids, backtick_error, blocked_problem, cited_sources,
+                    claim_length_warning, component_rows, coverage_problem, design_problem, expected_files,
+                    finding_problem, gap_problem, group_problem, headings, id_order, ids, ledger_rows,
+                    link_definitions, link_text, links, listed, local_link, markdown, outcome_problem, reference_key,
+                    report_headings, review_problem, section_span, source_reference_missing, status_problem,
+                    strip_anchors, superseded_problem, table_cells, unlinked_backticks, unlinked_references,
+                    unread_components, unread_message, unrecorded_ids)
 
 
 def check_report(report, handover=False):
@@ -104,11 +111,11 @@ def check_report(report, handover=False):
 
 def check_ledger(path, handover=False):
     """(errors, warnings) of the ledger's structure: its sections and the
-    queue's in order, one heading per finding with its fields, every ticket and
-    pull request linked, and, at handover, a queue with nothing left ready or in
-    progress, the review finished, completed questions answered, blocked ones
-    naming what blocks them, allowed source groups and limits, statuses,
-    depths and areas, the system design's rules, code read for every
+    queue's in order, findings written once and every one cited written, every
+    ticket and pull request linked, and, at handover, a queue with nothing left
+    ready or in progress, the review finished, completed questions answered,
+    blocked ones naming what blocks them, the rows of sources, findings,
+    components and the system design within their rules, code read for every
     component claiming it, and linked sources."""
     errors, warnings = [], []
     try:
@@ -134,24 +141,19 @@ def check_ledger(path, handover=False):
     if queue != QUEUE_SUBSECTIONS:
         errors.append(f"{LEDGER}: the queue needs exactly these ### subsections, in order: "
                       + " → ".join(QUEUE_SUBSECTIONS))
-    findings = FINDING_HEADING.findall(body)
-    duplicates = sorted({f for f in findings if findings.count(f) > 1})
+    findings = [row for row in ledger_rows(
+        body, TABLE_HEADINGS["findings"]) if len(row) > 1]
+    written = [row[0] for row in findings]
+    duplicates = sorted(
+        {f for f in written if written.count(f) > 1}, key=id_order)
     if duplicates:
-        errors.append(f"{LEDGER}: duplicate findings: " +
-                      ", ".join(duplicates))
-    for ident, entry in finding_blocks(h2_text(body, FINDINGS) or "").items():
-        missing = [f for f in FINDING_FIELDS if not re.search(
-            rf"\*\*{re.escape(f)}\b[^*]*:?\*\*", entry)]
-        if missing:
-            warnings.append(
-                f"{LEDGER}: {ident} lacks " + ", ".join(missing))
-        claim = re.search(
-            r"\*\*Claim:?\*\*:?(.*?)(?=\n- \*\*|\Z)", entry, re.S)
-        too_long = claim_length_warning(ident, claim[1] if claim else "")
+        errors.append(f"{LEDGER}: findings written more than once: " +
+                      ", ".join(duplicates) + "; keep one row each")
+    for row in findings:
+        too_long = claim_length_warning(row[0], row[1])
         if too_long:
             warnings.append(f"{LEDGER}: {too_long}")
-    cited = set(re.findall(r"\bF\d+\b", re.sub(FINDING_HEADING, "", body)))
-    undefined = sorted(cited - set(findings), key=id_order)
+    undefined = sorted(set(ids(body, "F")) - set(written), key=id_order)
     if undefined:
         errors.append(
             f"{LEDGER}: findings cited but never written: " + ", ".join(undefined))
@@ -183,29 +185,17 @@ def check_ledger(path, handover=False):
         register = failing_rows(body, TABLE_HEADINGS["sources"], 2,
                                 source_reference_missing)
         if register:
-            errors.append(f"{LEDGER}: source register rows without a link to their exact reference: "
+            errors.append(f"{LEDGER}: sources without a link to their reference: "
                           + ", ".join(register) + "; " + SOURCE_LINK_FIX)
-        coverage = failing_rows(
-            body, TABLE_HEADINGS["file-coverage"], 1, coverage_material_missing)
-        if coverage:
-            errors.append(f"{LEDGER}: File reading coverage rows without a link to the material read: "
-                          + ", ".join(sorted(set(coverage))))
         mismatched = source_finding_problems(body)
         if mismatched:
-            errors.append(f"{LEDGER}: a source's Findings differ from the findings whose Evidence names it ("
-                          + "; ".join(mismatched) + "). Run ledger.py sync-sources")
+            errors.append(f"{LEDGER}: a source's Findings differ from the findings whose Sources name it ("
+                          + "; ".join(mismatched) + "). The ledger was edited by hand: change it only through investigate.py submit, "
+                          "which keeps them in step")
         spans = unlinked_backticks(without_queries(body))
         if spans:
             errors.append(backtick_error(LEDGER, spans))
     return errors, warnings
-
-
-def h2_text(body, title):
-    """The text of the ledger's ## `title` section, up to the next ## heading,
-    or None without one."""
-    lines = body.split("\n")
-    span = h2_span(lines, title)
-    return "\n".join(lines[span[0] + 1:span[1]]) if span else None
 
 
 def table_rows(prose):
@@ -242,14 +232,13 @@ def reference_problems(body):
 
 
 def source_finding_problems(body):
-    """Source rows whose `Findings:` differ from the findings whose Evidence line names them."""
+    """Source rows whose Findings differ from the findings whose Sources name them."""
     cited = cited_sources(body)
     problems = []
     for cells in ledger_rows(body, TABLE_HEADINGS["sources"]):
-        if len(cells) < 5 or not re.fullmatch(r"S\d+", cells[0]):
+        if len(cells) <= SOURCE_FINDINGS_COLUMN or not re.fullmatch(r"S\d+", cells[0]):
             continue
-        written = SOURCE_FINDINGS.search(cells[4])
-        have = set(re.findall(r"F\d+", written[1])) if written else set()
+        have = set(ids(cells[SOURCE_FINDINGS_COLUMN], "F"))
         want = cited.get(id_order(cells[0])[1], set())
         if have != want:
             problems.append(f"{cells[0]} lists {', '.join(sorted(have)) or 'none'}, "
@@ -258,7 +247,7 @@ def source_finding_problems(body):
 
 
 def without_queries(body):
-    """`body` with the queries of the source register's rows blanked. A search
+    """`body` with the queries of the sources' rows blanked. A search
     has no URL to pin, so its reference cell holds its exact query in plain
     text between backticks: visible, and neither a reference to link nor a
     ticket to link."""
@@ -276,41 +265,40 @@ def without_queries(body):
 
 def reference_error(where, found):
     return (f"{where}: tickets and pull requests written without a link: {listed(found)}. "
-            "Write them through ledger.py or make_report.py, which link them, a pull request as owner/repo#123")
+            "Write them through investigate.py submit, which links them, a pull request as owner/repo#123")
 
 
 def closing_problems(body):
     """The independent review not yet finished, completed questions with no
-    answer, blocked questions that don't say what blocks them, source groups
-    and limits, coverage depths, component statuses and source or gap areas
-    that are not allowed ones, and components claiming code nobody read."""
+    answer, blocked questions that don't say what blocks them, sources,
+    findings, components and system design rows that break their rules, and
+    components claiming code nobody read."""
     problems = []
     completed = ledger_rows(body, TABLE_HEADINGS["queue-completed"])
-    problems.append(review_problem(completed))
+    problems.append(review_problem(
+        ledger_rows(body, TABLE_HEADINGS["reviews"])))
     for row in completed:
         if re.fullmatch(r"Q\d+", row[0]):
-            problems.append(outcome_problem(
-                row[0], row[-1], row[2] if len(row) > 2 else ""))
+            problems.append(outcome_problem(row[0], row[-1], row[2]))
     blocked = ledger_rows(body, TABLE_HEADINGS["queue-blocked"])
     blocked_ids = {ident for row in blocked for ident in ids(row[0], "Q")}
-    problems += [blocked_problem(row[0], row[4] if len(row) > 4 else "", blocked_ids)
+    depends = QUEUE_HEADER.index("Depends on")
+    problems += [blocked_problem(row[0], row[depends] if len(row) > depends else "", blocked_ids)
                  for row in blocked]
-    coverage = [row for row in ledger_rows(body, TABLE_HEADINGS["file-coverage"])
-                if len(row) > 2]
-    problems += [depth_problem(row[2]) for row in coverage]
     components = component_rows(body)
     problems += [status_problem(row[0], row[4]) for row in components]
-    # The system design's rules, as ledger.py applies them on write.
+    # The rules ledger.py applies on write.
     problems += [design_problem("components", row)
                  for row in components if len(row) == len(COMPONENT_HEADER)]
     problems += [design_problem(table, row) for table in DESIGN_TABLES
                  for row in ledger_rows(body, TABLE_HEADINGS[table]) if re.fullmatch(r"[BEIP]\d+", row[0])]
-    problems += [group_problem(row) or limits_problem(row) for row in ledger_rows(body, TABLE_HEADINGS["sources"])
-                 if re.fullmatch(r"S\d+", row[0]) and len(row) > 5]
-    problems += [areas_problem(row) for table in ("sources", "gaps")
-                 for row in ledger_rows(body, TABLE_HEADINGS[table]) if re.fullmatch(r"[SG]\d+", row[0])]
-    definitions = link_definitions(body)
-    unread = unread_components(components, coverage, definitions)
+    sources = [row for row in ledger_rows(body, TABLE_HEADINGS["sources"])
+               if re.fullmatch(r"S\d+", row[0]) and len(row) > 6]
+    problems += [group_problem(row) or coverage_problem(row)
+                 or superseded_problem(row) for row in sources]
+    problems += [finding_problem(row) for row in ledger_rows(body, TABLE_HEADINGS["findings"])
+                 if re.fullmatch(r"F\d+", row[0]) and len(row) > 3]
+    unread = unread_components(components, sources, link_definitions(body))
     if unread:
         problems.append(unread_message(unread))
     return [p for p in problems if p]
@@ -324,7 +312,7 @@ def gap_problems(body):
 
 def failing_rows(body, heading, width, failing):
     """The first cell, as plain text, of the rows under `heading` that
-    `failing` rejects: a source's ID, or the source a file coverage row cites."""
+    `failing` rejects."""
     return [link_text(cells[0]).strip() for cells in ledger_rows(body, heading)
             if len(cells) > width and failing(cells)]
 

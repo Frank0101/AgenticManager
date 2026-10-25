@@ -13,7 +13,7 @@ import re
 import sys
 from datetime import date, timedelta
 
-from common import (INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, FIELD_TABLE_HEAD, ISSUE_KEY,
+from common import (HEADING, INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, FIELD_TABLE_HEAD, ISSUE_KEY,
                     BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, KEY_LIST, TICKET_ESTIMATE,
                     TICKET_EVENT_TYPES,
                     NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai, text_rule_problems,
@@ -39,6 +39,8 @@ CREATED_VALUES = {"sprint", "status", "statusCategory", "resolution", "priority"
 HEADER_LABELS = ["Dates", "Goal", ai("Goal outcome"), ai("Key Achievements"),
                  ai("Blockers & Risks"), "Sprint target completion"]
 
+# The report's title line, plain text the checks set apart from the rest.
+TITLE = re.compile(r"^# Sprint Summary:.*$", re.M)
 # The commentary's caveats, which its word limit doesn't count.
 CAVEATS = ("resolved as Duplicate or Won't Do",
            "is reconstructed from changelogs")
@@ -492,13 +494,14 @@ def check_framing(c, md):
         if kind is None:
             continue
         before = md.partition(table)[0]
-        headings = list(re.finditer(r"^##+ +(.+)$", before, re.M))
+        # A section heading, ## or deeper: the # title heads the whole report.
+        headings = [h for h in HEADING.finditer(before) if len(h[1]) >= 2]
         if c.check(bool(headings), "headings", f"{kind} table has a heading above it"):
             between = "\n".join(
                 line for line in before[headings[-1].end():].splitlines()
                 if line.strip() and not ((m := INLINE_LINK.fullmatch(line.strip())) and m[1]))
             c.check(between.strip() == "", "headings",
-                    f"{kind} table directly follows '{headings[-1].group(1).strip()}'")
+                    f"{kind} table directly follows '{headings[-1][2]}'")
 
 
 def check_images(c, md, report_dir):
@@ -664,7 +667,7 @@ def check_style(c, md):
     iso = dict(text_rule_problems(generated)).get(DATE_RULE, [])
     c.check(not iso, "dates", f"{DATE_RULE} {iso[:3] or ''}".strip())
     # The title is plain text; every other key, including copied fields, is linked.
-    md = re.sub(r"^# Sprint Summary:.*$", "", md, flags=re.M)
+    md = TITLE.sub("", md)
     stripped = INLINE_LINK.sub("", md)
     stripped = re.sub(r"<a\s[^>]*>.*?</a>", "", stripped, flags=re.S)
     unlinked = sorted(set(ISSUE_KEY.findall(stripped)))
@@ -674,7 +677,7 @@ def check_style(c, md):
 
 def generated_text(md):
     """Exclude only the fixed source-text slots, never matching prose by value."""
-    md = re.sub(r"^# Sprint Summary:.*$", "# Sprint Summary:", md, flags=re.M)
+    md = TITLE.sub("# Sprint Summary:", md)
     md = re.sub(r"^\| Goal \|.*$", "| Goal | |", md, flags=re.M)
     for table in html_tables(md):
         if table_kind(table) == "epics":

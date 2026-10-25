@@ -1,0 +1,12 @@
+{
+  "blocked": {
+    "gap": {
+      "gap": "Billing service callers",
+      "established_and_missing": "The retry API is merged; its callers in billing are not read",
+      "would_close": "Read access to the billing repository",
+      "blocked_by": "No access (billing repository)",
+      "authority": "Code; the caller is named in the design only",
+      "owner_and_next_check": "Billing team; once access exists"
+    }
+  }
+}

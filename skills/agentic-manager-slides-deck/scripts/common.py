@@ -152,18 +152,6 @@ def asset_image(name):
     return next((file for file in files if ASSET_IMAGE.fullmatch(file)), None)
 
 
-def link_kind(value):
-    """What a file-loading attribute's value links to: "remote" for a URL
-    leading off the page, "file" for a local path, None for nothing or inline
-    data."""
-    value = (value or "").strip()
-    if REMOTE.match(value):
-        return "remote"
-    if value and not value.startswith("data:"):
-        return "file"
-    return None
-
-
 def assets_dir():
     """The absolute path of _assets in the skill's output folder; it may not
     exist yet."""
@@ -216,3 +204,15 @@ def placed_images(text):
 def credit_line(entry):
     """The text that credits a downloaded image on a slide, from its credit."""
     return f"{entry['credit']} · {entry['license']}"
+
+
+def link_kind(value):
+    """What a file-loading attribute's value links to: "remote" for a URL
+    leading off the page, "file" for a local path, None for nothing or inline
+    data."""
+    value = (value or "").strip()
+    if REMOTE.match(value):
+        return "remote"
+    if value and not value.startswith("data:"):
+        return "file"
+    return None

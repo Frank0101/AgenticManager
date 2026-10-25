@@ -1,0 +1,1 @@
+This would be round {{round}}. Before running it, show the user what each of the {{rounds}} rounds so far raised, and ask whether to go on. If they stop, submit what they said: {"stopped": "<what they said>"}.

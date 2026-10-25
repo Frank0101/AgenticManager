@@ -83,13 +83,16 @@ class ReferencesTest(unittest.TestCase):
         two = {**self.DEFINED, "b": "https://other.example/x/y/blob/abc/f"}
         self.assertEqual(common.autolink("z/w#1", two)[1], ["z/w#1"])
 
-    def test_id_order_and_finding_blocks(self):
-        # IDs sort by number; each finding's block runs to the next finding.
+    def test_id_order_and_cited_sources(self):
+        # IDs sort by number; a source is cited by the findings whose Sources name it.
         self.assertEqual(sorted(["S10", "S2", "F01", "Q3"], key=common.id_order), [
                          "F01", "Q3", "S2", "S10"])
-        text = "intro\n### F01 — One\n\n- a\n### F02 — Two\n- b\n"
-        self.assertEqual(common.finding_blocks(text),
-                         {"F01": "### F01 — One\n\n- a", "F02": "### F02 — Two\n- b"})
+        findings = common.table(common.FINDING_HEADER, [
+            ["F01", "One.", "S01 (lines 1-9); [S02](#s02)",
+             "Read."], ["F02", "Two.", "F01", "Inferred."],
+            ["F03", "Three.", "S02", "Read."]])
+        self.assertEqual(common.cited_sources(f"## Findings\n\n{findings}\n"),
+                         {1: {"F01"}, 2: {"F01", "F03"}})
 
     def test_unlinked_references(self):
         text = "PROJ-1 [PROJ-2][p] acme/app#3, #4 and `PROJ-5`\n### PROJ-6\n[p]: https://x/PROJ-7"
@@ -143,18 +146,13 @@ class ReferencesTest(unittest.TestCase):
                     self.assertIn(expected, problem or "")
 
     def test_the_review_ends_on_a_round_raising_nothing_or_the_choice_to_stop(self):
-        def review(row_id, outcome):
-            return [row_id, "Independent review", common.REVIEW_QUESTION, "s", "None", outcome]
-        # (completed rows, reviewed)
-        cases = [([], False), ([review("Q01", "Raised Q02")], False),
-                 ([review("Q01", "Raised Q02"), review(
-                     "Q03", "No issue raised")], True),
-                 ([review("Q01", "Raised Q02"), review("Q03", "Stopped by the user: enough")], True)]
-        for completed, done in cases:
-            with self.subTest(completed=completed):
-                self.assertEqual(common.reviewed(completed), done)
-        self.assertIsNone(common.outcome_problem(
-            "Q03", "Stopped by the user: enough", common.REVIEW_QUESTION))
+        # (the reviews table's rounds, reviewed)
+        cases = [([], False), ([["1", "Q02"]], False),
+                 ([["1", "Q02"], ["2", "No issue raised"]], True),
+                 ([["1", "Q02"], ["2", "Stopped by the user: enough"]], True)]
+        for rounds, done in cases:
+            with self.subTest(rounds=rounds):
+                self.assertEqual(common.reviewed(rounds), done)
 
     def test_closing_values(self):
         # (function, value, accepted)
@@ -165,13 +163,10 @@ class ReferencesTest(unittest.TestCase):
                  (common.status_problem,
                   "🟦 In development (on a branch)", True),
                  (common.status_problem, "Implemented", False),
-                 (common.depth_problem, "partial: lines 1-70 of 474", True),
-                 (common.depth_problem, "Full",
-                  True), (common.depth_problem, "skimmed", False)]
+                 ]
         for function, value, accepted in cases:
             with self.subTest(function=function.__name__, value=value):
-                problem = function(
-                    value) if function is common.depth_problem else function("X01", value)
+                problem = function("X01", value)
                 self.assertEqual(problem is None, accepted, problem)
 
     def test_a_blocked_question_names_what_blocks_it(self):
@@ -185,49 +180,89 @@ class ReferencesTest(unittest.TestCase):
                 self.assertEqual(problem is None, accepted, problem)
 
     def test_a_sources_group_is_one_of_the_groups(self):
-        # (Group / evidence kind, group, accepted)
-        cases = [("source_control", "source_control", True), ("documentation: vision", "documentation", True),
-                 ("Workflow", "workflow", True), ("code", None, False), ("", None, False)]
+        # (Kind, the group as the config names it, accepted): the ledger uses
+        # the names code, tracker and documentation, never the config's keys.
+        cases = [("code", "source_control", True), ("documentation: vision", "documentation", True),
+                 ("Tracker", "workflow", True), ("source_control", None, False), ("", None, False)]
         for value, group, accepted in cases:
             with self.subTest(value):
                 row = ["S01", value,
-                       "[x](https://example.com/x)", "d", "Read.", "None", ""]
+                       "[x](https://example.com/x)", "d", "full", "None", "None"]
                 self.assertEqual(common.group_of(row), group)
                 self.assertEqual(common.group_problem(row) is None, accepted)
 
-    def test_a_sources_limits_give_its_mark(self):
-        # (Access limits / superseded by, mark, accepted)
-        cases = [("None", None, True), ("", None, True),
-                 ("Limited: only lines 1-200 read", "limited", True),
-                 ("superseded by the 2026 design", "superseded", True),
-                 ("only lines 1-200 read", None, False)]
-        for value, mark, accepted in cases:
-            with self.subTest(value):
-                row = ["S01", "documentation",
-                       "[x](https://example.com/x)", "d", "Read.", value, ""]
-                self.assertEqual(common.limit_mark(row), mark)
-                self.assertEqual(common.limits_problem(row) is None, accepted)
+    def test_a_sources_coverage_and_replacement_give_its_mark(self):
+        # (Coverage, Superseded by, the report's mark, the problem's text or None)
+        cases = [("full", "None", None, None), ("Full: every line", "None", None, None),
+                 ("entry points: routes", "None", "limited", None),
+                 ("partial: lines 1-80 of 352", "None", "limited", None),
+                 ("listing", "None", "limited",
+                  None), ("search hit", "None", "limited", None),
+                 ("No access: repository not visible", "None", "limited", None),
+                 ("full", "S02", "superseded", None),
+                 ("partial: the summary",
+                  "[S02](#s02)", "limited, superseded", None),
+                 ("skimmed", "None", "limited", "Coverage starts with one of"),
+                 ("full", "the 2026 design", "superseded", "Superseded by is None"),
+                 ("full", "S01", "superseded", "Superseded by is None"),
+                 ("full", "S02, S03", "superseded", "Superseded by is None")]
+        for coverage, superseded, mark, expected in cases:
+            with self.subTest(coverage=coverage, superseded=superseded):
+                row = ["S01", "documentation", "[x](https://example.com/x)", "2026-10-01", coverage, "None",
+                       superseded]
+                self.assertEqual(common.source_mark(row), mark)
+                problem = common.coverage_problem(
+                    row) or common.superseded_problem(row)
+                if expected is None:
+                    self.assertIsNone(problem)
+                else:
+                    self.assertIn(expected, problem or "")
+
+    def test_a_finding_states_a_claim_its_sources_and_limits(self):
+        # (row, the problem's text, or None)
+        cases = [(["F01", "A claim.", "S01 (lines 1-9)", "Read."], None),
+                 (["F01", "A conclusion.", "F02, F03", "Inferred."], None),
+                 (["F01", " ", "S01", "Read."], "Claim holds the claim"),
+                 (["F01", "A claim.", "the code", "Read."],
+                  "Sources names the sources"),
+                 (["F01", "A claim.", "S01", ""], "Limits says how")]
+        for row, expected in cases:
+            with self.subTest(row=row):
+                problem = common.finding_problem(row)
+                if expected is None:
+                    self.assertIsNone(problem)
+                else:
+                    self.assertIn(expected, problem or "")
 
     def test_unread_components(self):
-        # A component claiming code needs coverage, at a reading depth, of its
-        # path, a file under it, or a folder above it, which covers its files.
+        # A component claiming code needs a code source, read in full or at its
+        # entry points, of its path, a file under it, or a folder above it,
+        # which covers its files.
         definitions = {"search": "https://git.example/acme/api/tree/abc/services/search",
                        "client": "https://git.example/acme/api/blob/abc/app/plugins/client.ts"}
         unread = {"C01": ["acme/api: services/search"]}
+
+        def source(path, coverage, kind="code"):
+            return ["S01", kind, f"[f](https://git.example/acme/api/{path})", "abc", coverage, "None", "None"]
         cases = [("nothing read", "[search][search]", [], unread),
-                 ("a README", "[search][search]",
-                  [["S01", "[f](https://git.example/acme/api/blob/abc/services/search/README.md)", "README"]], unread),
+                 ("a README in part", "[search][search]",
+                  [source("blob/abc/services/search/README.md", "partial: the README")], unread),
+                 ("a listing of it", "[search][search]", [
+                  source("tree/abc/services/search", "listing")], unread),
                  ("a sibling folder", "[search][search]",
-                  [["S01", "[f](https://git.example/acme/api/blob/abc/services/searcher/main.py)", "full"]], unread),
+                  [source("blob/abc/services/searcher/main.py", "full")], unread),
+                 ("a document at its path", "[search][search]",
+                  [source("blob/abc/services/search/main.py", "full", "documentation")], unread),
                  ("a file under it", "[search][search]",
-                  [["S01", "[f](https://git.example/acme/api/blob/abc/services/search/main.py)", "Full"]], {}),
-                 ("a folder above it", "[client][client]",
-                  [["S01", "[plugins](https://git.example/acme/api/tree/abc/app/plugins)", "full"]], {})]
-        for name, repository, coverage, expected in cases:
+                  [source("blob/abc/services/search/main.py", "Full")], {}),
+                 ("its entry points", "[search][search]",
+                  [source("blob/abc/services/search/main.py", "entry points: routes")], {}),
+                 ("a folder above it", "[client][client]", [source("tree/abc/app/plugins", "full")], {})]
+        for name, repository, sources, expected in cases:
             with self.subTest(name):
                 component = ["C01", "n", "r", repository, "🟩 Implemented"]
                 self.assertEqual(common.unread_components(
-                    [component], coverage, definitions), expected)
+                    [component], sources, definitions), expected)
         self.assertEqual(common.unread_components(
             [["C01", "n", "r", "[search][search]", "⬜ Unverified"]], [], definitions), {})
         # The message names the path to read.

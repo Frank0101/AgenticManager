@@ -39,13 +39,14 @@ def build_brief(data):
                     **({"comments": brief_comments(comments[ticket["key"]])} if ticket["key"] in comments else {}),
                 })
         completed = epic["original_points_done"] + epic["extra_points_done"]
-        epics.append({"key": epic["key"], "name": epic["name"], **first_chunk(epic["description"]),
-                      "completed_pts": completed, "tickets": tickets})
+        epics.append((completed, {"key": epic["key"], "name": epic["name"], **first_chunk(epic["description"]),
+                                  "tickets": tickets}))
     # By completed pts, commitment and extra together: the order Key
-    # Achievements takes after the goal's themes. Matching tickets to themes
-    # is left to the agent: it is the same reading as the goal verdict, an
-    # interpretation.
-    epics.sort(key=lambda e: -e["completed_pts"])
+    # Achievements takes after the goal's themes. The figure itself stays out
+    # of the brief, as the report quotes only report_facts. Matching tickets to
+    # themes is left to the agent: it is the same reading as the goal verdict,
+    # an interpretation.
+    epics = [epic for _, epic in sorted(epics, key=lambda pair: -pair[0])]
     return {
         "sprint": {
             "name": data["sprint_name"], "status": data["sprint_status"],

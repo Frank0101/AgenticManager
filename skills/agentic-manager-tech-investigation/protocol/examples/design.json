@@ -1,0 +1,65 @@
+{
+  "boundaries": [
+    {
+      "key": "[[b1]]",
+      "name": "Production cluster",
+      "kind": "network",
+      "evidence": "[[F01]]"
+    }
+  ],
+  "identities": [
+    {
+      "key": "[[i1]]",
+      "name": "search-api service account",
+      "kind": "service account",
+      "reaches": "read on the search index",
+      "evidence": "[[F01]]"
+    }
+  ],
+  "components": [
+    {
+      "key": "[[c1]]",
+      "name_and_type": "search-api (service)",
+      "responsibility": "Serves search queries",
+      "code": "[server.py](https://github.com/acme/api/blob/1a2b3c4/server.py)",
+      "status": "🟩 Implemented",
+      "how_much_was_read": "Routes read",
+      "evidence": "[[F01]]",
+      "next_steps": "Unchanged",
+      "boundary": "[[b1]]"
+    },
+    {
+      "key": "[[c2]]",
+      "name_and_type": "Search index (store)",
+      "responsibility": "Holds the searchable documents",
+      "code": "None",
+      "status": "⬜ Unverified",
+      "how_much_was_read": "Not read",
+      "evidence": "[[G01]]",
+      "next_steps": "Moves to a managed index ([[F02]])",
+      "boundary": "[[b1]]"
+    }
+  ],
+  "connections": [
+    {
+      "key": "[[e1]]",
+      "from": "[[c1]]",
+      "to": "[[c2]]",
+      "how": "HTTP",
+      "data": "the query and its results",
+      "waits_for_reply": "yes",
+      "identity": "[[i1]]",
+      "state": "🟩 Implemented",
+      "evidence": "[[F01]]"
+    }
+  ],
+  "flows": [
+    {
+      "key": "[[p1]]",
+      "entry_point": "A user searches",
+      "connections": "[[e1]]",
+      "evidence": "[[F01]]"
+    }
+  ],
+  "new_questions": []
+}

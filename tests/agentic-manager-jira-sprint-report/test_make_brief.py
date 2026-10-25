@@ -114,8 +114,9 @@ class BriefTest(unittest.TestCase):
 
     def test_epics_in_order_of_completed_pts(self):
         # Commitment and extra together: the order Key Achievements takes.
-        self.assertEqual([(e["key"], e["completed_pts"]) for e in self.brief["epics"]],
-                         [("PROJ-100", 6), ("__no_epic__", 1)])
+        self.assertEqual([e["key"] for e in self.brief["epics"]], [
+                         "PROJ-100", "__no_epic__"])
+        self.assertNotIn("completed_pts", self.brief["epics"][0])
         self.assertEqual(
             self.brief["epics"][0]["description"], "Staff sign in with their work account.")
 

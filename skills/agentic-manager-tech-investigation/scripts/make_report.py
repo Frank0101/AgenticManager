@@ -14,7 +14,7 @@ import json
 import os
 import re
 
-from common import (CONTENT, DISPLAY_DATE, FENCE, backtick_error, INVESTIGATION, TABLE_HEADINGS, inline_links, ledger_rows, FOLDER_NAME, HEADING, group_of, limit_mark, HEADINGS, LEDGER, RECORD_DEFINITION,
+from common import (CONTENT, DISPLAY_DATE, FENCE, backtick_error, INVESTIGATION, TABLE_HEADINGS, inline_links, ledger_rows, FOLDER_NAME, HEADING, group_of, source_mark, HEADINGS, LEDGER, RECORD_DEFINITION,
                     REPORT_SUFFIX, anchor_tag, autolink, headings, investigation_dir, link_definitions, markdown, read_json, table, topic_of, unlinked_backticks, unresolved_message, word_count, write_output_file)
 import check_report
 
@@ -49,6 +49,16 @@ def make_report(relative):
     check = check_report.check_report(path)
     return {"path": path, "temporary": temporary, "ok": check["ok"], "errors": check["errors"],
             "warnings": content.warnings + check["warnings"]}
+
+
+def content_problems(relative):
+    """The problems of the investigation's content.json, as make_report would
+    list them, without writing anything."""
+    folder, _, _ = investigation_dir(relative)
+    content = Content(read_json(os.path.join(folder, CONTENT)),
+                      Ledger(os.path.join(folder, LEDGER)), folder)
+    build(content)
+    return content.errors
 
 
 class Content:
@@ -188,8 +198,8 @@ def build(content):
         sections[key] = architect_section(content, key, stage)
     parts = [f"# {topic_of(content.folder).replace('-', ' ')}",
              f"Evidence snapshot: {snapshot(content)}. Code links pin inspected "
-             "commits; ticket, PR and document links may display later changes. Evidence revisions and "
-             f"access limits are recorded in the [Research ledger]({LEDGER}).",
+             "commits; ticket, PR and document links may display later changes. Each source's revision "
+             f"and how much of it was read are recorded in the [Research ledger]({LEDGER}).",
              HEADING_LINE["exec"], HEADING_LINE["exec.purpose"], *purpose]
     parts += [HEADING_LINE["exec.current"], *current_status]
     parts += [HEADING_LINE["exec.direction"], *direction]
@@ -229,8 +239,9 @@ def architect_section(content, key, stage):
 
 
 def snapshot(content):
-    """The day the evidence was last checked: the latest date a source of the
-    ledger records, or the investigation's own day when none records one."""
+    """The day of the evidence: the latest date in the Revision of the
+    ledger's sources, such as a page's last edit, or the investigation's own day
+    when none records one."""
     days = [date.fromisoformat(day) for row in content.ledger.sources if len(row) > 3
             for day in re.findall(r"\b\d{4}-\d{2}-\d{2}\b", row[3]) if valid_day(day)]
     if days:
@@ -266,19 +277,20 @@ def key_decisions(content):
 
 def references(content):
     """Every source of the ledger with a link, by its group: code, tracker and
-    documentation, each marked limited or superseded as its limits say."""
+    documentation, each marked limited unless read in full, and superseded when
+    another source replaces it."""
     lines = []
     for group, label in (("source_control", "Implementation and configuration"), ("workflow", "Delivery"),
                          ("documentation", "Vision, rationale and reported operational gaps")):
         entries = []
         for row in content.ledger.sources:
-            if len(row) < 6 or group_of(row) != group:
+            if len(row) < 7 or group_of(row) != group:
                 continue
             reference = content.ledger.inlined(row[2].strip())
             if "](" not in reference:
                 continue
             entry = f"- {reference}" + \
-                (f" ({mark})" if (mark := limit_mark(row)) else "")
+                (f" ({mark})" if (mark := source_mark(row)) else "")
             if entry not in entries:
                 entries.append(entry)
         lines += [f"**{label}**",

@@ -19,7 +19,7 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.output_file import read_json, write_output_file  # noqa: E402,F401
-from agentic_manager.text import DISPLAY_DATE, INLINE_LINK, link_text, word_count  # noqa: E402,F401
+from agentic_manager.text import DISPLAY_DATE, HEADING, INLINE_LINK, link_text, word_count  # noqa: E402,F401
 from agentic_manager.output_folder import clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order,  # noqa: E402,F401
@@ -322,6 +322,11 @@ def status_category(raw, categories):
     return category
 
 
+def status_categories(statuses):
+    """{status id: status category key} from Jira's list of statuses."""
+    return {str(s["id"]): nested(s, ["statusCategory", "key"]) for s in statuses}
+
+
 def points_value(value):
     """Story points as a number, or None: whole points as int, fractions kept.
     Takes the issue field's number or a changelog's string."""
@@ -344,11 +349,6 @@ def history_fields(flagged_field, points_field):
 # creation of the ticket and each change of a tracked field.
 TICKET_EVENT_TYPES = {"jira": (
     "created", *(f"{field}_changed" for field in history_fields(None, None)))}
-
-
-def status_categories(statuses):
-    """{status id: status category key} from Jira's list of statuses."""
-    return {str(s["id"]): nested(s, ["statusCategory", "key"]) for s in statuses}
 
 
 def as_of(sprint, fetched_at):

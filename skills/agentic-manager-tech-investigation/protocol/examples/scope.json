@@ -1,0 +1,17 @@
+{
+  "decisions": [
+    {
+      "question": "[[Q07]]",
+      "name": "The payments gateway",
+      "answer": "include"
+    }
+  ],
+  "new_questions": [
+    {
+      "key": "[[q1]]",
+      "question": "Which calls does the search API make to the payments gateway, and with which identity?",
+      "raised_by": "[[Q07]]",
+      "depends_on": "None"
+    }
+  ]
+}
