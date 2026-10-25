@@ -148,10 +148,9 @@ REVIEW_HEADER = ["Round", "Raised"]
 REVIEW_NONE = "No issue raised"
 REVIEW_STOPPED = "Stopped by the user:"
 # A finding holds one claim, of about 80 words; a claim far past that, here
-# about twice it, usually bundles several, which are then cited and corrected
-# as one. It is a warning, never a refusal: a single claim can need the room.
-# Warning when the finding is written, not only at the end, splits it before
-# other rows cite it.
+# about twice it, bundles several, which are then cited and corrected as one.
+# It is refused when the finding is written, so it is split before other rows
+# cite it, and the final check refuses it too.
 CLAIM_WORDS_MAX = 150
 # A pipe that separates table cells: one escaped as \| stays inside its cell.
 CELL_PIPE = re.compile(r"(?<!\\)\|")
@@ -378,8 +377,8 @@ def ids(text, letters):
     return re.findall(rf"\b[{letters}]\d{{2,}}\b", text)
 
 
-def claim_length_warning(ident, claim):
-    """A warning when a finding's claim is far past its length, or None."""
+def claim_length_problem(ident, claim):
+    """Why a finding's claim is too long, far past its length, or None."""
     words = word_count(claim)
     if words <= CLAIM_WORDS_MAX:
         return None

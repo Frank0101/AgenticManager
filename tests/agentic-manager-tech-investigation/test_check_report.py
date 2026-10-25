@@ -6,8 +6,6 @@ Each test writes an invented report and ledger to a temporary folder;
 check_report() reads no config.
 """
 
-import contextlib
-import io
 import json
 import os
 import sys
@@ -443,12 +441,12 @@ class CheckReportTest(unittest.TestCase):
         result = check_report.check_report(self.report, handover=True)
         self.assertTrue(result["ok"], result)
 
-    def test_long_claims_warn_and_unrecorded_ids_fail_at_handover(self):
+    def test_long_claims_and_unrecorded_ids_fail(self):
         ledger = self.folder / "ledger.md"
         ledger.write_text(LEDGER.replace("| Search is merged. |", "| " + "word " * 160 + "|"),
                           encoding="utf-8")
-        _, warnings = check_report.check_ledger(ledger)
-        self.assertIn("claim is 160 words", " ".join(warnings))
+        errors, _ = check_report.check_ledger(ledger)
+        self.assertIn("claim is 160 words", " ".join(errors))
         # A citation is a link to a record's anchor; a bare ID-shaped word,
         # such as P95, is prose.
         ledger.write_text(LEDGER.replace("## Boundary\n\nNone yet.",
@@ -466,14 +464,6 @@ class CheckReportTest(unittest.TestCase):
                 self.assertFalse(check_report.check_report(path)["ok"])
         self.report.write_bytes(b"\xff")
         self.assertIn("UTF-8", " ".join(self.check()["errors"]))
-
-    def test_cli_json_and_exit_status(self):
-        for path, status in ((self.report, 0), (self.folder / "missing.md", 1)):
-            with self.subTest(status=status), contextlib.redirect_stdout(io.StringIO()) as output:
-                self.assertEqual(check_report.main(
-                    ["--report", str(path)]), status)
-                self.assertEqual(json.loads(output.getvalue())
-                                 ["ok"], status == 0)
 
 
 if __name__ == "__main__":

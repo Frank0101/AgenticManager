@@ -63,12 +63,7 @@ class InvestigateTest(unittest.TestCase):
                         answer(f"Fact for {question}."))
 
     def design(self):
-        # The example's API claims code, but the example answer read it only in part.
-        design = copy.deepcopy(protocol.example("design"))
-        design["components"][0]["code"] = "None"
-        design["components"][0]["status"] = "🟨 Planned"
-        design["connections"][0]["state"] = "🟨 Planned"
-        return design
+        return copy.deepcopy(protocol.example("design"))
 
     def test_the_phase_follows_the_ledger(self):
         # Each step's submission moves the investigation on, in order: the
@@ -150,7 +145,11 @@ class InvestigateTest(unittest.TestCase):
                       investigate.next_tasks(INVESTIGATION))
 
     def test_a_task_carries_what_it_needs(self):
-        self.submit("research:Q01", {**protocol.example("research"), "new_questions": [
+        # The API file read only in part, so the task flags it.
+        data = protocol.example("research")
+        data["sources"][0]["coverage"] = "partial: routes, lines 1-200 of 900"
+        data["findings"][0]["limits"] += " [[s1]]: the unread lines hold admin routes."
+        self.submit("research:Q01", {**data, "new_questions": [
             {"key": "[[q1]]", "question": "Which job builds the index?", "raised_by": "[[f1]]", "depends_on": "None"}]})
         self.submit("research:Q02", answer())
         for question in ("Q03", "Q04", "Q05"):

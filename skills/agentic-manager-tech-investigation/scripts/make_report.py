@@ -8,7 +8,6 @@ holds only the sections that need judgment. A claim links the ledger as
 owner/repo#123 are linked from the ledger's links, and a key it can't link is
 written as code rather than guessed.
 """
-import argparse
 from datetime import date
 import json
 import os
@@ -256,6 +255,7 @@ def snapshot(content):
 
 
 def valid_day(text):
+    """Whether `text` is a date as YYYY-MM-DD."""
     try:
         date.fromisoformat(text)
     except ValueError:
@@ -264,6 +264,7 @@ def valid_day(text):
 
 
 def key_decisions(content):
+    """The Key decisions and risks section's lines, from content.json's key_decisions."""
     items = content.data.get("key_decisions")
     if not isinstance(items, list):
         content.errors.append(
@@ -298,17 +299,3 @@ def references(content):
     lines.append(f"The [research ledger]({LEDGER}) holds the full validation trail: revisions, searches, "
                  "the component inventory, reconciled findings, decisions and limitations.")
     return lines
-
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Write the report from content.json, then check it.")
-    parser.add_argument("--investigation", required=True,
-                        help="the investigation's folder, <Topic>_<YY-MM-DD>, inside tech-investigations")
-    result = make_report(parser.parse_args(argv).investigation)
-    print(json.dumps(result))
-    return 0 if result["ok"] else 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

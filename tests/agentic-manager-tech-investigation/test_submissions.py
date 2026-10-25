@@ -117,8 +117,6 @@ class SubmissionTest(unittest.TestCase):
         # A new question is ready, raised by the finding that raised it.
         self.assertIn(
             "| Q06 | F01 | Which job builds the search index, and how often? | None |  |", self.plain())
-        # Its partial read is said in the finding's limits, citing the source.
-        self.assertIn("S01: the unread lines hold admin routes", self.plain())
         self.assertEqual(check_report.check_ledger(self.path)[0], [])
 
     def test_a_source_read_again_keeps_its_id(self):

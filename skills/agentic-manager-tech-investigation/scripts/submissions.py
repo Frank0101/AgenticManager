@@ -9,7 +9,7 @@ problem is collected by field, and the ledger changes only when there is none.
 """
 import re
 
-from common import OUTSIDE_SCOPE, ids, read_in_part, USER_DECIDED, USER_QUESTION, citation, claim_length_warning
+from common import OUTSIDE_SCOPE, ids, read_in_part, USER_DECIDED, USER_QUESTION, citation, claim_length_problem
 from ledger import (TABLES, as_written, duplicate_of, finish_write, find_row,
                     header_of, move_row, next_id, put_row, refuse_cited, search_reference, set_design_basis,
                     add_scope, table_rows, write_rows, record_review)
@@ -133,7 +133,7 @@ def submit_research(lines, question, data):
         if cells is None:
             continue
         check_partial(lines, cells, where, problems, keys)
-        if too_long := claim_length_warning(where, cells[0]):
+        if too_long := claim_length_problem(where, cells[0]):
             problems.add(too_long)
         written += problems.put(lines, "findings",
                                 keys.get(key_of(item)), cells, where, keys)

@@ -5,8 +5,6 @@ the form of the evidence, not whether it is true.
 It recognizes the skill's ordinary Markdown output, not every Markdown
 extension.
 """
-import argparse
-import json
 import os
 from pathlib import Path
 import re
@@ -14,7 +12,7 @@ import re
 from common import (CELL_PIPE, COMPONENT_HEADER, DEFINITION, DESIGN_TABLES, GAP_FIX, HEADING, LEDGER, LEDGER_SECTIONS,
                     LINKS, QUERY, QUEUE, QUEUE_HEADER, QUEUE_SUBSECTIONS, REFERENCE_LINK, SOURCE_FINDINGS_COLUMN,
                     SOURCE_LINK_FIX, TABLE_HEADINGS, anchor_ids, backtick_error, blocked_problem, cited_sources,
-                    claim_length_warning, component_rows, coverage_problem, design_problem, expected_files,
+                    claim_length_problem, component_rows, coverage_problem, design_problem, expected_files,
                     finding_problem, gap_problem, group_problem, headings, id_order, ids, ledger_rows,
                     link_definitions, link_text, links, listed, local_link, markdown, outcome_problem, reference_key,
                     report_headings, review_problem, section_span, source_reference_missing, status_problem,
@@ -29,7 +27,7 @@ def check_report(report, handover=False):
     errors, warnings = [], []
     result = {"ok": False, "errors": errors, "warnings": warnings}
     if not report.is_absolute():
-        errors.append("--report must be an absolute Markdown path.")
+        errors.append("The report's path must be absolute.")
         return result
     try:
         text = report.read_text(encoding="utf-8")
@@ -150,9 +148,9 @@ def check_ledger(path, handover=False):
         errors.append(f"{LEDGER}: findings written more than once: " +
                       ", ".join(duplicates) + "; keep one row each")
     for row in findings:
-        too_long = claim_length_warning(row[0], row[1])
+        too_long = claim_length_problem(row[0], row[1])
         if too_long:
-            warnings.append(f"{LEDGER}: {too_long}")
+            errors.append(f"{LEDGER}: {too_long}")
     undefined = sorted(set(ids(body, "F")) - set(written), key=id_order)
     if undefined:
         errors.append(
@@ -264,6 +262,7 @@ def without_queries(body):
 
 
 def reference_error(where, found):
+    """The error for tickets and pull requests found written without a link."""
     return (f"{where}: tickets and pull requests written without a link: {listed(found)}. "
             "Write them through investigate.py submit, which links them, a pull request as owner/repo#123")
 
@@ -315,22 +314,3 @@ def failing_rows(body, heading, width, failing):
     `failing` rejects."""
     return [link_text(cells[0]).strip() for cells in ledger_rows(body, heading)
             if len(cells) > width and failing(cells)]
-
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Check a report's structure and local files; --handover adds the handover checks.",
-        epilog='Prints one line of JSON, {"ok": bool, "errors": [...], "warnings": [...]}, and exits 1 '
-        "unless the report passes.")
-    parser.add_argument("--report", required=True,
-                        help="Absolute path of the Markdown report.")
-    parser.add_argument("--handover", action="store_true",
-                        help="also apply every handover check")
-    args = parser.parse_args(argv)
-    result = check_report(args.report, args.handover)
-    print(json.dumps(result))
-    return 0 if result["ok"] else 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

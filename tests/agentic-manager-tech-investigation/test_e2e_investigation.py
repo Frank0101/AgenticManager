@@ -85,15 +85,13 @@ class InvestigationTest(unittest.TestCase):
             self.submit(f"research:{question}", {"findings": [{"key": "[[f1]]", "claim": f"Fact for {question}.",
                                                                "sources": "[[S02]]", "limits": "Read in full."}],
                                                  "outcome": {"answered": "[[f1]]"}})
-        # A refused answer lists its problems and writes nothing.
         self.assertTrue(self.next().startswith("# Task design"))
-        refused = self.refused("design", protocol.example("design"))
+        self.submit("design", protocol.example("design"))
+        # A refused answer lists its problems and writes nothing.
+        self.assertTrue(self.next().startswith("# Task review:1"))
+        refused = self.refused("review:1", {"raised": [
+                               {"key": "q1", "question": "Why?", "depends_on": "None"}]})
         self.assertIn("nothing was written", refused)
-        self.assertIn("[[c1]] links acme/api: server.py", refused)
-        design = json.loads(json.dumps(protocol.example("design")))
-        design["components"][0] |= {"status": "🟨 Planned", "code": "None"}
-        design["connections"][0]["state"] = "🟨 Planned"
-        self.submit("design", design)
         self.assertTrue(self.next().startswith("# Task review:1"))
         self.submit("review:1", {"raised": []})
         task = self.next()

@@ -47,5 +47,3 @@ A ticket that a document names but that doesn't exist is a finding: the document
 Read the code pinned to a commit on the main branch, so every claim names the revision it holds for. For a repository you read beyond a few files, clone it into your scratch folder without file contents (git clone --filter=blob:none) and check out that commit; for a few files, or for pull requests, use {{code}}. Before concluding something doesn't exist, look where it could be hiding: active branches, open pull requests, and the history, for something merged and later removed; submit where you looked as sources.
 
 When a tool's result is too large and saved to a file, list what you need from it with `python3 {{lib}}/extract_saved.py`, rather than reading it whole.
-
-Before you submit, check that every reference is in double brackets, every pull request is written as owner/repo#123, and every finding citing a source read in part, new or already read, cites it again in its limits with why the unread part can't change the claim.

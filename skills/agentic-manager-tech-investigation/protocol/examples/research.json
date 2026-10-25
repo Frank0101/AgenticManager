@@ -5,7 +5,7 @@
       "kind": "code",
       "reference": "[api server.py](https://github.com/acme/api/blob/1a2b3c4/server.py)",
       "revision": "1a2b3c4",
-      "coverage": "partial: routes, lines 1-200 of 900"
+      "coverage": "entry points: routes, lines 1-200 of 900"
     },
     {
       "key": "[[s2]]",
@@ -20,7 +20,7 @@
       "key": "[[f1]]",
       "claim": "The search API answers /search from the index, never the primary database.",
       "sources": "[[s1]] (lines 120-160)",
-      "limits": "Routes read at the pinned commit; the index build job not read. [[s1]]: the unread lines hold admin routes, which don't serve /search."
+      "limits": "Routes read at the pinned commit; the index build job not read."
     },
     {
       "key": "[[f2]]",
