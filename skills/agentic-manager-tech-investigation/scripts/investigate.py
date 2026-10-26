@@ -1,9 +1,10 @@
 """Runs an investigation as a state machine: next hands out a task, submit takes its answer.
 
 The tasks are worked out from the ledger every time, never stored, so they can't
-drift from it: the research questions, those for the user first, all together;
-then the system design once none is open, built again whenever research has
-added to what it rests on; then the review rounds, the report and the handover.
+drift from it: the research questions, those for the user asked first, all
+together, while research that doesn't wait on their answers goes on; then the
+system design once none is open, built again whenever research has added to
+what it rests on; then the review rounds, the report and the handover.
 A task holds everything needed to do it, so it can go to a subagent as printed.
 """
 import argparse
@@ -16,9 +17,9 @@ import re
 import sys
 import tempfile
 
-from common import (CONTENT, group_of, ids, read_in_part, FOLDER_NAME, LEDGER, REPORT_SUFFIX, TABLE_HEADINGS, USER_QUESTION, investigation_dir,
+from common import (CONTENT, group_of, ids, read_in_part, FOLDER_NAME, LEDGER, REPORT_SUFFIX, TABLE_HEADINGS, SCOPE_QUESTION, investigation_dir,
                     last_review,
-                    ledger_rows, link_text, reviewed, stops_on_failure, strip_anchors, topic_of, write_output_file)
+                    ledger_rows, plain, reviewed, stops_on_failure, strip_anchors, topic_of, write_output_file)
 from init_investigation import init, usable_sources
 from ledger import (as_written, basis, brief, design_basis, depends_on, load, move_row, save, scope_decisions,
                     table_rows)
@@ -68,19 +69,22 @@ def lock_path(relative):
 
 def next_tasks(relative, maximum=1):
     """The text of the next tasks, each question in it moved to in progress:
-    every question for the user, as one task, while any is open; else up to
-    `maximum` research questions; one task in any other phase."""
+    the questions for the user, as one task, when any is new or nothing else is
+    left; else up to `maximum` research questions, those that don't wait on the
+    user's answers; one task in any other phase."""
     lines = load(relative).split("\n")
     phase = phase_of(relative, lines)
     if phase != "research":
         return render(relative, lines, task_of(lines, phase))
-    asked = for_user(questions_to_work(lines))
-    handed = asked or questions_to_work(lines)[:maximum]
+    asking = scope_due(lines)
+    open_questions = questions_to_work(lines)
+    handed = scope_questions(open_questions) if asking else [
+        row for row in open_questions if not is_scope_question(row)][:maximum]
     for row in handed:
         if row in table_rows(lines, "queue-ready"):
             move_row(lines, row[0], "queue-in-progress")
     save(relative, lines)
-    if asked:
+    if asking:
         return render(relative, lines, "scope")
     return SEPARATOR.join(render(relative, lines, f"research:{row[0]}") for row in handed)
 
@@ -95,12 +99,12 @@ def submit(relative, task, data):
         return submit_report(relative, data)
     if (match := RESEARCH_TASK.fullmatch(task)) and phase == "research":
         research = [row for row in questions_to_work(
-            lines, all_open=True) if not for_user([row])]
+            lines, all_open=True) if not is_scope_question(row)]
         if match[1] not in {row[0] for row in research}:
             raise SystemExit(
                 f"{match[1]} isn't an open research question: run next")
         result = submit_research(lines, match[1], data)
-    elif task == "scope" and (asked := for_user(questions_to_work(lines))):
+    elif task == "scope" and (asked := scope_questions(questions_to_work(lines))):
         result = submit_scope(lines, data, [row[0] for row in asked])
     elif task != current:
         raise SystemExit(
@@ -139,18 +143,34 @@ def questions_to_work(lines, all_open=False):
     return table_rows(lines, "queue-in-progress") + ready
 
 
-def for_user(rows):
-    """The questions of `rows` only the user can answer."""
-    return [row for row in rows if row[2].startswith(USER_QUESTION)]
+def scope_questions(rows):
+    """The scope questions of `rows`, which only the user can answer."""
+    return [row for row in rows if is_scope_question(row)]
+
+
+def is_scope_question(row):
+    """Whether the queue row `row` is a scope question."""
+    return row[2].startswith(SCOPE_QUESTION)
 
 
 def task_of(lines, phase):
-    """The one task of `phase`: in research, asking the user while any
-    question for them is open, else the first question's answer."""
+    """The one task of `phase`: in research, asking the user when it is due,
+    else the first research question's answer."""
     if phase == "research":
-        open_questions = questions_to_work(lines)
-        return "scope" if for_user(open_questions) else f"research:{open_questions[0][0]}"
+        if scope_due(lines):
+            return "scope"
+        return f"research:{next(row for row in questions_to_work(lines) if not is_scope_question(row))[0]}"
     return {"review": f"review:{len(rounds(lines)) + 1}"}.get(phase, phase)
+
+
+def scope_due(lines):
+    """Whether to ask the user now: a question for them is new, not yet asked,
+    or nothing but their questions is left to work. Research that doesn't wait
+    on their answers goes on meanwhile, so a run continues while they are away."""
+    open_questions = questions_to_work(lines)
+    asked = scope_questions(open_questions)
+    new = [row for row in asked if row in table_rows(lines, "queue-ready")]
+    return bool(new) or (bool(asked) and len(asked) == len(open_questions))
 
 
 def render(relative, lines, task):
@@ -219,8 +239,8 @@ def scope_context(lines):
     """What asking the user needs: each question for them handed out, what
     raised it, and the decisions they made so far."""
     out = ["## The questions", ""]
-    out += [f"- {row[0]}: {plain(row[2]).removeprefix(USER_QUESTION)} (raised by {plain(row[1])})"
-            for row in for_user(questions_to_work(lines))]
+    out += [f"- {row[0]}: {plain(row[2]).removeprefix(SCOPE_QUESTION)} (raised by {plain(row[1])})"
+            for row in scope_questions(questions_to_work(lines))]
     return out + ["", "## Decided so far", "", *(scope_decisions(lines) or ["None yet."])]
 
 
@@ -272,11 +292,6 @@ def design_context(lines):
         out += ["", "## The current design, to change and submit again whole", "",
                 json.dumps(current, ensure_ascii=False, indent=2)]
     return out
-
-
-def plain(text):
-    """A cell as plain text: no anchors, links as their text."""
-    return link_text(strip_anchors(text))
 
 
 def rounds(lines):

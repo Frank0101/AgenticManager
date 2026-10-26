@@ -55,14 +55,14 @@ HEADINGS = [
 # an empty section.
 QUEUE = "Research questions"
 REVIEWS = "Independent reviews"
-BOUNDARY = "Boundary"
+SCOPE = "Scope boundaries"
 SOURCES = "Sources"
 FINDINGS = "Findings"
 DESIGN = "System design"
 DECISIONS = "Open decisions"
 GAPS = "Evidence gaps"
 LINKS = "Links"
-LEDGER_SECTIONS = [QUEUE, BOUNDARY, REVIEWS, SOURCES, FINDINGS,
+LEDGER_SECTIONS = [QUEUE, SCOPE, REVIEWS, SOURCES, FINDINGS,
                    DESIGN, DECISIONS, GAPS, LINKS]
 # A question is ready until someone starts it, so that after a break, or with
 # work shared out, what is under way shows apart from what is waiting.
@@ -79,21 +79,24 @@ DESIGN_TABLES = ["boundaries", "connections", "identities", "flows"]
 # gives it: one place, since a heading typed differently elsewhere would
 # leave a check reading an empty table.
 TABLE_HEADINGS = {**{table: f"### {title}" for table, title in zip(QUEUE_TABLES, QUEUE_SUBSECTIONS)},
-                  "reviews": f"## {REVIEWS}", "sources": f"## {SOURCES}", "findings": f"## {FINDINGS}",
+                  "scope": f"## {SCOPE}", "reviews": f"## {REVIEWS}", "sources": f"## {SOURCES}", "findings": f"## {FINDINGS}",
                   "decisions": f"## {DECISIONS}", "gaps": f"## {GAPS}",
                   **{table: f"### {title}" for table, title in zip(["components", *DESIGN_TABLES],
                                                                    DESIGN_SUBSECTIONS)}}
 # A question, what raised it, the questions it waits for, and the findings that answer it.
 QUEUE_HEADER = ["ID", "Trigger", "Question", "Depends on", "Findings"]
-# A question only the user can answer starts with USER_QUESTION: whether the
-# investigation covers something research has reached. Research raises it there,
-# rather than settling scope or reading on, and the user's answer closes it,
-# starting its Findings with USER_DECIDED.
-USER_QUESTION = "For the user: "
+# Whether the investigation covers something research has reached is the
+# user's to decide: research raises a question starting SCOPE_QUESTION, rather
+# than settling scope or reading on. The user's answer is a scope boundary, a
+# record of its own, so whatever rests on it cites it: the question it closes,
+# whose Findings start with USER_DECIDED, and any research question it leaves
+# out, whose Findings start with OUTSIDE_SCOPE.
+SCOPE_QUESTION = "Scope boundary: "
 USER_DECIDED = "Decided by the user: "
-# A research question the user's scope decision leaves out is closed by it:
-# its Findings start with OUTSIDE_SCOPE and cite the question that decided it.
-OUTSIDE_SCOPE = "Outside the scope the user decided in "
+OUTSIDE_SCOPE = "Outside the scope decided in "
+SCOPE_HEADER = ["ID", "Topic", "Decision", "Asked in"]
+SCOPE_ANSWERS = ("include", "mention only", "exclude")
+LEFT_OUT = SCOPE_ANSWERS[1:]
 # The source groups, each with the name the ledger and the output give it.
 GROUPS = {"source_control": "code", "workflow": "tracker",
           "documentation": "documentation"}
@@ -116,7 +119,7 @@ DECISION_HEADER = ["ID", "Decision", "Established position or unresolved choice"
                    "Owner and next check"]
 # What a gap can be blocked by. Anything else is work the agent can do, so it is
 # a ready question in the queue and not a gap; whether the investigation covers
-# something is a question for the user in the queue, so no gap waits on them.
+# something is a scope question in the queue, so no gap waits on the user.
 BLOCKERS = ("No access", "Waiting on decision")
 GAP_HEADER = ["ID", "Gap", "What is established and what is missing",
               "What would close it", "Blocked by", "Source authority and status",
@@ -184,10 +187,10 @@ GAP_FIX = ("Blocked by starts with one of: " + "; ".join(BLOCKERS) + ". A gap no
 LINK = re.compile(r"\]\(https?://[^)\s]+\)|\]\[[^\]]*\]|https?://\S+")
 # A search has no URL to pin, so its exact query, between backticks, stands in.
 QUERY = re.compile(r"`[^`\n]+`")
-# The letters of the recorded IDs: S sources, Q questions, F findings,
-# C components, D decisions, G gaps, B boundaries, E connections, I identities
-# and P flows.
-ID_LETTERS = "SQFCDGBEIP"
+# The letters of the recorded IDs: S sources, Q questions, U scope boundaries,
+# F findings, C components, D decisions, G gaps, B design boundaries,
+# E connections, I identities and P flows.
+ID_LETTERS = "SQUFCDGBEIP"
 # Every recorded ID has an anchor, so any citation of it can link to it: a
 # table row carries an HTML anchor in its ID cell, which Markdown viewers such
 # as VS Code and GitHub render. A heading's anchor would change with its title;
@@ -347,19 +350,31 @@ def unresolved_message(unresolved):
 
 def outcome_problem(row_id, outcome, question=""):
     """Why a completed question's outcome doesn't close it, or None: the
-    findings that answer it, the user's scope decision that leaves it out, or
-    for a question for the user, their decision."""
-    if question.startswith(USER_QUESTION):
-        if outcome.startswith(USER_DECIDED):
+    findings that answer it, the scope boundary that leaves it out, or for a
+    scope question, the boundary the user decided."""
+    if question.startswith(SCOPE_QUESTION):
+        if outcome.startswith(USER_DECIDED) and ids(outcome, "U"):
             return None
-        return f"{row_id}: a question for the user is closed by their decision ({USER_DECIDED}include)"
-    # A question is completed by the findings that answer it, or by the user's
-    # scope decision that leaves it out; one a gap or a decision stops is
-    # blocked, never completed.
-    if ids(outcome, "F") or (outcome.startswith(OUTSIDE_SCOPE) and ids(outcome, "Q")):
+        return f"{row_id}: a scope question is closed by the boundary the user decided ({USER_DECIDED}U01)"
+    # A question is completed by the findings that answer it, or by the scope
+    # boundary that leaves it out; one a gap or a decision stops is blocked,
+    # never completed.
+    if ids(outcome, "F") or (outcome.startswith(OUTSIDE_SCOPE) and ids(outcome, "U")):
         return None
     return (f"{row_id}: a completed question names the findings that answer it (F01, F02) in Findings; a "
             "question a gap or a decision stops is blocked by it instead")
+
+
+def scope_problem(row):
+    """Why a scope boundary row breaks a rule, or None: it names a topic, the
+    user's decision on it, and the question it was asked in."""
+    if not row[1].strip():
+        return f"{row[0]}: Topic names what was decided"
+    if row[2] not in SCOPE_ANSWERS:
+        return f"{row[0]}: Decision is one of: {', '.join(SCOPE_ANSWERS)}"
+    if len(ids(row[3], "Q")) != 1:
+        return f"{row[0]}: Asked in names the question it was asked in (Q07)"
+    return None
 
 
 def blocked_problem(row_id, depends_on, blocked):
@@ -501,15 +516,6 @@ def section_span(lines, heading):
     return start, next((i for i in range(start + 1, len(lines)) if lines[i].startswith("#")), len(lines))
 
 
-def h2_span(lines, title):
-    """(index of the line `## title`, index of the next ## heading or the end),
-    or None: a ## section with the ### headings inside it."""
-    span = section_span(lines, f"## {title}")
-    if span is None:
-        return None
-    return span[0], next((i for i in range(span[0] + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
-
-
 def table_cells(line, keep_anchors=False):
     """A Markdown table row's cells, trimmed; an ID without its anchor unless
     `keep_anchors`. A pipe escaped as \\| stays inside its cell, read as |."""
@@ -521,6 +527,11 @@ def table_cells(line, keep_anchors=False):
 def strip_anchors(text):
     """A text without its ID anchors."""
     return ID_ANCHOR.sub("", text)
+
+
+def plain(text):
+    """A cell as plain text: no anchors, links as their text."""
+    return link_text(strip_anchors(text))
 
 
 def citation(ident):

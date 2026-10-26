@@ -15,7 +15,7 @@ from common import (CELL_PIPE, COMPONENT_HEADER, DEFINITION, DESIGN_TABLES, GAP_
                     claim_length_problem, component_rows, coverage_problem, design_problem, expected_files,
                     finding_problem, gap_problem, group_problem, headings, id_order, ids, ledger_rows,
                     link_definitions, link_text, links, listed, local_link, markdown, outcome_problem, reference_key,
-                    report_headings, review_problem, section_span, source_reference_missing, status_problem,
+                    report_headings, review_problem, scope_problem, section_span, source_reference_missing, status_problem,
                     strip_anchors, superseded_problem, table_cells, unlinked_backticks, unlinked_references,
                     unread_components, unread_message, unrecorded_ids)
 
@@ -112,8 +112,8 @@ def check_ledger(path, handover=False):
     queue's in order, findings written once and every one cited written, every
     ticket and pull request linked, and, at handover, a queue with nothing left
     ready or in progress, the review finished, completed questions answered,
-    blocked ones naming what blocks them, the rows of sources, findings,
-    components and the system design within their rules, code read for every
+    blocked ones naming what blocks them, the rows of scope boundaries,
+    sources, findings, components and the system design within their rules, code read for every
     component claiming it, and linked sources."""
     errors, warnings = [], []
     try:
@@ -269,9 +269,9 @@ def reference_error(where, found):
 
 def closing_problems(body):
     """The independent review not yet finished, completed questions with no
-    answer, blocked questions that don't say what blocks them, sources,
-    findings, components and system design rows that break their rules, and
-    components claiming code nobody read."""
+    answer, blocked questions that don't say what blocks them, scope
+    boundaries, sources, findings, components and system design rows that
+    break their rules, and components claiming code nobody read."""
     problems = []
     completed = ledger_rows(body, TABLE_HEADINGS["queue-completed"])
     problems.append(review_problem(
@@ -297,6 +297,8 @@ def closing_problems(body):
                  or superseded_problem(row) for row in sources]
     problems += [finding_problem(row) for row in ledger_rows(body, TABLE_HEADINGS["findings"])
                  if re.fullmatch(r"F\d+", row[0]) and len(row) > 3]
+    problems += [scope_problem(row) for row in ledger_rows(body, TABLE_HEADINGS["scope"])
+                 if re.fullmatch(r"U\d+", row[0]) and len(row) > 3]
     unread = unread_components(components, sources, link_definitions(body))
     if unread:
         problems.append(unread_message(unread))

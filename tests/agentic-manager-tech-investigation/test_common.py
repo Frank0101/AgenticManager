@@ -169,6 +169,31 @@ class ReferencesTest(unittest.TestCase):
                 problem = function("X01", value)
                 self.assertEqual(problem is None, accepted, problem)
 
+    def test_scope_boundaries_and_the_questions_they_close(self):
+        # A scope question is closed by the boundary the user decided, and a
+        # question the scope leaves out by the boundary that does.
+        asked = "Scope boundary: Should the investigation cover billing?"
+        # (name, problem, accepted)
+        cases = [("decided", common.outcome_problem("Q07", "Decided by the user: [U01](#u01)", asked), True),
+                 ("decided with no boundary", common.outcome_problem(
+                     "Q07", "Decided by the user: include", asked), False),
+                 ("answered by findings", common.outcome_problem(
+                     "Q07", "[F01](#f01)", asked), False),
+                 ("left out by a boundary", common.outcome_problem(
+                     "Q09", "Outside the scope decided in [U01](#u01)"), True),
+                 ("left out by a question", common.outcome_problem(
+                     "Q09", "Outside the scope decided in [Q07](#q07)"), False),
+                 ("a boundary", common.scope_problem(
+                     ["U01", "Billing", "include", "[Q07](#q07)"]), True),
+                 ("no topic", common.scope_problem(
+                     ["U01", "", "include", "Q07"]), False),
+                 ("an answer not allowed", common.scope_problem(
+                     ["U01", "Billing", "maybe", "Q07"]), False),
+                 ("asked in no question", common.scope_problem(["U01", "Billing", "exclude", "None"]), False)]
+        for name, problem, accepted in cases:
+            with self.subTest(name):
+                self.assertEqual(problem is None, accepted, problem)
+
     def test_a_blocked_question_names_what_blocks_it(self):
         # Q03 is blocked; Q04 is still open, so it blocks nothing.
         # (Depends on, accepted)

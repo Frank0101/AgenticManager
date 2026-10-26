@@ -77,29 +77,29 @@ class SubmissionTest(unittest.TestCase):
         data.setdefault("outcome", {"answered": "[[f1]]"})
         return self.submit("research", question, data)
 
-    def test_the_users_decisions_close_their_questions_and_form_the_boundary(self):
+    def test_the_users_decisions_are_scope_boundaries_that_close_their_questions(self):
         self.submit("research", "Q01", copy.deepcopy(
             protocol.example("research")))
         self.assertIn(
-            "| Q07 | F01 | For the user: Should the investigation cover the payments gateway", self.plain())
+            "| Q07 | F01 | Scope boundary: Should the investigation cover the payments gateway", self.plain())
         # name: (the decisions, a problem they list)
-        cases = [("a question not handed out", [{"question": "[[Q02]]", "name": "x", "answer": "include"}],
+        cases = [("a question not handed out", [{"question": "[[Q02]]", "topic": "x", "answer": "include"}],
                   "decisions[0].question is one of the questions handed out: [[Q07]]"),
-                 ("an answer not allowed", [{"question": "[[Q07]]", "name": "x", "answer": "maybe"}],
+                 ("an answer not allowed", [{"question": "[[Q07]]", "topic": "x", "answer": "maybe"}],
                   "decisions[0].answer is one of: include, mention only, exclude"),
-                 ("a question decided twice", [{"question": "[[Q07]]", "name": "x", "answer": "exclude"}] * 2,
+                 ("a question decided twice", [{"question": "[[Q07]]", "topic": "x", "answer": "exclude"}] * 2,
                   "decisions[1].question [[Q07]] is decided twice"),
-                 ("no name", [{"question": "[[Q07]]", "answer": "exclude"}], "decisions[0].name needs text")]
+                 ("no topic", [{"question": "[[Q07]]", "answer": "exclude"}], "decisions[0].topic needs text")]
         for name, decisions, expected in cases:
             with self.subTest(name):
                 self.assertIn(expected, self.refused(
                     "scope", {"decisions": decisions}, ["Q07"]))
-        self.submit("scope", {"decisions": [{"question": "[[Q07]]", "name": "The payments gateway",
+        self.submit("scope", {"decisions": [{"question": "[[Q07]]", "topic": "The payments gateway",
                                              "answer": "exclude"}]}, ["Q07"])
-        self.assertIn(
-            "## Boundary\n\n- The payments gateway: exclude.\n\n## Independent reviews", self.text())
-        self.assertIn("| For the user: Should the investigation cover the payments gateway the search API calls for "
-                      "paid results? | None | Decided by the user: exclude |", self.plain())
+        self.assertIn("## Scope boundaries\n\n| ID | Topic | Decision | Asked in |\n| --- | --- | --- | --- |\n"
+                      "| U01 | The payments gateway | exclude | Q07 |\n\n## Independent reviews", self.plain())
+        self.assertIn("| Scope boundary: Should the investigation cover the payments gateway the search API calls for "
+                      "paid results? | None | Decided by the user: U01 |", self.plain())
         self.assertEqual(check_report.check_ledger(self.path)[0], [])
 
     def test_an_answer_writes_its_records_and_closes_the_question(self):
@@ -206,28 +206,26 @@ class SubmissionTest(unittest.TestCase):
                     "research", "Q02", {**data, "outcome": outcome}))
 
     def test_a_question_the_users_scope_leaves_out_is_closed_by_it(self):
-        # Closing it records what it leaves out beside the user's decisions, so
-        # every later task sees it.
+        # It cites the boundary that leaves it out, and adds no boundary: the
+        # user decided only the one they were asked.
         self.submit("research", "Q01", copy.deepcopy(
             protocol.example("research")))
-        self.submit("scope", {"decisions": [{"question": "[[Q07]]", "name": "The payments gateway",
+        self.submit("scope", {"decisions": [{"question": "[[Q07]]", "topic": "The payments gateway",
                                              "answer": "mention only"}]}, ["Q07"])
-        self.submit("research", "Q02", {"outcome": {"outside_scope": {"decided_in": "[[Q07]]",
-                                                                      "name": "The gateway's retry queue"}}})
+        self.submit("research", "Q02", {
+                    "outcome": {"outside_scope": "[[U01]]"}})
         completed = {row[0]: row[-1]
                      for row in ledger.table_rows(self.text().split("\n"), "queue-completed")}
         self.assertEqual(
-            completed["Q02"], "Outside the scope the user decided in [Q07](#q07)")
-        self.assertIn("- The payments gateway: mention only.\n- The gateway's retry queue, under [Q07](#q07): "
-                      "mention only.", self.text())
+            completed["Q02"], "Outside the scope decided in [U01](#u01)")
+        self.assertEqual([row[0] for row in ledger.table_rows(
+            self.text().split("\n"), "scope")], ["U01"])
         self.assertEqual(check_report.check_ledger(self.path)[0], [])
         # name: (the outcome, a problem it lists)
-        cases = [("a decision the user included", {"decided_in": "[[Q01]]", "name": "x"}, "is no question the user"),
-                 ("a question not in the ledger", {
-                  "decided_in": "[[Q09]]", "name": "x"}, "is no question the user"),
-                 ("no name", {
-                  "decided_in": "[[Q07]]"}, 'outcome.outside_scope is {"decided_in"'),
-                 ("only the question", "[[Q07]]", 'outcome.outside_scope is {"decided_in"')]
+        refused = "is no scope boundary decided as mention only or exclude"
+        cases = [("a boundary not in the ledger", "[[U02]]", refused),
+                 ("the question, not its boundary", "[[Q07]]", refused),
+                 ("not a citation", {"decided_in": "[[U01]]"}, refused)]
         for name, given, expected in cases:
             with self.subTest(name):
                 self.assertIn(expected, self.refused(

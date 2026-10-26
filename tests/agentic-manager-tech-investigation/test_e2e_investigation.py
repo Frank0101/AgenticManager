@@ -73,7 +73,7 @@ class InvestigationTest(unittest.TestCase):
         self.assertIn(protocol.compact(protocol.example("research")), task)
         result = self.submit("research:Q01", protocol.example("research"))
         self.assertEqual(result["ids"]["[[f1]]"], "F01")
-        # The answer raised a question for the user, asked before research goes on.
+        # The answer raised a scope question, asked before any other task.
         task = self.next()
         self.assertTrue(task.startswith("# Task scope"))
         self.submit("scope", protocol.example("scope"))

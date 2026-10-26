@@ -9,10 +9,11 @@ problem is collected by field, and the ledger changes only when there is none.
 """
 import re
 
-from common import OUTSIDE_SCOPE, ids, read_in_part, USER_DECIDED, USER_QUESTION, citation, claim_length_problem
+from common import (LEFT_OUT, OUTSIDE_SCOPE, SCOPE_ANSWERS, SCOPE_QUESTION, USER_DECIDED, citation, claim_length_problem, ids,
+                    read_in_part)
 from ledger import (TABLES, as_written, duplicate_of, finish_write, find_row,
                     header_of, move_row, next_id, put_row, refuse_cited, search_reference, set_design_basis,
-                    add_scope, table_rows, write_rows, record_review)
+                    table_rows, write_rows, record_review)
 
 # A submission's fields for each kind of record, in the order of the ledger's
 # columns after the ID: the script writes the cells from them.
@@ -30,8 +31,6 @@ FIELDS = {
 }
 # Fields a submission may leave out, with the value written then.
 DEFAULTS = {"superseded_by": "None"}
-# The user's answers on whether the investigation covers something.
-SCOPE_ANSWERS = ("include", "mention only", "exclude")
 # A key names a record new in this submission: its table's letter, in lower
 # case, and a number, so it can't be taken for an ID. It is cited as [[s1]],
 # which stands out in any field, so every citation of one is found and replaced,
@@ -52,23 +51,23 @@ DESIGN_ORDER = ["boundaries", "identities",
 
 
 def submit_scope(lines, data, asked):
-    """Write the user's decision on each question for them of `asked`, the
-    IDs handed out, to the Boundary section, close each with it, and add the
-    research questions an included one opens; returns {key: ID}."""
+    """Write the user's decision on each scope question of `asked`, the IDs
+    handed out, as a scope boundary, close each with it, and add the research
+    questions an included one opens; returns {key: ID}."""
     problems = Problems()
     problems.only(data, ["decisions", "new_questions"])
     decisions = problems.items(data, "decisions")
     questions = problems.items(data, "new_questions", required=False)
-    ids = Allocator(lines)
+    allocator = Allocator(lines)
     keys = {}
     for number, item in enumerate(questions):
-        ids.claim(keys, "questions", item,
-                  f"new_questions[{number}]", problems)
+        allocator.claim(keys, "questions", item,
+                        f"new_questions[{number}]", problems)
     written = []
     decided = set()
     for number, item in enumerate(decisions):
         where = f"decisions[{number}]"
-        problems.only(item, ["question", "name", "answer"], where)
+        problems.only(item, ["question", "topic", "answer"], where)
         question = referenced(item.get("question"))
         if question not in asked:
             problems.add(f"{where}.question is one of the questions handed out: "
@@ -78,17 +77,18 @@ def submit_scope(lines, data, asked):
             problems.add(f"{where}.question [[{question}]] is decided twice")
             continue
         decided.add(question)
-        name = problems.text(item, "name", where)
+        topic = problems.text(item, "topic", where)
         answer = problems.text(item, "answer", where)
         if answer and answer not in SCOPE_ANSWERS:
             problems.add(
                 f"{where}.answer is one of: {', '.join(SCOPE_ANSWERS)}")
             continue
-        if name and answer:
-            written += problems.guard(where, lambda n=name,
-                                      a=answer: add_scope(lines, n, a)) or []
-            problems.guard(where, lambda q=question, a=answer: move_row(
-                lines, q, "queue-completed", {"Findings": f"{USER_DECIDED}{a}"}))
+        if topic and answer:
+            boundary = allocator.next("U")
+            written += problems.put(lines, "scope", boundary,
+                                    [topic, answer, citation(question)], where, keys)
+            problems.guard(where, lambda q=question, b=boundary: move_row(
+                lines, q, "queue-completed", {"Findings": f"{USER_DECIDED}{citation(b)}"}))
     written += add_questions(lines, questions, keys, problems)
     problems.stop()
     problems.guard("the decisions", lambda: finish_write(lines, written))
@@ -102,7 +102,7 @@ def submit_research(lines, question, data):
     blocked with it."""
     problems = Problems()
     problems.only(data, ["sources", "findings", "new_questions", "outcome"])
-    ids = Allocator(lines)
+    allocator = Allocator(lines)
     written = []
     sources = problems.items(data, "sources", required=False)
     findings = problems.items(data, "findings", required=False)
@@ -112,11 +112,12 @@ def submit_research(lines, question, data):
     # read again keeps its ID, its coverage now what was read in all.
     keys = {}
     for number, item in enumerate(sources):
-        ids.claim(keys, "sources", item,
-                  f"sources[{number}]", problems, same=read_before(lines, item))
+        allocator.claim(keys, "sources", item,
+                        f"sources[{number}]", problems, same=read_before(lines, item))
     for table, items in (("findings", findings), ("questions", questions)):
         for number, item in enumerate(items):
-            ids.claim(keys, table, item, f"{label(table)}[{number}]", problems)
+            allocator.claim(keys, table, item,
+                            f"{label(table)}[{number}]", problems)
     for number, item in enumerate(sources):
         where = f"sources[{number}]"
         cells = problems.cells(item, "sources", where, keys, extra=["key"])
@@ -138,7 +139,7 @@ def submit_research(lines, question, data):
         written += problems.put(lines, "findings",
                                 keys.get(key_of(item)), cells, where, keys)
     written += add_questions(lines, questions, keys, problems)
-    written += close(lines, question, outcome, keys, ids, problems)
+    written += close(lines, question, outcome, keys, allocator, problems)
     problems.stop()
     blocked = problems.guard(
         "the answer", lambda: finish_write(lines, written))
@@ -152,7 +153,7 @@ def submit_design(lines, data, basis):
     `basis`, what it was built from; returns {key: ID}."""
     problems = Problems()
     problems.only(data, [*DESIGN_ORDER, "new_questions"])
-    ids = Allocator(lines)
+    allocator = Allocator(lines)
     before = {table: {row[0] for row in table_rows(
         lines, table)} for table in DESIGN_ORDER}
     items = {table: problems.items(data, table, required=False)
@@ -161,11 +162,11 @@ def submit_design(lines, data, basis):
     keys = {}
     for table in DESIGN_ORDER:
         for number, item in enumerate(items[table]):
-            ids.claim(keys, table, item,
-                      f"{table}[{number}]", problems, keep=before[table])
+            allocator.claim(keys, table, item,
+                            f"{table}[{number}]", problems, keep=before[table])
     for number, item in enumerate(questions):
-        ids.claim(keys, "questions", item,
-                  f"new_questions[{number}]", problems)
+        allocator.claim(keys, "questions", item,
+                        f"new_questions[{number}]", problems)
     for table in DESIGN_ORDER:
         write_rows(lines, table, [], header_of(lines, table))
     written = []
@@ -201,10 +202,10 @@ def submit_review(lines, data, round_number):
         return {"ids": {}}
     problems.only(data, ["raised"])
     raised = problems.items(data, "raised", required=False)
-    ids = Allocator(lines)
+    allocator = Allocator(lines)
     keys = {}
     for number, item in enumerate(raised):
-        ids.claim(keys, "questions", item, f"raised[{number}]", problems)
+        allocator.claim(keys, "questions", item, f"raised[{number}]", problems)
     for item in raised:
         if isinstance(item, dict):
             item.setdefault("raised_by", f"Review round {round_number}")
@@ -272,7 +273,7 @@ def check_partial(lines, cells, where, problems, keys):
 
 def add_questions(lines, questions, keys, problems, where="new_questions"):
     """Write each new question as a ready one, one with "for": "user" as a
-    question for the user; returns the values written."""
+    scope question; returns the values written."""
     written = []
     for number, item in enumerate(questions):
         at = f"{where}[{number}]"
@@ -280,23 +281,24 @@ def add_questions(lines, questions, keys, problems, where="new_questions"):
                                keys, extra=["key", "for"])
         if cells is not None and item.get("for", "user") != "user":
             problems.add(
-                f'{at}.for is "user", for a question only the user can answer, or left out')
+                f'{at}.for is "user", for a scope question, or left out')
         elif cells is not None:
             if item.get("for") == "user":
-                cells[1] = USER_QUESTION + cells[1]
+                cells[1] = SCOPE_QUESTION + cells[1]
             written += problems.put(lines, "queue-ready",
                                     keys.get(key_of(item)), [*cells, ""], at, keys)
     return written
 
 
-def close(lines, question, outcome, keys, ids, problems):
+def close(lines, question, outcome, keys, allocator, problems):
     """Close `question` as `outcome` says: answered, with the findings that
-    answer it and any other question the same reading answered, or blocked by
-    a gap or decision, new or held; returns the values written."""
+    answer it and any other question the same reading answered; outside the
+    scope a boundary leaves out; or blocked by a gap or decision, new or held;
+    returns the values written."""
     if not isinstance(outcome, dict) or len(set(outcome) & {"answered", "blocked", "outside_scope"}) != 1:
         problems.add('outcome is {"answered": "[[f1]], [[F07]]"}, {"blocked": ...}: a gap {"gap": {...}}, a '
-                     'decision {"decision": {...}}, or one the ledger holds, "[[G02]]", or {"outside_scope": '
-                     '{"decided_in": "[[Q06]]", "name": "..."}}, the question for the user whose answer leaves it out')
+                     'decision {"decision": {...}}, or one the ledger holds, "[[G02]]", or {"outside_scope": "[[U01]]"}, the '
+                     'scope boundary that leaves it out')
         return []
     if "outside_scope" in outcome:
         return close_outside_scope(lines, question, outcome, problems)
@@ -343,7 +345,7 @@ def close(lines, question, outcome, keys, ids, problems):
     elif isinstance(blocked, dict) and len(blocked) == 1 and next(iter(blocked)) in ("gap", "decision"):
         kind = next(iter(blocked))
         table = kind + "s"
-        ident = ids.next(table[0].upper())
+        ident = allocator.next(table[0].upper())
         cells = problems.cells(
             blocked[kind], table, f"outcome.blocked.{kind}", keys)
         values = problems.put(lines, table, ident, cells,
@@ -358,35 +360,21 @@ def close(lines, question, outcome, keys, ids, problems):
 
 
 def close_outside_scope(lines, question, outcome, problems):
-    """Close `question` as outside the scope a decision of the user's leaves
-    out, and add what it leaves out to the Boundary section, under that
-    decision, so every later task sees it beside the user's own decisions;
-    returns the values written."""
+    """Close `question` as outside the scope a boundary the user decided
+    leaves out, citing it; returns the values written."""
     problems.only(outcome, ["outside_scope"], "outcome")
     given = outcome["outside_scope"]
-    shape = ('outcome.outside_scope is {"decided_in": "[[Q06]]", "name": "<what this question would research, '
-             'briefly>"}, the question for the user whose answer leaves it out')
-    if not isinstance(given, dict) or set(given) != {"decided_in", "name"}:
-        problems.add(shape)
-        return []
-    decided = referenced(given["decided_in"])
+    boundary = referenced(given) if isinstance(given, str) else None
     row = {row[0]: row for row in table_rows(
-        lines, "queue-completed")}.get(decided or "")
-    answer = row[-1].removeprefix(
-        USER_DECIDED) if row and row[2].startswith(USER_QUESTION) else ""
-    if answer not in ("mention only", "exclude"):
-        problems.add(f"outcome.outside_scope.decided_in: {given['decided_in']} is no question the user decided as "
-                     "mention only or exclude")
+        lines, "scope")}.get(boundary or "")
+    if row is None or row[2] not in LEFT_OUT:
+        problems.add(f"outcome.outside_scope: {given} is no scope boundary decided as mention only or exclude, "
+                     "written as [[U01]]")
         return []
-    name = problems.text(given, "name", "outcome.outside_scope")
-    if not name:
-        return []
-    cited = citation(decided)
-    written = problems.guard("outcome", lambda: add_scope(
-        lines, f"{name}, under {cited}", answer)) or []
+    cited = citation(boundary)
     problems.guard("outcome", lambda: move_row(lines, question, "queue-completed",
                                                {"Findings": f"{OUTSIDE_SCOPE}{cited}"}))
-    return [*written, cited]
+    return [cited]
 
 
 class Allocator:

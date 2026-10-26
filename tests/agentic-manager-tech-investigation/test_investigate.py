@@ -52,10 +52,10 @@ class InvestigateTest(unittest.TestCase):
 
     def research(self):
         """Work every question: the first with the example answer, so the
-        ledger has sources and findings to cite, which raises a question for
-        the user; the second blocked by a gap, which the report cites."""
+        ledger has sources and findings to cite, which raises a scope
+        question; the second blocked by a gap, which the report cites."""
         self.submit("research:Q01", protocol.example("research"))
-        self.submit("scope", {"decisions": [{"question": "[[Q07]]", "name": "The payments gateway",
+        self.submit("scope", {"decisions": [{"question": "[[Q07]]", "topic": "The payments gateway",
                                              "answer": "mention only"}]})
         self.submit("research:Q02", {"outcome": {"blocked": {"gap": GAP}}})
         for question in ("Q03", "Q04", "Q05", "Q06"):
@@ -109,10 +109,10 @@ class InvestigateTest(unittest.TestCase):
         self.assertNotIn("# Task research:Q06", text)
         self.assertIn("# Task research:Q04", text)
 
-    def test_questions_for_the_user_come_first_all_together(self):
-        # A question for the user is asked before research goes on, with every
-        # other one open, in one task; the user's decision closes it and goes in
-        # the Boundary, and an included topic opens research questions.
+    def test_scope_questions_are_asked_first_all_together(self):
+        # A new scope question is asked before any other task, with every
+        # other one open, in one task; the user's decision is a scope boundary
+        # that closes it, and an included topic opens research questions.
         data = protocol.example("research")
         data["new_questions"].append({"key": "[[q3]]", "question": "Should the investigation cover billing?",
                                       "raised_by": "[[f2]]", "depends_on": "None", "for": "user"})
@@ -126,23 +126,39 @@ class InvestigateTest(unittest.TestCase):
                 self.assertIn(expected, text)
         self.assertNotIn("# Task answer", text)
         result = self.submit("scope", {"decisions": [
-            {"question": "[[Q07]]", "name": "The payments gateway",
+            {"question": "[[Q07]]", "topic": "The payments gateway",
                 "answer": "mention only"},
-            {"question": "[[Q08]]", "name": "Billing", "answer": "include"}],
+            {"question": "[[Q08]]", "topic": "Billing", "answer": "include"}],
             "new_questions": [{"key": "[[q1]]", "question": "How does search reach billing?", "raised_by": "[[Q08]]",
                                "depends_on": "None"}]})
         self.assertEqual(result["ids"], {"[[q1]]": "Q09"})
-        text = self.path.read_text(encoding="utf-8")
-        self.assertIn(
-            "## Boundary\n\n- The payments gateway: mention only.\n- Billing: include.\n", text)
+        self.assertEqual([row[:3] for row in ledger.table_rows(self.lines(), "scope")],
+                         [["U01", "The payments gateway", "mention only"], ["U02", "Billing", "include"]])
         completed = {row[0]: row[-1]
                      for row in ledger.table_rows(self.lines(), "queue-completed")}
-        self.assertEqual(completed["Q08"], "Decided by the user: include")
+        self.assertEqual(completed["Q08"], "Decided by the user: [U02](#u02)")
         self.assertTrue(investigate.next_tasks(
             INVESTIGATION).startswith("# Task research:Q02"))
         # The research task shows what the user decided.
-        self.assertIn("## The scope the user decided so far\n\n- The payments gateway: mention only.",
+        self.assertIn("## The scope the user decided so far\n\n- U01: The payments gateway: mention only",
                       investigate.next_tasks(INVESTIGATION))
+
+    def test_research_goes_on_while_the_user_is_away(self):
+        # Asked once, the user's questions wait; research that doesn't depend
+        # on their answers is handed out meanwhile, and they are asked again
+        # once nothing else is left.
+        self.submit("research:Q01", protocol.example("research"))
+        self.assertTrue(investigate.next_tasks(
+            INVESTIGATION).startswith("# Task scope"))
+        self.assertTrue(investigate.next_tasks(
+            INVESTIGATION).startswith("# Task research:Q02"))
+        for question in ("Q02", "Q03", "Q04", "Q05", "Q06"):
+            self.submit(f"research:{question}", answer())
+        self.assertTrue(investigate.next_tasks(
+            INVESTIGATION).startswith("# Task scope"))
+        self.submit("scope", {"decisions": [{"question": "[[Q07]]", "topic": "The payments gateway",
+                                             "answer": "exclude"}]})
+        self.assertEqual(self.phase(), "design")
 
     def test_a_task_carries_what_it_needs(self):
         # The API file read only in part, so the task flags it.
@@ -170,7 +186,7 @@ class InvestigateTest(unittest.TestCase):
     def test_submit_takes_only_a_task_handed_out_now(self):
         # name: (task, the refusal)
         cases = [("a later step", "design", "design isn't a task now; the task now is research:Q01"),
-                 ("asking with no question for the user",
+                 ("asking with no scope question",
                   "scope", "scope isn't a task now"),
                  ("a question not in the queue", "research:Q10", "Q10 isn't an open research question")]
         for name, task, expected in cases:
@@ -189,7 +205,7 @@ class InvestigateTest(unittest.TestCase):
         text = investigate.next_tasks(INVESTIGATION)
         self.assertTrue(text.startswith("# Task design"))
         self.assertIn(
-            "## The scope the user decided\n\n- The payments gateway: mention only.", text)
+            "## The scope the user decided\n\n- U01: The payments gateway: mention only", text)
 
     def test_the_review_asks_the_user_after_three_rounds(self):
         self.research()

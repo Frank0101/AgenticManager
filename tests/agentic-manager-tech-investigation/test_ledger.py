@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import check_report  # noqa: E402
 import init_investigation  # noqa: E402
 import ledger  # noqa: E402
-from common import BOUNDARY, ID_LETTERS, JiraError, citation as c  # noqa: E402
+from common import ID_LETTERS, JiraError, citation as c  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from investigation_fixture import INVESTIGATION, temp_output  # noqa: E402
 
@@ -96,14 +96,10 @@ class LedgerTest(unittest.TestCase):
         self.write(*((table, ident, row)
                    for ident in ids for table, row in [cells[ident[0]](ident)]))
 
-    def boundary(self, text):
-        """Write the Boundary section as a submission does: linked, checked."""
-        def action(lines):
-            written = ledger.linked(lines, [text])
-            ledger.check_backticks(lines, written, BOUNDARY)
-            ledger.set_text(lines, BOUNDARY, written[0])
-            ledger.finish_write(lines, written)
-        self.change(action)
+    def prose(self, text):
+        """Write `text` as a cell of its own, in the decision D09, as a
+        submission does: linked, checked."""
+        self.write(("decisions", "D09", [text, "b", "c", "d", "e"]))
 
     def test_next_id_per_kind(self):
         self.assertEqual(ledger.next_id(self.text(), "S"), "S01")
@@ -159,9 +155,9 @@ class LedgerTest(unittest.TestCase):
                    ("decisions", "D01", [
                     "Which index", "Unresolved", "Two options", "Design doc", "Owner not named"]),
                    ("queue-ready", "Q01", QUEUE_ROW))
-        self.boundary("Search only.")
+        self.write(("scope", "U01", ["Search", "include", c("Q01")]))
         brief = ledger.brief(self.lines())
-        kept = ["## Boundary\n\nSearch only.", "S01: [api](https://example.com/api), abc; coverage: full; superseded by S02",
+        kept = ["## Scope boundaries\n\nID | Topic | Decision | Asked in\nU01 | Search | include | Q01", "S01: [api](https://example.com/api), abc; coverage: full; superseded by S02",
                 "## Findings\n\nID | Claim | Sources | Limits\nF01 | Search reads the index. | S01 | code read",
                 "C01 | Search API (service) | Serves search | search | 🟨 Planned", "D01 | Which index",
                 "## Evidence gaps\n\nNone."]
@@ -337,7 +333,7 @@ class LedgerTest(unittest.TestCase):
         self.assertEqual([line for line in text.split("## Links")[1].splitlines() if line.startswith("[")], [
             "[spec]: https://example.com/other", "[spec-doc]: https://example.com/spec"])
         # Another URL under a key already taken gets the next free one.
-        self.boundary("See [Spec](https://example.com/third).")
+        self.prose("See [Spec](https://example.com/third).")
         self.assertIn("See [Spec][spec-2].", self.text())
 
     def test_ticket_keys_link_to_the_jira_site_that_has_their_project(self):
@@ -354,9 +350,9 @@ class LedgerTest(unittest.TestCase):
         ledger.SITES.clear()
         self.addCleanup(ledger.SITES.clear)
         with mock.patch.object(ledger, "JiraClient", Site), mock.patch.object(ledger, "is_enabled", return_value=True):
-            self.boundary("PROJ-7 and PROJ-8 use SHA-256.")
+            self.prose("PROJ-7 and PROJ-8 use SHA-256.")
         self.assertIn(
-            "[PROJ-7][proj-7] and [PROJ-8][proj-8] use `SHA-256`.", self.text())
+            "| [PROJ-7][proj-7] and [PROJ-8][proj-8] use `SHA-256`. |", self.text())
         self.assertIn(
             "[proj-7]: https://acme.atlassian.net/browse/PROJ-7", self.text())
         self.assertEqual(asked, ["PROJ", "SHA"])
@@ -386,11 +382,11 @@ class LedgerTest(unittest.TestCase):
                         mock.patch.object(ledger, "is_enabled", return_value=enabled):
                     if stop:
                         with self.assertRaises(stop):
-                            self.boundary("PROJ-7 is done.")
+                            self.prose("PROJ-7 is done.")
                         self.assertEqual(self.text(), before)
                     else:
-                        self.boundary("PROJ-7 is done.")
-                        self.assertIn("`PROJ-7` is done.", self.text())
+                        self.prose("PROJ-7 is done.")
+                        self.assertIn("| `PROJ-7` is done. |", self.text())
 
     def test_tickets_and_pull_requests_are_linked_on_write(self):
         # A ticket links once the ledger links one of its project, else it is code;
@@ -406,8 +402,8 @@ class LedgerTest(unittest.TestCase):
                  ("`PROJ-8` in code", "[PROJ-8][proj-8] in code", None)]
         for text, written, definition in cases:
             with self.subTest(text):
-                self.boundary(text)
-                self.assertIn(f"\n{written}\n", self.text())
+                self.prose(text)
+                self.assertIn(f"| {written} |", self.text())
                 if definition:
                     self.assertIn(definition, self.text())
         self.write(
@@ -416,15 +412,15 @@ class LedgerTest(unittest.TestCase):
             "| [PROJ-9][proj-9] is open. | S01 and [PROJ-9][proj-9] |", self.plain())
         before = self.text()
         with self.assertRaisesRegex(SystemExit, "#12: write a pull request as owner/repo#123"):
-            self.boundary("#12 merged")
+            self.prose("#12 merged")
         self.assertEqual(self.text(), before)
 
     def test_a_ticket_written_as_code_is_linked_once_its_project_is(self):
-        self.boundary("PROJ-7 is open")
-        self.assertIn("\n`PROJ-7` is open\n", self.text())
+        self.prose("PROJ-7 is open")
+        self.assertIn("| `PROJ-7` is open |", self.text())
         self.write(("sources", "S01", source(
             "[PROJ-1](https://acme.example/browse/PROJ-1)", "tracker", "Done")))
-        self.assertIn("\n[PROJ-7][proj-7] is open\n", self.text())
+        self.assertIn("| [PROJ-7][proj-7] is open |", self.text())
         self.assertIn(
             "[proj-7]: https://acme.example/browse/PROJ-7", self.text())
 
@@ -443,10 +439,10 @@ class LedgerTest(unittest.TestCase):
         self.records("S01", "S02", "F01")
         self.write(("components", "C01", ["n", "r", "p", "🟨 Planned", "d", "F01", "next", "None"]),
                    ("queue-ready", "Q01", ["C01", "Is it live?", "None", ""]))
-        self.boundary("Searched as S02 says.")
+        self.change(lambda lines: ledger.record_review(lines, raised=["S02"]))
         cases = [("a row", "F01", "F01 is still cited by C01"),
                  ("a question's trigger", "C01", "C01 is still cited by Q01"),
-                 ("outside the records", "S02", "S02 is still cited by the Boundary section")]
+                 ("outside the records", "S02", "S02 is still cited by the Independent reviews section")]
         for name, ident, expected in cases:
             with self.subTest(name), self.assertRaisesRegex(SystemExit, expected):
                 ledger.refuse_cited(self.lines(), ident)
@@ -478,8 +474,8 @@ class LedgerTest(unittest.TestCase):
             '| <a id="f01"></a>F01 | Search is slow. | [S01](#s01) and [S02](#s02) |', text)
         self.assertIn("| full | [F01](#f01) | None |", text)
         # An ID-shaped word not written as a citation is prose, left as it is.
-        self.boundary("F01 rests on S01; P95 is a latency.")
-        self.assertIn("\nF01 rests on S01; P95 is a latency.\n", self.text())
+        self.prose("F01 rests on S01; P95 is a latency.")
+        self.assertIn("| F01 rests on S01; P95 is a latency. |", self.text())
         # The next ID counts anchored rows.
         self.assertEqual(ledger.next_id(self.text(), "S"), "S03")
         self.assertEqual(check_report.check_ledger(self.path), ([], []))

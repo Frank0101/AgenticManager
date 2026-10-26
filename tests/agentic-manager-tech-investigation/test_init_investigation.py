@@ -97,8 +97,8 @@ class InitTest(unittest.TestCase):
             ["Q05", "Seed (code)",
              "What code for Acme Search is merged or in an open pull request, and how does it work: components, "
              "connections, identities?", "[Q01](#q01)"]])
-        # The boundary holds the user's decisions, made as research meets them.
-        self.assertIn("## Boundary\n\nNone yet.\n", body)
+        # The scope boundaries hold the user's decisions, made as research meets them.
+        self.assertIn("## Scope boundaries\n\nNone yet.\n", body)
         self.assertEqual(check_report.check_ledger(ledger), ([], []))
         self.assertEqual(signed_in.call_args.args[0], [
                          "gh", "auth", "status"])

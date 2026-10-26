@@ -188,7 +188,7 @@ class CheckReportTest(unittest.TestCase):
         cases = [("no access", "No access to the cluster", None),
                  ("a decision", "Waiting on decision D01", None),
                  ("a decision with no ID", "Waiting on decision", "Blocked by"),
-                 # Scope is a question for the user in the queue, so no gap waits on them.
+                 # Scope is a scope question in the queue, so no gap waits on the user.
                  ("a scope cut", "Out of scope, approved by the user", "Blocked by"),
                  ("nothing blocks it", "Not done yet", "Blocked by"),
                  ("empty", "", "Blocked by")]
@@ -291,8 +291,8 @@ class CheckReportTest(unittest.TestCase):
         for name, sentence, expected in cases:
             with self.subTest(name):
                 (self.folder / "ledger.md").write_text(
-                    LEDGER.replace("## Boundary\n\nNone yet.",
-                                   "## Boundary\n\n" + sentence), encoding="utf-8")
+                    LEDGER.replace("## Scope boundaries\n\nNone yet.",
+                                   "## Scope boundaries\n\n" + sentence), encoding="utf-8")
                 self.report.write_text(
                     self.text + "\n" + sentence + "\n", encoding="utf-8")
                 self.assertTrue(check_report.check_report(self.report)["ok"])
@@ -318,8 +318,8 @@ class CheckReportTest(unittest.TestCase):
                 with self.subTest(name, handover=handover):
                     (self.folder / "ledger.md").write_text(
                         LEDGER.replace(
-                            "## Boundary\n\nNone yet.",
-                            "## Boundary\n\n" + sentence), encoding="utf-8")
+                            "## Scope boundaries\n\nNone yet.",
+                            "## Scope boundaries\n\n" + sentence), encoding="utf-8")
                     self.report.write_text(
                         self.text + "\n" + sentence + "\n", encoding="utf-8")
                     result = check_report.check_report(
@@ -419,8 +419,8 @@ class CheckReportTest(unittest.TestCase):
             with self.subTest(name):
                 text = LEDGER.replace("## Links\n\nNone yet.", body.split(
                     "\n\n## Links\n\n")[1].join(["## Links\n\n", ""]))
-                text = text.replace("## Boundary\n\nNone yet.",
-                                    "## Boundary\n\n" + body.split("\n\n## Links")[0])
+                text = text.replace("## Scope boundaries\n\nNone yet.",
+                                    "## Scope boundaries\n\n" + body.split("\n\n## Links")[0])
                 ledger.write_text(text, encoding="utf-8")
                 found_errors, found_warnings = check_report.check_ledger(
                     ledger)
@@ -434,8 +434,8 @@ class CheckReportTest(unittest.TestCase):
     def test_reference_links_count_as_links_at_handover(self):
         sentence = "See [`app.py`][app], [PROJ-1][proj-1] and [#2][pr-2]."
         links = "[app]: https://github.com/acme/app/blob/abc/app.py\n[pr-2]: https://github.com/acme/app/pull/2\n[proj-1]: https://example.atlassian.net/browse/PROJ-1"
-        text = LEDGER.replace("## Boundary\n\nNone yet.",
-                              "## Boundary\n\n" + sentence)
+        text = LEDGER.replace("## Scope boundaries\n\nNone yet.",
+                              "## Scope boundaries\n\n" + sentence)
         text = text.replace("## Links\n\nNone yet.", "## Links\n\n" + links)
         (self.folder / "ledger.md").write_text(text, encoding="utf-8")
         result = check_report.check_report(self.report, handover=True)
@@ -449,8 +449,8 @@ class CheckReportTest(unittest.TestCase):
         self.assertIn("claim is 160 words", " ".join(errors))
         # A citation is a link to a record's anchor; a bare ID-shaped word,
         # such as P95, is prose.
-        ledger.write_text(LEDGER.replace("## Boundary\n\nNone yet.",
-                                         "## Boundary\n\nSee [S07](#s07) and [Q03](#q03); P95 is a latency."),
+        ledger.write_text(LEDGER.replace("## Scope boundaries\n\nNone yet.",
+                                         "## Scope boundaries\n\nSee [S07](#s07) and [Q03](#q03); P95 is a latency."),
                           encoding="utf-8")
         self.assertEqual(check_report.check_ledger(
             ledger, handover=False)[0], [])

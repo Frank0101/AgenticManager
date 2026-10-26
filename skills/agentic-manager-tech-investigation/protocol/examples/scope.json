@@ -2,7 +2,7 @@
   "decisions": [
     {
       "question": "[[Q07]]",
-      "name": "The payments gateway",
+      "topic": "The payments gateway",
       "answer": "include"
     }
   ],

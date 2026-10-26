@@ -4,7 +4,7 @@ Link each claim to the ledger, such as [F03](ledger:F03); the script writes the 
 
 The executive layer:
 
-- purpose (about 150 words): the problem, who it affects, why it matters and the intended outcome, in plain language. End with each topic the brief's Boundary section marks mention only, in one line on how it connects.
+- purpose (about 150 words): the problem, who it affects, why it matters and the intended outcome, in plain language. End with each topic the brief's Scope boundaries mark mention only, in one line on how it connects.
 - current_status (about 200 words): what is done, what is in progress, and the gap between them, keeping implemented, in development and planned apart. Name the evidence limits that matter, such as a source that couldn't be read.
 - direction (about 200 words): what comes next, in the order the sources give, separating what the tracker plans from what only the documentation proposes. Give timing only where a source commits to it.
 - key_decisions: only the decisions, blockers and risks that need a leader's attention, each with why it matters and its evidence. An empty list is fine.

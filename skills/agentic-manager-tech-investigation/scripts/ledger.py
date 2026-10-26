@@ -1,4 +1,4 @@
-"""Reads and writes the research ledger's tables, text and links by ID.
+"""Reads and writes the research ledger's tables and links by ID.
 
 The ledger is long, and a hand-made patch has to match its text exactly once, so
 every write goes through here: IDs, order, anchors and links are mechanical;
@@ -9,14 +9,14 @@ check_report.py applies to the whole ledger at handover.
 import os
 import re
 
-from common import (BOUNDARY, read_in_part, CITATION, citation, DESIGN, BOUNDARY_HEADER, COMPONENT_HEADER, CONNECTION_HEADER, DECISION_HEADER, DESIGN_TABLES,
+from common import (SCOPE_HEADER, read_in_part, CITATION, citation, DESIGN, BOUNDARY_HEADER, COMPONENT_HEADER, CONNECTION_HEADER, DECISION_HEADER, DESIGN_TABLES,
                     FINDING_HEADER, FLOW_HEADER, FOLDER_NAME, GAP_FIX, GAP_HEADER, ID_LETTERS,
                     IDENTITY_HEADER, INLINE_LINK, JIRA_API, JIRA_GROUP, LEDGER, LINKS, QUERY, QUEUE_HEADER,
                     QUEUE_TABLES, REVIEW_HEADER, REVIEW_NONE, REVIEW_STOPPED, ROW_START, SOURCE_FINDINGS_COLUMN,
                     SOURCE_HEADER, SOURCE_LINK_FIX, TABLE_HEADINGS, JiraClient, anchored, autolink, backtick_error,
                     blocked_problem, cited_sources, coverage_problem, design_problem, finding_problem, free_name,
-                    gap_problem, group_problem, h2_span, id_order, ids, inline_links, investigation_dir, is_enabled,
-                    ledger_rows, link_definitions, link_text, links, outcome_problem, same_document,
+                    gap_problem, group_problem, id_order, ids, inline_links, investigation_dir, is_enabled,
+                    ledger_rows, link_definitions, link_text, links, outcome_problem, plain, same_document, scope_problem,
                     section_span, slug, source_reference_missing, status_problem, strip_anchors, superseded_problem,
                     table, table_cells, table_row, ticket_sites, unlinked_backticks, unread_components,
                     unread_message, unrecorded_citations, unresolved_message, upgraded_tickets, write_output_file)
@@ -24,6 +24,7 @@ from common import (BOUNDARY, read_in_part, CITATION, citation, DESIGN, BOUNDARY
 # table name: (heading it sits under, default header, ID letter)
 TABLES = {
     **{table: (TABLE_HEADINGS[table], QUEUE_HEADER, "Q") for table in QUEUE_TABLES},
+    "scope": (TABLE_HEADINGS["scope"], SCOPE_HEADER, "U"),
     "sources": (TABLE_HEADINGS["sources"], SOURCE_HEADER, "S"),
     "findings": (TABLE_HEADINGS["findings"], FINDING_HEADER, "F"),
     "decisions": (TABLE_HEADINGS["decisions"], DECISION_HEADER, "D"),
@@ -52,40 +53,26 @@ BASIS = re.compile(
 
 def brief(lines):
     """What writing the report reads, from the ledger as it stands: the
-    boundary, each source's reference with its coverage, every finding, the
+    scope boundaries, each source's reference with its coverage, every finding, the
     components, the system design, decisions and gaps, and the findings resting
     on a partial read. The queue and the review rounds are for research, and make up much
     of a long ledger. Links show their text, IDs are plain, and a source's
     reference keeps its URL, so the report can link the source itself."""
-    def plain(text):
-        return link_text(strip_anchors(text))
+    def rows_of(name):
+        rows = table_rows(lines, name)
+        return [TABLES[name][0], "", *([" | ".join(header_of(lines, name))] + [plain(" | ".join(row)) for row in rows]
+                                       if rows else ["None."]), ""]
 
-    out = []
-    start, end = h2_section(lines, BOUNDARY)
-    out += [f"## {BOUNDARY}", "",
-            plain("\n".join(lines[start + 1:end]).strip()), ""]
+    out = rows_of("scope")
     out += ["## Sources: references and coverage", ""]
     out += [f"{row[0]}: {as_written(lines, row[2])}, {plain(row[3])}; coverage: {plain(row[4])}"
             + ("" if row[6] == "None" else f"; superseded by {plain(row[6])}")
             for row in table_rows(lines, "sources")] or ["None."]
     out.append("")
     for name in ("findings", "components", *DESIGN_TABLES, "decisions", "gaps"):
-        rows = table_rows(lines, name)
-        out += [TABLES[name][0], ""]
-        out += ([" | ".join(header_of(lines, name))] + [plain(" | ".join(row)) for row in rows]
-                if rows else ["None."])
-        out.append("")
+        out += rows_of(name)
     out += partial_lines(lines)
     return "\n".join(out).rstrip() + "\n"
-
-
-def h2_section(lines, title):
-    """(index of its heading, index of the next ## heading or the end) of the
-    ## section `title`; exits if the ledger has none."""
-    span = h2_span(lines, title)
-    if span is None:
-        raise SystemExit(f"the ledger has no '## {title}' section")
-    return span
 
 
 def partial_lines(lines):
@@ -103,7 +90,7 @@ def partial_reads(lines):
     the part left unread."""
     partial = {row[0]: row for row in table_rows(lines, "sources")
                if read_in_part(row)}
-    return [(row[0], source, link_text(strip_anchors(partial[source][2])), partial[source][4])
+    return [(row[0], source, plain(partial[source][2]), partial[source][4])
             for row in table_rows(lines, "findings") for source in dict.fromkeys(ids(row[2], "S"))
             if source in partial]
 
@@ -275,6 +262,8 @@ def check_cells(lines, name, row):
         problem = design_problem(name, row)
     elif name == "findings":
         problem = finding_problem(row)
+    elif name == "scope":
+        problem = scope_problem(row)
     elif name == "queue-completed":
         problem = outcome_problem(row[0], row[-1], row[2])
     elif name == "queue-blocked":
@@ -498,7 +487,7 @@ def mentions(lines, ident):
 
 def cited_outside_records(lines, ident):
     """The headings of the parts of the ledger outside its records, such as
-    the boundary, whose text names `ident`; records, which mentions() names by
+    the review rounds, whose text names `ident`; records, which mentions() names by
     their ID, are left out."""
     found, heading = [], ""
     for line in lines:
@@ -526,29 +515,9 @@ def record_review(lines, raised=(), stopped=None):
     return len(rows)
 
 
-def add_scope(lines, name, answer):
-    """Add the user's decision on `name`, include, mention only or exclude, to
-    the Boundary section, below those already there; returns the line as
-    written."""
-    start, end = h2_section(lines, BOUNDARY)
-    kept = [line for line in lines[start + 1:end]
-            if line.strip() and line.strip() not in PLACEHOLDERS]
-    written = linked(lines, [f"- {name}: {answer}."])
-    check_backticks(lines, written, BOUNDARY)
-    set_text(lines, BOUNDARY, "\n".join([*kept, written[0]]))
-    return written
-
-
 def scope_decisions(lines):
-    """The Boundary section's decisions, one line each, as the user made them."""
-    start, end = h2_section(lines, BOUNDARY)
-    return [link_text(line.strip()) for line in lines[start + 1:end] if line.strip().startswith("- ")]
-
-
-def set_text(lines, name, text):
-    """Replace the text section `name` with `text`."""
-    start, end = h2_section(lines, name)
-    lines[start + 1:end] = ["", *text.strip().split("\n"), ""]
+    """The scope boundaries the user decided, one line each."""
+    return [f"- {row[0]}: {link_text(row[1])}: {row[2]}" for row in table_rows(lines, "scope")]
 
 
 def basis(lines):
@@ -560,7 +529,7 @@ def basis(lines):
 def design_basis(lines):
     """What the system design was last built from, as basis() counts it, or
     None while it was never built."""
-    start, end = h2_section(lines, DESIGN)
+    start, end = section(lines, f"## {DESIGN}")
     found = next((BASIS.match(line.strip())
                  for line in lines[start + 1:end] if BASIS.match(line.strip())), None)
     return tuple(int(n) for n in found.groups()) if found else None
@@ -568,9 +537,7 @@ def design_basis(lines):
 
 def set_design_basis(lines, counts):
     """Record under the System design heading what the design was built from."""
-    start, _ = h2_section(lines, DESIGN)
-    end = next(i for i in range(start + 1, len(lines))
-               if lines[i].startswith("#"))
+    start, end = section(lines, f"## {DESIGN}")
     findings, gaps, decisions = counts
     lines[start + 1:end] = ["",
                             f"Built from {findings} findings, {gaps} gaps and {decisions} decisions.", ""]
