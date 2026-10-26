@@ -137,8 +137,10 @@ class SubmissionTest(unittest.TestCase):
             "| P95 latency is 2s. | S01; F01 | Contradicts F01. |", self.plain())
         self.assertIn("| P95 latency is 2s. | [S01](#s01); [F01](#f01) | Contradicts [F01](#f01). |",
                       self.text())
-        # name: (the findings, a problem they list)
-        cases = [("a bare key where a field cites", [finding(sources="s1")],
+        # name: (the findings, a problem they list), the source s1 declared
+        DECLARED = [{"key": "[[s1]]", "kind": "code", "reference": "[api](https://example.com/api)",
+                     "revision": "abc", "coverage": "full"}]
+        cases = [("a bare key where a field cites", [finding(sources="[[S01]] and s1")],
                   "write each reference in double brackets, such as [[s1]]"),
                  ("a bare ID where a field cites", [finding(sources="S01")],
                   "write each reference in double brackets, such as [[S01]]"),
@@ -149,8 +151,13 @@ class SubmissionTest(unittest.TestCase):
                  ("an ID the ledger doesn't hold", [finding(sources="[[S09]]")], "cites S09, which the ledger")]
         for name, findings, expected in cases:
             with self.subTest(name):
-                self.assertIn(expected, self.refused("research", "Q02", {"findings": findings,
+                self.assertIn(expected, self.refused("research", "Q02", {"sources": DECLARED, "findings": findings,
                                                                          "outcome": {"answered": "[[f1]]"}}))
+        # In a field that cites, a word shaped like an ID that names no record,
+        # such as a page's version, is prose too.
+        self.submit("research", "Q02", {"findings": [finding(sources="[[S01]], version V2")],
+                                        "outcome": {"answered": "[[f1]]"}})
+        self.assertIn("| S01, version V2 |", self.plain())
 
     def test_a_partial_read_is_explained_in_the_limits(self):
         # A finding citing a source read only in part cites it again in its

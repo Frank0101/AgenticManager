@@ -31,7 +31,7 @@ GAP = {"gap": "Billing callers", "established_and_missing": "Callers aren't read
 
 def answer(claim="A fact.", **outcome):
     """An answer resting on a source the ledger holds, read in full."""
-    return {"findings": [{"key": "[[f1]]", "claim": claim, "sources": "[[S02]]", "limits": "Read in full."}],
+    return {"findings": [{"key": "[[f1]]", "claim": claim, "sources": "[[S02]]", "limits": "[[S02]]: the unread sections can't change it."}],
             "outcome": outcome or {"answered": "[[f1]]"}}
 
 
@@ -95,14 +95,17 @@ class InvestigateTest(unittest.TestCase):
         self.assertNotIn("- Q01:", text)
         self.assertEqual([row[0] for row in ledger.table_rows(
             self.lines(), "queue-in-progress")], ["Q01"])
-        # Asked again, it hands out the one in progress, and none of the seeds
-        # waiting for it.
+        # Asked again, it hands out nothing: the one in progress is someone's,
+        # and the seeds wait for it. After a break, --resume hands it out again.
         text = investigate.next_tasks(INVESTIGATION, 3)
+        self.assertTrue(text.startswith(
+            "Nothing new to hand out: Q01 in progress."), text)
+        text = investigate.next_tasks(INVESTIGATION, 3, resume=True)
         self.assertEqual([part.split("\n")[0] for part in text.split(investigate.SEPARATOR)],
                          ["# Task research:Q01"])
         # A question waiting on an open one isn't handed out.
         self.submit("research:Q01", {**answer(), "sources": protocol.example("research")["sources"],
-                                     "findings": [{"key": "[[f1]]", "claim": "x", "sources": "[[s2]]", "limits": "y"}],
+                                     "findings": [{"key": "[[f1]]", "claim": "x", "sources": "[[s2]]", "limits": "[[s2]]: y"}],
                                      "new_questions": [{"key": "[[q1]]", "question": "Then?", "raised_by": "[[f1]]",
                                                         "depends_on": "[[Q04]]"}]})
         text = investigate.next_tasks(INVESTIGATION, 9)

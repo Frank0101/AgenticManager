@@ -12,13 +12,13 @@
       "kind": "documentation: design page",
       "reference": "[Search design](https://docs.example.com/search-design)",
       "revision": "2026-09-30",
-      "coverage": "full"
+      "coverage": "partial: the Proposal section"
     }
   ],
   "findings": [
     {
       "key": "[[f1]]",
-      "claim": "The search API answers /search from the index, never the primary database.",
+      "claim": "The search API answers /search from the index, never the primary database; acme/api#42 added the route.",
       "sources": "[[s1]] (lines 120-160)",
       "limits": "Routes read at the pinned commit; the index build job not read."
     },
@@ -26,7 +26,7 @@
       "key": "[[f2]]",
       "claim": "The design page plans to move search to a managed index.",
       "sources": "[[s2]]",
-      "limits": "Proposed, not accepted."
+      "limits": "Proposed, not accepted. [[s2]]: the unread sections are the background and the rejected options, which can't change what is proposed."
     }
   ],
   "new_questions": [

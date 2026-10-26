@@ -83,7 +83,7 @@ class InvestigationTest(unittest.TestCase):
             self.assertTrue(self.next().startswith(
                 f"# Task research:{question}"))
             self.submit(f"research:{question}", {"findings": [{"key": "[[f1]]", "claim": f"Fact for {question}.",
-                                                               "sources": "[[S02]]", "limits": "Read in full."}],
+                                                               "sources": "[[S02]]", "limits": "[[S02]]: the unread sections can't change it."}],
                                                  "outcome": {"answered": "[[f1]]"}})
         self.assertTrue(self.next().startswith("# Task design"))
         self.submit("design", protocol.example("design"))

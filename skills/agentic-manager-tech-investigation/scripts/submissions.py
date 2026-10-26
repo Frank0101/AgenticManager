@@ -10,6 +10,7 @@ problem is collected by field, and the ledger changes only when there is none.
 import re
 
 from common import (LEFT_OUT, OUTSIDE_SCOPE, SCOPE_ANSWERS, SCOPE_QUESTION, USER_DECIDED, citation, claim_length_problem, ids,
+                    recorded_ids,
                     read_in_part)
 from ledger import (TABLES, as_written, duplicate_of, finish_write, find_row,
                     header_of, move_row, next_id, put_row, refuse_cited, search_reference, set_design_basis,
@@ -38,8 +39,9 @@ DEFAULTS = {"superseded_by": "None"}
 KEY_REFERENCE = re.compile(r"\[\[([A-Za-z]\d+)\]\]")
 BARE_REFERENCE = re.compile(r"\b[A-Za-z]\d+\b")
 RECORD_ID = re.compile(r"[A-Z]\d{2,}")
-# The fields that only cite other records, where a key written bare, not as
-# [[s1]], is refused.
+# The fields that only cite other records, where the name of a record written
+# bare, not as [[s1]], is refused: it would be left as prose, its citation
+# lost. Any other word shaped like an ID, such as V2, is prose.
 CITING = {"sources": ["superseded_by"], "findings": ["sources"], "boundaries": ["evidence"],
           "identities": ["evidence"], "components": ["evidence", "boundary"],
           "connections": ["from", "to", "identity", "evidence"], "flows": ["connections", "evidence"],
@@ -54,7 +56,7 @@ def submit_scope(lines, data, asked):
     """Write the user's decision on each scope question of `asked`, the IDs
     handed out, as a scope boundary, close each with it, and add the research
     questions an included one opens; returns {key: ID}."""
-    problems = Problems()
+    problems = Problems(lines)
     problems.only(data, ["decisions", "new_questions"])
     decisions = problems.items(data, "decisions")
     questions = problems.items(data, "new_questions", required=False)
@@ -100,7 +102,7 @@ def submit_research(lines, question, data):
     """Write an answer to `question`: its sources, findings and new questions,
     then close it, as answered or blocked; returns {key: ID} and the questions
     blocked with it."""
-    problems = Problems()
+    problems = Problems(lines)
     problems.only(data, ["sources", "findings", "new_questions", "outcome"])
     allocator = Allocator(lines)
     written = []
@@ -151,7 +153,7 @@ def submit_design(lines, data, basis):
     """Replace the system design with the one submitted, keeping the IDs given
     as keys and assigning new ones, then add its new questions and record
     `basis`, what it was built from; returns {key: ID}."""
-    problems = Problems()
+    problems = Problems(lines)
     problems.only(data, [*DESIGN_ORDER, "new_questions"])
     allocator = Allocator(lines)
     before = {table: {row[0] for row in table_rows(
@@ -193,7 +195,7 @@ def submit_design(lines, data, basis):
 def submit_review(lines, data, round_number):
     """Record review round `round_number`: the questions it raised, added to
     the queue, or the user's choice to stop; returns {key: ID}."""
-    problems = Problems()
+    problems = Problems(lines)
     if isinstance(data, dict) and "stopped" in data:
         problems.only(data, ["stopped"])
         stopped = problems.text(data, "stopped")
@@ -414,8 +416,9 @@ class Problems:
     """What is wrong with a submission, by field: collected, not raised, so
     one answer lists them all."""
 
-    def __init__(self):
+    def __init__(self, lines):
         self.found = []
+        self.held = recorded_ids("\n".join(lines))
 
     def add(self, problem):
         """Record a problem."""
@@ -490,7 +493,8 @@ class Problems:
     def cite(self, value, where, keys, citing=True):
         """`value` with each [[F07]] or [[f1]] written as the citation of its
         record, recording a key no record of the submission has, and, in a
-        field that only cites, an ID or key written bare, which is prose."""
+        field that only cites, the ID of a record the ledger holds or a key
+        of the submission written bare."""
         if not isinstance(value, str):
             self.add(f"{where} needs text")
             return ""
@@ -499,7 +503,8 @@ class Problems:
         if unknown:
             self.add(
                 f"{where}: {', '.join(f'[[{key}]]' for key in unknown)} is no key of this submission")
-        if citing and (bare := BARE_REFERENCE.findall(KEY_REFERENCE.sub("", value))):
+        if citing and (bare := [word for word in BARE_REFERENCE.findall(KEY_REFERENCE.sub("", value))
+                                if word in keys or word in self.held]):
             self.add(
                 f"{where}: write each reference in double brackets, such as [[{bare[0]}]]")
         return KEY_REFERENCE.sub(lambda m: citation(keys.get(m[1], m[1])) if m[1] in keys or RECORD_ID.fullmatch(m[1])

@@ -67,25 +67,35 @@ def lock_path(relative):
     return os.path.join(tempfile.gettempdir(), f"tech-investigation-{digest}.lock")
 
 
-def next_tasks(relative, maximum=1):
+def next_tasks(relative, maximum=1, resume=False):
     """The text of the next tasks, each question in it moved to in progress:
-    the questions for the user, as one task, when any is new or nothing else is
-    left; else up to `maximum` research questions, those that don't wait on the
-    user's answers; one task in any other phase."""
+    the scope questions, as one task, when any is new or nothing else is left;
+    else up to `maximum` ready research questions, those that don't wait on
+    the user's answers. A question in progress is someone's already, so it is
+    handed out again only with `resume`, as after a break; one task in any
+    other phase."""
     lines = load(relative).split("\n")
     phase = phase_of(relative, lines)
     if phase != "research":
         return render(relative, lines, task_of(lines, phase))
-    asking = scope_due(lines)
-    open_questions = questions_to_work(lines)
-    handed = scope_questions(open_questions) if asking else [
-        row for row in open_questions if not is_scope_question(row)][:maximum]
+    if scope_due(lines):
+        for row in scope_questions(table_rows(lines, "queue-ready")):
+            move_row(lines, row[0], "queue-in-progress")
+        save(relative, lines)
+        return render(relative, lines, "scope")
+    research = [row for row in questions_to_work(
+        lines) if not is_scope_question(row)]
+    working = [row for row in research if row in table_rows(
+        lines, "queue-in-progress")]
+    handed = (working if resume else [
+              row for row in research if row not in working])[:maximum]
+    if not handed:
+        return (f"Nothing new to hand out: {', '.join(row[0] for row in working)} in progress. Run next again once "
+                "an answer is submitted; if no one is working on them, as after a break, run next with --resume.")
     for row in handed:
-        if row in table_rows(lines, "queue-ready"):
+        if row not in working:
             move_row(lines, row[0], "queue-in-progress")
     save(relative, lines)
-    if asking:
-        return render(relative, lines, "scope")
     return SEPARATOR.join(render(relative, lines, f"research:{row[0]}") for row in handed)
 
 
@@ -380,6 +390,9 @@ def main(argv=None):
                       help="<Topic>_<YY-MM-DD>, as start printed it")
     take.add_argument("--max", type=int, default=1,
                       help="how many research questions at most, such as 4 to give each to a subagent")
+    take.add_argument("--resume", action="store_true",
+                      help="hand out the research questions in progress again, when no one is working on them, "
+                      "as after a break")
     give = commands.add_parser("submit", help="check a task's answer and write it",
                                description="Check a task's answer, given as JSON on standard input or in --input, "
                                "and write everything it implies; nothing is written while any problem is left, but for the "
@@ -397,7 +410,8 @@ def main(argv=None):
             print(json.dumps(start(args.topic)))
         elif args.command == "next":
             with locked(args.investigation):
-                print(next_tasks(args.investigation, max(1, args.max)))
+                print(next_tasks(args.investigation,
+                      max(1, args.max), args.resume))
         else:
             data = read_input(args.input)
             with locked(args.investigation):
