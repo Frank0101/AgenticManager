@@ -8,8 +8,8 @@ The scripts run against a fake Jira server, started on a local port, that serves
 made-up sprint in sprint_fixture.py. HOME points at a temporary folder holding the
 test's own config, whose base-url is that server and whose output root is in that
 folder too, and TMPDIR at the same folder, so reports that fall back to the system
-temp folder stay inside it. Where a test enables github-cli, a fake gh put first
-on PATH answers from a file of answers, so nothing reaches GitHub.
+temp folder stay inside it. github-cli is enabled, as the report needs it, and a
+fake gh put first on PATH answers from a file of answers, so nothing reaches GitHub.
 """
 
 import base64
@@ -258,6 +258,22 @@ class FetchTest(unittest.TestCase):
         self.out_root = os.path.join(self.root, "jira-sprint-reports")
         self.reset_jira()
         self.write_config()
+        # The fake gh, answering nothing until a test gives it answers.
+        self.bin_dir = os.path.join(self.tmp.name, "bin")
+        os.makedirs(self.bin_dir)
+        with open(os.path.join(self.bin_dir, "gh"), "w", encoding="utf-8") as f:
+            f.write(FAKE_GH)
+        os.chmod(os.path.join(self.bin_dir, "gh"), 0o755)
+        self.gh_answers = os.path.join(self.tmp.name, "gh.json")
+        self.gh_log = os.path.join(self.tmp.name, "gh.log")
+        self.answer_gh({})
+
+    # Gives the fake gh its answers, by the words of each call, and clears its log.
+    def answer_gh(self, answers):
+        with open(self.gh_answers, "w", encoding="utf-8") as f:
+            json.dump(answers, f)
+        with open(self.gh_log, "w", encoding="utf-8"):
+            pass
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -287,7 +303,7 @@ class FetchTest(unittest.TestCase):
 
     # Writes the test's config. `output` is its output settings; by default the
     # output root is the test's own.
-    def write_config(self, output=None, github=False, **settings):
+    def write_config(self, output=None, github=True, **settings):
         source = {"enabled": True, "base-url": self.base_url,
                   "email": EMAIL, "api-token": TOKEN}
         source.update(settings)
@@ -300,10 +316,12 @@ class FetchTest(unittest.TestCase):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(config, f)
 
-    # Runs a script with the test's HOME, and its own system temp folder;
-    # `env` adds to its environment.
+    # Runs a script with the test's HOME, its own system temp folder and the
+    # fake gh; `env` adds to its environment.
     def run_script(self, name, *args, **env):
-        env = dict(os.environ, HOME=self.home, TMPDIR=self.tmp.name, **env)
+        env = dict(os.environ, HOME=self.home, TMPDIR=self.tmp.name, FAKE_GH_ANSWERS=self.gh_answers,
+                   FAKE_GH_LIB=FAKE_GH_LIB, FAKE_GH_LOG=self.gh_log,
+                   PATH=self.bin_dir + os.pathsep + os.environ["PATH"], **env)
         return subprocess.run([sys.executable, os.path.join(SCRIPTS, name), *args],
                               env=env, capture_output=True, text=True)
 
@@ -560,13 +578,12 @@ class FetchTest(unittest.TestCase):
             self.raw(out, "changelogs/PROJ-2.json"), changelogs["PROJ-2"])
 
     def test_pull_requests(self):
-        # gh is optional. Without it, the panel, which gives no events, isn't
-        # read either, and the raw file says GitHub wasn't read; a pull
-        # request GitHub says doesn't exist is skipped, said on stderr and
-        # kept as skipped; any other gh failure stops the fetch with gh's
-        # message and what to do. With it, a ticket's pull requests are only
-        # those of the panels of it and its sub-tasks: the panel's commits
-        # aren't read, and GitHub is read only for the times, never searched.
+        # gh is required: without it the fetch stops before reading anything.
+        # A pull request GitHub says doesn't exist is skipped, said on stderr
+        # and kept as skipped; any other gh failure stops the fetch with gh's
+        # message and what to do. A ticket's pull requests are only those of
+        # the panels of it and its sub-tasks: the panel's commits aren't read,
+        # and GitHub is read only for the times, never searched.
         pr = "https://github.com/acme/api/pull/{}"
         proj_1, proj_2 = fixture.CURRENT[0]["id"], fixture.CURRENT[1]["id"]
         # PROJ-9, a sub-task of PROJ-1, lists a pull request of its own.
@@ -577,15 +594,8 @@ class FetchTest(unittest.TestCase):
                                    "repository": [{"name": "acme/api", "commits": [{"id": "c1"}]}]},
                           "20009": {"pullrequest": [{"url": pr.format(43), "status": "OPEN"}]},
                           proj_2: {"repository": [{"name": "acme/api", "commits": [{"id": "c2"}]}]}}
-        bin_dir = os.path.join(self.tmp.name, "bin")
-        os.makedirs(bin_dir)
-        with open(os.path.join(bin_dir, "gh"), "w", encoding="utf-8") as f:
-            f.write(FAKE_GH)
-        os.chmod(os.path.join(bin_dir, "gh"), 0o755)
-        answers = os.path.join(self.tmp.name, "gh.json")
-        gh_log = os.path.join(self.tmp.name, "gh.log")
-        times = {number: {"url": pr.format(number), "state": "OPEN",
-                          "createdAt": "2026-03-05T10:00:00Z", "mergedAt": None} for number in (41, 43)}
+        times = {number: {"url": pr.format(number), "state": "OPEN", "createdAt": "2026-03-05T10:00:00Z",
+                          "mergedAt": None, "closedAt": None} for number in (41, 43)}
         answered = {f"pr view {pr.format(n)}": t for n, t in times.items()}
         # A failure trying again won't fix, so the fetch stops at once.
         refused = "HTTP 401: Bad credentials (https://api.github.com/graphql)"
@@ -593,7 +603,8 @@ class FetchTest(unittest.TestCase):
         # name: (github-cli enabled, gh's answers, PROJ-1's and PROJ-2's pull
         # requests, GitHub's times, the skipped), or for a failure, what
         # stderr says
-        cases = [("without gh", False, answered, [], {}, []),
+        cases = [("without gh", False, answered,
+                  ["gh isn't available or github-cli isn't enabled, and the report needs GitHub"], None, None),
                  ("with gh", True, answered, [(pr.format(41), "PROJ-1"), (pr.format(43), "PROJ-9")],
                   {pr.format(n): times[n] for n in (41, 43)}, []),
                  ("a pull request GitHub can't find", True, {f"pr view {pr.format(41)}": times[41]},
@@ -607,18 +618,13 @@ class FetchTest(unittest.TestCase):
             with self.subTest(name):
                 FakeJira.requests, FakeJira.queries, FakeJira.data_types = [], [], []
                 before = self.reports()
-                with open(answers, "w", encoding="utf-8") as f:
-                    json.dump(gh_answers, f)
-                with open(gh_log, "w", encoding="utf-8"):
-                    pass
+                self.answer_gh(gh_answers)
                 self.write_config(github=github)
-                proc = self.run_script("fetch_sprint.py", "--project", "PROJ", FAKE_GH_ANSWERS=answers,
-                                       FAKE_GH_LIB=FAKE_GH_LIB, FAKE_GH_LOG=gh_log,
-                                       PATH=bin_dir + os.pathsep + os.environ["PATH"])
+                proc = self.run_script("fetch_sprint.py", "--project", "PROJ")
                 # No panel's commits read, and no gh call but GraphQL's:
                 # no commit lookup, no search.
                 self.assertNotIn("repository", FakeJira.data_types)
-                with open(gh_log, encoding="utf-8") as f:
+                with open(self.gh_log, encoding="utf-8") as f:
                     gh_calls = [json.loads(line) for line in f]
                 self.assertTrue(all(is_graphql(call)
                                 for call in gh_calls), gh_calls)
@@ -626,31 +632,27 @@ class FetchTest(unittest.TestCase):
                     self.assertEqual(proc.returncode, 1, proc.stderr)
                     for wanted in expected:
                         self.assertIn(wanted, proc.stderr)
-                    # Stopped before the report folder was touched.
+                    # Stopped before the report folder was touched; without
+                    # gh, before anything was read.
                     self.assertEqual(proc.stdout, "")
                     self.assertEqual(self.reports(), before)
+                    if not github:
+                        self.assertEqual(
+                            (FakeJira.requests, gh_calls), ([], []))
                     continue
                 self.assertEqual(proc.returncode, 0, proc.stderr)
-                self.assertEqual(
-                    "pull requests weren't read" in proc.stderr, not github)
-                # Without gh the fetch makes no call it made before
-                # GitHub: no Development panel, no sub-task search.
-                self.assertEqual(any(path.startswith("/rest/dev-status/")
-                                 for path in FakeJira.requests), github)
-                self.assertEqual(any(jql.startswith("parent in")
-                                 for jql in FakeJira.queries), github)
                 pulls = self.raw(json.loads(proc.stdout), "pull_requests.json")
-                self.assertEqual(pulls["github_read"], github)
                 self.assertEqual([(p["url"], p["via"]) for key in ("PROJ-1", "PROJ-2")
                                   for p in pulls["tickets"].get(key, [])], expected)
                 self.assertEqual(pulls["events"], events)
                 self.assertEqual(pulls["skipped"], skipped)
+                self.assertEqual(pulls["full_panels"], [])
                 self.assertEqual(f"skipped a pull request GitHub says doesn't exist, found through PROJ-9: {gone}"
                                  in proc.stderr.splitlines(), bool(skipped))
-                # With gh, every ticket the report counts, sub-tasks left out.
+                # Every ticket the report counts, sub-tasks left out.
                 self.assertEqual(sorted(pulls["tickets"], key=lambda k: int(k.split("-")[1])),
                                  ["PROJ-1", "PROJ-2", "PROJ-3", "PROJ-4", "PROJ-5", "PROJ-6", "PROJ-7", "PROJ-8",
-                                  "PROJ-10", "PROJ-11"] if github else [])
+                                  "PROJ-10", "PROJ-11"])
 
     def test_points_field_found_by_name_when_the_board_estimates_by_count(self):
         FakeJira.estimation = {"typeId": "issueCount"}

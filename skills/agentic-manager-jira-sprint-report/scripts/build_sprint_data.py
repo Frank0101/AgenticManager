@@ -15,9 +15,10 @@ from datetime import date, datetime, time, timedelta, tzinfo
 from common import (CHANGELOGS_DIR, COMMENTS_DIR, DATA_FILE, META_FILE, OUTCOME_ROWS, OUTCOMES, PARENTS_FILE,
                     PREVIOUS_SPRINT_FILE, PUNTED_ISSUES_FILE, RAW_DIR, SPRINT_FILE,
                     SPRINT_ISSUES_FILE, SPRINT_REPORT_FILE, STATUSES_FILE, SCOPE_GROUPS, add_and_remove_events, as_of,
-                    in_sprint_at, history_fields, is_blocker_candidate, key_order, read_json, nested, outcome_total,
-                    parse_ts, plain_text, points_value, report_timezone, set_at_creation, spell_epic, split_ids, standard_issues,
-                    status_categories, status_category, write_json)
+                    PULL_REQUESTS_FILE, PULL_STATES, ISSUE_KEY, in_sprint_at, history_fields, is_blocker_candidate,
+                    key_order, read_json, nested, outcome_total, parse_ts, plain_text, points_value, report_timezone,
+                    set_at_creation, spell_epic, split_ids, standard_issues, status_categories, status_category,
+                    write_json)
 
 # Terms meaning an issue was closed without delivering it (duplicate, won't do,
 # cancelled...), matched against both the status and the resolution: a
@@ -445,6 +446,95 @@ def scope_group(spell):
     return "completed", None
 
 
+def ticket_pulls(raw, key, moment):
+    """The pull requests of ticket `key` as at `moment`, from
+    pull_requests.json (`raw`): those opened by then, each with the panel's
+    title and source branch, the issue it was found through and GitHub's
+    times, a merge or closing after `moment` left out, as for the ticket's
+    events; then, from those, whether it is the ticket's own and its state
+    then. Fails on one GitHub gave no times for, as its state can't be told."""
+    pulls, cutoff = [], parse_ts(moment)
+    for pr in raw["tickets"].get(key, []):
+        times = raw["events"].get(pr["url"])
+        if times is None:
+            raise SystemExit(f"{key}: no GitHub times for {pr['url']}, so its state can't be told; "
+                             "fetch the sprint again")
+        if not times.get("createdAt") or parse_ts(times["createdAt"]) > cutoff:
+            continue
+        record = {"url": pr["url"], "title": pr.get("name") or "", "branch": nested(pr, ["source", "branch"]) or "",
+                  "via": pr["via"], "createdAt": times["createdAt"],
+                  **{field: times[field] if times.get(field) and parse_ts(times[field]) <= cutoff else None
+                     for field in ("mergedAt", "closedAt")}}
+        pulls.append({**record, "own": is_own_pull(record, key),
+                     "state": pull_state(record)})
+    return pulls
+
+
+def is_own_pull(pr, key):
+    """Whether a pull request is the ticket's own work: its title and branch
+    name the ticket or the sub-task it was found through, or no ticket at all.
+    One that names only other tickets was linked by a mention, such as
+    groundwork another ticket owns, so it says nothing of this one's status."""
+    named = set(ISSUE_KEY.findall(pr["title"])) | set(
+        ISSUE_KEY.findall(pr["branch"]))
+    return not named or bool(named & {key, pr["via"]})
+
+
+def pull_state(pr):
+    """A pull request's state as at the moment its times run to: merged,
+    declined (closed without a merge) or open."""
+    if pr["mergedAt"]:
+        return "merged"
+    return "declined" if pr["closedAt"] else "open"
+
+
+def build_status_checks(spells, pulls_of, full_panels, epics):
+    """The rows of the Status to Verify section: each ticket in the sprint at
+    the end with a status flag, or Done with a panel that may have left an
+    open pull request out, in the epics' order (`epics`, build_epics()) and
+    then by key, with its status, how many of its own pull requests are open,
+    how many of all those Jira links are in each state, as its Development
+    panel shows them, and how many of those name only other tickets;
+    `pulls_of` is {key: ticket_pulls()}."""
+    order = {epic["key"]: index for index, epic in enumerate(epics)}
+    rows = []
+    for spell in spells:
+        if not spell["counted"] or spell["outcome"] == "removed":
+            continue
+        key, pulls = spell["key"], pulls_of.get(spell["key"], [])
+        flag = status_flag(spell["statusCategory"], pulls)
+        # Only a Done ticket's answer depends on every pull request being
+        # known: a full panel can hide its open one.
+        full = key in full_panels and spell["statusCategory"] == "done"
+        if not flag and not full:
+            continue
+        rows.append({"key": key, "points": spell["points"], "epicKey": spell_epic(spell)[0], "status": spell["status"],
+                     "statusCategory": spell["statusCategory"],
+                     "flag": flag, "fullPanel": full,
+                     "ownOpen": sum(pr["own"] and pr["state"] == "open" for pr in pulls),
+                     "linked": {state: sum(pr["state"] == state for pr in pulls) for state in PULL_STATES},
+                     "otherTickets": sum(not pr["own"] for pr in pulls)})
+    return sorted(rows, key=lambda r: (order[r["epicKey"]], key_order(r["key"])))
+
+
+def status_flag(category, pulls):
+    """The Status to Verify flag of a ticket in the sprint at the end, from
+    its status category then and its own pull requests (ticket_pulls), or
+    None: work_started, not started with one open or merged, or
+    open_after_done, Done with one open. Only these two: a started ticket's
+    work can sit in a branch before any pull request, and one in review can
+    gain new ones, so other mismatches are mostly noise. Both need a pull
+    request to be there, so a panel that left some out can't wrongly raise
+    one. A pull request merged before the sprint started counts too: work
+    merged earlier still contradicts a ticket left as not started."""
+    states = [pr["state"] for pr in pulls if pr["own"]]
+    if category == "new" and ("open" in states or "merged" in states):
+        return "work_started"
+    if category == "done" and "open" in states:
+        return "open_after_done"
+    return None
+
+
 def build_timeline(spells, status, start, end, complete, today):
     """Every spell's events by day, counted or not, plus the start, today or
     close rows."""
@@ -632,8 +722,7 @@ def main():
     complete = sprint_date(sprint.get("completeDate"), zone)
 
     parents = read_json(os.path.join(raw_dir, PARENTS_FILE))
-    # The pull request data (PULL_REQUESTS_FILE) is fetched for a later use:
-    # nothing reads it yet.
+    pull_requests = read_json(os.path.join(raw_dir, PULL_REQUESTS_FILE))
     changes = load_changelogs(os.path.join(
         raw_dir, CHANGELOGS_DIR), current_raw + removed_raw)
     context = Context(sprint_id, sprint["startDate"],
@@ -697,6 +786,13 @@ def main():
         key_order(t["key"]), parse_ts(t["events"][0]["at"])))
     counted = [t for t in spells if t["counted"]]
     counts, points = outcome_breakdown(spells)
+    epics = build_epics(spells, epic_descriptions(parents))
+    # The pull requests of each ticket in the sprint at the end, the only
+    # tickets whose status the report checks.
+    pulls_of = {t["key"]: ticket_pulls(pull_requests, t["key"], moment) for t in counted
+                if t["outcome"] != "removed"}
+    full_panels = sorted(
+        set(pull_requests["full_panels"]) & set(pulls_of), key=key_order)
     original = [t for t in spells if t["scope"] == "original"]
 
     data = {
@@ -734,7 +830,13 @@ def main():
         # Their comments as at the end, as plain text and without authors.
         "blocker_comments": blocker_comments(os.path.join(raw_dir, COMMENTS_DIR), blocker_keys, moment, zone),
         "target_completion": target_completion(spells),
-        "epics": build_epics(spells, epic_descriptions(parents)),
+        "epics": epics,
+        # Each ticket's pull requests as at the end, as ticket_pulls() gives
+        # them; the tickets whose panel may have left some out; and the rows
+        # of the Status to Verify section, worked out from both.
+        "ticket_pull_requests": {key: pulls_of[key] for key in sorted(pulls_of, key=key_order)},
+        "full_panel_keys": full_panels,
+        "status_checks": build_status_checks(spells, pulls_of, set(full_panels), epics),
         "timeline": build_timeline(spells, status, start, end, complete, today),
         # The burndown's first point: the whole commitment at the start, Done or
         # not; the start day's end-of-day reading then shows what was open.

@@ -1,12 +1,12 @@
 ---
 name: agentic-manager-jira-sprint-report
-description: Writes a short, exec-ready report of one Jira sprint, closed or still running - goal outcome, key achievements, blockers and risks, delivery by epic, target completion and carry-over from the previous sprint, a burndown, a dated scope timeline (added, descoped, completed) with its commentary and notes for the retro - as Markdown with SVG charts, built from the Jira REST API. Use when the user asks for a sprint report, summary or review, or "how did the sprint go" / "how is the sprint going", for a project, board or sprint.
+description: Writes a short, exec-ready report of one Jira sprint, closed or still running - goal outcome, key achievements, blockers and risks, delivery by epic, target completion and carry-over from the previous sprint, a burndown, a dated scope timeline (added, descoped, completed) with its commentary, the tickets whose status their pull requests contradict and notes for the retro - as Markdown with SVG charts, built from the Jira REST API and GitHub. Use when the user asks for a sprint report, summary or review, or "how did the sprint go" / "how is the sprint going", for a project, board or sprint.
 allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_description.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *)
 ---
 
 # Sprint Report
 
-Writes a short, exec-ready report of one Jira sprint, closed or still running. Scripts generate the whole report: figures, tables, charts, the timeline and its commentary. You write only the parts the report marks [AI Gen.], in `content.json` (step 2).
+Writes a short, exec-ready report of one Jira sprint, closed or still running. Scripts generate the whole report: figures, tables, charts, the timeline and its commentary, and the tickets whose status their pull requests contradict. You write only the parts the report marks [AI Gen.], in `content.json` (step 2).
 
 The report's files go to the `jira-sprint-reports` folder of the user's configured output root (`output.root`), or to a temporary folder if none is set. The scripts choose the folder; don't pass one.
 
@@ -27,9 +27,7 @@ jira-sprint-reports/
 
 Run the config check, `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py`, pre-approved in the frontmatter. If it fails, stop here and follow its `next_steps`. If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ as `python3`; if the script is missing, tell them to reinstall every skill.
 
-This skill needs the `jira-api` source. If it isn't enabled, stop and tell the user to enable it, showing its `setup` and the config `path`. The scripts read its settings themselves; never read, pass or show them.
-
-The `github-cli` source is optional: it fetches pull request data into the raw files, not used by the report yet. Without it, the report is the same; don't stop or ask to enable it.
+This skill needs the `jira-api` and `github-cli` sources. If one isn't enabled, stop and tell the user to enable it, showing its `setup` and the config `path`. The scripts read the settings themselves; never read, pass or show them.
 
 ## 1. Prepare
 
@@ -39,13 +37,13 @@ Call the scripts by exactly these paths, so they run without a permission prompt
 python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py <selector>
 ```
 
-| The user names            | Selector                                                                                                                                             |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| a sprint id               | `--sprint-id 123` (add `--board 42` to read that board's sprint report)                                                                              |
-| a project key             | `--project PROJ` (the last closed sprint)                                                                                                            |
-| a project, current sprint | `--project PROJ --active`                                                                                                                            |
-| a board id                | `--board 42` (add `--active` as needed)                                                                                                              |
-| a sprint name             | `--sprint-name "PROJ Sprint 3"`: its first word is tried as the project key; if the name doesn't start with it, add `--project PROJ` or `--board 42` |
+| The user names            | Selector                                  |
+| ------------------------- | ----------------------------------------- |
+| a sprint id               | `--sprint-id 123`                         |
+| a project key             | `--project PROJ` (the last closed sprint) |
+| a project, current sprint | `--project PROJ --active`                 |
+| a board id                | `--board 42` (add `--active` as needed)   |
+| a sprint name             | `--sprint-name "PROJ Sprint 3"`           |
 
 If the user names no sprint, project or board, ask; don't guess. If they name only a sprint, run it alone first, and ask for the project or board only when the script says it couldn't find the sprint. If the script fails, report its message and follow any fix it gives; when it asks for another board, keep the sprint by passing its `--sprint-id` with the `--board`.
 

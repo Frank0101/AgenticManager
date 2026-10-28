@@ -392,7 +392,7 @@ class BuildTest(unittest.TestCase):
         md = report().build()
         headings = [line for line in md.splitlines() if line.startswith("#")]
         self.assertEqual(headings, ["# Sprint Summary: Sprint 7", "## Delivery by Epic", "## Sprint Metrics", "## Scope Timeline",
-                                    f"## Notes for Sprint Retro{AI}"])
+                                    "## Status to Verify", f"## Notes for Sprint Retro{AI}"])
         # The outcome charts sit above the timeline, the burndown under its heading.
         self.assertEqual([m[3] for m in INLINE_LINK.finditer(md) if m[1]],
                          [CHART_FILES["outcome_tickets"], CHART_FILES["outcome_pts"], CHART_FILES["burndown"]])
@@ -407,6 +407,54 @@ class BuildTest(unittest.TestCase):
             f"## Notes for Sprint Retro{AI}\n\n- [PROJ-1]({BASE}/browse/PROJ-1) (3 pts) grew", md)
         self.assertTrue(md.endswith(
             "left the sprint and came back: should it have stayed out?\n"))
+
+    def test_status_table(self):
+        # Each listed ticket under its epic, with its latest estimate, its
+        # status in Jira and counts: a Done ticket's own open pull requests;
+        # a ticket not started, every linked one by state and those naming
+        # other tickets; a full panel said; and a line instead of the table
+        # when no ticket needs checking.
+        r = report()
+        rows = [[text_of(cell) for cell in cells_of(row)]
+                for row in rows_of(r.status_table())]
+        self.assertEqual(rows, [
+            ["Epic", "Ticket", "Status", "What its pull requests show"],
+            ["PROJ-100: Login <beta>",
+                "PROJ-1 (3 pts)", "Done", "Done, but 1 PR is still open."],
+            ["(no epic)", "PROJ-3 (1 pt)", "Done", "Done, but 1 PR is still open."]])
+        self.assertNotIn("<a href=\"https://github.com", r.status_table())
+        self.assertEqual(r.status_table().count(
+            '<td rowspan="1" class="jira"'), 2)
+
+        def linked(merged=0, opened=0, declined=0):
+            return {"merged": merged, "open": opened, "declined": declined}
+        # name: (changes to PROJ-1's row, what its cell says)
+        cases = [
+            ("Done, several open", {"ownOpen": 4},
+             "Done, but 4 PRs are still open."),
+            ("Done, a full panel", {
+             "fullPanel": True}, "Done, but 1 PR is still open. " + make_report.FULL_PANEL + "."),
+            ("Done, a full panel alone", {"flag": None, "ownOpen": 0, "fullPanel": True},
+             "None of the PRs Jira lists is open. " + make_report.FULL_PANEL + "."),
+            ("not started, one", {"flag": "work_started", "linked": linked(merged=1), "otherTickets": 0},
+             "Not started, but 1 merged PR is linked."),
+            ("not started, all merged", {"flag": "work_started", "linked": linked(merged=3), "otherTickets": 2},
+             "Not started, but 3 PRs are linked, all merged (2 of them name other tickets)."),
+            ("not started, mixed", {"flag": "work_started", "linked": linked(93, 2, 1), "otherTickets": 1},
+             "Not started, but 96 PRs are linked: 93 merged, 2 open, 1 declined (1 of them names another ticket)."),
+        ]
+        for name, changes, text in cases:
+            with self.subTest(name):
+                data = sprint_data()
+                data["status_checks"][0].update(changes)
+                cell = cells_of(
+                    rows_of(Report(data, CONTENT).status_table())[1])[-1]
+                self.assertEqual(text_of(cell), text)
+        with self.subTest("nothing to verify"):
+            r = report(ticket_pull_requests={})
+            self.assertEqual(r.status_table(), make_report.NOTHING_TO_VERIFY)
+            self.assertIn("## Status to Verify\n\nEvery ticket's status agrees with its pull requests.\n\n## Notes",
+                          r.build())
 
     def test_mid_sprint_snapshot_note(self):
         # A running sprint's figures are provisional; the note says so.

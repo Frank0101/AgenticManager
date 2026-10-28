@@ -1,5 +1,5 @@
-"""Fetch everything a sprint report needs from Jira, and GitHub when it can be
-read, into a new report folder.
+"""Fetch everything a sprint report needs from Jira and GitHub into a new report
+folder.
 
 Nothing is computed here beyond choosing what to fetch: the previous sprint,
 the epics, whose comments and where to look for pull requests. The raw files
@@ -17,9 +17,9 @@ from datetime import datetime, timezone
 
 from common import (CHANGELOGS_DIR, COMMENTS_DIR, META_FILE, PARENTS_FILE, PREVIOUS_SPRINT_FILE, PULL_REQUESTS_FILE,
                     PUNTED_ISSUES_FILE, RAW_DIR, REPORTS_FOLDER, SPRINT_FILE, SPRINT_ISSUES_FILE,
-                    SPRINT_REPORT_FILE, STATUSES_FILE, GITHUB_FAILED, PULLS_UNREAD, JiraClient, as_of, blocker_candidate_keys,
+                    SPRINT_REPORT_FILE, STATUSES_FILE, GH_UNAVAILABLE, GITHUB_FAILED, JiraClient, as_of, blocker_candidate_keys,
                     clear_folder, day_folder, gather, gh_available, history_fields, nested, output_folder, parse_ts,
-                    project_of, pulls_by_ticket, read_events, report_label, report_timezone,
+                    project_of, pulls_and_full_panels, read_events, report_label, report_timezone,
                     standard_issues, status_categories, stops_on_failure, write_json)
 
 # Issue fields the report needs, besides the site's Flagged and story points fields.
@@ -105,26 +105,23 @@ def project_key_of(args, issues):
     return project_of(issues[0]["key"]) if issues else None
 
 
-def pull_requests(client, issues, gh, run=subprocess.run):
-    """What pull_requests.json holds: {github_read, tickets: {key: the
-    ticket's pull requests from the Development panels of it and its
-    sub-tasks, each with `via`, the ticket it was found through}, events:
-    {url: when GitHub says it was opened and merged}, skipped: [{url, via:
-    [the tickets it was found through], message}] of those GitHub says don't
-    exist, left out of `tickets`}; with gh False, nothing is read and all
-    are empty. Raises GhError when gh fails otherwise.
+def pull_requests(client, issues, run=subprocess.run):
+    """What pull_requests.json holds: {tickets: {key: the ticket's pull
+    requests from the Development panels of it and its sub-tasks, each with
+    `via`, the ticket it was found through}, full_panels: [the keys of the
+    tickets whose panel, or a sub-task's, listed as many as Jira lists, so
+    may have left some out], events: {url: when GitHub says it was opened,
+    merged and closed}, skipped: [{url, via: [the tickets it was found
+    through], message}] of those GitHub says don't exist, left out of
+    `tickets`}. Raises GhError when gh fails otherwise.
 
     Sub-tasks are left out of the report, but their pull requests are their
     ticket's, as a ticket removed from the sprint takes its sub-tasks with it.
-    Without gh the panel isn't read either, as it alone gives no open or merge
-    times. One GitHub says doesn't exist, such as one deleted that Jira still
-    links, is skipped, as there is nothing to read and nothing to fix; any
-    other failure stops the fetch, as a pull request it couldn't read would
-    otherwise be taken for work without times. The report doesn't use this
-    data yet: it is fetched for a later use."""
-    if not gh:
-        return {"github_read": False, "tickets": {}, "events": {}, "skipped": []}
-    found = pulls_by_ticket(client, issues)
+    One GitHub says doesn't exist, such as one deleted that Jira still links,
+    is skipped, as there is nothing to read and nothing to fix; any other
+    failure stops the fetch, as a pull request it couldn't read would
+    otherwise be taken for work without times."""
+    found, full = pulls_and_full_panels(client, issues)
     every = [pr for prs in found.values() for pr in prs]
     events, gone = read_events(every, run)
     skipped = [{"url": url, "via": list(dict.fromkeys(pr["via"] for pr in every if pr["url"] == url)),
@@ -135,7 +132,7 @@ def pull_requests(client, issues, gh, run=subprocess.run):
     gone = {skip["url"] for skip in skipped}
     tickets = {key: [pr for pr in prs if pr["url"] not in gone]
                for key, prs in found.items()}
-    return {"github_read": True, "tickets": tickets, "events": events, "skipped": skipped}
+    return {"tickets": tickets, "full_panels": full, "events": events, "skipped": skipped}
 
 
 def log(message):
@@ -185,6 +182,11 @@ def selector_parser(description, prints):
 
 def main():
     args = parse_args()
+    # GitHub is required: without it every ticket would seem to have no pull
+    # requests, and the report's status checks would pass by finding none.
+    if not gh_available():
+        raise SystemExit(f"{GH_UNAVAILABLE}, and the report needs GitHub: install gh and enable the "
+                         "github-cli source, then run it again")
     with stops_on_failure(NO_REPORT):
         client = JiraClient()
         profile = client.whoami()
@@ -258,11 +260,9 @@ def main():
         comments = dict(
             zip(blocker_keys, gather(blocker_keys, client.comments)))
 
-        gh = gh_available()
         pulls = pull_requests(client, standard_issues(
-            sprint_issues + punted_issues), gh)
-        log(f"{sum(map(len, pulls['tickets'].values()))} pull request(s) found" if gh
-            else PULLS_UNREAD)
+            sprint_issues + punted_issues))
+        log(f"{sum(map(len, pulls['tickets'].values()))} pull request(s) found")
 
         project_key = project_key_of(args, sprint_issues + punted_issues)
         label = report_label(project_key, sprint.get("name"))

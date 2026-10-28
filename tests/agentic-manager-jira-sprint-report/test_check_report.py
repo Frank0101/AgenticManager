@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_report  # noqa: E402
 from common import CHART_FILES, ai, expected_files  # noqa: E402
-from make_report import Report, tag  # noqa: E402
+from make_report import FULL_PANEL, Report, tag  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
 from report_fixture import BASE, CONTENT, TICKETS, caveat_data, ev, ticket, sprint_data  # noqa: E402
@@ -117,6 +117,29 @@ class ChecksTest(unittest.TestCase):
         """The report with `old`, which must appear in it, replaced by `new`."""
         self.assertIn(old, self.md)
         return self.md.replace(old, new, 1)
+
+    def test_status_rows_of_every_kind_pass(self):
+        # Whatever a row's flag and counts, the section the generator writes
+        # passes the section's own check.
+        def linked(merged=0, opened=0, declined=0):
+            return {"merged": merged, "open": opened, "declined": declined}
+        # name: changes to the first row
+        cases = {"not started, 1 PR": {"flag": "work_started", "linked": linked(merged=1), "otherTickets": 0},
+                 "not started, 1 open PR": {"flag": "work_started", "linked": linked(opened=1), "otherTickets": 0},
+                 "not started, all merged": {"flag": "work_started", "linked": linked(merged=3), "otherTickets": 2},
+                 "not started, mixed": {"flag": "work_started", "linked": linked(5, 2, 1), "otherTickets": 1},
+                 "Done, several open": {"ownOpen": 3},
+                 "Done, a full panel alone": {"flag": None, "ownOpen": 0, "fullPanel": True}}
+        for name, changes in cases.items():
+            with self.subTest(name):
+                data = sprint_data()
+                data["status_checks"][0].update(changes)
+                md = Report(data, copy.deepcopy(CONTENT)).build()
+                table = next(t for t in check_report.html_tables(
+                    md) if check_report.table_kind(t) == "status")
+                checked = check_report.Checker()
+                check_report.check_status_section(checked, md, table, data)
+                self.assertEqual(checked.failures, [])
 
     def test_generated_reports_pass(self):
         cases = {"closed": ({}, "Partially met"),
@@ -259,6 +282,7 @@ class ChecksTest(unittest.TestCase):
 
     def test_each_check_catches_its_breakage(self):
         proj_6 = f'<a href="{BASE}/browse/PROJ-6">PROJ-6</a>'
+        proj_1 = f'<a href="{BASE}/browse/PROJ-1">PROJ-1'
         cases = [
             ("timeline", ">Descoped</span>", ">Removed</span>"),
             ("timeline", f'>Descoped</span></td></tr>\n<tr><td style="white-space:nowrap">{proj_6}',
@@ -336,6 +360,18 @@ class ChecksTest(unittest.TestCase):
              f"[PROJ-1]({BASE}/browse/PROJ-1) (5 pts)"),
             ("vocabulary", f"were descoped ([PROJ-2]({BASE}/browse/PROJ-2), [PROJ-6]({BASE}/browse/PROJ-6))",
              f"were descoped ([PROJ-6]({BASE}/browse/PROJ-6), [PROJ-2]({BASE}/browse/PROJ-2))"),
+            ("status: a Status to Verify section sits right above the retro notes",
+             "## Status to Verify", "## Statuses"),
+            ("status: the table lists each flagged ticket", f'{proj_1}</a> (3 pts)</td><td class="jira">Done<',
+             f'{proj_1}</a> (3 pts)</td><td class="jira">To Do<'),
+            ("status: the table lists each flagged ticket", f'{proj_1}</a> (3 pts)</td><td class="jira">',
+             f'{proj_1}</a> (2 pts)</td><td class="jira">'),
+            ("status: PROJ-1 shows Done, but 1 PR", "Done, but 1 PR is still open.",
+             "Done, but 2 PRs are still open."),
+            ("status: PROJ-1 shows Done, but 1 PR", "Done, but 1 PR is still open.</td>",
+             "Done, but 1 PR is still open. " + FULL_PANEL + ".</td>"),
+            # Copied Jira text keeps its wording; the generated text doesn't.
+            ("vocabulary", "1 PR is still open.", "1 PR isn't closed."),
         ]
         for check, old, new in cases:
             with self.subTest(check=check, old=old):
@@ -386,6 +422,24 @@ class ChecksTest(unittest.TestCase):
             # The epic table is recomputed from the spells, not trusted from data.json.
             ("a ticket under the wrong epic", lambda d: d["spells"][0].update(parentKey=None),
              "epics: PROJ-100 shows"),
+            # The pull requests' ownership and state, and the status rows,
+            # are recomputed from each pull request's title, branch and times.
+            ("a pull request taken as the ticket's own", lambda d: d["ticket_pull_requests"]["PROJ-1"][1].update(
+                own=True), "model: PROJ-1's pull requests are as at the end"),
+            ("a merge with no merge time", lambda d: d["ticket_pull_requests"]["PROJ-2"][0].update(mergedAt=None),
+             "model: PROJ-2's pull requests are as at the end"),
+            ("a merge after the end", lambda d: d["ticket_pull_requests"]["PROJ-2"][0].update(
+                mergedAt="2026-03-20T10:00:00.000+0000"), "model: PROJ-2's pull requests are as at the end"),
+            ("a ticket without its pull requests", lambda d: d["ticket_pull_requests"].pop("PROJ-3"),
+             "model: every ticket in the sprint at the end has its pull requests"),
+            ("a flagged ticket missing", lambda d: d["status_checks"].pop(),
+             "model: the Status to Verify rows are the tickets"),
+            ("a wrong flag", lambda d: d["status_checks"][0].update(flag="work_started"),
+             "model: the Status to Verify rows are the tickets"),
+            ("a full panel that isn't stored", lambda d: d["status_checks"][1].update(fullPanel=True),
+             "model: the Status to Verify rows are the tickets"),
+            ("rows out of order", lambda d: d["status_checks"].reverse(),
+             "model: the Status to Verify rows are in the epics' order"),
             ("the timeline", lambda d: d["timeline"][1]["events"].clear(),
              "model: the timeline holds exactly the spells' events"),
             ("the breakdown", lambda d: d["outcome_breakdown_points"].update(extra_completed=5),

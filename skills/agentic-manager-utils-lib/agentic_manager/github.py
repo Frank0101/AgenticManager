@@ -1,5 +1,5 @@
 """GitHub through its CLI, gh, shared by every skill: whether it can be used,
-its JSON answers, when pull requests were opened and merged, and what to do
+its JSON answers, when pull requests were opened, merged and closed, and what to do
 when gh fails.
 
 gh is the user's `github-cli` source, used only when enabled, and signs in
@@ -39,9 +39,10 @@ GRAPHQL = ["api", "graphql"]
 # and can hold what was searched for.
 COMMAND_WORD = re.compile(r"[a-z]+(?:-[a-z]+)*")
 COMMAND_WORDS = 2
-# What a pull request's opening and merge are read with; GraphQL's state is
-# OPEN, CLOSED or MERGED, as gh pr view gives it.
-EVENT_FIELDS = "url state createdAt mergedAt"
+# What a pull request's opening, merge and closing are read with; GraphQL's
+# state is OPEN, CLOSED or MERGED, as gh pr view gives it. closedAt is set for
+# a merged one too, so a pull request's state at a past moment can be told.
+EVENT_FIELDS = "url state createdAt mergedAt closedAt"
 # What gh says when the call failed in passing: no answer in time, GitHub
 # busy or briefly unwell, or the connection lost.
 PASSING_SIGNS = ("no answer within", "http 500", "http 502", "http 503", "http 504", "timeout", "timed out",
@@ -76,8 +77,8 @@ def gh_signed_in(run=subprocess.run):
 
 def pull_events(urls, run=subprocess.run):
     """(events, gone) of the pull requests at `urls`: events as {url: {url,
-    state, createdAt, mergedAt}}, when each was opened and, if it was, merged
-    (else mergedAt is None), with state OPEN, CLOSED or MERGED; and gone as
+    state, createdAt, mergedAt, closedAt}}, when each was opened and, if it
+    was, merged and closed (else None), with state OPEN, CLOSED or MERGED; and gone as
     {url: GitHub's words} of those GitHub says don't exist, in the order of
     `urls`. Raises GhError for any other that gh couldn't read, such as one
     in a repository GitHub can't find (see _batch_events()) or a URL whose

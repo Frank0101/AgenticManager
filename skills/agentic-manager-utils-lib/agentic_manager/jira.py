@@ -1,12 +1,12 @@
-"""Jira Cloud REST client, using only the standard library.
+"""Jira Cloud through its REST API, shared by every skill: the client, and
+helpers for issue keys, links, timestamps and rich text, in the standard library.
 
 Its settings are the user's `jira-api` source. The API token, sent with the
-email as Basic auth, is never printed or written anywhere, and errors name a
-setting, never its value: debug output added here shows URLs and status
-codes only, never headers. A request that fails once retry.py gives up raises JiraError, while
-"Jira has none" is an answer (failures.py), so a skill tells "Jira answered
-no" from "Jira failed" without sorting errors. The client enforces the
-source's `excluded-projects`, so no skill has to.
+email as Basic auth, is never printed or written, and errors name a setting,
+never its value: debug output shows URLs and status codes, never headers. A
+request that fails once retry.py gives up raises JiraError, while "Jira has
+none" is an answer (failures.py). The client enforces the source's
+`excluded-projects`, so no skill has to.
 """
 import base64
 import json
@@ -57,6 +57,11 @@ FAILURE_KINDS = ((ConnectionResetError, "connection reset"), (ConnectionRefusedE
 # Atlassian's documented API, but the only way to the pull requests a code
 # host's integration links to an issue.
 DEV_STATUS = "/rest/dev-status/latest/issue"
+# The most pull requests a Development panel lists from one code host: it
+# keeps the most recently updated and gives no sign that it left any out. A
+# panel is counted whole, across its hosts, so one holding as many may have
+# left some out.
+PANEL_LIMIT = 100
 # The type of Jira Software's Sprint field. A site can have other fields named
 # Sprint, so the field is found by its type.
 SPRINT_TYPE = "com.pyxis.greenhopper.jira:gh-sprint"

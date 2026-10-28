@@ -26,8 +26,8 @@ from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order, 
                                   parse_ts, plain_text, project_of, value_at)
 from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.failures import GITHUB_FAILED, stops_on_failure  # noqa: E402,F401
-from agentic_manager.github import PULLS_UNREAD, gh_available  # noqa: E402,F401
-from agentic_manager.ticket_pulls import pulls_by_ticket, read_events  # noqa: E402,F401
+from agentic_manager.github import GH_UNAVAILABLE, gh_available  # noqa: E402,F401
+from agentic_manager.ticket_pulls import pulls_and_full_panels, read_events  # noqa: E402,F401
 
 # The skill's output folder, which holds the report folders (see output_folder.py).
 REPORTS_FOLDER = "jira-sprint-reports"
@@ -39,8 +39,8 @@ RAW_DIR = "_raw"
 # fetch's own facts (META_FILE). Changelogs and comments hold one <KEY>.json
 # per issue; PULL_REQUESTS_FILE every ticket's pull requests, how each was
 # found and through which ticket, the ticket or a sub-task, when it was
-# opened and merged, those skipped as GitHub says they don't exist, and
-# whether GitHub was read.
+# opened, merged and closed, the tickets whose panel may have left some out,
+# and those skipped as GitHub says they don't exist.
 META_FILE = "_meta.json"
 SPRINT_FILE = "sprint.json"
 PREVIOUS_SPRINT_FILE = "previous_sprint.json"
@@ -129,6 +129,15 @@ OUTCOME_COLOURS = {"completed": ("#0ca30c", "#ffffff"), "not_completed": ("#fab2
 # The groups of an epic's commentary, in the order it shows them (see
 # build_sprint_data.py's scope_group).
 SCOPE_GROUPS = ("completed", "in_review", "not_completed", "descoped")
+
+# A pull request's states as at the end, in the order the section counts them.
+PULL_STATES = ("merged", "open", "declined")
+
+# The heading of the Status to Verify section, and the class of its cells
+# that hold text copied from Jira (epic names and statuses), which the
+# report's vocabulary doesn't apply to.
+STATUS_HEADING = "Status to Verify"
+JIRA_CELL = "jira"
 
 # A description reaches the agent in pieces of at most this many characters, so
 # the brief stays small and the rest is read only when it could matter.

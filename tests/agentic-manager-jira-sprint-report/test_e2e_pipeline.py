@@ -553,6 +553,23 @@ class OutputFolderTest(ReportTest):
 
 
 class MakeReportTest(ReportTest):
+    def test_status_to_verify(self):
+        # The fetched pull requests reach the report as at the close:
+        # PROJ-1, Done, has its own still open, its sub-task's merged and its
+        # own opened after the close, which doesn't count; PROJ-2, In
+        # Progress, has its own merged and one naming only PROJ-5, which
+        # flag nothing.
+        data, md = self.make_report()
+        self.assertEqual([(r["key"], r["flag"]) for r in data["status_checks"]], [
+                         ("PROJ-1", "open_after_done")])
+        self.assertEqual(
+            [pr["url"][-2:] for pr in data["ticket_pull_requests"]["PROJ-1"]], ["41", "45"])
+        section = md.split("## Status to Verify\n\n", 1)[
+            1].split("\n\n## ", 1)[0]
+        self.assertIn(
+            "Done, but 1 PR is still open.", section)
+        self.assertNotIn("PROJ-2<", section)
+
     def test_report_text(self):
         # Each case changes the fixture sprint or content.json, makes the
         # report (which must pass check_report.py) and looks for the wording

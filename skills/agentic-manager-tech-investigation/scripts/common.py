@@ -191,11 +191,13 @@ QUERY = re.compile(r"`[^`\n]+`")
 # F findings, C components, D decisions, G gaps, B design boundaries,
 # E connections, I identities and P flows.
 ID_LETTERS = "SQUFCDGBEIP"
+# An ID of the kinds a set of letters names, such as "GD": ID's own pattern.
+IDS_OF = r"\b[{}]\d{{2,}}\b"
+ID = re.compile(IDS_OF.format(ID_LETTERS))
 # Every recorded ID has an anchor, so any citation of it can link to it: a
 # table row carries an HTML anchor in its ID cell, which Markdown viewers such
 # as VS Code and GitHub render. A heading's anchor would change with its title;
 # these don't.
-ID = re.compile(rf"\b[{ID_LETTERS}]\d{{2,}}\b")
 ANCHOR_ID = r"[a-z]+\d+"
 ID_ANCHOR = re.compile(rf'<a id="{ANCHOR_ID}"></a>')
 # The start of a table row, before its ID and the anchor that may precede it.
@@ -389,7 +391,7 @@ def blocked_problem(row_id, depends_on, blocked):
 def ids(text, letters):
     """The IDs in `text` of the kinds `letters` names, such as "Q" or "GD", in
     order."""
-    return re.findall(rf"\b[{letters}]\d{{2,}}\b", text)
+    return re.findall(IDS_OF.format(letters), text)
 
 
 def claim_length_problem(ident, claim):

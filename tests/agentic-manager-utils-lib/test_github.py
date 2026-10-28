@@ -334,7 +334,7 @@ class GithubTest(unittest.TestCase):
             "r0: repository(owner: $o0, name: $n0) { p0: pullRequest(number: $p0) { ...pull } "
             "p1: pullRequest(number: $p1) { ...pull } }",
             "r1: repository(owner: $o1, name: $n1) { p2: pullRequest(number: $p2) { ...pull } }",
-            "}", "fragment pull on PullRequest { url state createdAt mergedAt }"]))
+            "}", "fragment pull on PullRequest { url state createdAt mergedAt closedAt }"]))
         self.assertEqual(fields, ["-f", "o0=acme", "-f", "n0=api", "-F", "p0=41", "-F", "p1=42",
                                   "-f", "o1=acme", "-f", "n1=web", "-F", "p2=7"])
         self.assertEqual(aliases, {("r0", "p0"): PR.format(41), ("r0", "p1"): PR.format(42),

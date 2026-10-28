@@ -519,7 +519,7 @@ class Problems:
             lines, table, ident, cells))
         if written is None:
             back = {ident: f"[[{key}]]" for key, ident in keys.items()}
-            self.found[-1] = re.sub(r"\b[A-Z]\d{2,}\b",
+            self.found[-1] = re.sub(rf"\b{RECORD_ID.pattern}\b",
                                     lambda m: back.get(m[0], m[0]), self.found[-1])
             return []
         return written

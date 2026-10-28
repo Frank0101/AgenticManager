@@ -11,6 +11,10 @@ events (see build_sprint_data.py for the model):
   PROJ-5  original, 2 pts, closed as Duplicate 05/03                     epic PROJ-100
   PROJ-6  original, 2 pts, removed while open 04/03                      epic PROJ-100
 
+PROJ-1 and PROJ-3, both Done, each have a pull request of their own still open,
+so the Status to Verify section lists both; PROJ-2, In Progress with its own
+merged, isn't listed (see PULLS).
+
 The spells are written by hand; every figure built from them (breakdown,
 epics, timeline, burndown) comes from build_sprint_data.py's own functions,
 which check_report.py verifies independently. Each ticket's events, which the
@@ -161,6 +165,7 @@ def sprint_data(**changes):
         "previous_sprint": {"id": 6, "name": "Sprint 6", "complete_instant": "2026-03-02T08:00:00.000Z",
                             "complete_date": "2026-03-02"},
         "spells": copy.deepcopy(TICKETS),
+        "ticket_pull_requests": copy.deepcopy(PULLS),
         "membership_cross_check_excluded_keys": [],
         "blocker_candidate_keys": ["PROJ-2"],
         "blocker_comments": {"PROJ-2": [{"at": "2026-03-05T10:00:00.000+0000", "date": "2026-03-05",
@@ -175,6 +180,14 @@ def sprint_data(**changes):
     if "ticket_events" not in changes:
         data["ticket_events"] = ticket_events(
             tickets, str(data["sprint_id"]), ZoneInfo(data["report_timezone"]))
+    # Each ticket in the sprint at the end has its pull requests: none unless
+    # a test gives some, as ticket_pulls() stores them.
+    present = [t["key"]
+               for t in tickets if t["counted"] and t["outcome"] != "removed"]
+    pulls_of = {key: data.get("ticket_pull_requests", {}).get(
+        key, []) for key in present}
+    data["ticket_pull_requests"] = pulls_of
+    data.setdefault("full_panel_keys", [])
     counts, points = build.outcome_breakdown(tickets)
     counted = [t for t in tickets if t["counted"]]
     original = [t for t in tickets if t["scope"] == "original"]
@@ -183,7 +196,8 @@ def sprint_data(**changes):
         "non_delivery_closures": build.non_delivery_closures(tickets),
         "points_estimated_issue_count": sum(1 for t in counted if t["points"] is not None),
         "points_total_issue_count": len(counted),
-        "epics": build.build_epics(tickets, {"PROJ-100": "Staff sign in with their work account."}),
+        "epics": (epics := build.build_epics(tickets, {"PROJ-100": "Staff sign in with their work account."})),
+        "status_checks": build.build_status_checks(tickets, pulls_of, set(data["full_panel_keys"]), epics),
         "timeline": build.build_timeline(tickets, data["sprint_status"], data["sprint_start"], data["sprint_end"],
                                          data["sprint_complete_date"], data["today"]),
         "target_completion": build.target_completion(tickets),
@@ -192,6 +206,27 @@ def sprint_data(**changes):
                                          timezone.utc),
     })
     return data
+
+
+def pull(number, title, state, via, branch="", day=3):
+    """A pull request as ticket_pulls() stores it, opened on a day of March
+    2026 and, unless open, merged or declined the day after; its ownership
+    and state are the model's own."""
+    end = f"2026-03-{day + 1:02d}T10:00:00.000+0000"
+    pr = {"url": f"https://github.com/acme/api/pull/{number}", "title": title, "branch": branch, "via": via,
+          "createdAt": f"2026-03-{day:02d}T10:00:00.000+0000", "mergedAt": end if state == "merged" else None,
+          "closedAt": None if state == "open" else end}
+    return {**pr, "own": build.is_own_pull(pr, via), "state": build.pull_state(pr)}
+
+
+# The pull requests of the tickets in the sprint at the end: PROJ-1, Done, has
+# its own still open and one naming only another ticket; PROJ-3, Done, has its
+# own still open; PROJ-2, In Progress, has its own merged, which flags nothing.
+# So the Status to Verify section lists PROJ-1 and PROJ-3, under two epics.
+PULLS = {"PROJ-1": [pull(41, "PROJ-1 sign in with a password", "open", "PROJ-1", "PROJ-1-password"),
+                    pull(42, "PROJ-9 share the login helper", "merged", "PROJ-1")],
+         "PROJ-2": [pull(43, "Remember the last sign-in method", "merged", "PROJ-2", "PROJ-2-remember", day=5)],
+         "PROJ-3": [pull(44, "Handle empty export files", "open", "PROJ-3", "PROJ-3-empty", day=5)]}
 
 
 CONTENT = {

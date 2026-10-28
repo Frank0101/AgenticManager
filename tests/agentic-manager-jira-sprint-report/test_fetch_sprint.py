@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import fetch_sprint  # noqa: E402
 from common import RAW_DIR, SPRINT_FILE  # noqa: E402
 from agentic_manager import retry  # noqa: E402
+from agentic_manager.jira import PANEL_LIMIT  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from sprint_fixture import report_folder  # noqa: E402
 # The fake gh's GraphQL answers follow the library's query.
@@ -283,7 +284,7 @@ class PullRequestsTest(unittest.TestCase):
                 client = Panel(panel)
                 run = gh(self.TIMES)
                 found = fetch_sprint.pull_requests(
-                    client, self.ISSUES, True, run)
+                    client, self.ISSUES, run)
                 self.assertEqual({key: [pr["url"] for pr in prs]
                                   for key, prs in found["tickets"].items()}, expected)
                 # Each found through the panel of its own ticket, as there
@@ -297,17 +298,25 @@ class PullRequestsTest(unittest.TestCase):
                 self.assertTrue(
                     all(is_graphql(c.split()[1:]) for c in run.calls), run.calls)
                 self.assertEqual(bool(run.calls), any(expected.values()))
-                self.assertTrue(found["github_read"])
+                self.assertEqual(found["full_panels"], [])
                 # GitHub's times of every pull request found.
                 self.assertEqual(found["events"], {url: {"createdAt": "2026-03-05T10:00:00Z"}
                                                    for urls in expected.values() for url in urls})
 
-    def test_without_gh_nothing_is_read(self):
-        # The panel alone gives no events, so it isn't read either.
-        client, run = Panel(self.PANEL), gh(self.TIMES)
-        self.assertEqual(fetch_sprint.pull_requests(client, self.ISSUES, False, run),
-                         {"github_read": False, "tickets": {}, "events": {}, "skipped": []})
-        self.assertEqual((client.read, run.calls), ([], []))
+    def test_a_full_panel_is_reported(self):
+        # A panel, the ticket's or a sub-task's, listing as many pull requests
+        # as Jira lists may have left some out: its ticket is reported, and
+        # every pull request the panel listed is kept.
+        many = [{"url": PR.format(100 + n)} for n in range(PANEL_LIMIT)]
+        times = {f"pr view {pr['url']}": {
+            "createdAt": "2026-03-05T10:00:00Z"} for pr in many}
+        found = fetch_sprint.pull_requests(
+            Panel({"3": many}), self.ISSUES, gh(times))
+        self.assertEqual(found["full_panels"], ["PROJ-3"])
+        self.assertEqual(len(found["tickets"]["PROJ-3"]), PANEL_LIMIT)
+        found = fetch_sprint.pull_requests(
+            Panel({"3": many[1:]}), self.ISSUES, gh(times))
+        self.assertEqual(found["full_panels"], [])
 
     def test_a_pull_request_github_cant_find_is_skipped(self):
         # One GitHub says doesn't exist, such as one deleted that Jira still
@@ -333,7 +342,7 @@ class PullRequestsTest(unittest.TestCase):
                 run = gh({k: v for k, v in self.TIMES.items()
                           if k.removeprefix("pr view ") not in missing})
                 found = fetch_sprint.pull_requests(
-                    Panel(panel), self.ISSUES, True, run)
+                    Panel(panel), self.ISSUES, run)
                 self.assertEqual({key: [pr["url"] for pr in prs]
                                   for key, prs in found["tickets"].items()}, kept)
                 self.assertEqual(found["events"], {url: {"createdAt": "2026-03-05T10:00:00Z"}
@@ -384,7 +393,7 @@ class PullRequestsTest(unittest.TestCase):
             with self.subTest(name), contextlib.redirect_stderr(io.StringIO()), \
                     self.assertRaises(SystemExit) as raised, fetch_sprint.stops_on_failure(fetch_sprint.NO_REPORT):
                 fetch_sprint.pull_requests(
-                    Panel(self.PANEL), self.ISSUES, True, run)
+                    Panel(self.PANEL), self.ISSUES, run)
             message = str(raised.exception.code)
             self.assertTrue(message.startswith(start), message)
             self.assertTrue(message.endswith(end), message)

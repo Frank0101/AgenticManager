@@ -14,7 +14,8 @@ import sys
 from datetime import date, timedelta
 
 from common import (HEADING, INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, FIELD_TABLE_HEAD, ISSUE_KEY,
-                    BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, KEY_LIST, TICKET_ESTIMATE,
+                    BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, JIRA_CELL, KEY_LIST, STATUS_HEADING,
+                    TICKET_ESTIMATE,
                     TICKET_EVENT_TYPES,
                     NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai, text_rule_problems,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty,
@@ -57,6 +58,7 @@ def run_checks(md, data, report_dir):
     check_files(c, report_dir, data)
     check_timeline(c, tables.get("timeline"), data)
     check_epics(c, tables.get("epics"), data)
+    check_status_section(c, md, tables.get("status"), data)
     check_style(c, md)
     check_vocabulary(c, md, data)
     return c
@@ -93,6 +95,8 @@ def table_kind(table):
         return "timeline"
     if "epic" in header and "commentary" in header:
         return "epics"
+    if "ticket" in header and "pull requests" in header:
+        return "status"
     return None
 
 
@@ -203,6 +207,7 @@ def check_model(c, data):
             "the timeline holds exactly the spells' events")
     check_commentary_groups(c, data)
     check_ticket_events(c, data)
+    check_pull_requests(c, data)
 
 
 def check_commentary_groups(c, data):
@@ -348,6 +353,58 @@ def ticket_state(events, instant):
         elif e["type"] == "points_changed":
             points = e["to"]
     return done, points
+
+
+def check_pull_requests(c, data):
+    """Each ticket in the sprint at the end, and no other, has its pull
+    requests, each opened by the end, its merge and closing left out after
+    it, and its ownership and state what its title, branch and times give;
+    and the Status to Verify rows are the tickets those and their statuses
+    flag (not started with work, Done with one open) and the Done ones with a
+    full panel, recomputed here with the checker's own rules."""
+    cutoff = parse_ts(data["as_of_instant"])
+    present = {s["key"]: s for s in data["spells"]
+               if s["counted"] and s["outcome"] != "removed"}
+    pulls_of = data["ticket_pull_requests"]
+    c.check(set(pulls_of) == set(present), "model",
+            "every ticket in the sprint at the end has its pull requests, and no other ticket")
+    for key, pulls in pulls_of.items():
+        wrong = []
+        for pr in pulls:
+            named = set(ISSUE_KEY.findall(pr["title"] + " " + pr["branch"]))
+            own = not named or key in named or pr["via"] in named
+            state = "merged" if pr["mergedAt"] else "declined" if pr["closedAt"] else "open"
+            in_time = parse_ts(pr["createdAt"]) <= cutoff and all(
+                not pr[f] or parse_ts(pr[f]) <= cutoff for f in ("mergedAt", "closedAt"))
+            if pr["own"] != own or pr["state"] != state or not in_time:
+                wrong.append(pr["url"])
+        c.check(not wrong, "model",
+                f"{key}'s pull requests are as at the end, with the ownership and state they give {wrong[:2] or ''}"
+                .strip())
+    c.check(set(data["full_panel_keys"]) <= set(present), "model",
+            "the full panels are of tickets in the sprint at the end")
+    expected = []
+    for key, spell in present.items():
+        own = [pr for pr in pulls_of.get(key, []) if pr["own"]]
+        states = [pr["state"] for pr in own]
+        full = key in data["full_panel_keys"] and spell["statusCategory"] == "done"
+        flag = None
+        if spell["statusCategory"] == "new" and ("open" in states or "merged" in states):
+            flag = "work_started"
+        elif spell["statusCategory"] == "done" and "open" in states:
+            flag = "open_after_done"
+        if flag or full:
+            every = [pr["state"] for pr in pulls_of.get(key, [])]
+            expected.append((key, flag, full, states.count("open"), every.count("merged"), every.count("open"),
+                             every.count("declined"), len(every) - len(states)))
+    stored = [(r["key"], r["flag"], r["fullPanel"], r["ownOpen"], r["linked"]["merged"], r["linked"]["open"],
+               r["linked"]["declined"], r["otherTickets"]) for r in data["status_checks"]]
+    c.check(sorted(stored) == sorted(expected), "model",
+            f"the Status to Verify rows are the tickets their pull requests and statuses flag ({len(expected)})")
+    order = {e["key"]: i for i, e in enumerate(data["epics"])}
+    c.check([r["key"] for r in data["status_checks"]] == [r["key"] for r in sorted(
+        data["status_checks"], key=lambda r: (order.get(r["epicKey"], len(order)), key_order(r["key"])))],
+        "model", "the Status to Verify rows are in the epics' order, then by key")
 
 
 def check_header(c, md, data):
@@ -641,6 +698,54 @@ def epic_figures(data):
     return figures
 
 
+def check_status_section(c, md, table, data):
+    """The Status to Verify section sits above the retro notes and shows the
+    model's rows in order, each under its epic, with its status and its
+    counts: a ticket not started, every linked pull request and those naming
+    other tickets; a Done one, its own still open; with no rows, it says so."""
+    section = md.split(f"## {STATUS_HEADING}\n\n", 1)
+    after = section[1].split("\n\n## ", 1) if len(section) == 2 else []
+    c.check(len(after) == 2 and after[1].startswith("Notes for Sprint Retro"), "status",
+            f"a {STATUS_HEADING} section sits right above the retro notes")
+    rows = data["status_checks"]
+    if not rows:
+        c.check(table is None and len(section) == 2 and section[1].startswith("Every ticket's status agrees"),
+                "status", "with nothing to verify, the section says so")
+        return
+    if not c.check(table is not None, "status", "table found") or table is None:
+        return
+    shown, epic = [], None
+    for row in rows_of(table)[1:]:
+        cells = re.findall(r"<td([^>]*)>(.*?)</td>", row, re.S)
+        if len(cells) == 4:
+            epic = (ISSUE_KEY.findall(text_of(cells[0][1])) or [None])[0]
+            cells = cells[1:]
+        shown.append((epic, text_of(cells[0][1]), text_of(
+            cells[1][1]), text_of(cells[2][1])))
+    latest = {s["key"]: s["points"] for s in data["spells"]}
+    expected = [(None if r["epicKey"] == NO_EPIC else r["epicKey"], f"{r['key']} ({pts(latest.get(r['key']))})",
+                 r["status"] or "") for r in rows]
+    c.check([s[:3] for s in shown] == expected, "status",
+            f"the table lists each flagged ticket under its epic, with its latest estimate and status "
+            f"({len(expected)})")
+    for row, (_, _, _, text) in zip(rows, shown):
+        # A total may carry its one state: "1 merged PR is linked".
+        if row["flag"] == "work_started":
+            total = sum(row["linked"].values())
+            counts = [rf"\b{total} (?:\w+ )?PRs? (?:is|are) linked"] + \
+                [rf"\b{row['otherTickets']} of them"] * \
+                bool(row["otherTickets"])
+        elif row["flag"] == "open_after_done":
+            counts = [
+                rf"Done, but {row['ownOpen']} PRs? (?:is|are) still open"]
+        else:
+            counts = ["None of the PRs"]
+        full = "most recently updated" in text
+        c.check(all(re.search(count, text) for count in counts) and full == row["fullPanel"], "status",
+                f"{row['key']} shows {', '.join(counts)}"
+                + (" and that its panel may leave some out" if row["fullPanel"] else ""))
+
+
 def check_epic_commentary(c, epic, cell, status):
     """The labels of the groups the epic has tickets to describe in, in order
     and a blank line apart; "–" if there are none. The sentences are the
@@ -684,6 +789,9 @@ def generated_text(md):
             without_names = re.sub(
                 r"(<tr>\s*)<td>.*?</td>", r"\1<td></td>", table, flags=re.S)
             md = md.replace(table, without_names, 1)
+        elif table_kind(table) == "status":
+            md = md.replace(table, re.sub(rf'(<td[^>]*class="{JIRA_CELL}"[^>]*>).*?</td>', r"\1</td>", table,
+                                          flags=re.S), 1)
     return md
 
 
@@ -700,10 +808,11 @@ def check_vocabulary(c, md, data):
         c.check(not found.get(rule), "vocabulary",
                 f"{rule} {found.get(rule, [])[:3] or ''}".strip())
     # Tickets in running text: one as KEY (N pts), with its latest estimate;
-    # a list as (KEY, KEY), sorted. The timeline's cells are checked apart.
+    # a list as (KEY, KEY), sorted. The timeline's and the Status to Verify
+    # section's ticket cells are checked apart.
     prose = text
     for table in html_tables(text):
-        if table_kind(table) == "timeline":
+        if table_kind(table) in ("timeline", "status"):
             prose = prose.replace(table, "", 1)
     prose = strip_tags(prose)
     latest = {s["key"]: s["points"] for s in data["spells"]}

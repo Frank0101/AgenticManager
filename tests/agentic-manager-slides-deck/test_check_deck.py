@@ -10,6 +10,7 @@ import os
 import shutil
 import sys
 import unittest
+from unittest import mock
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
@@ -89,6 +90,14 @@ class CheckDeckTest(unittest.TestCase):
         self.assertTrue(make_deck.make_deck(DECK)["ok"])
         with open(os.path.join(self.deck, PAGE), encoding="utf-8") as f:
             page = f.read()
+        # A link that doesn't reach the image's file fails, whatever link the
+        # generator thinks right: the check reads where each link leads.
+        broken = "../_assets/acme-logo/image"
+        with mock.patch.object(check_deck, "asset_link", lambda name: broken, create=True):
+            errors = self.errors_of(page.replace(
+                "../_assets/acme-logo/image.svg", broken))
+        self.assertTrue(
+            any(f"the page links the images ['{broken}']" in e for e in errors), errors)
         cases = [("another image", lambda p: p.replace("acme-logo/image.svg", "other/image.svg"),
                   "the page links the images ['../_assets/other/image.svg']; slides.json places ['acme-logo']"),
                  ("an image by its path", lambda p: p.replace("../_assets/acme-logo/image.svg", "/tmp/acme-logo.svg"),

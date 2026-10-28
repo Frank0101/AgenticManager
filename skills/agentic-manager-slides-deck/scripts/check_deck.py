@@ -14,7 +14,7 @@ import re
 from html.parser import HTMLParser
 
 from common import (ASSETS, CHART_JS, PAGE, PLACEHOLDER, SLIDE_HEIGHT, SLIDE_WIDTH, SLIDES, STAND_IN,
-                    TOKEN, URL_ATTRIBUTES, VOID, asset_link, asset_names, credit_line, credits, deck_dir, deck_file,
+                    TOKEN, URL_ATTRIBUTES, VOID, asset_names, credit_line, credits, deck_dir, deck_file,
                     expected_files, link_kind, placed_images, read_json)
 
 TOOLBAR_BUTTONS = ["Zoom in", "Zoom out", "Export PDF"]
@@ -81,7 +81,17 @@ def check(folder, deck, content):
                       f"slides.json has {wanted_rings}")
     placed = sorted(match[2] for slide in content["slides"]
                     for match in TOKEN.finditer("\n".join(slide["html"])) if match[1] == "asset")
-    if sorted(page.files) != sorted(asset_link(name) for name in placed):
+    # Where each link leads, read from the deck's folder rather than built
+    # with the generator's own link: the image's name when it reaches a file
+    # of _assets/<name>/, else the link as written.
+    assets = os.path.join(os.path.dirname(os.path.abspath(folder)), ASSETS)
+    reached = []
+    for link in page.files:
+        path = os.path.normpath(os.path.join(os.path.abspath(folder), link))
+        image = os.path.dirname(path)
+        reached.append(os.path.basename(image) if os.path.dirname(image) == assets and os.path.isfile(path)
+                       else link)
+    if sorted(reached) != placed:
         errors.append(
             f"the page links the images {page.files}; slides.json places {placed} from {ASSETS}")
     missing = sorted(set(placed) - asset_names())

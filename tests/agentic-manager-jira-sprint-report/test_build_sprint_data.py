@@ -25,7 +25,7 @@ from agentic_manager import output_file  # noqa: E402
 from common import NO_EPIC, parse_ts  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from sprint_fixture import STATUS, moved  # noqa: E402
-from report_fixture import ev, ticket  # noqa: E402
+from report_fixture import ev, pull, ticket  # noqa: E402
 
 START = "2026-03-02T09:00:00.000+0100"
 START_DATE = "2026-03-02"
@@ -518,6 +518,125 @@ class BreakdownAndEpicsTest(unittest.TestCase):
                                                   {"id": "7", "fields": {}}]), {"PROJ-100": "Sign-in"})
 
 
+class StatusChecksTest(unittest.TestCase):
+    PR = "https://github.com/acme/api/pull/{}"
+
+    def test_is_own_pull(self):
+        # A pull request is the ticket's own when its title or branch names
+        # the ticket or the sub-task it came through, or names no ticket.
+        # name: (title, branch, via, own)
+        cases = [("names the ticket", "PROJ-1 add the importer", "", "PROJ-1", True),
+                 ("its branch names the ticket", "Add the importer",
+                  "feature/PROJ-1-importer", "PROJ-1", True),
+                 ("names no ticket", "ADR 0051: what a search returns",
+                  "adr/0051", "PROJ-1", True),
+                 ("names the sub-task it came through",
+                  "PROJ-9 read the files", "", "PROJ-9", True),
+                 ("names only another ticket", "PROJ-5 cache the settings",
+                  "PROJ-5-cache", "PROJ-1", False),
+                 ("names another ticket and this one",
+                  "PROJ-5 and PROJ-1 together", "", "PROJ-1", True),
+                 ("a lower-case key isn't one", "proj-5 cache", "", "PROJ-1", True)]
+        for name, title, branch, via, own in cases:
+            with self.subTest(name):
+                self.assertEqual(build.is_own_pull(
+                    {"title": title, "branch": branch, "via": via}, "PROJ-1"), own)
+
+    def test_pull_state(self):
+        # name: (mergedAt, closedAt, state)
+        cases = [("open", None, None, "open"), ("merged", at("03-05"), at("03-05"), "merged"),
+                 ("declined", None, at("03-05"), "declined")]
+        for name, merged, closed, state in cases:
+            with self.subTest(name):
+                self.assertEqual(build.pull_state(
+                    {"mergedAt": merged, "closedAt": closed}), state)
+
+    def test_ticket_pulls(self):
+        # As at the moment: one opened after it is left out, and a merge or
+        # closing after it doesn't count yet. One without GitHub's times stops.
+        raw = {"tickets": {"PROJ-1": [
+            {"url": self.PR.format(41), "name": "PROJ-1 import",
+             "source": {"branch": "PROJ-1"}, "via": "PROJ-1"},
+            {"url": self.PR.format(
+                42), "name": "PROJ-5 cache", "via": "PROJ-1"},
+            {"url": self.PR.format(43), "name": "Later work", "via": "PROJ-1"}]},
+            "events": {self.PR.format(41): {"createdAt": at("03-03"), "mergedAt": at("03-12"),
+                                            "closedAt": at("03-12")},
+                       self.PR.format(42): {"createdAt": at("03-03"), "mergedAt": None, "closedAt": at("03-04")},
+                       self.PR.format(43): {"createdAt": at("03-12"), "mergedAt": None, "closedAt": None}}}
+        found = build.ticket_pulls(raw, "PROJ-1", at("03-10"))
+        self.assertEqual([(pr["url"][-2:], pr["title"], pr["branch"], pr["mergedAt"], pr["closedAt"], pr["own"],
+                           pr["state"]) for pr in found],
+                         [("41", "PROJ-1 import", "PROJ-1", None, None, True, "open"),
+                          ("42", "PROJ-5 cache", "", None, at("03-04"), False, "declined")])
+        self.assertEqual(build.ticket_pulls(raw, "PROJ-2", at("03-10")), [])
+        del raw["events"][self.PR.format(42)]
+        with self.assertRaisesRegex(SystemExit, f"PROJ-1: no GitHub times for {self.PR.format(42)}"):
+            build.ticket_pulls(raw, "PROJ-1", at("03-10"))
+
+    def test_status_flag(self):
+        # Each status category with its own pull requests' states, the
+        # others' ignored: not started with work, or Done with one open. A
+        # started ticket is never flagged, however its pull requests stand.
+        other = pull(50, "PROJ-5 cache", "open", "PROJ-1")
+        # name: (category, states of its own, flag)
+        cases = [("not started, none", "new", [], None),
+                 ("not started, one open", "new", ["open"], "work_started"),
+                 ("not started, one merged", "new",
+                  ["merged"], "work_started"),
+                 ("not started, only declined", "new", ["declined"], None),
+                 ("started, all merged", "indeterminate",
+                  ["merged", "declined"], None),
+                 ("started, one open", "indeterminate",
+                  ["merged", "open"], None),
+                 ("started, none", "indeterminate", [], None),
+                 ("Done, one open", "done", [
+                  "merged", "open"], "open_after_done"),
+                 ("Done, all merged", "done", ["merged"], None),
+                 ("Done, only another ticket's open", "done", [], None)]
+        for name, category, states, flag in cases:
+            with self.subTest(name):
+                pulls = [pull(41 + i, "PROJ-1 work", state, "PROJ-1")
+                         for i, state in enumerate(states)]
+                self.assertEqual(build.status_flag(
+                    category, pulls + [other]), flag)
+
+    def test_build_status_checks(self):
+        # The flagged tickets in the sprint at the end, and the Done ones with
+        # a full panel, in the epics' order and then by key, with their
+        # counts; a started ticket and a descoped one aren't listed, even
+        # with a full panel.
+        def not_started(spell):
+            return dict(spell, status="To Do", statusCategory="new")
+        spells = [not_started(ticket("PROJ-3", [ev(2, "committed")], "not_completed", parent="PROJ-101")),
+                  ticket("PROJ-1", [ev(2, "committed")],
+                         "not_completed", status="In Progress"),
+                  ticket("PROJ-2", [ev(2, "committed"),
+                         ev(4, "completed", done=True)], "completed"),
+                  ticket("PROJ-4", [ev(2, "committed"),
+                         ev(4, "completed", done=True)], "completed"),
+                  ticket("PROJ-6", [ev(2, "committed")],
+                         "not_completed", status="In Review"),
+                  not_started(ticket("PROJ-5", [ev(2, "committed"), ev(4, "removed")], "removed"))]
+        pulls_of = {"PROJ-1": [pull(41, "PROJ-1 a", "merged", "PROJ-1")],
+                    "PROJ-2": [pull(43, "PROJ-1 c", "open", "PROJ-1"), pull(42, "PROJ-9 b", "open", "PROJ-1")],
+                    "PROJ-3": [pull(44, "PROJ-1 d", "merged", "PROJ-1")],
+                    "PROJ-4": [pull(45, "PROJ-1 e", "merged", "PROJ-1")],
+                    "PROJ-6": [pull(47, "PROJ-1 g", "merged", "PROJ-1")],
+                    "PROJ-5": [pull(46, "PROJ-1 f", "merged", "PROJ-1")]}
+        epics = [{"key": "PROJ-101"}, {"key": "PROJ-100"}]
+        rows = build.build_status_checks(
+            spells, pulls_of, {"PROJ-4", "PROJ-6"}, epics)
+        # Its own open pull requests, then every linked one by state.
+        self.assertEqual([(r["key"], r["epicKey"], r["status"], r["flag"], r["fullPanel"], r["ownOpen"],
+                           r["linked"], r["otherTickets"]) for r in rows],
+                         [("PROJ-3", "PROJ-101", "To Do", "work_started", False, 0,
+                           {"merged": 1, "open": 0, "declined": 0}, 0),
+                          ("PROJ-2", "PROJ-100", "Done", "open_after_done", False, 1,
+                           {"merged": 0, "open": 2, "declined": 0}, 1),
+                          ("PROJ-4", "PROJ-100", "Done", None, True, 0, {"merged": 1, "open": 0, "declined": 0}, 0)])
+
+
 class TimelineTest(unittest.TestCase):
     def test_timeline(self):
         tickets = [ticket("PROJ-10", [ev(2, "committed"), ev(4, "completed", done=True)], "completed"),
@@ -759,8 +878,9 @@ class MainTest(unittest.TestCase):
         # {key: changes}; by default the current issues have none and the
         # removed ones a removal.
         self.changelogs = {}
-        # The raw pull request data, or None for no file: the build reads none.
-        self.pulls = None
+        # The raw pull request data, as fetch_sprint.py writes it.
+        self.pulls = {"tickets": {}, "full_panels": [],
+                      "events": {}, "skipped": []}
 
     def write(self, name, payload):
         path = os.path.join(self.dir, common.RAW_DIR, name)
@@ -780,8 +900,7 @@ class MainTest(unittest.TestCase):
         self.write(common.SPRINT_REPORT_FILE, self.report)
         self.write(common.PREVIOUS_SPRINT_FILE, self.previous)
         self.write(common.PARENTS_FILE, [])
-        if self.pulls is not None:
-            self.write(common.PULL_REQUESTS_FILE, self.pulls)
+        self.write(common.PULL_REQUESTS_FILE, self.pulls)
         for issue in self.current + self.removed:
             default = [left(at("03-04"))] if issue in self.removed else []
             self.write(os.path.join(common.CHANGELOGS_DIR, f"{issue['key']}.json"),
@@ -854,29 +973,33 @@ class MainTest(unittest.TestCase):
         self.assertEqual([e["type"]
                          for e in data["ticket_events"]["PROJ-1"]], ["created"])
 
-    def test_pull_request_data_is_left_out(self):
-        # The fetched pull request data is for a later use: with or without
-        # it, data.json is the same, its ticket events Jira's alone.
-        url = "https://github.com/acme/api/pull/41"
-        read = {"github_read": True, "skipped": [],
-                "tickets": {"PROJ-1": [{"url": url, "state": "MERGED", "via": "PROJ-1"}]},
-                "events": {url: {"url": url, "state": "MERGED", "createdAt": at("03-03"),
-                                 "mergedAt": at("03-04")}}}
-        # name: the raw pull request data, or None for no file
-        cases = [("no file", None),
-                 ("GitHub not read", {"github_read": False,
-                  "tickets": {}, "events": {}, "skipped": []}),
-                 ("GitHub read", read)]
-        found = []
-        for name, pulls in cases:
-            with self.subTest(name):
-                self.reset()
-                self.pulls = pulls
-                data = self.run_main()
-                self.assertEqual({e["source"] for events in data["ticket_events"].values() for e in events},
-                                 {"jira"})
-                found.append({k: v for k, v in data.items() if k != "label"})
-        self.assertEqual(found[1:], found[:1] * 2)
+    def test_pull_requests_are_as_at_the_end(self):
+        # A ticket's pull requests as at the close, beside its ticket events,
+        # which stay Jira's alone: one opened after it is left out, and a
+        # merge after it leaves one open then, so the ticket, To Do, is
+        # flagged as started. One GitHub gave no times for stops the build.
+        pr = "https://github.com/acme/api/pull/{}"
+        self.pulls["tickets"] = {"PROJ-1": [
+            {"url": pr.format(41), "name": "PROJ-1 add the importer", "source": {"branch": "PROJ-1-importer"},
+             "via": "PROJ-1"},
+            {"url": pr.format(42), "name": "Tidy the README", "via": "PROJ-1"}]}
+        self.pulls["events"] = {
+            pr.format(41): {"url": pr.format(41), "state": "MERGED", "createdAt": at("03-10"),
+                            "mergedAt": at("03-20"), "closedAt": at("03-20")},
+            pr.format(42): {"url": pr.format(42), "state": "OPEN", "createdAt": at("03-14"),
+                            "mergedAt": None, "closedAt": None}}
+        data = self.run_main()
+        self.assertEqual(
+            {e["source"] for events in data["ticket_events"].values() for e in events}, {"jira"})
+        self.assertEqual(data["ticket_pull_requests"], {"PROJ-1": [
+            {"url": pr.format(41), "title": "PROJ-1 add the importer", "branch": "PROJ-1-importer", "via": "PROJ-1",
+             "createdAt": at("03-10"), "mergedAt": None, "closedAt": None, "own": True, "state": "open"}]})
+        self.assertEqual(data["full_panel_keys"], [])
+        self.assertEqual([(r["key"], r["flag"], r["linked"]) for r in data["status_checks"]],
+                         [("PROJ-1", "work_started", {"merged": 0, "open": 1, "declined": 0})])
+        del self.pulls["events"][pr.format(41)]
+        os.remove(os.path.join(self.dir, "data.json"))
+        self.assert_fails(f"PROJ-1: no GitHub times for {pr.format(41)}")
 
     def test_active_sprint_runs_to_the_fetch(self):
         # The fetch ends actuals both before and after the planned end.

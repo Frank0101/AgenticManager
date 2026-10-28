@@ -184,17 +184,35 @@ SPRINT_REPORT = {"contents": {
 COMMENTS = {"PROJ-7": [{"id": "1", "body": "Waiting on a dependency."}]}
 
 # The pull requests the fetch found, as fetch_sprint.py stores them, the
-# ticket's own before its sub-tasks': PROJ-1's own, opened after the close,
-# and one found through its sub-task PROJ-9. The build reads none of it.
+# ticket's own before its sub-tasks': PROJ-1's own, one opened after the close
+# and one still open at it, so the report asks to verify its Done status, and
+# one found through its sub-task PROJ-9, merged before PROJ-1 was Done; and
+# PROJ-2's, still In Progress at the close: its own, merged, and one naming
+# only PROJ-5, neither of which flags a ticket that has started.
 PR = "https://github.com/acme/api/pull/{}"
 PULL_REQUESTS = {
-    "github_read": True,
-    "tickets": {"PROJ-1": [{"url": PR.format(42), "state": "OPEN", "via": "PROJ-1"},
-                           {"url": PR.format(41), "state": "MERGED", "via": "PROJ-9"}]},
-    "events": {PR.format(41): {"url": PR.format(41), "state": "MERGED", "createdAt": "2026-03-05T10:00:00Z",
-                               "mergedAt": "2026-03-06T09:00:00Z"},
+    "tickets": {"PROJ-1": [{"url": PR.format(42), "name": "PROJ-1 import from a folder", "state": "OPEN",
+                            "source": {"branch": "PROJ-1-folder"}, "via": "PROJ-1"},
+                           {"url": PR.format(41), "name": "Read the folder's files", "state": "MERGED",
+                            "source": {"branch": "PROJ-9-read"}, "via": "PROJ-9"},
+                           {"url": PR.format(45), "name": "PROJ-1 tidy the folder import", "state": "OPEN",
+                            "source": {"branch": "PROJ-1-tidy"}, "via": "PROJ-1"}],
+                "PROJ-2": [{"url": PR.format(43), "name": "PROJ-2 import from a shared link", "state": "MERGED",
+                            "source": {"branch": "PROJ-2-link"}, "via": "PROJ-2"},
+                           {"url": PR.format(44), "name": "PROJ-5 cache the settings", "state": "MERGED",
+                            "source": {"branch": "PROJ-5-cache"}, "via": "PROJ-2"}]},
+    "full_panels": [],
+    "events": {PR.format(45): {"url": PR.format(45), "state": "OPEN", "createdAt": "2026-03-12T10:00:00Z",
+                               "mergedAt": None, "closedAt": None},
+               PR.format(41): {"url": PR.format(41), "state": "MERGED", "createdAt": "2026-03-05T10:00:00Z",
+                               "mergedAt": "2026-03-06T09:00:00Z", "closedAt": "2026-03-06T09:00:00Z"},
                PR.format(42): {"url": PR.format(42), "state": "OPEN", "createdAt": "2026-03-14T10:00:00Z",
-                               "mergedAt": None}},
+                               "mergedAt": None, "closedAt": None},
+               PR.format(43): {"url": PR.format(43), "state": "MERGED", "createdAt": "2026-03-05T10:00:00Z",
+                               "mergedAt": "2026-03-09T09:00:00Z", "closedAt": "2026-03-09T09:00:00Z"},
+               PR.format(44): {"url": PR.format(44), "state": "MERGED", "createdAt": "2026-03-05T10:00:00Z",
+                               "mergedAt": "2026-03-09T09:00:00Z", "closedAt": "2026-03-09T09:00:00Z"}},
+    "skipped": [],
 }
 
 # Judgment text the agent would write for this sprint.

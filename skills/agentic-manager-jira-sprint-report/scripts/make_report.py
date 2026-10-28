@@ -16,7 +16,8 @@ from datetime import date
 from typing import cast
 
 from common import (browse_url, epic_title, SENTENCE_BREAK, CHART_FILES, COMMENTARY_WORDS, CONTENT_FILE, DATA_FILE, EPIC_COMMENTARY_WORDS, FIELD_TABLE_HEAD, ISSUE_KEY,
-                    NO_EPIC, OUTCOME_COLOURS, RETRO_NOTES, SCOPE_GROUPS, SUMMARY_WORDS, ai, allowed_verdicts,
+                    JIRA_CELL, NO_EPIC, OUTCOME_COLOURS, PULL_STATES, RETRO_NOTES, SCOPE_GROUPS, STATUS_HEADING,
+                    SUMMARY_WORDS, ai, allowed_verdicts,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty, ratio,
                     report_file, scope_group_label, text_rule_problems, ticket_ref, unit, whole_percentage,
                     word_count, write_report_file)
@@ -34,6 +35,12 @@ TAGS = {
     "reestimated": ("Re-estimated", "#9c27b0", "#ffffff"),
 }
 
+
+# What the Status to Verify section adds for a Done ticket whose panel may
+# have left an open pull request out.
+FULL_PANEL = "Jira lists only its most recently updated PRs, so an older PR may still be open"
+# What the section says when no ticket needs checking.
+NOTHING_TO_VERIFY = "Every ticket's status agrees with its pull requests."
 
 # Phrases of the commentary, each with the shorter form used when the text is
 # over its word limit: one place for both, so they can't drift apart.
@@ -253,6 +260,56 @@ class Report:
         share = f"{whole_percentage(done, total)}, " if scope == "original" else ""
         return share + ratio(done, total, epic[f"{scope}_points_done"], epic[f"{scope}_points_total"])
 
+    def status_table(self):
+        """The Status to Verify section's table: per epic, in the model's
+        order, each ticket whose status its own pull requests contradict, or
+        whose panel may have left some out, with its status in Jira and what
+        its pull requests show; or a line saying none needs checking."""
+        rows = self.data["status_checks"]
+        if not rows:
+            return NOTHING_TO_VERIFY
+        names = {epic["key"]: epic for epic in self.data["epics"]}
+        lines = ['<table>', '<tr>', '<th style="width:22%">Epic</th>', '<th style="width:14%">Ticket</th>',
+                 '<th style="width:14%">Status</th>', '<th style="width:50%">What its pull requests show</th>',
+                 '</tr>']
+        for index, row in enumerate(rows):
+            cells = []
+            if index == 0 or rows[index - 1]["epicKey"] != row["epicKey"]:
+                span = sum(1 for r in rows if r["epicKey"] == row["epicKey"])
+                epic = names[row["epicKey"]]
+                title = html.escape(epic_title(epic))
+                if epic["key"] != NO_EPIC:
+                    title = f'<a href="{self.url(epic["key"])}">{title}</a>'
+                cells.append(
+                    f'<td rowspan="{span}" class="{JIRA_CELL}" style="vertical-align:top">{title}</td>')
+            cells += [f'<td style="white-space:nowrap">{ticket_ref(self.html_key(row["key"]), row["points"])}</td>',
+                      f'<td class="{JIRA_CELL}">{html.escape(row["status"] or "")}</td>',
+                      f"<td>{self.status_text(row)}</td>"]
+            lines.append("<tr>" + "".join(cells) + "</tr>")
+        lines.append("</table>")
+        return "\n".join(lines)
+
+    @staticmethod
+    def status_text(row):
+        """What a ticket's pull requests show, as counts: for a ticket not
+        started, every pull request Jira links, as its Development panel
+        shows them, by state, and how many name other tickets; for a Done
+        one, only its own still open; then FULL_PANEL when its panel is full.
+        Counts, not links: the reader checks them in Jira."""
+        if row["flag"] == "work_started":
+            parts = [f"Not started, but {linked_text(row['linked'])}"
+                     + (f" ({row['otherTickets']} of them "
+                        f"{plural(row['otherTickets'], 'names another ticket', 'name other tickets')})"
+                        if row["otherTickets"] else "") + "."]
+        elif row["flag"] == "open_after_done":
+            parts = [
+                f"Done, but {row['ownOpen']} {plural(row['ownOpen'], 'PR is', 'PRs are')} still open."]
+        else:
+            parts = ["None of the PRs Jira lists is open."]
+        if row["fullPanel"]:
+            parts.append(FULL_PANEL + ".")
+        return " ".join(parts)
+
     def header_table(self):
         """The table at the top: always these rows, in this order, so readers
         find each part in the same place."""
@@ -471,6 +528,8 @@ class Report:
             f"![Sprint burndown]({CHART_FILES['burndown']})",
             self.timeline_table(),
             self.commentary(),
+            f"## {STATUS_HEADING}",
+            self.status_table(),
             self.bullets(
                 f"## {ai('Notes for Sprint Retro')}", c["retro_notes"]),
         ]
@@ -480,6 +539,16 @@ class Report:
 def field_table(rows):
     """The report's two-column table of (label, value) rows."""
     return FIELD_TABLE_HEAD + "\n".join(f"| {label} | {value} |" for label, value in rows)
+
+
+def linked_text(linked):
+    """The pull requests Jira links, by state: "1 merged PR is linked", "3
+    PRs are linked, all merged" or "4 PRs are linked: 3 merged, 1 open"."""
+    found = [(linked[state], state) for state in PULL_STATES if linked[state]]
+    total = sum(n for n, _ in found)
+    if len(found) == 1:
+        return f"1 {found[0][1]} PR is linked" if total == 1 else f"{total} PRs are linked, all {found[0][1]}"
+    return f"{total} PRs are linked: " + ", ".join(f"{n} {state}" for n, state in found)
 
 
 def tag(kind, suffix=""):
