@@ -1,6 +1,6 @@
 ---
 name: agentic-manager-slides-deck
-description: Turns a conversation into an HTML slide deck - infers the kind of presentation (pitch, business review, townhall, report, roadmap, status update), asks a few qualifying questions one at a time, then builds a deck of fixed-size slides with zoom and PDF export, from a reference the user gives, from a library of described slide layouts or from a blank skeleton, and iterates on it with the user. Use when the user asks for slides, a deck or a presentation, or to change the deck built in the same conversation.
+description: Turns a conversation into an HTML slide deck - infers the kind of presentation (pitch, business review, townhall, report, roadmap, status update), asks a few qualifying questions one at a time, then builds a deck of fixed-size slides with zoom and PDF export, from a reference the user gives, from a library of described slide layouts or as plain slides to focus on the content, and iterates on it with the user. Use when the user asks for slides, a deck or a presentation, or to change the deck built in the same conversation.
 allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_deck.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/add_asset.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/save_example.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_deck.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/snap_deck.py *)
 ---
 
@@ -40,16 +40,16 @@ Drive the conversation: don't wait for the user to know what to ask for.
 
 **The type.** Infer it from what the user says (pitch, business review, townhall, report, roadmap, status update and so on); don't present a list.
 
-**The starting point.** Unless the user's message makes it clear, ask, in your own words: "Do you have an example to start from, or should I draw from my own? We can also start completely blank."
+**The starting point.** Unless the user's message makes it clear, ask, in your own words: "Do you have an example to start from, or should I draw from my own? We can also work on the content only, with plain slides and no styling."
 
 - **A reference from the user** (a PDF, an image or a file): replicate it as the only structural and visual guide, and don't consult the examples.
 - **No reference:** draw from the examples `init_deck.py` lists (step 2), reading those whose use fits the deck:
   - A built-in one is a real slide kept as a `description.md` (layout, style, density) and a `wireframe.svg` at the deck's slide size, with the original's positions, shapes and colours (text as grey bars, headings as placeholder words, photos as labelled boxes), so you can take its measurements.
   - One of the user's is a slide of an earlier deck: `slides.json` holds its HTML, which you can reuse, and its CSS, reusable when its look is the deck's; `slide.html` shows it.
 
-  Take layout, section structure, chart types and density from them, and the look only as [Consistency](#consistency) sets out, and tell the user briefly which you use: "I'm basing the layout on the Market Segmentation example."
+  Take layout, section structure, chart types and density from them, and the look as [Consistency](#consistency) sets out, and tell the user briefly which you use: "I'm basing the layout on the Market Segmentation example."
 
-- **Blank:** a plain look and your own structure, without the examples: white background, dark text, the default sans-serif, and on each slide a title and a layout skeleton. The content is written as usual, with placeholders only for what is missing.
+- **Content only:** plain slides, so the work stays on structure and content: white background, dark text, the default sans-serif, and on each slide a title and a layout skeleton, without the examples. The content is written as usual, with placeholders only for what is missing.
 
 **Questions.** Ask one at a time, conversationally, and stop when you have enough for a coherent first draft; after a complete reference, ask only about what is missing or ambiguous. What to ask depends on the type:
 
@@ -111,7 +111,7 @@ END_OF_FILE
 Many examples make it easy to build a deck that looks like several. Keep it one:
 
 - **One look, set before the first slide.** Define the palette, fonts and type sizes, margins, where titles sit and the frame (page number, footer, logo) once, at the top of `style`: colours and fonts as CSS variables in `:root`, shared parts as classes. Slides take their look from these, never from values of their own, and every content slide has the same frame; only the cover and section dividers may differ.
-- **One source for the look, layout from the rest.** The look comes from the user's reference; otherwise from their kept example, when they want an earlier deck's look; otherwise from the one example you choose as the anchor for the deck's type and audience; on a blank start, from the blank style. Tell the user which. Every other example gives only its layout: keep its positions and proportions and redraw it in the deck's look, its main colour as the deck's main colour, its other colours as accents. If a layout doesn't survive the change, such as one needing a contrast the palette lacks, pick another rather than inventing a hybrid.
+- **One source for the look, layout from the rest.** The look comes from the user's reference; otherwise from their kept example, when they want an earlier deck's look; otherwise from the one example you choose as the anchor for the deck's type and audience; if the user chose to work on the content only, from the plain look that option sets out. Tell the user which. Every other example gives only its layout: keep its positions and proportions and redraw it in the deck's look, its main colour as the deck's main colour, its other colours as accents. If a layout doesn't survive the change, such as one needing a contrast the palette lacks, pick another rather than inventing a hybrid.
 - **Graphics and colours keep a meaning.** A pictorial element stands for one idea: a road or timeline for a journey through steps, a funnel for narrowing stages, a pyramid for levels, a wheel for parts of a whole, an arrow for a direction or a cause. Use it only for content with that shape, never stretched, cut or repeated into something else, such as a road drawn as a bar in a chart: figures go in a chart or table, with plain marks. When the content lacks the shape, keep the example's arrangement without the element, or choose another example. Prefer giving each accent colour one meaning across the deck, such as a team or a status, over using it as decoration.
 - **The same layout for slides of the same kind.** Once a kind of slide, such as a workstream's detail or a section divider, has a layout, every slide of that kind uses it at a similar density, and a change applies to all of them.
 - **Try what fits.** When choosing a kind of slide's layout, don't fall back on the same few: use an example you haven't used when it fits well. When two layouts fit an important slide equally well, such as the one carrying the main message, build both, one after the other, for the user to choose; do this for a slide or two per draft, and delete the one they don't choose.

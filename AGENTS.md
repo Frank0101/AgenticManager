@@ -16,7 +16,7 @@ For you, working in this repo, whatever the task. A skill's instructions are fol
 - **A check is a guardrail, never the goal.** When a check fails, do the work it protects. Never change, relabel, reword or fill in anything only so that the check passes, never loosen a check that reports open work to let the work through, and never write a value you can't stand behind. Change a check only for a case it gets wrong: say so and show the case.
 - **Choices about scope belong to the user.** Never decide on your own to skip a step a skill requires or to treat a topic as out of scope. Ask, at the step the skill sets for it, such as when the work first reaches a topic whose place in the scope is open, and record their answer where the skill asks for it; until they answer, the work stays open. How deep to go is not such a choice: the user asks for the work because they don't know those details, so a skill states how much evidence is enough, and reports what it left out instead of asking. Whatever you can do yourself, do.
 - **Record decisions in the repo.** When the developer settles how the skills or this repo should work, write it in the repo, not only in an agent's local memory, so it applies on every machine and to every agent: in AGENTS.md when it holds for every skill, or in the skill's SKILL.md and scripts when it is the skill's own. AGENTS.md names no skill but the shared library, and describes no other skill's files or scripts; its rules and examples stay general.
-- **Generate lists of what exists, never keep them by hand.** A list of things that live in the repo or the output folder, such as examples or the code's modules and functions, is built by a script from the things themselves, each describing itself (a `description.md`, a header comment, a docstring), so it can't go stale and adding or removing one needs no other edit.
+- **Generate lists of what exists, never keep them by hand.** A list of things that live in the repo or the output folder, such as examples or the code's modules and functions, is built by a script from the things themselves, each describing itself (a `description.md`, a header comment, a docstring), so it can't go stale and adding or removing one needs no other edit. The one exception is README.md's table of skills, written for people: it is kept by hand, and `tests/repo/` checks that it lists every skill.
 - **Reuse before you write code.** Before you write or change code in a skill or the library, print the code map (see [Utilities](#utilities)) and search the code itself, so you use or extend what exists instead of writing it again. Search for any helper, constant or pattern, such as a regular expression, before writing one: the map lists public functions only, and a private one, or one inside a single script, may already do the job. Make such a one public in the library or the skill's shared module, with a docstring, rather than writing another, and move a skill's helper that another skill could use to the library rather than copying it.
 
 ### Tools
@@ -37,8 +37,9 @@ tests/<skill>/           tests for that skill, mirroring skills/: unit tests per
                          module (test_<module>.py) and end-to-end tests (test_e2e_*.py)
 tests/repo/              checks of the repo's own integrity: every module and listed
                          function says what it is for, briefly, every module reads
-                         top-down, every script answers --help, and every link to a
-                         section in AGENTS.md and each SKILL.md reaches a heading
+                         top-down, every script answers --help, every link to a
+                         section in AGENTS.md and each SKILL.md reaches a heading,
+                         and README.md's table lists every skill
 tests/run.py             runs every skill's tests, each skill in its own process (its own
                          tests are in tests/runner/)
 .claude/skills  ─┐       symlinks to skills/, so the skills load when you run
