@@ -155,6 +155,12 @@ class Report:
     def html_key(self, key):
         return f'<a href="{self.url(key)}">{html.escape(key)}</a>'
 
+    def epic_link(self, epic):
+        """An epic's title, linked to Jira unless it is the tickets without
+        an epic."""
+        title = html.escape(epic_title(epic))
+        return title if epic["key"] == NO_EPIC else f'<a href="{self.url(epic["key"])}">{title}</a>'
+
     def linkify(self, text):
         """`text` with each bare Jira key, the agent's included, a link."""
         return ISSUE_KEY.sub(lambda m: self.md_key(m.group(0)), text)
@@ -237,10 +243,7 @@ class Report:
         lines = ['<table>', '<tr>', '<th style="width:20%">Epic</th>', '<th style="width:14%">Commitment</th>',
                  '<th style="width:14%">Extra</th>', f'<th style="width:52%">{ai("Commentary")}</th>', '</tr>']
         for epic in self.data["epics"]:
-            title = html.escape(epic_title(epic))
-            if epic["key"] != NO_EPIC:
-                title = f'<a href="{self.url(epic["key"])}">{title}</a>'
-            cells = [title, self.epic_done(epic, "original"), self.epic_done(epic, "extra"),
+            cells = [self.epic_link(epic), self.epic_done(epic, "original"), self.epic_done(epic, "extra"),
                      self.epic_commentary(epic)]
             lines += ["<tr>"] + [f"<td>{c}</td>" for c in cells] + ["</tr>"]
         lines.append("</table>")
@@ -274,11 +277,8 @@ class Report:
             if index == 0 or rows[index - 1]["epicKey"] != row["epicKey"]:
                 span = sum(1 for r in rows if r["epicKey"] == row["epicKey"])
                 epic = names[row["epicKey"]]
-                title = html.escape(epic_title(epic))
-                if epic["key"] != NO_EPIC:
-                    title = f'<a href="{self.url(epic["key"])}">{title}</a>'
-                cells.append(
-                    f'<td rowspan="{span}" class="{JIRA_CELL}" style="vertical-align:top">{title}</td>')
+                cells.append(f'<td rowspan="{span}" class="{JIRA_CELL}" style="vertical-align:top">'
+                             f'{self.epic_link(epic)}</td>')
             cells += [f'<td style="white-space:nowrap">{ticket_ref(self.html_key(row["key"]), row["points"])}</td>',
                       f'<td class="{JIRA_CELL}">{html.escape(row["status"] or "")}</td>',
                       f"<td>{self.status_text(row)}</td>"]
