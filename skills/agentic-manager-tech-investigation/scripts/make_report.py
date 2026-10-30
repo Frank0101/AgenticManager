@@ -1,5 +1,5 @@
-"""Writes the investigation's <Topic>_Report.md from <investigation>/content.json,
-then checks it with check_report.py.
+"""Writes the investigation's <Topic>_Report.md from <investigation>/content.json;
+check_report.py checks it at handover.
 
 The script owns the template: headings, tables, fixed sentences, the title, the
 evidence date and the references, which it reads from the ledger, so content.json
@@ -15,7 +15,6 @@ import re
 
 from common import (CONTENT, DISPLAY_DATE, FENCE, backtick_error, INVESTIGATION, TABLE_HEADINGS, inline_links, ledger_rows, FOLDER_NAME, HEADING, group_of, source_mark, HEADINGS, LEDGER, RECORD_DEFINITION,
                     REPORT_SUFFIX, anchor_tag, autolink, headings, investigation_dir, link_definitions, markdown, read_json, table, topic_of, unlinked_backticks, unresolved_message, word_count, write_output_file)
-import check_report
 
 # Approximate prose lengths, in words: room to articulate, not quotas. Warn above
 # one and a half times, or far below, under a third, which is a stub.
@@ -33,8 +32,9 @@ HEADING_LINE = {ident: "#" * level + " " +
 
 
 def make_report(relative):
-    """Writes the report and checks it; returns the JSON result, or exits
-    with the problems if content.json is invalid."""
+    """Writes the report; returns its path, whether the folder is temporary
+    and content.json's warnings, or exits with the problems if content.json
+    is invalid."""
     folder, _, temporary = investigation_dir(relative)
     topic = topic_of(folder)
     content = Content(read_json(os.path.join(folder, CONTENT)),
@@ -45,9 +45,7 @@ def make_report(relative):
                          + "\n  - ".join(content.errors))
     path, _ = write_output_file(
         FOLDER_NAME, f"{relative}/{topic}{REPORT_SUFFIX}", text.encode("utf-8"))
-    check = check_report.check_report(path)
-    return {"path": path, "temporary": temporary, "ok": check["ok"], "errors": check["errors"],
-            "warnings": content.warnings + check["warnings"]}
+    return {"path": path, "temporary": temporary, "warnings": content.warnings}
 
 
 def content_problems(relative):

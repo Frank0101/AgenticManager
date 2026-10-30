@@ -16,7 +16,6 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(
     REPO_ROOT, "skills", os.path.basename(TEST_DIR)))
 from agentic_manager import ticket_pulls  # noqa: E402
-from agentic_manager.jira import PANEL_LIMIT  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from gh_fake import graphql_answer  # noqa: E402
 
@@ -109,28 +108,6 @@ class TicketPullsTest(unittest.TestCase):
             client = Panels({"1": [{"url": PR.format(41)}]}, subtasks)
             self.assertEqual(ticket_pulls.pulls_by_ticket(client, []), {})
             self.assertEqual(client.read, [])
-
-    def test_full_panels(self):
-        # A ticket whose panel, or a sub-task's, lists PANEL_LIMIT pull
-        # requests may have more: it is reported, in the tickets' order, and
-        # its pull requests are those found, as pulls_by_ticket() gives them.
-        issues = [{"id": "1", "key": "PROJ-1"}, {"id": "2", "key": "PROJ-2"}]
-        subtasks = [sub_task("PROJ-21", "PROJ-2")]
-        full = [{"url": PR.format(100 + n)} for n in range(PANEL_LIMIT)]
-        # name: (the panels' pull requests by issue id, the full panels' tickets)
-        cases = [("none full", {"1": full[1:], "PROJ-21": full[1:]}, []),
-                 ("the ticket's own", {"2": full, "1": full[:3]}, ["PROJ-2"]),
-                 ("a sub-task's", {"PROJ-21": full}, ["PROJ-2"]),
-                 ("both tickets", {"PROJ-21": full, "1": full}, ["PROJ-1", "PROJ-2"])]
-        for name, pulls, expected in cases:
-            with self.subTest(name):
-                found, panels = ticket_pulls.pulls_and_full_panels(
-                    Panels(pulls, subtasks), issues)
-                self.assertEqual(panels, expected)
-                # Every pull request a full panel listed is kept.
-                self.assertEqual({key: len(prs) for key, prs in found.items()},
-                                 {"PROJ-1": len(pulls.get("1", [])),
-                                  "PROJ-2": len({pr["url"] for panel in ("2", "PROJ-21") for pr in pulls.get(panel, [])})})
 
     def test_first_found(self):
         first = [{"url": PR.format(41), "via": "PROJ-1"}]

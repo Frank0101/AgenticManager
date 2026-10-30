@@ -168,7 +168,8 @@ def check_ledger(path, handover=False):
         errors.append(reference_error(LEDGER, unlinked))
     if handover:
         errors += [f"{LEDGER}: {p}" for p in closing_problems(body)]
-        unrecorded = unrecorded_ids(body)
+        # Findings are checked against their own table above, once.
+        unrecorded = [i for i in unrecorded_ids(body) if not i.startswith("F")]
         if unrecorded:
             errors.append(
                 f"{LEDGER}: IDs cited but never recorded: " + ", ".join(unrecorded))

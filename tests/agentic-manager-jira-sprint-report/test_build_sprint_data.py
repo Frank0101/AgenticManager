@@ -602,10 +602,9 @@ class StatusChecksTest(unittest.TestCase):
                     category, pulls + [other]), flag)
 
     def test_build_status_checks(self):
-        # The flagged tickets in the sprint at the end, and the Done ones with
-        # a full panel, in the epics' order and then by key, with their
-        # counts; a started ticket and a descoped one aren't listed, even
-        # with a full panel.
+        # The flagged tickets in the sprint at the end, in the epics' order
+        # and then by key, with their counts; a started ticket, a Done one with
+        # none open and a descoped one aren't listed.
         def not_started(spell):
             return dict(spell, status="To Do", statusCategory="new")
         spells = [not_started(ticket("PROJ-3", [ev(2, "committed")], "not_completed", parent="PROJ-101")),
@@ -625,16 +624,13 @@ class StatusChecksTest(unittest.TestCase):
                     "PROJ-6": [pull(47, "PROJ-1 g", "merged", "PROJ-1")],
                     "PROJ-5": [pull(46, "PROJ-1 f", "merged", "PROJ-1")]}
         epics = [{"key": "PROJ-101"}, {"key": "PROJ-100"}]
-        rows = build.build_status_checks(
-            spells, pulls_of, {"PROJ-4", "PROJ-6"}, epics)
+        rows = build.build_status_checks(spells, pulls_of, epics)
         # Its own open pull requests, then every linked one by state.
-        self.assertEqual([(r["key"], r["epicKey"], r["status"], r["flag"], r["fullPanel"], r["ownOpen"],
-                           r["linked"], r["otherTickets"]) for r in rows],
-                         [("PROJ-3", "PROJ-101", "To Do", "work_started", False, 0,
-                           {"merged": 1, "open": 0, "declined": 0}, 0),
-                          ("PROJ-2", "PROJ-100", "Done", "open_after_done", False, 1,
-                           {"merged": 0, "open": 2, "declined": 0}, 1),
-                          ("PROJ-4", "PROJ-100", "Done", None, True, 0, {"merged": 1, "open": 0, "declined": 0}, 0)])
+        self.assertEqual([(r["key"], r["epicKey"], r["status"], r["flag"], r["ownOpen"], r["linked"],
+                           r["otherTickets"]) for r in rows],
+                         [("PROJ-3", "PROJ-101", "To Do", "work_started", 0, {"merged": 1, "open": 0, "declined": 0}, 0),
+                          ("PROJ-2", "PROJ-100", "Done", "open_after_done", 1, {"merged": 0, "open": 2, "declined": 0},
+                           1)])
 
 
 class TimelineTest(unittest.TestCase):
@@ -879,8 +875,7 @@ class MainTest(unittest.TestCase):
         # removed ones a removal.
         self.changelogs = {}
         # The raw pull request data, as fetch_sprint.py writes it.
-        self.pulls = {"tickets": {}, "full_panels": [],
-                      "events": {}, "skipped": []}
+        self.pulls = {"tickets": {}, "events": {}, "skipped": []}
 
     def write(self, name, payload):
         path = os.path.join(self.dir, common.RAW_DIR, name)
@@ -994,7 +989,6 @@ class MainTest(unittest.TestCase):
         self.assertEqual(data["ticket_pull_requests"], {"PROJ-1": [
             {"url": pr.format(41), "title": "PROJ-1 add the importer", "branch": "PROJ-1-importer", "via": "PROJ-1",
              "createdAt": at("03-10"), "mergedAt": None, "closedAt": None, "own": True, "state": "open"}]})
-        self.assertEqual(data["full_panel_keys"], [])
         self.assertEqual([(r["key"], r["flag"], r["linked"]) for r in data["status_checks"]],
                          [("PROJ-1", "work_started", {"merged": 0, "open": 1, "declined": 0})])
         del self.pulls["events"][pr.format(41)]

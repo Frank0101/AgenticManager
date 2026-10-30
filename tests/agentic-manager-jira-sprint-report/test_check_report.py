@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_report  # noqa: E402
 from common import CHART_FILES, ai, expected_files  # noqa: E402
-from make_report import FULL_PANEL, Report, tag  # noqa: E402
+from make_report import Report, tag  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
 from report_fixture import BASE, CONTENT, TICKETS, caveat_data, ev, ticket, sprint_data  # noqa: E402
@@ -128,8 +128,7 @@ class ChecksTest(unittest.TestCase):
                  "not started, 1 open PR": {"flag": "work_started", "linked": linked(opened=1), "otherTickets": 0},
                  "not started, all merged": {"flag": "work_started", "linked": linked(merged=3), "otherTickets": 2},
                  "not started, mixed": {"flag": "work_started", "linked": linked(5, 2, 1), "otherTickets": 1},
-                 "Done, several open": {"ownOpen": 3},
-                 "Done, a full panel alone": {"flag": None, "ownOpen": 0, "fullPanel": True}}
+                 "Done, several open": {"ownOpen": 3}}
         for name, changes in cases.items():
             with self.subTest(name):
                 data = sprint_data()
@@ -368,8 +367,6 @@ class ChecksTest(unittest.TestCase):
              f'{proj_1}</a> (2 pts)</td><td class="jira">'),
             ("status: PROJ-1 shows Done, but 1 PR", "Done, but 1 PR is still open.",
              "Done, but 2 PRs are still open."),
-            ("status: PROJ-1 shows Done, but 1 PR", "Done, but 1 PR is still open.</td>",
-             "Done, but 1 PR is still open. " + FULL_PANEL + ".</td>"),
             # Copied Jira text keeps its wording; the generated text doesn't.
             ("vocabulary", "1 PR is still open.", "1 PR isn't closed."),
         ]
@@ -436,7 +433,7 @@ class ChecksTest(unittest.TestCase):
              "model: the Status to Verify rows are the tickets"),
             ("a wrong flag", lambda d: d["status_checks"][0].update(flag="work_started"),
              "model: the Status to Verify rows are the tickets"),
-            ("a full panel that isn't stored", lambda d: d["status_checks"][1].update(fullPanel=True),
+            ("an open count that isn't stored", lambda d: d["status_checks"][1].update(ownOpen=2),
              "model: the Status to Verify rows are the tickets"),
             ("rows out of order", lambda d: d["status_checks"].reverse(),
              "model: the Status to Verify rows are in the epics' order"),

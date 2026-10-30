@@ -345,7 +345,7 @@ def submit_report(relative, data):
         raise SystemExit("the report doesn't pass its final check; fix each of these and submit again:\n- "
                          + "\n- ".join(checked["errors"]))
     return {"ok": True, "task": "write", "path": made["path"], "temporary": made["temporary"],
-            "warnings": list(dict.fromkeys(made["warnings"] + checked["warnings"])),
+            "warnings": made["warnings"] + checked["warnings"],
             "next": f"{call()} next --investigation {relative}"}
 
 

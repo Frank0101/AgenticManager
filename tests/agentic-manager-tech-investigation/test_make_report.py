@@ -14,6 +14,7 @@ TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
+import check_report  # noqa: E402
 import make_report  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from investigation_fixture import (INVESTIGATION, LEDGER, content,  # noqa: E402
@@ -35,6 +36,13 @@ class MakeReportTest(unittest.TestCase):
             content() if data is None else data))
         return make_report.make_report(INVESTIGATION)
 
+    def checked(self, data=None):
+        """The final check's result for the report made from `data`, with
+        content.json's warnings added."""
+        made = self.make(data)
+        check = check_report.check_report(made["path"])
+        return {**check, "warnings": made["warnings"] + check["warnings"]}
+
     def report(self):
         with open(os.path.join(self.folder, "Acme-Search_Report.md"), encoding="utf-8") as f:
             return f.read()
@@ -47,7 +55,7 @@ class MakeReportTest(unittest.TestCase):
         return str(raised.exception)
 
     def test_report_passes_the_check(self):
-        result = self.make()
+        result = self.checked()
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["warnings"], [])
 
@@ -156,7 +164,7 @@ class MakeReportTest(unittest.TestCase):
         # row itself, not only to its section.
         self.write("ledger.md", LEDGER.replace("- **G01** Billing callers unverified.",
                                                '| ID | Gap |\n| --- | --- |\n| <a id="g01"></a>G01 | Billing callers unverified |'))
-        self.assertTrue(self.make(content())["ok"])
+        self.assertTrue(self.checked(content())["ok"])
         self.assertIn("[gap](ledger.md#g01)", self.report())
 
     def test_ledger_definitions_exclude_fences(self):
@@ -191,7 +199,7 @@ class MakeReportTest(unittest.TestCase):
             with self.subTest(field=field, items=len(items)):
                 data = content()
                 data[field] = items
-                result = self.make(data)
+                result = self.checked(data)
                 self.assertTrue(result["ok"], result)
                 self.assertIn(expected, self.report())
 

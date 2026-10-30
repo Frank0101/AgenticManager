@@ -47,7 +47,7 @@ Drive the conversation: don't wait for the user to know what to ask for.
   - A built-in one is a real slide kept as a `description.md` (layout, style, density) and a `wireframe.svg` at the deck's slide size, with the original's positions, shapes and colours (text as grey bars, headings as placeholder words, photos as labelled boxes), so you can take its measurements.
   - One of the user's is a slide of an earlier deck: `slides.json` holds its HTML, which you can reuse, and its CSS, reusable when its look is the deck's; `slide.html` shows it.
 
-  Take layout, section structure, chart types and density from them, never the look (see [Consistency](#consistency)), and tell the user briefly which you use: "I'm basing the layout on the Market Segmentation example."
+  Take layout, section structure, chart types and density from them, and the look only as [Consistency](#consistency) sets out, and tell the user briefly which you use: "I'm basing the layout on the Market Segmentation example."
 
 - **Blank:** a plain look and your own structure, without the examples: white background, dark text, the default sans-serif, and on each slide a title and a layout skeleton. The content is written as usual, with placeholders only for what is missing.
 

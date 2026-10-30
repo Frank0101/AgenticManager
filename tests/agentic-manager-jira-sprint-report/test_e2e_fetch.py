@@ -646,7 +646,6 @@ class FetchTest(unittest.TestCase):
                                   for p in pulls["tickets"].get(key, [])], expected)
                 self.assertEqual(pulls["events"], events)
                 self.assertEqual(pulls["skipped"], skipped)
-                self.assertEqual(pulls["full_panels"], [])
                 self.assertEqual(f"skipped a pull request GitHub says doesn't exist, found through PROJ-9: {gone}"
                                  in proc.stderr.splitlines(), bool(skipped))
                 # Every ticket the report counts, sub-tasks left out.

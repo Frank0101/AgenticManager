@@ -488,14 +488,13 @@ def pull_state(pr):
     return "declined" if pr["closedAt"] else "open"
 
 
-def build_status_checks(spells, pulls_of, full_panels, epics):
+def build_status_checks(spells, pulls_of, epics):
     """The rows of the Status to Verify section: each ticket in the sprint at
-    the end with a status flag, or Done with a panel that may have left an
-    open pull request out, in the epics' order (`epics`, build_epics()) and
-    then by key, with its status, how many of its own pull requests are open,
-    how many of all those Jira links are in each state, as its Development
-    panel shows them, and how many of those name only other tickets;
-    `pulls_of` is {key: ticket_pulls()}."""
+    the end with a status flag, in the epics' order (`epics`, build_epics())
+    and then by key, with its status, how many of its own pull requests are
+    open, how many of all those Jira links are in each state, as its
+    Development panel shows them, and how many of those name only other
+    tickets; `pulls_of` is {key: ticket_pulls()}."""
     order = {epic["key"]: index for index, epic in enumerate(epics)}
     rows = []
     for spell in spells:
@@ -503,14 +502,10 @@ def build_status_checks(spells, pulls_of, full_panels, epics):
             continue
         key, pulls = spell["key"], pulls_of.get(spell["key"], [])
         flag = status_flag(spell["statusCategory"], pulls)
-        # Only a Done ticket's answer depends on every pull request being
-        # known: a full panel can hide its open one.
-        full = key in full_panels and spell["statusCategory"] == "done"
-        if not flag and not full:
+        if not flag:
             continue
         rows.append({"key": key, "points": spell["points"], "epicKey": spell_epic(spell)[0], "status": spell["status"],
-                     "statusCategory": spell["statusCategory"],
-                     "flag": flag, "fullPanel": full,
+                     "flag": flag,
                      "ownOpen": sum(pr["own"] and pr["state"] == "open" for pr in pulls),
                      "linked": {state: sum(pr["state"] == state for pr in pulls) for state in PULL_STATES},
                      "otherTickets": sum(not pr["own"] for pr in pulls)})
@@ -523,10 +518,9 @@ def status_flag(category, pulls):
     None: work_started, not started with one open or merged, or
     open_after_done, Done with one open. Only these two: a started ticket's
     work can sit in a branch before any pull request, and one in review can
-    gain new ones, so other mismatches are mostly noise. Both need a pull
-    request to be there, so a panel that left some out can't wrongly raise
-    one. A pull request merged before the sprint started counts too: work
-    merged earlier still contradicts a ticket left as not started."""
+    gain new ones, so other mismatches are mostly noise. A pull request
+    merged before the sprint started counts too: work merged earlier still
+    contradicts a ticket left as not started."""
     states = [pr["state"] for pr in pulls if pr["own"]]
     if category == "new" and ("open" in states or "merged" in states):
         return "work_started"
@@ -791,8 +785,6 @@ def main():
     # tickets whose status the report checks.
     pulls_of = {t["key"]: ticket_pulls(pull_requests, t["key"], moment) for t in counted
                 if t["outcome"] != "removed"}
-    full_panels = sorted(
-        set(pull_requests["full_panels"]) & set(pulls_of), key=key_order)
     original = [t for t in spells if t["scope"] == "original"]
 
     data = {
@@ -832,11 +824,10 @@ def main():
         "target_completion": target_completion(spells),
         "epics": epics,
         # Each ticket's pull requests as at the end, as ticket_pulls() gives
-        # them; the tickets whose panel may have left some out; and the rows
-        # of the Status to Verify section, worked out from both.
+        # them, and the rows of the Status to Verify section, worked out from
+        # them.
         "ticket_pull_requests": {key: pulls_of[key] for key in sorted(pulls_of, key=key_order)},
-        "full_panel_keys": full_panels,
-        "status_checks": build_status_checks(spells, pulls_of, set(full_panels), epics),
+        "status_checks": build_status_checks(spells, pulls_of, epics),
         "timeline": build_timeline(spells, status, start, end, complete, today),
         # The burndown's first point: the whole commitment at the start, Done or
         # not; the start day's end-of-day reading then shows what was open.

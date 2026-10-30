@@ -201,7 +201,6 @@ PULL_REQUESTS = {
                             "source": {"branch": "PROJ-2-link"}, "via": "PROJ-2"},
                            {"url": PR.format(44), "name": "PROJ-5 cache the settings", "state": "MERGED",
                             "source": {"branch": "PROJ-5-cache"}, "via": "PROJ-2"}]},
-    "full_panels": [],
     "events": {PR.format(45): {"url": PR.format(45), "state": "OPEN", "createdAt": "2026-03-12T10:00:00Z",
                                "mergedAt": None, "closedAt": None},
                PR.format(41): {"url": PR.format(41), "state": "MERGED", "createdAt": "2026-03-05T10:00:00Z",

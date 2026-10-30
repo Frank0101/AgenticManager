@@ -187,7 +187,6 @@ def sprint_data(**changes):
     pulls_of = {key: data.get("ticket_pull_requests", {}).get(
         key, []) for key in present}
     data["ticket_pull_requests"] = pulls_of
-    data.setdefault("full_panel_keys", [])
     counts, points = build.outcome_breakdown(tickets)
     counted = [t for t in tickets if t["counted"]]
     original = [t for t in tickets if t["scope"] == "original"]
@@ -197,7 +196,7 @@ def sprint_data(**changes):
         "points_estimated_issue_count": sum(1 for t in counted if t["points"] is not None),
         "points_total_issue_count": len(counted),
         "epics": (epics := build.build_epics(tickets, {"PROJ-100": "Staff sign in with their work account."})),
-        "status_checks": build.build_status_checks(tickets, pulls_of, set(data["full_panel_keys"]), epics),
+        "status_checks": build.build_status_checks(tickets, pulls_of, epics),
         "timeline": build.build_timeline(tickets, data["sprint_status"], data["sprint_start"], data["sprint_end"],
                                          data["sprint_complete_date"], data["today"]),
         "target_completion": build.target_completion(tickets),

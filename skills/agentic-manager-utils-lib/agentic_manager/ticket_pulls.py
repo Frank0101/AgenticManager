@@ -1,6 +1,6 @@
 """Jira tickets' pull requests, shared by every skill that relates tickets to
 code: those the Development panels of each ticket and of its sub-tasks list,
-which panels may have left some out, and when each was opened, merged and closed.
+and when GitHub says each was opened, merged and closed.
 
 A sub-task's work is its parent's, as Jira's sprint report rolls it in. The
 panel is the link the team's integration made, and GitHub isn't searched for
@@ -12,7 +12,7 @@ import subprocess
 
 from agentic_manager.batch import gather
 from agentic_manager.github import pull_events, pull_parts
-from agentic_manager.jira import PANEL_LIMIT, key_order
+from agentic_manager.jira import key_order
 from agentic_manager.json_path import nested
 
 # Jira's condition for the issue types that are sub-tasks.
@@ -25,19 +25,6 @@ def pulls_by_ticket(client, issues):
     its sub-tasks list, each once, through the ticket before its sub-tasks,
     those in key order, with `via`, the key of the issue it came through.
     Raises JiraError when Jira can't answer."""
-    return pulls_and_full_panels(client, issues)[0]
-
-
-def pulls_and_full_panels(client, issues):
-    """(pulls_by_ticket(), the keys of `issues`, in their order, whose own
-    panel or a sub-task's listed PANEL_LIMIT pull requests or more, across
-    its code hosts, so may
-    have left some out). Raises JiraError when Jira can't answer.
-
-    A full panel is reported, never taken as the ticket's every pull request:
-    the panel keeps the most recently updated, and those it leaves out can
-    still be open, such as idle drafts (one ticket had 190 on GitHub, 100 in
-    its panel, and 88 of the others open)."""
     children = sub_tasks(client, [issue["key"] for issue in issues])
     # Each ticket, then its sub-tasks: (the ticket's key, the issue looked at).
     looked = [(issue["key"], seen) for issue in issues
@@ -45,13 +32,9 @@ def pulls_and_full_panels(client, issues):
     panels = gather(looked, lambda pair: panel_pulls(
         client.pull_requests(pair[1]["id"])))
     groups = {issue["key"]: [] for issue in issues}
-    full = set()
     for (key, seen), prs in zip(looked, panels):
         groups[key].append([{**pr, "via": seen["key"]} for pr in prs])
-        if len(prs) >= PANEL_LIMIT:
-            full.add(key)
-    return ({key: first_found(*found) for key, found in groups.items()},
-            [key for key in groups if key in full])
+    return {key: first_found(*found) for key, found in groups.items()}
 
 
 def sub_tasks(client, keys):

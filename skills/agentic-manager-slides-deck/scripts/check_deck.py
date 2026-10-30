@@ -84,10 +84,10 @@ def check(folder, deck, content):
     # Where each link leads, read from the deck's folder rather than built
     # with the generator's own link: the image's name when it reaches a file
     # of _assets/<name>/, else the link as written.
-    assets = os.path.join(os.path.dirname(os.path.abspath(folder)), ASSETS)
+    assets = os.path.join(os.path.dirname(folder), ASSETS)
     reached = []
     for link in page.files:
-        path = os.path.normpath(os.path.join(os.path.abspath(folder), link))
+        path = os.path.normpath(os.path.join(folder, link))
         image = os.path.dirname(path)
         reached.append(os.path.basename(image) if os.path.dirname(image) == assets and os.path.isfile(path)
                        else link)

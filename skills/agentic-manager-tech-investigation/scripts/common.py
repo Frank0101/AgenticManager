@@ -16,7 +16,7 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.config import enabled_sources, is_enabled  # noqa: E402,F401
-from agentic_manager.github import NAME as GITHUB_CLI, GH_UNAVAILABLE, PULLS_UNREAD, GhError, gh_available, gh_found, gh_signed_in, pull_parts  # noqa: E402,F401
+from agentic_manager.github import NAME as GITHUB_CLI, GH_UNAVAILABLE, GhError, gh_available, gh_found, gh_signed_in, pull_parts  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
 from agentic_manager.jira import BROWSE_URL as TICKET_URL, GROUP as JIRA_GROUP, NAME as JIRA_API, PROJECT_KEY, JiraClient, JiraError, browse_url, plain_text, project_of  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
@@ -26,6 +26,8 @@ from agentic_manager.text import DEFINITION, DISPLAY_DATE, FENCE, HEADING, INLIN
 from agentic_manager.ticket_pulls import pulls_by_ticket  # noqa: E402,F401
 
 FOLDER_NAME = "tech-investigations"
+# What a ticket shows in place of its pull requests when gh can't be used.
+PULLS_UNREAD = f"{GH_UNAVAILABLE}, so pull requests weren't read"
 # An example's own description, beside its copied documents: what makes it
 # good, as the agent wrote it when the user approved it.
 WHY_GOOD = "Why it's good"

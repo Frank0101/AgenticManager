@@ -25,7 +25,6 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import fetch_sprint  # noqa: E402
 from common import RAW_DIR, SPRINT_FILE  # noqa: E402
 from agentic_manager import retry  # noqa: E402
-from agentic_manager.jira import PANEL_LIMIT  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from sprint_fixture import report_folder  # noqa: E402
 # The fake gh's GraphQL answers follow the library's query.
@@ -298,25 +297,9 @@ class PullRequestsTest(unittest.TestCase):
                 self.assertTrue(
                     all(is_graphql(c.split()[1:]) for c in run.calls), run.calls)
                 self.assertEqual(bool(run.calls), any(expected.values()))
-                self.assertEqual(found["full_panels"], [])
                 # GitHub's times of every pull request found.
                 self.assertEqual(found["events"], {url: {"createdAt": "2026-03-05T10:00:00Z"}
                                                    for urls in expected.values() for url in urls})
-
-    def test_a_full_panel_is_reported(self):
-        # A panel, the ticket's or a sub-task's, listing as many pull requests
-        # as Jira lists may have left some out: its ticket is reported, and
-        # every pull request the panel listed is kept.
-        many = [{"url": PR.format(100 + n)} for n in range(PANEL_LIMIT)]
-        times = {f"pr view {pr['url']}": {
-            "createdAt": "2026-03-05T10:00:00Z"} for pr in many}
-        found = fetch_sprint.pull_requests(
-            Panel({"3": many}), self.ISSUES, gh(times))
-        self.assertEqual(found["full_panels"], ["PROJ-3"])
-        self.assertEqual(len(found["tickets"]["PROJ-3"]), PANEL_LIMIT)
-        found = fetch_sprint.pull_requests(
-            Panel({"3": many[1:]}), self.ISSUES, gh(times))
-        self.assertEqual(found["full_panels"], [])
 
     def test_a_pull_request_github_cant_find_is_skipped(self):
         # One GitHub says doesn't exist, such as one deleted that Jira still

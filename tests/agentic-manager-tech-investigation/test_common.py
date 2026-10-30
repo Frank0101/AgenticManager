@@ -154,27 +154,30 @@ class ReferencesTest(unittest.TestCase):
             with self.subTest(rounds=rounds):
                 self.assertEqual(common.reviewed(rounds), done)
 
-    def test_closing_values(self):
-        # (function, value, accepted)
-        cases = [(common.outcome_problem, "F01, F02", True), (common.outcome_problem, "G03", False), (common.outcome_problem, "D01", False),
-                 (common.outcome_problem, "Rejected by the user: not needed", False),
-                 (common.outcome_problem, "Answered within scope",
-                  False), (common.outcome_problem, "", False),
-                 (common.status_problem,
-                  "🟦 In development (on a branch)", True),
-                 (common.status_problem, "Implemented", False),
-                 ]
-        for function, value, accepted in cases:
-            with self.subTest(function=function.__name__, value=value):
-                problem = function("X01", value)
+    def test_a_component_status_is_an_allowed_one(self):
+        # (status, accepted)
+        for status, accepted in (("🟦 In development (on a branch)", True), ("Implemented", False)):
+            with self.subTest(status):
+                problem = common.status_problem("X01", status)
                 self.assertEqual(problem is None, accepted, problem)
 
-    def test_scope_boundaries_and_the_questions_they_close(self):
-        # A scope question is closed by the boundary the user decided, and a
-        # question the scope leaves out by the boundary that does.
+    def test_how_a_question_closes_and_the_scope_boundaries(self):
+        # A question closes on the findings that answer it, never on a gap, a
+        # decision or a choice not to pursue it; a scope question is closed by
+        # the boundary the user decided, and a question the scope leaves out by
+        # the boundary that does.
         asked = "Scope boundary: Should the investigation cover billing?"
         # (name, problem, accepted)
-        cases = [("decided", common.outcome_problem("Q07", "Decided by the user: [U01](#u01)", asked), True),
+        cases = [("answered", common.outcome_problem("Q07", "F01, F02"), True),
+                 ("a gap", common.outcome_problem("Q07", "G03"), False),
+                 ("a decision", common.outcome_problem("Q07", "D01"), False),
+                 ("rejected", common.outcome_problem(
+                     "Q07", "Rejected by the user: not needed"), False),
+                 ("answered in words", common.outcome_problem(
+                     "Q07", "Answered within scope"), False),
+                 ("no answer", common.outcome_problem("Q07", ""), False),
+                 ("decided", common.outcome_problem(
+                     "Q07", "Decided by the user: [U01](#u01)", asked), True),
                  ("decided with no boundary", common.outcome_problem(
                      "Q07", "Decided by the user: include", asked), False),
                  ("answered by findings", common.outcome_problem(

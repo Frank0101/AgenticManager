@@ -36,9 +36,6 @@ TAGS = {
 }
 
 
-# What the Status to Verify section adds for a Done ticket whose panel may
-# have left an open pull request out.
-FULL_PANEL = "Jira lists only its most recently updated PRs, so an older PR may still be open"
 # What the section says when no ticket needs checking.
 NOTHING_TO_VERIFY = "Every ticket's status agrees with its pull requests."
 
@@ -262,9 +259,9 @@ class Report:
 
     def status_table(self):
         """The Status to Verify section's table: per epic, in the model's
-        order, each ticket whose status its own pull requests contradict, or
-        whose panel may have left some out, with its status in Jira and what
-        its pull requests show; or a line saying none needs checking."""
+        order, each ticket whose status its own pull requests contradict, with
+        its status in Jira and what its pull requests show; or a line saying
+        none needs checking."""
         rows = self.data["status_checks"]
         if not rows:
             return NOTHING_TO_VERIFY
@@ -294,21 +291,14 @@ class Report:
         """What a ticket's pull requests show, as counts: for a ticket not
         started, every pull request Jira links, as its Development panel
         shows them, by state, and how many name other tickets; for a Done
-        one, only its own still open; then FULL_PANEL when its panel is full.
-        Counts, not links: the reader checks them in Jira."""
+        one, only its own still open. Counts, not links: the reader checks
+        them in Jira."""
         if row["flag"] == "work_started":
-            parts = [f"Not started, but {linked_text(row['linked'])}"
-                     + (f" ({row['otherTickets']} of them "
-                        f"{plural(row['otherTickets'], 'names another ticket', 'name other tickets')})"
-                        if row["otherTickets"] else "") + "."]
-        elif row["flag"] == "open_after_done":
-            parts = [
-                f"Done, but {row['ownOpen']} {plural(row['ownOpen'], 'PR is', 'PRs are')} still open."]
-        else:
-            parts = ["None of the PRs Jira lists is open."]
-        if row["fullPanel"]:
-            parts.append(FULL_PANEL + ".")
-        return " ".join(parts)
+            return (f"Not started, but {linked_text(row['linked'])}"
+                    + (f" ({row['otherTickets']} of them "
+                       f"{plural(row['otherTickets'], 'names another ticket', 'name other tickets')})"
+                       if row["otherTickets"] else "") + ".")
+        return f"Done, but {row['ownOpen']} {plural(row['ownOpen'], 'PR is', 'PRs are')} still open."
 
     def header_table(self):
         """The table at the top: always these rows, in this order, so readers

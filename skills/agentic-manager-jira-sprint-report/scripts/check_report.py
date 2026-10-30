@@ -360,8 +360,8 @@ def check_pull_requests(c, data):
     requests, each opened by the end, its merge and closing left out after
     it, and its ownership and state what its title, branch and times give;
     and the Status to Verify rows are the tickets those and their statuses
-    flag (not started with work, Done with one open) and the Done ones with a
-    full panel, recomputed here with the checker's own rules."""
+    flag (not started with work, Done with one open), recomputed here with
+    the checker's own rules."""
     cutoff = parse_ts(data["as_of_instant"])
     present = {s["key"]: s for s in data["spells"]
                if s["counted"] and s["outcome"] != "removed"}
@@ -381,23 +381,20 @@ def check_pull_requests(c, data):
         c.check(not wrong, "model",
                 f"{key}'s pull requests are as at the end, with the ownership and state they give {wrong[:2] or ''}"
                 .strip())
-    c.check(set(data["full_panel_keys"]) <= set(present), "model",
-            "the full panels are of tickets in the sprint at the end")
     expected = []
     for key, spell in present.items():
         own = [pr for pr in pulls_of.get(key, []) if pr["own"]]
         states = [pr["state"] for pr in own]
-        full = key in data["full_panel_keys"] and spell["statusCategory"] == "done"
         flag = None
         if spell["statusCategory"] == "new" and ("open" in states or "merged" in states):
             flag = "work_started"
         elif spell["statusCategory"] == "done" and "open" in states:
             flag = "open_after_done"
-        if flag or full:
+        if flag:
             every = [pr["state"] for pr in pulls_of.get(key, [])]
-            expected.append((key, flag, full, states.count("open"), every.count("merged"), every.count("open"),
+            expected.append((key, flag, states.count("open"), every.count("merged"), every.count("open"),
                              every.count("declined"), len(every) - len(states)))
-    stored = [(r["key"], r["flag"], r["fullPanel"], r["ownOpen"], r["linked"]["merged"], r["linked"]["open"],
+    stored = [(r["key"], r["flag"], r["ownOpen"], r["linked"]["merged"], r["linked"]["open"],
                r["linked"]["declined"], r["otherTickets"]) for r in data["status_checks"]]
     c.check(sorted(stored) == sorted(expected), "model",
             f"the Status to Verify rows are the tickets their pull requests and statuses flag ({len(expected)})")
@@ -735,15 +732,11 @@ def check_status_section(c, md, table, data):
             counts = [rf"\b{total} (?:\w+ )?PRs? (?:is|are) linked"] + \
                 [rf"\b{row['otherTickets']} of them"] * \
                 bool(row["otherTickets"])
-        elif row["flag"] == "open_after_done":
+        else:
             counts = [
                 rf"Done, but {row['ownOpen']} PRs? (?:is|are) still open"]
-        else:
-            counts = ["None of the PRs"]
-        full = "most recently updated" in text
-        c.check(all(re.search(count, text) for count in counts) and full == row["fullPanel"], "status",
-                f"{row['key']} shows {', '.join(counts)}"
-                + (" and that its panel may leave some out" if row["fullPanel"] else ""))
+        c.check(all(re.search(count, text) for count in counts), "status",
+                f"{row['key']} shows {', '.join(counts)}")
 
 
 def check_epic_commentary(c, epic, cell, status):

@@ -412,8 +412,8 @@ class BuildTest(unittest.TestCase):
         # Each listed ticket under its epic, with its latest estimate, its
         # status in Jira and counts: a Done ticket's own open pull requests;
         # a ticket not started, every linked one by state and those naming
-        # other tickets; a full panel said; and a line instead of the table
-        # when no ticket needs checking.
+        # other tickets; and a line instead of the table when no ticket needs
+        # checking.
         r = report()
         rows = [[text_of(cell) for cell in cells_of(row)]
                 for row in rows_of(r.status_table())]
@@ -432,10 +432,6 @@ class BuildTest(unittest.TestCase):
         cases = [
             ("Done, several open", {"ownOpen": 4},
              "Done, but 4 PRs are still open."),
-            ("Done, a full panel", {
-             "fullPanel": True}, "Done, but 1 PR is still open. " + make_report.FULL_PANEL + "."),
-            ("Done, a full panel alone", {"flag": None, "ownOpen": 0, "fullPanel": True},
-             "None of the PRs Jira lists is open. " + make_report.FULL_PANEL + "."),
             ("not started, one", {"flag": "work_started", "linked": linked(merged=1), "otherTickets": 0},
              "Not started, but 1 merged PR is linked."),
             ("not started, all merged", {"flag": "work_started", "linked": linked(merged=3), "otherTickets": 2},

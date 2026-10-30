@@ -379,8 +379,6 @@ class CheckReportTest(unittest.TestCase):
              readme, "C01 links acme/app: services/search"),
             ("code claimed from its routes", "F01", "🟩 Implemented",
              read("src/routes.py", "entry points"), None),
-            ("code claimed from a document", "F01", "🟩 Implemented", read("src/routes.py", "full", "documentation"),
-             "C01 links acme/app: services/search"),
         ]
         for name, outcome, status, sources, expected in cases:
             with self.subTest(name):
@@ -449,6 +447,12 @@ class CheckReportTest(unittest.TestCase):
         errors, _ = check_report.check_ledger(ledger, handover=True)
         self.assertIn("IDs cited but never recorded: Q03, S07",
                       " ".join(errors))
+        # A finding cited but never written is reported once, by its own check.
+        ledger.write_text(LEDGER.replace("## Scope boundaries\n\nNone yet.", "## Scope boundaries\n\nSee [F07](#f07)."),
+                          encoding="utf-8")
+        errors, _ = check_report.check_ledger(ledger, handover=True)
+        self.assertEqual([e for e in errors if "F07" in e], [
+                         "ledger.md: findings cited but never written: F07"])
 
     def test_unreadable_missing_and_relative_report(self):
         for path in ("relative.md", self.folder / "missing.md"):
