@@ -204,6 +204,23 @@ class ReferencesTest(unittest.TestCase):
                 problem = common.blocked_problem("Q09", depends_on, {"Q03"})
                 self.assertEqual(problem is None, accepted, problem)
 
+    def test_a_gap_names_what_blocks_it(self):
+        # A gap nothing blocks is work to do, so it must be a question in the
+        # queue and not a gap; scope is a scope question, so no gap waits on
+        # the user. (Blocked by, the problem's text, or None)
+        cases = [("No access to the cluster", None), ("Waiting on decision D01", None),
+                 ("Waiting on decision", "waits on a decision but names none"),
+                 ("Out of scope, approved by the user", "is blocked by"),
+                 ("Not done yet", "is blocked by"), ("Not started", "is blocked by"), ("", "is blocked by")]
+        for blocker, expected in cases:
+            with self.subTest(blocker):
+                problem = common.gap_problem(
+                    ["G01", "Gap", "Missing", "Read it", blocker, "Code", "Owner"])
+                if expected is None:
+                    self.assertIsNone(problem)
+                else:
+                    self.assertIn(expected, problem or "")
+
     def test_a_sources_group_is_one_of_the_groups(self):
         # (Kind, the group as the config names it, accepted): the ledger uses
         # the names code, tracker and documentation, never the config's keys.

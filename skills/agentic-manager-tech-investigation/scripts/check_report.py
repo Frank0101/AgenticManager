@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import re
 
-from common import (CELL_PIPE, COMPONENT_HEADER, DEFINITION, DESIGN_TABLES, GAP_FIX, HEADING, LEDGER, LEDGER_SECTIONS,
+from common import (CELL_PIPE, CITATION, COMPONENT_HEADER, DEFINITION, DESIGN_TABLES, GAP_FIX, HEADING, LEDGER, LEDGER_SECTIONS,
                     LINKS, QUERY, QUEUE, QUEUE_HEADER, QUEUE_SUBSECTIONS, REFERENCE_LINK, SOURCE_FINDINGS_COLUMN,
                     SOURCE_LINK_FIX, TABLE_HEADINGS, anchor_ids, backtick_error, blocked_problem, cited_sources,
                     claim_length_problem, component_rows, coverage_problem, design_problem, expected_files,
@@ -151,7 +151,9 @@ def check_ledger(path, handover=False):
         too_long = claim_length_problem(row[0], row[1])
         if too_long:
             errors.append(f"{LEDGER}: {too_long}")
-    undefined = sorted(set(ids(body, "F")) - set(written), key=id_order)
+    # Only a citation refers to a finding; a bare F-shaped word is prose.
+    undefined = sorted({m[1] for m in CITATION.finditer(body) if m[1].startswith("F")} - set(written),
+                       key=id_order)
     if undefined:
         errors.append(
             f"{LEDGER}: findings cited but never written: " + ", ".join(undefined))

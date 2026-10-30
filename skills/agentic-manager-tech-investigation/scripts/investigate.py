@@ -79,8 +79,12 @@ def next_tasks(relative, maximum=1, resume=False):
     if phase != "research":
         return render(relative, lines, task_of(lines, phase))
     if scope_due(lines):
-        for row in scope_questions(table_rows(lines, "queue-ready")):
-            move_row(lines, row[0], "queue-in-progress")
+        # Only those whose dependencies are completed: one waiting on research
+        # is asked once that research is done.
+        ready = table_rows(lines, "queue-ready")
+        for row in scope_questions(questions_to_work(lines)):
+            if row in ready:
+                move_row(lines, row[0], "queue-in-progress")
         save(relative, lines)
         return render(relative, lines, "scope")
     research = [row for row in questions_to_work(

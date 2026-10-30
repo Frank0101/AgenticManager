@@ -146,6 +146,23 @@ class InvestigateTest(unittest.TestCase):
         self.assertIn("## The scope the user decided so far\n\n- U01: The payments gateway: mention only",
                       investigate.next_tasks(INVESTIGATION))
 
+    def test_a_scope_question_waits_for_the_research_it_depends_on(self):
+        # Asked with the others only once the question it depends on is
+        # completed: Q08 waits on Q04, still open, while Q07 is asked.
+        data = protocol.example("research")
+        data["new_questions"].append({"key": "[[q3]]", "question": "Should the investigation cover billing?",
+                                      "raised_by": "[[f2]]", "depends_on": "[[Q04]]", "for": "user"})
+        self.submit("research:Q01", data)
+        text = investigate.next_tasks(INVESTIGATION)
+        self.assertTrue(text.startswith("# Task scope"), text[:80])
+        self.assertIn(
+            "- Q07: Should the investigation cover the payments gateway", text)
+        self.assertNotIn("- Q08:", text)
+        self.assertEqual([row[0] for row in ledger.table_rows(
+            self.lines(), "queue-in-progress")], ["Q07"])
+        self.assertIn(
+            "Q08", [row[0] for row in ledger.table_rows(self.lines(), "queue-ready")])
+
     def test_research_goes_on_while_the_user_is_away(self):
         # Asked once, the user's questions wait; research that doesn't depend
         # on their answers is handed out meanwhile, and they are asked again

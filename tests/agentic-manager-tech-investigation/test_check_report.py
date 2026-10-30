@@ -155,7 +155,7 @@ class CheckReportTest(unittest.TestCase):
             ("duplicate finding", LEDGER.replace(FINDING_ROW, FINDING_ROW + "\n" + FINDING_ROW),
              "findings written more than once: F01; keep one row each"),
             ("undefined finding", LEDGER.replace(
-                "None yet.", "See F07.", 1), "never written: F07"),
+                "None yet.", "See [F07](#f07).", 1), "never written: F07"),
         ]
         for name, text, error in cases:
             with self.subTest(name=name):
@@ -181,17 +181,12 @@ class CheckReportTest(unittest.TestCase):
                 self.assertIn("cannot read research ledger", " ".join(errors))
 
     def test_handover_gaps_need_a_valid_blocker(self):
-        # A gap nothing blocks is work to do, so it must be a question in the
-        # queue and not a gap.
+        # The gap rule applies at handover; its own cases are in
+        # test_common.py.
         ledger = self.folder / "ledger.md"
         gap = "| G01 | Gap | Missing | Read it | {} | Code | Owner |\n"
-        cases = [("no access", "No access to the cluster", None),
-                 ("a decision", "Waiting on decision D01", None),
-                 ("a decision with no ID", "Waiting on decision", "Blocked by"),
-                 # Scope is a scope question in the queue, so no gap waits on the user.
-                 ("a scope cut", "Out of scope, approved by the user", "Blocked by"),
-                 ("nothing blocks it", "Not done yet", "Blocked by"),
-                 ("empty", "", "Blocked by")]
+        cases = [("a decision", "Waiting on decision D01", None),
+                 ("nothing blocks it", "Not done yet", "Blocked by")]
         for name, blocker, expected in cases:
             with self.subTest(name):
                 text = LEDGER.replace(
@@ -330,7 +325,8 @@ class CheckReportTest(unittest.TestCase):
                             sum("without a link" in e and expected in e for e in result["errors"]), 2, result)
 
     def test_handover_rechecks_blocked_questions_sources_and_findings(self):
-        # A ledger edited without the script is checked again at handover.
+        # A ledger edited without the script is checked again at handover:
+        # one case of each rule, whose own cases are in test_common.py.
         def source(kind="tracker", coverage="partial: one page", superseded="None"):
             return with_sources([
                 ["S01", "code",
@@ -338,7 +334,6 @@ class CheckReportTest(unittest.TestCase):
                 ["S02", kind, "[x](https://example.com/x)", "d", coverage, "None", superseded]])
         # name: (ledger, expected problem, or None)
         cases = [("allowed sources", source(), None),
-                 ("a superseded source", source(superseded="S01"), None),
                  ("a source of no group", source(
                      kind="source_control"), "S02: Kind starts with"),
                  ("a coverage not allowed", source(coverage="skimmed"),
@@ -360,8 +355,9 @@ class CheckReportTest(unittest.TestCase):
                         any(expected in p for p in problems), problems)
 
     def test_handover_closing_rules(self):
-        # A completed question names its answer; a component's status is an allowed one, and one claiming
-        # code rests on a code source read under its path.
+        # A completed question names its answer and a component's status is an
+        # allowed one, one case each, as test_common.py has the rules' own; one
+        # claiming code rests on a code source read under its path.
         tree = "https://github.com/acme/app/tree/abc/services/search"
         component = ("### Components\n\n| ID | Name | Responsibility | Repository | Status |"
                      " Read | Evidence | Next |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n"
@@ -377,11 +373,6 @@ class CheckReportTest(unittest.TestCase):
              readme, "Q01: a completed question"),
             ("a question closed on its finding",
              "F01", "⬜ Unverified", readme, None),
-            ("a question with no answer", "—", "⬜ Unverified",
-             readme, "Q01: a completed question"),
-            # A question closes answered, never by a choice not to pursue it.
-            ("a user rejection", "Rejected by the user: not needed", "⬜ Unverified", readme,
-             "Q01: a completed question"),
             ("a status not allowed", "F01", "Done",
              readme, "C01: Status starts with"),
             ("code claimed from a README", "F01", "🟩 Implemented",
@@ -448,9 +439,10 @@ class CheckReportTest(unittest.TestCase):
         errors, _ = check_report.check_ledger(ledger)
         self.assertIn("claim is 160 words", " ".join(errors))
         # A citation is a link to a record's anchor; a bare ID-shaped word,
-        # such as P95, is prose.
+        # such as P95 or F150, is prose, a finding's number included.
         ledger.write_text(LEDGER.replace("## Scope boundaries\n\nNone yet.",
-                                         "## Scope boundaries\n\nSee [S07](#s07) and [Q03](#q03); P95 is a latency."),
+                                         "## Scope boundaries\n\nSee [S07](#s07) and [Q03](#q03); P95 is a latency "
+                                         "and the F150 a truck."),
                           encoding="utf-8")
         self.assertEqual(check_report.check_ledger(
             ledger, handover=False)[0], [])

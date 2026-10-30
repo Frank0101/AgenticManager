@@ -22,7 +22,7 @@ SCRIPTS = os.path.join(REPO_ROOT, "skills",
 sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, TEST_DIR)
 import protocol  # noqa: E402
-from investigation_fixture import SOURCES, content  # noqa: E402
+from investigation_fixture import SOURCES  # noqa: E402
 
 INVESTIGATE = os.path.join(SCRIPTS, "investigate.py")
 
@@ -76,16 +76,28 @@ class InvestigationTest(unittest.TestCase):
         # The answer raised a scope question, asked before any other task.
         task = self.next()
         self.assertTrue(task.startswith("# Task scope"))
+        self.assertIn(protocol.compact(protocol.example("scope")), task)
         self.submit("scope", protocol.example("scope"))
         self.submit("research:Q02", {
                     "outcome": protocol.example("research-blocked")})
-        for question in ("Q03", "Q04", "Q05", "Q06", "Q08"):
+        for question in ("Q03", "Q04", "Q05", "Q06"):
             self.assertTrue(self.next().startswith(
                 f"# Task research:{question}"))
             self.submit(f"research:{question}", {"findings": [{"key": "[[f1]]", "claim": f"Fact for {question}.",
                                                                "sources": "[[S02]]", "limits": "[[S02]]: the unread sections can't change it."}],
                                                  "outcome": {"answered": "[[f1]]"}})
-        self.assertTrue(self.next().startswith("# Task design"))
+        # The last finds a fact and then waits on a choice someone has to
+        # make: an open decision, which the report's example cites.
+        self.assertTrue(self.next().startswith("# Task research:Q08"))
+        self.submit("research:Q08", {"findings": [{"key": "[[f1]]", "claim": "Fact for Q08.", "sources": "[[S02]]",
+                                                   "limits": "[[S02]]: the unread sections can't change it."}],
+                                     "outcome": {"blocked": {"decision": {
+                                         "decision": "Which queue to use", "position": "Unresolved: Kafka or SQS",
+                                         "candidates_and_constraints": "Kafka keeps replay; SQS costs less", "authority": "The team's design doc",
+                                         "owner_and_next_check": "The platform team, at the next design review"}}}})
+        task = self.next()
+        self.assertTrue(task.startswith("# Task design"))
+        self.assertIn(protocol.compact(protocol.example("design")), task)
         self.submit("design", protocol.example("design"))
         # A refused answer lists its problems and writes nothing.
         self.assertTrue(self.next().startswith("# Task review:1"))
@@ -96,9 +108,10 @@ class InvestigationTest(unittest.TestCase):
         self.submit("review:1", {"raised": []})
         task = self.next()
         self.assertTrue(task.startswith("# Task write"))
+        self.assertIn(protocol.compact(protocol.example("write")), task)
         text = os.path.join(self.root, "content.json")
         with open(text, "w", encoding="utf-8") as f:
-            json.dump(content(), f)
+            json.dump(protocol.example("write"), f)
         written = json.loads(self.run_script(INVESTIGATE, "submit", "--investigation", self.investigation,
                                              "--task", "write", "--input", text))
         self.assertTrue(written["ok"], written)

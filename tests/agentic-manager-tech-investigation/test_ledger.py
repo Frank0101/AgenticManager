@@ -195,8 +195,9 @@ class LedgerTest(unittest.TestCase):
         self.assertEqual(ledger.as_written(self.lines(), row[2]), cells[1])
 
     def test_rows_that_break_a_rule_are_refused(self):
-        # Wrong columns or IDs, and the rules check_report.py applies at
-        # handover, refused on write: nothing is written.
+        # Wrong columns or IDs, and one case of each rule check_report.py
+        # applies at handover, refused on write: nothing is written. The
+        # rules' own cases are in test_common.py.
         cases = [("sources", "S01", ["too few"], "takes 5 texts"),
                  ("sources", "Q01", source(), "IDs are S and a number"),
                  ("sources", "S01", source("acme/api"), "S01: link the Reference"),
@@ -208,19 +209,14 @@ class LedgerTest(unittest.TestCase):
                   "S01: Superseded by is None, or the one source"),
                  ("findings", "F01", ["A claim.", "the code",
                   "read"], "F01: Sources names the sources"),
-                 ("findings", "F01", ["A claim.",
-                  "S01", ""], "F01: Limits says how"),
                  ("gaps", "G01", ["a", "b", "c", "Not started",
                   "d", "e"], "G01 is blocked by 'Not started'"),
-                 ("gaps", "G01", ["a", "b", "c", "Waiting on decision", "d", "e"],
-                  "G01 waits on a decision but names none"),
                  ("decisions", "D01", ["See `app.py`", "b", "c", "d", "e"],
                   "references in backticks without a link: `app.py`"),
                  ("components", "C01", [
                   "n", "r", "p", "Done", "d", "F01", "next", "None"], "Status starts with"),
                  ("queue-completed", "Q01",
-                  QUEUE_ROW[:-1] + [""], "names the findings"),
-                 ("queue-completed", "Q01", QUEUE_ROW[:-1] + ["Out of scope"], "names the findings")]
+                  QUEUE_ROW[:-1] + [""], "names the findings")]
         before = self.text()
         for table, ident, cells, expected in cases:
             with self.subTest(expected), self.assertRaisesRegex(SystemExit, expected):
