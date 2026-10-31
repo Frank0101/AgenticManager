@@ -92,7 +92,8 @@ def content():
 
 def temp_output(test):
     """The skill's output folder in a temporary folder, for `test`: a config
-    of its own setting the output root, never the developer's, and CODE_HOST
+    of its own setting the output root, never the developer's, a system
+    temporary folder of its own, for the run's working folder, and CODE_HOST
     as the code host, so no test asks gh."""
     tmp = tempfile.TemporaryDirectory()
     test.addCleanup(tmp.cleanup)
@@ -104,7 +105,9 @@ def temp_output(test):
     for target, attribute, value in ((config, "CONFIG_PATH", path),
                                      (output_folder, "TEMP_ROOT",
                                       os.path.join(root, "temp")),
-                                     (common, "CODE_HOST", {"host": CODE_HOST})):
+                                     (common, "CODE_HOST", {
+                                      "host": CODE_HOST}),
+                                     (tempfile, "tempdir", os.path.join(root, "system-temp"))):
         patcher = mock.patch.object(target, attribute, value)
         patcher.start()
         test.addCleanup(patcher.stop)

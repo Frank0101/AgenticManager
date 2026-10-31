@@ -38,7 +38,7 @@ def text(name, **values):
         if key in VALUES:
             return VALUES[key]
         if os.path.isfile(part := os.path.join(FOLDER, f"_{key}.md")):
-            return read(part).strip()
+            return PLACEHOLDER.sub(fill, read(part).strip())
         raise SystemExit(
             f"protocol/{name}.md names {{{{{key}}}}}, which nothing fills")
     return PLACEHOLDER.sub(fill, read(os.path.join(FOLDER, f"{name}.md"))).strip()

@@ -286,6 +286,9 @@ class InvestigateTest(unittest.TestCase):
         # over another's answer.
         import fcntl
         lock = investigate.lock_path(INVESTIGATION)
+        # It sits in the run's working folder, with everything else a run keeps.
+        self.assertEqual(os.path.dirname(
+            lock), investigate.work_dir(INVESTIGATION))
         with investigate.locked(INVESTIGATION):
             with open(lock, "a") as other:
                 with self.assertRaises(BlockingIOError):

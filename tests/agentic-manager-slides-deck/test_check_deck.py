@@ -92,7 +92,8 @@ class CheckDeckTest(unittest.TestCase):
         # A link that doesn't reach the image's file fails: the check reads
         # where each link leads.
         broken = "../_assets/acme-logo/image"
-        errors = self.errors_of(page.replace("../_assets/acme-logo/image.svg", broken))
+        errors = self.errors_of(page.replace(
+            "../_assets/acme-logo/image.svg", broken))
         self.assertTrue(
             any(f"the page links the images ['{broken}']" in e for e in errors), errors)
         cases = [("another image", lambda p: p.replace("acme-logo/image.svg", "other/image.svg"),

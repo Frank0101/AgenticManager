@@ -10,7 +10,6 @@ A task holds everything needed to do it, so it can go to a subagent as printed.
 import argparse
 import contextlib
 import fcntl
-import hashlib
 import json
 import os
 import re
@@ -62,13 +61,11 @@ def locked(relative):
 
 
 def lock_path(relative):
-    """The lock file of the investigation `relative`: in the system's temporary
-    folder, named after the investigation folder's path, so the output folder holds only the
-    investigation's own files."""
-    folder, _, _ = investigation_dir(relative)
-    digest = hashlib.sha256(os.path.realpath(
-        folder).encode("utf-8")).hexdigest()[:16]
-    return os.path.join(tempfile.gettempdir(), f"tech-investigation-{digest}.lock")
+    """The lock file of the investigation `relative`, in its working folder
+    with everything else a run keeps outside the output folder."""
+    work = work_dir(relative)
+    os.makedirs(work, exist_ok=True)
+    return os.path.join(work, ".lock")
 
 
 def next_tasks(relative, maximum=1, resume=False):
@@ -239,11 +236,11 @@ def render(relative, lines, task):
 
 
 def work_dir(relative):
-    """The investigation `relative`'s working folder, for the agents' clones
-    and drafts: in the system's temporary folder, named after the
-    investigation, so the output folder holds only its own files, and a new
-    run of the same topic and day empties it, never finding what an earlier
-    run left."""
+    """The investigation `relative`'s working folder, for its lock and the
+    agents' clones and drafts: in the system's temporary folder, named after
+    the investigation, so the output folder holds only its own files, a run is
+    cleaned up by deleting one folder, and a new run of the same topic and day
+    empties it, never finding what an earlier run left."""
     return os.path.join(tempfile.gettempdir(), "tech-investigations", relative)
 
 
