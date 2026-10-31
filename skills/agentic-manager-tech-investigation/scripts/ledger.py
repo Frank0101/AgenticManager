@@ -78,7 +78,7 @@ def brief(lines):
 def partial_lines(lines):
     """The lines naming the findings that rest on a partial read, or []."""
     found = partial_reads(lines)
-    return (["findings resting on a partial read (read the rest, or say in the finding why it can't change it):"]
+    return (["findings resting on a partial read (each says in its limits why the rest can't change it):"]
             + [f"  {ident}: {source} {reference} ({coverage})" for ident,
                source, reference, coverage in found]
             if found else [])
@@ -365,20 +365,18 @@ def next_id(text, kind):
 
 
 def finish_write(lines, written):
-    """Bring the ledger in step after a write whose new values are `written`,
-    and return the questions it blocked: no question waits on itself in a
-    circle, one waiting on a blocked question is blocked, sources name the
+    """Bring the ledger in step after a write whose new values are `written`:
+    no question waits on itself in a circle, one waiting on a blocked question is blocked, sources name the
     findings citing them, ticket keys are linked, and every record cited exists.
     Run once the write's records are all in, so records may cite each other."""
     check_dependencies(lines)
-    blocked = block_dependents(lines)
+    block_dependents(lines)
     sync_sources(lines)
     upgrade_tickets(lines)
     missing = unrecorded_citations(written, "\n".join(lines))
     if missing:
         raise SystemExit(
             f"cites {', '.join(missing)}, which the ledger doesn't hold")
-    return blocked
 
 
 def sync_sources(lines):
@@ -417,18 +415,15 @@ def depends_on(row):
 def block_dependents(lines):
     """Move every ready or in-progress question that depends on a blocked one
     to blocked, until none is left: it can't be answered while what it needs is
-    blocked. Its Depends on cell already names that question, so it says why.
-    Returns the IDs moved."""
-    moved = []
+    blocked. Its Depends on cell already names that question, so it says why."""
     while True:
         blocked = {row[0] for row in table_rows(lines, "queue-blocked")}
         stuck = [row[0] for name in ("queue-ready", "queue-in-progress") for row in table_rows(lines, name)
                  if blocked & set(depends_on(row))]
         if not stuck:
-            return moved
+            return
         for ident in stuck:
             move_row(lines, ident, "queue-blocked")
-        moved += stuck
 
 
 def move_row(lines, row_id, target, cells=None):
@@ -502,7 +497,7 @@ def cited_outside_records(lines, ident):
 def record_review(lines, raised=(), stopped=None):
     """Add an independent review round to the reviews table, with the IDs of
     the questions it raised, already in the queue, or what the user said when
-    they chose to stop reviewing; returns the round's number."""
+    they chose to stop reviewing."""
     if stopped is not None:
         outcome = f"{REVIEW_STOPPED} {stopped.strip()}"
     else:
@@ -512,7 +507,6 @@ def record_review(lines, raised=(), stopped=None):
     start, end = section(lines, heading)
     rows = rounds + [[str(len(rounds) + 1), linked(lines, [outcome])[0]]]
     lines[start + 1:end] = ["", *table(REVIEW_HEADER, rows).split("\n"), ""]
-    return len(rows)
 
 
 def scope_decisions(lines):

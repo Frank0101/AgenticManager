@@ -15,4 +15,4 @@ The architect layer cites the system design's rows, such as a component (C03) or
 - architecture.target (about 300 words): what the target keeps, adds, changes or removes compared with today, and why. Keep what the tracker plans apart from what only the documentation proposes, and name the technical choices still open.
 - open_choices_and_gaps: the choices and evidence gaps that matter to the target, each with why it matters and its evidence. Look where the sources disagree: vision with no ticket, a ticket with no code, code the design doesn't mention, and a ticket status the code contradicts.
 
-Submit the whole text every time; keep it in a file in your scratch folder and pass it with --input, so a revision changes the file and submits it again.
+Submit the whole text every time; keep it in a file in {{work}} and pass it with --input, so a revision changes the file and submits it again.

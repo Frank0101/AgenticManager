@@ -46,15 +46,13 @@ class LedgerTest(unittest.TestCase):
 
     def write(self, *rows):
         """Write each (table, ID, cells) of `rows`, then bring the ledger in
-        step as a submission does; returns the questions it blocked. Nothing is
-        saved if any write exits."""
+        step as a submission does. Nothing is saved if any write exits."""
         lines = self.lines()
         written = []
         for table, ident, cells in rows:
             written += ledger.put_row(lines, table, ident, cells)
-        blocked = ledger.finish_write(lines, written)
+        ledger.finish_write(lines, written)
         ledger.save(INVESTIGATION, lines)
-        return blocked
 
     def change(self, action):
         """Run `action` on the ledger's lines and save them, as a submission
@@ -231,14 +229,13 @@ class LedgerTest(unittest.TestCase):
         self.records("F01", "G01")
         self.write(("queue-ready", "Q01", question("None")), ("queue-ready", "Q02", question("Q01")),
                    ("queue-ready", "Q03", question("Q02")), ("queue-ready", "Q04", question("None")))
-        blocked = self.change(lambda lines: (ledger.move_row(lines, "Q01", "queue-blocked", {"Depends on": "G01"}),
-                                             ledger.finish_write(lines, []))[1])
-        self.assertEqual(blocked, ["Q02", "Q03"])
+        self.change(lambda lines: (ledger.move_row(lines, "Q01", "queue-blocked", {"Depends on": "G01"}),
+                                   ledger.finish_write(lines, [])))
         self.assertEqual(self.rows("### Blocked"), ["Q01", "Q02", "Q03"])
         self.assertEqual(self.rows("### Ready"), ["Q04"])
         # A question added that needs a blocked one is blocked as it is written.
-        self.assertEqual(self.write(
-            ("queue-ready", "Q05", question("Q02"))), ["Q05"])
+        self.write(("queue-ready", "Q05", question("Q02")))
+        self.assertIn("Q05", self.rows("### Blocked"))
         for name, rows in [("itself", [("queue-ready", "Q07", question("Q07"))]),
                            ("a circle", [("queue-ready", "Q07", question("Q08")),
                                          ("queue-ready", "Q08", question("Q07"))])]:
@@ -499,10 +496,8 @@ class LedgerTest(unittest.TestCase):
 
     def test_review_rounds_are_recorded(self):
         self.write(("queue-ready", "Q01", QUEUE_ROW))
-        self.assertEqual(self.change(
-            lambda lines: ledger.record_review(lines, ["Q01"])), 1)
-        self.assertEqual(self.change(
-            lambda lines: ledger.record_review(lines, [])), 2)
+        self.change(lambda lines: ledger.record_review(lines, ["Q01"]))
+        self.change(lambda lines: ledger.record_review(lines, []))
         self.change(lambda lines: ledger.record_review(
             lines, stopped="wrap up now"))
         # Each round is a row of the reviews table, numbered in order; the

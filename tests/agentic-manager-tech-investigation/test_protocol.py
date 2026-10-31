@@ -15,7 +15,7 @@ import protocol  # noqa: E402
 
 # What investigate.py fills for every task.
 FILLS = {"topic": "Acme Search", "documentation": "the notion-mcp source", "code": "the gitlab-cli source", "scripts": "/s", "lib": "/l",
-         "investigation": "Acme_26-10-05", "ledger": "/x/ledger.md"}
+         "investigation": "Acme_26-10-05", "ledger": "/x/ledger.md", "work": "/w"}
 
 
 class ProtocolTest(unittest.TestCase):

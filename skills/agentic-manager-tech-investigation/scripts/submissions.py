@@ -9,7 +9,7 @@ problem is collected by field, and the ledger changes only when there is none.
 """
 import re
 
-from common import (COVERAGE, GROUPS, LEFT_OUT, OUTSIDE_SCOPE, SCOPE_ANSWERS, links, SCOPE_QUESTION, USER_DECIDED, citation, claim_length_problem, ids,
+from common import (COVERAGE, LEFT_OUT, group_of, OUTSIDE_SCOPE, SCOPE_ANSWERS, links, SCOPE_QUESTION, USER_DECIDED, citation, claim_length_problem, ids,
                     recorded_ids,
                     read_in_part)
 from ledger import (TABLES, as_written, duplicate_of, finish_write, find_row,
@@ -224,9 +224,8 @@ def submit_review(lines, data, round_number):
 def coverage_text(given, kind, reference):
     """A source's Coverage as the ledger writes it, from the submitted object:
     {"read": ..., "lines": [[1, 80]], "of": 352, "sections": [...], "files":
-    [...], "note": ...}. A partial read names what was read: the lines of a
-    code file, the files of a pull request or a folder, the sections of a
-    page. Exits on anything else."""
+    [...], "note": ...}, under the rule COVERAGE states. Exits on anything
+    else."""
     shape = ('coverage is an object such as {"read": "partial", "lines": [[1, 80], [200, 240]], "of": 352}; read is '
              f'one of: {", ".join(COVERAGE)}, and lines, of, sections, files and note are optional')
     if not isinstance(given, dict) or given.get("read") not in COVERAGE \
@@ -252,13 +251,13 @@ def coverage_text(given, kind, reference):
     if given["read"] == "partial":
         url = next((url for _, _, _, url in links(reference, {})
                    if url), "") if isinstance(reference, str) else ""
-        code = kind.strip().casefold().startswith(GROUPS["source_control"])
-        needed = ("files" if "/pull/" in url else "lines" if "/blob/" in url else None) if code else \
-            "sections" if kind.strip().casefold().startswith(
-                GROUPS["documentation"]) else None
-        if needed and not (spans if needed == "lines" else named[needed]):
+        group = group_of([None, kind])
+        if group == "source_control" and not (spans or named["files"]):
+            raise SystemExit("a partial read of this source names the "
+                             + ("lines" if "/blob/" in url else "files") + " read")
+        if group == "documentation" and not named["sections"]:
             raise SystemExit(
-                f"a partial read of this source names the {needed} read")
+                "a partial read of this source names the sections read")
     parts = []
     if spans:
         parts.append(

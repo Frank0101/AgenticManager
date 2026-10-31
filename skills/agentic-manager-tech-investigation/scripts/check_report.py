@@ -91,7 +91,7 @@ def check_report(report, handover=False):
                        if not name.startswith(".") and name not in expected_files(report.name))
         if extra:
             errors.append("Unexpected files in the investigation folder: " + ", ".join(extra)
-                          + ". It holds only the skill's files; keep working files in your own scratch folder.")
+                          + ". It holds only the skill's files; keep working files in the working folder the task names.")
         try:
             ledger_text = (report.parent / LEDGER).read_text(encoding="utf-8")
         except (OSError, UnicodeError):

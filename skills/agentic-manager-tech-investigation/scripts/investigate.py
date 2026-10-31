@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 
@@ -32,15 +33,18 @@ import protocol
 RESEARCH_TASK = re.compile(r"research:(Q\d+)")
 # Beside a source read only in part, in a research task: the rule a finding
 # citing it must meet, where the agent sees the source.
-PARTIAL_NOTE = " (read in part: a finding citing it says in limits, citing it, why the rest can't change the claim)"
+PARTIAL_NOTE = " (read in part)"
 # What separates tasks handed out together.
 SEPARATOR = "\n\n" + "=" * 72 + "\n\n"
 
 
 def start(topic):
-    """Create the investigation's folder and ledger; the result tells the agent
-    how to go on."""
+    """Create the investigation's folder and ledger, and empty its working
+    folder; the result tells the agent how to go on."""
     result = init(topic)
+    work = work_dir(result["investigation"])
+    shutil.rmtree(work, ignore_errors=True)
+    os.makedirs(work)
     result["next"] = f"{call()} next --investigation {result['investigation']}"
     return result
 
@@ -234,15 +238,25 @@ def render(relative, lines, task):
                       "fields:", "", *command])
 
 
+def work_dir(relative):
+    """The investigation `relative`'s working folder, for the agents' clones
+    and drafts: in the system's temporary folder, named after the
+    investigation, so the output folder holds only its own files, and a new
+    run of the same topic and day empties it, never finding what an earlier
+    run left."""
+    return os.path.join(tempfile.gettempdir(), "tech-investigations", relative)
+
+
 def fills(relative):
     """The values the protocol names for this investigation: the scripts' and
     the library's folders, written as the commands the skill pre-approves need
-    them, the investigation, its topic and its ledger, and the sources the
-    config enables for the documentation and the code."""
+    them, the investigation, its topic, its ledger and its working folder,
+    and the sources the config enables for the documentation and the code."""
     scripts = os.path.dirname(script_path())
     folder, _, _ = investigation_dir(relative)
     sources = usable_sources()
     return {"scripts": scripts, "investigation": relative, "ledger": os.path.join(folder, LEDGER),
+            "work": work_dir(relative),
             "topic": topic_of(folder).replace("-", " "),
             "documentation": " or ".join(f"the {name} source" for name in sources["documentation"]),
             "code": " or ".join(f"the {name} source" for name in sources["source_control"]),
@@ -386,7 +400,7 @@ def main(argv=None):
         description="Run an investigation: start it, then repeat next, do the task, submit, until next says it is "
         "finished.")
     commands = parser.add_subparsers(dest="command", required=True)
-    begin = commands.add_parser("start", help="create the investigation's folder and ledger",
+    begin = commands.add_parser("start", help="create the investigation's folder and ledger, and empty its working folder",
                                 description="Create the investigation's folder, <Topic>_<YY-MM-DD>, replacing one of "
                                 "the same topic and day, and its ledger. Prints one line of JSON: the investigation's "
                                 "name, its folder, whether it is temporary, the sources it uses, the approved "

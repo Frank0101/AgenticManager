@@ -22,7 +22,7 @@ VALUES = {
     "groups": ", ".join(GROUPS.values()),
     "coverage": ", ".join(COVERAGE),
     "read_coverage": " or ".join(READ_COVERAGE),
-    "blockers": "; ".join(BLOCKERS),
+    "blockers": " or ".join(BLOCKERS),
     "statuses": "; ".join(f"{label} ({meaning})" for label, meaning in STATUSES),
 }
 PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")

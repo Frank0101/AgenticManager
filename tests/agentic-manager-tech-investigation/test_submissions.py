@@ -197,6 +197,8 @@ class SubmissionTest(unittest.TestCase):
                   "a partial read of this source names the lines read"),
                  ("a pull request in part with no files", {"read": "partial"}, "code: pull request", pull,
                   "a partial read of this source names the files read"),
+                 ("a folder in part with no files", {"read": "partial", "note": "the handlers"}, "code",
+                  "[d](https://git.example/acme/api/tree/abc/api)", "a partial read of this source names the files read"),
                  ("a page in part with no sections", {"read": "partial"}, "documentation", page,
                   "a partial read of this source names the sections read"),
                  ("lines beyond the file", {"read": "partial", "lines": [[300, 400]], "of": 352}, "code", file,

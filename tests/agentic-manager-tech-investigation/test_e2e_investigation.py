@@ -59,6 +59,14 @@ class InvestigationTest(unittest.TestCase):
                          proc.stderr.decode() + proc.stdout.decode())
         return proc.stdout.decode() if ok else proc.stderr.decode()
 
+    def start(self):
+        """Start the investigation, as the agent does: start's result and the
+        investigation's working folder."""
+        started = json.loads(self.run_script(
+            INVESTIGATE, "start", "--topic", "Acme-Search"))
+        self.investigation = started["investigation"]
+        return started, os.path.join(self.root, "tech-investigations", self.investigation)
+
     def next(self):
         return self.run_script(INVESTIGATE, "next", "--investigation", self.investigation)
 
@@ -73,15 +81,19 @@ class InvestigationTest(unittest.TestCase):
                                stdin=json.dumps(data), ok=False)
 
     def test_an_investigation_from_start_to_handover(self):
-        started = json.loads(self.run_script(
-            INVESTIGATE, "start", "--topic", "Acme-Search"))
-        self.investigation = started["investigation"]
+        # An earlier run's working files, such as a clone, are gone when the
+        # same topic and day starts again.
+        _, work = self.start()
+        os.makedirs(os.path.join(work, "Q05", "clone"))
+        started, work = self.start()
+        self.assertEqual(os.listdir(work), [])
         self.assertIn(
             f"{INVESTIGATE} next --investigation {self.investigation}", started["next"])
         # Each task is answered with the worked example it prints, so an example
         # the script would refuse fails here.
         task = self.next()
         self.assertTrue(task.startswith("# Task research:Q01"))
+        self.assertIn(f"under {work}, named after your question", task)
         self.assertIn(protocol.compact(protocol.example("research")), task)
         result = self.submit("research:Q01", protocol.example("research"))
         self.assertEqual(result["ids"]["[[f1]]"], "F01")

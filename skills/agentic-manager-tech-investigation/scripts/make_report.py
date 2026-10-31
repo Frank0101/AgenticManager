@@ -9,7 +9,6 @@ owner/repo#123 are linked from the ledger's links, and a key it can't link is
 written as code rather than guessed.
 """
 from datetime import date
-import json
 import os
 import re
 

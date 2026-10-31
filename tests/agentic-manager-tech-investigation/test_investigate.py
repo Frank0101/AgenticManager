@@ -196,7 +196,7 @@ class InvestigateTest(unittest.TestCase):
         for expected in ("# Task research:Q06", "Q06: Which job builds the index?", "Raised by: F01",
                          "It builds on these findings:\n- F01: The search API answers /search",
                          "- S01: code; [api server.py](https://github.com/acme/api/blob/1a2b3c4/server.py); "
-                         "1a2b3c4; coverage: partial", "(read in part: a finding citing it says in limits, citing it, why the rest can't change the claim)",
+                         "1a2b3c4; coverage: partial", "(read in part)",
                          "### Reading the tracker",
                          f"python3 {os.path.join(SCRIPTS, 'tickets.py')}",
                          f"submit --investigation {INVESTIGATION} --task research:Q06 <<'EOF'"):
