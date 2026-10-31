@@ -47,6 +47,8 @@ CITING = {"sources": ["superseded_by"], "findings": ["sources"], "boundaries": [
           "connections": ["from", "to", "identity", "evidence"], "flows": ["connections", "evidence"],
           "questions": ["raised_by", "depends_on"]}
 QUESTION_FIELDS = ["raised_by", "question", "depends_on"]
+# The lines part of a Coverage as coverage_text() writes it.
+COVERAGE_LINES = re.compile(r"lines (\d+-\d+(?:, \d+-\d+)*)(?: of (\d+))?")
 # The order design tables are written in, so each row's citations exist.
 DESIGN_ORDER = ["boundaries", "identities",
                 "components", "connections", "flows"]
@@ -111,7 +113,8 @@ def submit_research(lines, question, data):
     questions = problems.items(data, "new_questions", required=False)
     outcome = data.get("outcome") if isinstance(data, dict) else None
     # Every key first, so records can cite each other in any order. A source
-    # read again keeps its ID, its coverage now what was read in all.
+    # read again keeps its ID, and what was read this time is added to its
+    # coverage, which only ever grows.
     keys = {}
     for number, item in enumerate(sources):
         allocator.claim(keys, "sources", item,
@@ -127,8 +130,10 @@ def submit_research(lines, question, data):
             cells[1] = problems.guard(
                 where, lambda c=cells: search_reference(c[1]))
         if cells is not None:
-            cells[3] = problems.guard(
-                f"{where}.coverage", lambda c=cells: coverage_text(c[3], c[0], c[1]))
+            held = {row[0]: row[4] for row in table_rows(
+                lines, "sources")}.get(read_before(lines, item) or "")
+            cells[3] = problems.guard(f"{where}.coverage", lambda c=cells, h=held: coverage_text(
+                c[3] if h is None else grown_coverage(coverage_fields(h), c[3], c[0], c[1]), c[0], c[1]))
         if cells is not None and cells[1] is not None and cells[3] is not None:
             written += problems.put(lines, "sources",
                                     keys.get(key_of(item)), cells, where, keys)
@@ -266,6 +271,56 @@ def coverage_text(given, kind, reference):
               items in named.items() if items]
     parts += [note.strip()] if note.strip() else []
     return given["read"] + (": " + "; ".join(parts) if parts else "")
+
+
+def grown_coverage(before, now, kind, reference):
+    """The coverage of a source read again: `before`, as the ledger holds it,
+    and `now`, what this read covers, together. The fuller read wins, as full
+    covers everything; the lines, sections and files read are merged, and the
+    notes kept. Exits on a `now` coverage_text() refuses."""
+    coverage_text(now, kind, reference)
+    read = min(before["read"], now["read"], key=COVERAGE.index)
+    notes = list(dict.fromkeys(n for n in (
+        before.get("note"), now.get("note")) if n))
+    grown = {"read": read, **({"note": "; ".join(notes)} if notes else {})}
+    if read == "full":
+        return grown
+    spans = sorted(before.get("lines", []) + now.get("lines", []))
+    merged = []
+    for first, last in spans:
+        if merged and first <= merged[-1][1] + 1:
+            merged[-1][1] = max(merged[-1][1], last)
+        else:
+            merged.append([first, last])
+    if merged:
+        grown["lines"] = merged
+    if size := now.get("of") or before.get("of"):
+        grown["of"] = size
+    for name in ("sections", "files"):
+        if items := list(dict.fromkeys(before.get(name, []) + now.get(name, []))):
+            grown[name] = items
+    return grown
+
+
+def coverage_fields(text):
+    """The fields of a Coverage coverage_text() wrote, so a source read again
+    can add to it: its read, then each part it named."""
+    read, _, rest = text.partition(": ")
+    fields, notes = {"read": read.strip()}, []
+    for part in rest.split("; ") if rest else []:
+        if match := COVERAGE_LINES.fullmatch(part):
+            fields["lines"] = [[int(n) for n in span.split("-")]
+                               for span in match[1].split(", ")]
+            if match[2]:
+                fields["of"] = int(match[2])
+        elif part.startswith(("sections: ", "files: ")):
+            name, _, items = part.partition(": ")
+            fields[name] = items.split(", ")
+        else:
+            notes.append(part)
+    if notes:
+        fields["note"] = "; ".join(notes)
+    return fields
 
 
 def read_before(lines, item):

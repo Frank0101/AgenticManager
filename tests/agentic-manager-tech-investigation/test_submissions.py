@@ -127,6 +127,42 @@ class SubmissionTest(unittest.TestCase):
         self.assertEqual(self.rows("sources"), ["S01"])
         self.assertIn("| full: re-read | F01, F02 |", self.plain())
 
+    def test_a_source_read_again_only_grows(self):
+        # What a read covers is added to what the ledger holds: a later,
+        # smaller read never shrinks it.
+        file = "[f](https://git.example/acme/api/blob/abc/server.py)"
+        page = "[d](https://docs.example.com/design)"
+        # name: (the Coverage held, this read, kind, reference, the Coverage written)
+        cases = [("two line ranges", "partial: lines 1-80 of 352", {"read": "partial", "lines": [[200, 240]]},
+                  "code", file, "partial: lines 1-80, 200-240 of 352"),
+                 ("touching ranges join", "partial: lines 1-80", {"read": "partial", "lines": [[81, 120]]},
+                  "code", file, "partial: lines 1-120"),
+                 ("a smaller read", "partial: lines 1-200; routes", {"read": "partial", "lines": [[10, 20]]},
+                  "code", file, "partial: lines 1-200; routes"),
+                 ("then in full", "partial: lines 1-80",
+                  {"read": "full"}, "code", file, "full"),
+                 ("full stays full", "full", {
+                  "read": "partial", "lines": [[1, 9]]}, "code", file, "full"),
+                 ("more sections", "partial: sections: Proposal", {"read": "partial", "sections": ["Risks"]},
+                  "documentation", page, "partial: sections: Proposal, Risks"),
+                 ("found after all", "can't access: not on main", {"read": "partial", "lines": [[1, 5]], "note": "x"},
+                  "code", file, "partial: lines 1-5; not on main; x")]
+        for name, held, now, kind, reference, expected in cases:
+            with self.subTest(name):
+                grown = submissions.grown_coverage(
+                    submissions.coverage_fields(held), now, kind, reference)
+                self.assertEqual(submissions.coverage_text(
+                    grown, kind, reference), expected)
+        # Through a submission: the second read keeps the first one's lines.
+        source = {"key": "[[s1]]", "kind": "code",
+                  "reference": file, "revision": "abc"}
+        self.answered(sources=[{**source, "coverage": {"read": "partial", "lines": [[1, 80]], "of": 352}}],
+                      findings=[finding(sources="[[s1]]", limits="[[s1]]: the rest is admin routes.")])
+        self.answered("Q02", sources=[{**source, "coverage": {"read": "partial", "lines": [[200, 240]]}}],
+                      findings=[finding(sources="[[s1]]", limits="[[s1]]: the rest is admin routes.")])
+        self.assertEqual(self.rows("sources"), ["S01"])
+        self.assertIn("| partial: lines 1-80, 200-240 of 352 |", self.plain())
+
     def test_references_are_written_in_double_brackets(self):
         # A reference in double brackets, [[F07]] or a key such as [[f1]], is
         # written as a citation in any field, so none is left pointing nowhere;
