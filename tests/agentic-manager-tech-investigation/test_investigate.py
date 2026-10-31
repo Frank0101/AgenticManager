@@ -183,7 +183,8 @@ class InvestigateTest(unittest.TestCase):
     def test_a_task_carries_what_it_needs(self):
         # The API file read only in part, so the task flags it.
         data = protocol.example("research")
-        data["sources"][0]["coverage"] = "partial: routes, lines 1-200 of 900"
+        data["sources"][0]["coverage"] = {
+            "read": "partial", "lines": [[1, 200]], "of": 900, "note": "routes"}
         data["findings"][0]["limits"] += " [[s1]]: the unread lines hold admin routes."
         self.submit("research:Q01", {**data, "new_questions": [
             {"key": "[[q1]]", "question": "Which job builds the index?", "raised_by": "[[f1]]", "depends_on": "None"}]})
@@ -219,6 +220,17 @@ class InvestigateTest(unittest.TestCase):
         self.submit("research:Q02", {"outcome": {"blocked": {"gap": GAP}}})
         self.assertEqual([row[0] for row in ledger.table_rows(
             self.lines(), "queue-blocked")], ["Q02"])
+
+    def test_a_research_task_shows_the_gaps_to_block_on(self):
+        # A question needing evidence no one can get blocks on the gap the
+        # ledger holds, rather than looking again.
+        self.submit("research:Q01", protocol.example("research"))
+        investigate.next_tasks(INVESTIGATION, 2)
+        self.submit("research:Q02", {"outcome": {"blocked": {"gap": GAP}}})
+        text = investigate.next_tasks(INVESTIGATION)
+        self.assertIn("## Gaps the ledger holds", text)
+        self.assertIn(
+            "- G01: Billing callers (blocked by: No access (billing repository))", text)
 
     def test_the_design_task_shows_the_scope_decided(self):
         self.research()

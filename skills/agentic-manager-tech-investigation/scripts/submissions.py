@@ -9,7 +9,7 @@ problem is collected by field, and the ledger changes only when there is none.
 """
 import re
 
-from common import (LEFT_OUT, OUTSIDE_SCOPE, SCOPE_ANSWERS, SCOPE_QUESTION, USER_DECIDED, citation, claim_length_problem, ids,
+from common import (COVERAGE, GROUPS, LEFT_OUT, OUTSIDE_SCOPE, SCOPE_ANSWERS, links, SCOPE_QUESTION, USER_DECIDED, citation, claim_length_problem, ids,
                     recorded_ids,
                     read_in_part)
 from ledger import (TABLES, as_written, duplicate_of, finish_write, find_row,
@@ -100,8 +100,8 @@ def submit_scope(lines, data, asked):
 
 def submit_research(lines, question, data):
     """Write an answer to `question`: its sources, findings and new questions,
-    then close it, as answered or blocked; returns {key: ID} and the questions
-    blocked with it."""
+    then close it, as answered, outside the scope or blocked; returns
+    {key: ID}."""
     problems = Problems(lines)
     problems.only(data, ["sources", "findings", "new_questions", "outcome"])
     allocator = Allocator(lines)
@@ -126,7 +126,10 @@ def submit_research(lines, question, data):
         if cells is not None and isinstance(cells[1], dict):
             cells[1] = problems.guard(
                 where, lambda c=cells: search_reference(c[1]))
-        if cells is not None and cells[1] is not None:
+        if cells is not None:
+            cells[3] = problems.guard(
+                f"{where}.coverage", lambda c=cells: coverage_text(c[3], c[0], c[1]))
+        if cells is not None and cells[1] is not None and cells[3] is not None:
             written += problems.put(lines, "sources",
                                     keys.get(key_of(item)), cells, where, keys)
     for number, item in enumerate(findings):
@@ -143,10 +146,9 @@ def submit_research(lines, question, data):
     written += add_questions(lines, questions, keys, problems)
     written += close(lines, question, outcome, keys, allocator, problems)
     problems.stop()
-    blocked = problems.guard(
-        "the answer", lambda: finish_write(lines, written))
+    problems.guard("the answer", lambda: finish_write(lines, written))
     problems.stop()
-    return {"ids": written_keys(keys), "blocked": blocked}
+    return {"ids": written_keys(keys)}
 
 
 def submit_design(lines, data, basis):
@@ -217,6 +219,54 @@ def submit_review(lines, data, round_number):
     problems.guard("the review", lambda: finish_write(lines, written))
     problems.stop()
     return {"ids": written_keys(keys)}
+
+
+def coverage_text(given, kind, reference):
+    """A source's Coverage as the ledger writes it, from the submitted object:
+    {"read": ..., "lines": [[1, 80]], "of": 352, "sections": [...], "files":
+    [...], "note": ...}. A partial read names what was read: the lines of a
+    code file, the files of a pull request or a folder, the sections of a
+    page. Exits on anything else."""
+    shape = ('coverage is an object such as {"read": "partial", "lines": [[1, 80], [200, 240]], "of": 352}; read is '
+             f'one of: {", ".join(COVERAGE)}, and lines, of, sections, files and note are optional')
+    if not isinstance(given, dict) or given.get("read") not in COVERAGE \
+            or set(given) - {"read", "lines", "of", "sections", "files", "note"}:
+        raise SystemExit(shape)
+    size = given.get("of")
+    if size is not None and (not isinstance(size, int) or size < 1):
+        raise SystemExit("of is the number of lines the file has")
+    spans = given.get("lines", [])
+    if not isinstance(spans, list) or not all(
+            isinstance(span, list) and len(span) == 2 and all(
+                isinstance(n, int) for n in span)
+            and 1 <= span[0] <= span[1] <= (size or span[1]) for span in spans):
+        raise SystemExit(
+            "lines lists the ranges read, as [[first, last]], within the file's lines")
+    named = {name: given.get(name, []) for name in ("sections", "files")}
+    for name, items in named.items():
+        if not isinstance(items, list) or not all(isinstance(i, str) and i.strip() for i in items):
+            raise SystemExit(f"{name} lists the {name} read, as texts")
+    note = given.get("note", "")
+    if not isinstance(note, str):
+        raise SystemExit("note is a text")
+    if given["read"] == "partial":
+        url = next((url for _, _, _, url in links(reference, {})
+                   if url), "") if isinstance(reference, str) else ""
+        code = kind.strip().casefold().startswith(GROUPS["source_control"])
+        needed = ("files" if "/pull/" in url else "lines" if "/blob/" in url else None) if code else \
+            "sections" if kind.strip().casefold().startswith(
+                GROUPS["documentation"]) else None
+        if needed and not (spans if needed == "lines" else named[needed]):
+            raise SystemExit(
+                f"a partial read of this source names the {needed} read")
+    parts = []
+    if spans:
+        parts.append(
+            "lines " + ", ".join(f"{a}-{b}" for a, b in spans) + (f" of {size}" if size else ""))
+    parts += [f"{name}: {', '.join(items)}" for name,
+              items in named.items() if items]
+    parts += [note.strip()] if note.strip() else []
+    return given["read"] + (": " + "; ".join(parts) if parts else "")
 
 
 def read_before(lines, item):
@@ -479,7 +529,7 @@ class Problems:
         cells = []
         for name in names:
             value = item.get(name, DEFAULTS.get(name))
-            if name == "reference" and isinstance(value, dict):
+            if name in ("reference", "coverage") and isinstance(value, dict):
                 cells.append(value)
                 continue
             if not isinstance(value, str) or not value.strip():

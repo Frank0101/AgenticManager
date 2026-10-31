@@ -5,14 +5,14 @@
       "kind": "code",
       "reference": "[api server.py](https://github.com/acme/api/blob/1a2b3c4/server.py)",
       "revision": "1a2b3c4",
-      "coverage": "full"
+      "coverage": { "read": "full" }
     },
     {
       "key": "[[s2]]",
       "kind": "documentation: design page",
       "reference": "[Search design](https://docs.example.com/search-design)",
       "revision": "2026-09-30",
-      "coverage": "partial: the Proposal section"
+      "coverage": { "read": "partial", "sections": ["Proposal"] }
     }
   ],
   "findings": [

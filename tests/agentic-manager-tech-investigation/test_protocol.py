@@ -27,7 +27,7 @@ class ProtocolTest(unittest.TestCase):
                     text = protocol.text(name[:-3], round=4, rounds=3, **FILLS)
                     self.assertNotIn("{{", text)
                     self.assertTrue(text)
-        self.assertIn("coverage starts with one of: full, partial, listing",
+        self.assertIn("coverage is an object whose read is one of: full, partial, listing",
                       protocol.text("research", **FILLS))
         self.assertIn("`python3 /s/tickets.py`",
                       protocol.text("research", **FILLS))

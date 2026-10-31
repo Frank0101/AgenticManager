@@ -407,7 +407,7 @@ class LedgerTest(unittest.TestCase):
         self.assertIn(
             "| [PROJ-9][proj-9] is open. | S01 and [PROJ-9][proj-9] |", self.plain())
         before = self.text()
-        with self.assertRaisesRegex(SystemExit, "#12: write a pull request as owner/repo#123"):
+        with self.assertRaisesRegex(SystemExit, "#12: a pull request names its repository, as owner/repo#123"):
             self.prose("#12 merged")
         self.assertEqual(self.text(), before)
 

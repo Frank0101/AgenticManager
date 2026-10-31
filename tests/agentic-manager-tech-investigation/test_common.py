@@ -116,6 +116,13 @@ class ReferencesTest(unittest.TestCase):
         self.assertEqual(common.cited_sources(f"## Findings\n\n{findings}\n"),
                          {1: {"F01"}, 2: {"F01", "F03"}})
 
+    def test_an_unlinked_pull_request_says_why(self):
+        # A bare #123 names no repository; owner/repo#123 needs the code host.
+        self.assertEqual(common.unresolved_message(["#4", "acme/api#5", "#4"]),
+                         "#4: a pull request names its repository, as owner/repo#123, also in a range; acme/api#5: a "
+                         "pull request links to the host gh is signed in to, so it needs the github-cli source "
+                         "enabled and gh signed in to one host (gh auth status)")
+
     def test_unlinked_references(self):
         text = "PROJ-1 [PROJ-2][p] acme/app#3, #4 and `PROJ-5`\n### PROJ-6\n[p]: https://x/PROJ-7"
         self.assertEqual(common.unlinked_references(text),
@@ -272,7 +279,8 @@ class ReferencesTest(unittest.TestCase):
                   "Coverage starts with one of", "code"),
                  ("listing", "None", "limited",
                   None), ("search hit", "None", "limited", None),
-                 ("No access: repository not visible", "None", "limited", None),
+                 ("can't access: not on the main branch at abc",
+                  "None", "limited", None),
                  ("full", "S02", "superseded", None),
                  ("partial: the summary",
                   "[S02](#s02)", "limited, superseded", None),

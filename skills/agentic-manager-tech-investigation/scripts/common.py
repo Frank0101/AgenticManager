@@ -108,13 +108,17 @@ GROUPS = {"source_control": "code", "workflow": "tracker",
 SOURCE_HEADER = ["ID", "Kind", "Reference", "Revision", "Coverage", "Findings",
                  "Superseded by"]
 SOURCE_FINDINGS_COLUMN = SOURCE_HEADER.index("Findings")
-# How much of a source was read: its Coverage starts with one of these. A
+# How much of a source was read: its Coverage starts with one of these, and
+# the script writes it from a submission's fields, so its form never varies. A
 # listing or a search hit says where to look, not what the code does, so only
-# the first two count as read. A partial read of code names the lines read,
-# which with the pinned revision find them again however the file changes since,
-# and each finding citing it says why the rest can't change its claim; the
-# report marks every source not read in full as limited.
-COVERAGE = ["full", "partial", "listing", "search hit", "no access"]
+# the first two count as read. A partial read names what was read, the lines
+# of a code file or the files of a pull request, which with the pinned
+# revision find it again however the source changes since, and each finding
+# citing it says why the rest can't change its claim; the report marks every
+# source not read in full as limited. A source that can't be accessed, such
+# as a private repository or a path not on the main branch, is still where
+# the agent looked.
+COVERAGE = ["full", "partial", "listing", "search hit", "can't access"]
 READ_COVERAGE = ("full", "partial")
 LINE_RANGE = re.compile(r"\blines? \d+\s*[-–]\s*\d+")
 # A file written for people beside the code, such as a README: it helps to
@@ -354,10 +358,18 @@ def code_host():
 
 
 def unresolved_message(unresolved):
-    """Why pull requests couldn't be linked, and how to fix them."""
-    return (f"{', '.join(dict.fromkeys(unresolved))}: write a pull request as owner/repo#123; it links to the "
-            "host gh is signed in to, so it needs the github-cli source enabled and gh signed in to one host "
-            "(gh auth status)")
+    """Why pull requests couldn't be linked, and how to fix them: a bare #123
+    names no repository; owner/repo#123 needs the code host."""
+    bare = [u for u in dict.fromkeys(unresolved) if u.startswith("#")]
+    hostless = [u for u in dict.fromkeys(unresolved) if not u.startswith("#")]
+    reasons = []
+    if bare:
+        reasons.append(f"{', '.join(bare)}: a pull request names its repository, as owner/repo#123, also in a "
+                       "range")
+    if hostless:
+        reasons.append(f"{', '.join(hostless)}: a pull request links to the host gh is signed in to, so it needs "
+                       "the github-cli source enabled and gh signed in to one host (gh auth status)")
+    return "; ".join(reasons)
 
 
 # The rules below are each defined once: ledger.py applies them to a row as it
@@ -609,8 +621,9 @@ def coverage_problem(row):
     if not any(row[4].strip().casefold().startswith(c) for c in COVERAGE):
         return (f"{row[0]}: Coverage starts with one of: {', '.join(COVERAGE)}, then any detail, such as "
                 "'partial: lines 1-80, 200-240 of 352'")
-    if group_of(row) == "source_control" and read_in_part(row) and not LINE_RANGE.search(row[4]):
-        return f"{row[0]}: Coverage of code read in part names the lines read, such as 'partial: lines 1-80, 200-240 of 352'"
+    if group_of(row) == "source_control" and read_in_part(row) and not (LINE_RANGE.search(row[4]) or "files:" in row[4]):
+        return (f"{row[0]}: Coverage of code read in part names the lines read, such as 'partial: lines 1-80, "
+                "200-240 of 352', or the files of a pull request")
     return None
 
 

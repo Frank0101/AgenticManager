@@ -261,7 +261,8 @@ def scope_context(lines):
 def question_context(lines, ident):
     """What the ledger holds for the question `ident`: the question, what
     raised it, the scope decided so far, the answers it builds on, the other
-    open questions, and every source already read."""
+    open questions, the gaps no one can close yet, so it blocks on one rather
+    than looking again, and every source already read."""
     _, row = next((name, row) for name in ("queue-in-progress", "queue-ready") for row in table_rows(lines, name)
                   if row[0] == ident)
     findings = {row[0]: row for row in table_rows(lines, "findings")}
@@ -279,6 +280,11 @@ def question_context(lines, ident):
             "Don't raise one of these again: each is answered in its own task.", ""]
     out += [f"- {other[0]}: {plain(other[2])}" for name in ("queue-in-progress", "queue-ready", "queue-blocked")
             for other in table_rows(lines, name) if other[0] != ident] or ["None."]
+    out += ["", "## Gaps the ledger holds", "",
+            'Evidence no one can get yet: if this question needs it, block on it, {"blocked": "[[G01]]"}, rather '
+            "than look again.", ""]
+    out += [f"- {row[0]}: {plain(row[1])} (blocked by: {plain(row[4])})" for row in table_rows(lines, "gaps")] \
+        or ["None."]
     out += ["", "## Sources already read", ""]
     out += [f"- {row[0]}: {plain(row[1])}; {as_written(lines, row[2])}; {plain(row[3])}; coverage: {plain(row[4])}"
             + (PARTIAL_NOTE if read_in_part(row) else "")

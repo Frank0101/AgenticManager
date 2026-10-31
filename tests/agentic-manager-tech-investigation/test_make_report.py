@@ -156,7 +156,7 @@ class MakeReportTest(unittest.TestCase):
                       "[acme/api#12](https://git.example/acme/api/pull/12), `OPS-3` does not.", self.report())
         data["current_status"][0] += " See #4."
         os.remove(os.path.join(self.folder, "Acme-Search_Report.md"))
-        self.assertIn("current_status paragraph 1: couldn't link #4: write a pull request as owner/repo#123",
+        self.assertIn("current_status paragraph 1: couldn't link #4: a pull request names its repository, as owner/repo#123",
                       self.problems(data))
 
     def test_ledger_links_reach_a_row_by_its_anchor(self):

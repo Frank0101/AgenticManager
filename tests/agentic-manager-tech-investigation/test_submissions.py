@@ -72,7 +72,7 @@ class SubmissionTest(unittest.TestCase):
     def answered(self, question="Q01", **data):
         """Answer `question` with one source and the findings given, or one."""
         data.setdefault("sources", [{"key": "[[s1]]", "kind": "code", "reference": "[api](https://example.com/api)",
-                                     "revision": "abc", "coverage": "full"}])
+                                     "revision": "abc", "coverage": {"read": "full"}}])
         data.setdefault("findings", [finding(sources="[[s1]]")])
         data.setdefault("outcome", {"answered": "[[f1]]"})
         return self.submit("research", question, data)
@@ -122,7 +122,7 @@ class SubmissionTest(unittest.TestCase):
     def test_a_source_read_again_keeps_its_id(self):
         self.answered()
         self.answered("Q02", sources=[{"key": "[[s1]]", "kind": "code", "reference": "[the api](https://example.com/api)",
-                                       "revision": "abc", "coverage": "full: re-read"}],
+                                       "revision": "abc", "coverage": {"read": "full", "note": "re-read"}}],
                       findings=[finding(claim="Another fact.", sources="[[s1]]")])
         self.assertEqual(self.rows("sources"), ["S01"])
         self.assertIn("| full: re-read | F01, F02 |", self.plain())
@@ -139,7 +139,7 @@ class SubmissionTest(unittest.TestCase):
                       self.text())
         # name: (the findings, a problem they list), the source s1 declared
         DECLARED = [{"key": "[[s1]]", "kind": "code", "reference": "[api](https://example.com/api)",
-                     "revision": "abc", "coverage": "full"}]
+                     "revision": "abc", "coverage": {"read": "full"}}]
         cases = [("a bare key where a field cites", [finding(sources="[[S01]] and s1")],
                   "write each reference in double brackets, such as [[s1]]"),
                  ("a bare ID where a field cites", [finding(sources="S01")],
@@ -163,7 +163,7 @@ class SubmissionTest(unittest.TestCase):
         # A finding citing a source read only in part cites it again in its
         # limits, saying why the unread part can't change the claim.
         partial = [{"key": "[[s1]]", "kind": "code", "reference": "[api](https://example.com/api)", "revision": "abc",
-                    "coverage": "partial: lines 1-80"}]
+                    "coverage": {"read": "partial", "lines": [[1, 80]]}}]
         problems = self.refused("research", "Q01", {"sources": partial, "findings": [finding(sources="[[s1]]")],
                                                     "outcome": {"answered": "[[f1]]"}})
         self.assertIn("findings[0]: cites [[s1]], read only in part: read the rest, or say in limits, citing [[s1]], "
@@ -177,15 +177,51 @@ class SubmissionTest(unittest.TestCase):
         self.assertIn("has no field partial_read", self.refused("research", "Q02", {
             "findings": [finding(partial_read="x")], "outcome": {"answered": "[[f1]]"}}))
 
+    def test_coverage_is_written_from_its_fields(self):
+        # name: (coverage, kind, reference, the Coverage written, or the
+        # start of the problem): a partial read names what was read, by what
+        # the source is.
+        file = "[f](https://git.example/acme/api/blob/abc/server.py)"
+        pull = "[p](https://git.example/acme/api/pull/42)"
+        page = "[d](https://docs.example.com/design)"
+        cases = [("full", {"read": "full"}, "code", file, "full"),
+                 ("lines of a file", {"read": "partial", "lines": [[1, 80], [200, 240]], "of": 352, "note": "routes"},
+                  "code", file, "partial: lines 1-80, 200-240 of 352; routes"),
+                 ("files of a pull request", {"read": "partial", "files": ["api/routes.py"]}, "code: pull request",
+                  pull, "partial: files: api/routes.py"),
+                 ("sections of a page", {"read": "partial", "sections": ["Proposal"]}, "documentation", page,
+                  "partial: sections: Proposal"),
+                 ("a path not found", {"read": "can't access", "note": "not on the main branch at abc"}, "code", file,
+                  "can't access: not on the main branch at abc"),
+                 ("a file in part with no lines", {"read": "partial", "note": "routes"}, "code", file,
+                  "a partial read of this source names the lines read"),
+                 ("a pull request in part with no files", {"read": "partial"}, "code: pull request", pull,
+                  "a partial read of this source names the files read"),
+                 ("a page in part with no sections", {"read": "partial"}, "documentation", page,
+                  "a partial read of this source names the sections read"),
+                 ("lines beyond the file", {"read": "partial", "lines": [[300, 400]], "of": 352}, "code", file,
+                  "lines lists the ranges read"),
+                 ("a word, not a read", {"read": "skimmed"},
+                  "code", file, "coverage is an object"),
+                 ("text", "full", "code", file, "coverage is an object")]
+        for name, given, kind, reference, expected in cases:
+            with self.subTest(name):
+                try:
+                    self.assertEqual(submissions.coverage_text(
+                        given, kind, reference), expected)
+                except SystemExit as refused:
+                    self.assertTrue(str(refused.code).startswith(
+                        expected), refused.code)
+
     def test_every_problem_is_listed_by_field_and_nothing_is_written(self):
         data = {"sources": [{"key": "[[s1]]", "kind": "source_control", "reference": "[api](https://example.com/api)",
-                             "revision": "abc", "coverage": "skimmed"}],
+                             "revision": "abc", "coverage": {"read": "skimmed"}}],
                 "findings": [finding(sources="[[s1]], [[s9]]"), finding("[[f1]]", "Again."),
                              finding("x2", "word " * 151, sources="[[s1]]")],
                 "new_questions": [{"key": "[[q1]]", "question": "Why?", "raised_by": "[[f1]]", "depends_on": "[[Q99]]"}],
                 "outcome": {"answered": "[[f1]]"}, "notes": "x"}
         problems = self.refused("research", "Q01", data)
-        for expected in ("the submission has no field notes", "sources[0]: sources [[s1]]: Kind starts with",
+        for expected in ("the submission has no field notes", "sources[0].coverage: coverage is an object",
                          "findings[0].sources: [[s9]] is no key of this submission", "findings[1].key [[f1]] is used twice",
                          "findings[2].key is [[f1]]: f and a number", "claim is 151 words"):
             with self.subTest(expected):
@@ -241,9 +277,7 @@ class SubmissionTest(unittest.TestCase):
     def test_a_blocked_question_blocks_those_that_need_it(self):
         self.answered(findings=[finding(sources="[[s1]]")],
                       new_questions=[{"key": "[[q1]]", "question": "Next?", "raised_by": "[[f1]]", "depends_on": "[[Q02]]"}])
-        result = self.submit(
-            "research", "Q02", {"outcome": {"blocked": {"gap": GAP}}})
-        self.assertEqual(result["blocked"], ["Q06"])
+        self.submit("research", "Q02", {"outcome": {"blocked": {"gap": GAP}}})
         self.assertEqual(self.rows("gaps"), ["G01"])
         self.assertEqual(self.rows("queue-blocked"), ["Q02", "Q06"])
         self.assertIn(
