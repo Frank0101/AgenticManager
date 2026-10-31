@@ -282,7 +282,7 @@ class ReferencesTest(unittest.TestCase):
                  ("can't access: not on the main branch at abc",
                   "None", "limited", None),
                  ("full", "S02", "superseded", None),
-                 ("partial: the summary",
+                 ("partial: sections: Summary",
                   "[S02](#s02)", "limited, superseded", None),
                  ("skimmed", "None", "limited", "Coverage starts with one of"),
                  ("full", "the 2026 design", "superseded", "Superseded by is None"),

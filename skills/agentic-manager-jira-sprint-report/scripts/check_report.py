@@ -111,8 +111,9 @@ def strip_tags(text):
 def check_model(c, data):
     """Each spell's events are well formed, and its outcome, latest estimate
     and whether it's counted are what its events give; the charts' breakdown,
-    the non-delivery closures, the ticket counts, the burndown, the timeline
-    and the epics' commentary groups are built from the same spells."""
+    the non-delivery closures, the ticket counts, the burndown, the timeline,
+    and the epics' commentary groups and completed pts are built from the
+    same spells."""
     seen_keys = set()
     for t in data["spells"]:
         events, key = t["events"], t["key"]
@@ -123,9 +124,11 @@ def check_model(c, data):
                 and (t["scope"] == "extra" or key not in seen_keys),
                 "model", f"{key}'s events are well formed ({', '.join(kinds)})")
         flags = {"doneAtStart": bool(events and events[0]["done"]), "reopened": "reopened" in kinds,
-                 "reestimated": "reestimated" in kinds, "cameBack": key in seen_keys}
+                 "reestimated": "reestimated" in kinds, "cameBack": key in seen_keys,
+                 "firstEstimate": events[0]["points"] if events else None}
         c.check(all(t[name] == value for name, value in flags.items()), "model",
-                f"{key}'s doneAtStart, reopened, reestimated and cameBack flags are what its events give")
+                f"{key}'s doneAtStart, reopened, reestimated and cameBack flags and first estimate are what its "
+                "events give")
         seen_keys.add(key)
         done, flips = events[0]["done"] if events else False, True
         for e in events[1:]:
@@ -133,33 +136,33 @@ def check_model(c, data):
                 flips = flips and e["done"] == (
                     e["type"] == "completed") != done
             done = e["done"]
-        outcome = "removed" if kinds and kinds[-1] == "removed" else (
+        outcome = "descoped" if kinds and kinds[-1] == "removed" else (
             "completed" if done else "not_completed")
-        counted = not (t["scope"] == "extra" and outcome == "removed")
+        counted = not (t["scope"] == "extra" and outcome == "descoped")
         c.check(flips and t["outcome"] == outcome and t["counted"] == counted
                 and t["points"] == (events[-1]["points"] if events else None),
                 "model", f"{key} ends {outcome}{'' if counted else ', not counted'}, as its events give")
 
-    expected = {}
+    estimates = {}
     for t in (t for t in data["spells"] if t["counted"]):
         rows = ["extra"] if t["scope"] == "extra" else [
             "original", "carried_in" if t["carriedIn"] else "new"]
         for row in rows:
-            count, points = expected.get(f"{row}_{t['outcome']}", (0, 0))
-            expected[f"{row}_{t['outcome']}"] = (
-                count + 1, points + (t["points"] or 0))
+            estimates.setdefault(
+                f"{row}_{t['outcome']}", []).append(t["points"])
     for row in OUTCOME_ROWS:
         for outcome in OUTCOMES:
             got = (data["outcome_breakdown_counts"][f"{row}_{outcome}"],
                    data["outcome_breakdown_points"][f"{row}_{outcome}"])
-            c.check(got == expected.get(f"{row}_{outcome}", (0, 0)), "model",
+            found = estimates.get(f"{row}_{outcome}", [])
+            c.check(got == (len(found), known_sum(found)), "model",
                     f"the charts' {row} {outcome.replace('_', ' ')} is the counted spells' {qty(*got)}")
 
     counted = [t for t in data["spells"] if t["counted"]]
     closures = [t for t in counted
                 if t["outcome"] == "completed" and t["closedAsNonDelivery"]]
     c.check(data["non_delivery_closures"] == {
-        "count": len(closures), "points": sum(t["points"] or 0 for t in closures),
+        "count": len(closures), "points": known_sum(t["points"] for t in closures),
         "issues": [{"key": t["key"], "status": t["status"], "resolution": t["resolution"],
                     "storyPoints": t["points"], "marker": t["closedAsNonDelivery"], "summary": t["summary"]}
                    for t in closures]}, "model",
@@ -172,12 +175,12 @@ def check_model(c, data):
     done = [t for t in original if t["outcome"] == "completed"]
     c.check(data["target_completion"] == {
         "completed": len(done), "total": len(original),
-        "completed_points": sum(t["points"] or 0 for t in done),
-        "total_points": sum(t["points"] or 0 for t in original)}, "model",
+        "completed_points": known_sum(t["points"] for t in done),
+        "total_points": known_sum(t["points"] for t in original)}, "model",
         "the sprint target is the original commitment's spells, and those completed")
-    baseline = sum(t["events"][0]["points"] or 0 for t in original)
+    baseline = known_sum(t["events"][0]["points"] for t in original)
     c.check(data["burndown_baseline"] == baseline, "model",
-            f"the burndown starts at the whole commitment, {baseline}")
+            f"the burndown starts at the whole commitment, {estimate(baseline)}")
     first = date.fromisoformat(data["sprint_start"])
     last = parse_ts(data["as_of_instant"]).astimezone(
         report_timezone(data["report_timezone"])).date()
@@ -186,17 +189,15 @@ def check_model(c, data):
     c.check([row["date"] for row in data["burndown"]] == expected_dates, "model",
             "the burndown covers every day from the sprint start through the report cutoff, in order")
     for row in data["burndown"]:
-        committed = total = committed_stories = total_stories = 0
+        committed, total = [], []
         for t in data["spells"]:
             seen = [e for e in t["events"] if e["date"] <= row["date"]]
             if seen and seen[-1]["type"] != "removed" and not seen[-1]["done"]:
-                total += seen[-1]["points"] or 0
-                total_stories += 1
+                total.append(seen[-1]["points"])
                 if t["scope"] == "original":
-                    committed += seen[-1]["points"] or 0
-                    committed_stories += 1
+                    committed.append(seen[-1]["points"])
         c.check((row["committed"], row["total"], row["committed_stories"], row["total_stories"])
-                == (committed, total, committed_stories, total_stories), "model",
+                == (known_sum(committed), known_sum(total), len(committed), len(total)), "model",
                 f"the burndown on {display_date(row['date'])} is the spells' open tickets and pts")
 
     logged = sorted((e["key"], e["type"], row["date"])
@@ -206,8 +207,20 @@ def check_model(c, data):
     c.check(logged == replayed, "model",
             "the timeline holds exactly the spells' events")
     check_commentary_groups(c, data)
+    check_epic_points(c, data)
     check_ticket_events(c, data)
     check_pull_requests(c, data)
+
+
+def check_epic_points(c, data):
+    """Each epic's completed pts are its completed spells' estimates, by the
+    estimates rule."""
+    figures = epic_figures(data)
+    for epic in data["epics"]:
+        done_points = known_sum(scope[2] for scope in figures.get(
+            epic["key"], {}).values() if scope[0])
+        c.check(epic["points_done"] == done_points, "model",
+                f"{epic['key']}'s completed pts are its completed spells' {pts(done_points)}")
 
 
 def check_commentary_groups(c, data):
@@ -216,7 +229,7 @@ def check_commentary_groups(c, data):
     always described, and completed work only if the sprint did it."""
     expected = {}
     for t in (t for t in data["spells"] if t["counted"]):
-        if t["outcome"] == "removed":
+        if t["outcome"] == "descoped":
             group = "descoped"
         elif t["outcome"] == "not_completed":
             group = "in_review" if "review" in (
@@ -364,7 +377,7 @@ def check_pull_requests(c, data):
     the checker's own rules."""
     cutoff = parse_ts(data["as_of_instant"])
     present = {s["key"]: s for s in data["spells"]
-               if s["counted"] and s["outcome"] != "removed"}
+               if s["counted"] and s["outcome"] != "descoped"}
     pulls_of = data["ticket_pull_requests"]
     c.check(set(pulls_of) == set(present), "model",
             "every ticket in the sprint at the end has its pull requests, and no other ticket")
@@ -433,8 +446,8 @@ def check_header(c, md, data):
     so_far = " so far" if data["sprint_status"] == "active" else ""
     target = "No commitment" if not original_spells else (
         f"{whole_percentage(len(done), len(original_spells))}, "
-        + ratio(len(done), len(original_spells), sum(t["points"] or 0 for t in done),
-                sum(t["points"] or 0 for t in original_spells))
+        + ratio(len(done), len(original_spells), known_sum(t["points"] for t in done),
+                known_sum(t["points"] for t in original_spells))
         + f" completed{so_far}")
     c.check(values["Sprint target completion"] == target,
             "header", f"Sprint target completion is {target!r}")
@@ -472,7 +485,7 @@ def check_commentary(c, md, data):
     committed = qty(len(original), data["burndown_baseline"])
     c.check((f"{committed} in the commitment" if original else "Nothing was committed at the start") in text,
             "commentary", f"states the commitment, {committed}" if original else "states that nothing was committed")
-    descoped = [s for s in original if s["outcome"] == "removed"]
+    descoped = [s for s in original if s["outcome"] == "descoped"]
     extra = [s for s in spells if s["scope"] == "extra" and s["counted"]]
     for kind, items in (("descoped", descoped), ("added as extra", extra)):
         if len(items) > 1:
@@ -502,7 +515,10 @@ def check_commentary(c, md, data):
     if open_spells:
         amount = qty(len(open_spells), known_sum(
             s["points"] for s in open_spells))
-        c.check(amount in core, "commentary",
+        # In the sentence that says what is open, not anywhere: the
+        # commitment's sentence can hold the same amount.
+        c.check(bool(re.search(rf"{re.escape(amount)} (?:is|are) open|At the close, {re.escape(amount)} "
+                               r"(?:was|were) not completed", core)), "commentary",
                 f"states what is still open, {amount}")
     else:
         expected = "Nothing is open" if data["sprint_status"] == "active" else "Everything in the sprint was completed by the close"
@@ -681,18 +697,17 @@ def check_epics(c, table, data):
 def epic_figures(data):
     """{epic key: {scope: [completed, all, completed pts, all pts]}} recomputed
     from the counted spells, so a ticket under the wrong epic can't pass by
-    agreeing with data.json's own epic figures."""
-    figures = {}
+    agreeing with data.json's own epic figures; the pts by known_sum's rule."""
+    estimates = {}
     for spell in (s for s in data["spells"] if s["counted"]):
-        row = figures.setdefault(spell_epic(spell)[0], {
-                                 "original": [0] * 4, "extra": [0] * 4})[spell["scope"]]
-        points = spell["points"] or 0
-        row[1] += 1
-        row[3] += points
+        done, every = estimates.setdefault(spell_epic(spell)[0], {
+            "original": ([], []), "extra": ([], [])})[spell["scope"]]
+        every.append(spell["points"])
         if spell["outcome"] == "completed":
-            row[0] += 1
-            row[2] += points
-    return figures
+            done.append(spell["points"])
+    return {key: {scope: [len(done), len(every), known_sum(done), known_sum(every)]
+                  for scope, (done, every) in scopes.items()}
+            for key, scopes in estimates.items()}
 
 
 def check_status_section(c, md, table, data):
@@ -842,7 +857,7 @@ def historical_references(data):
             if events[0]["done"]:
                 allowed.add(
                     f"{key} ({pts(events[0]['points'])}) was already Done at the start")
-            if spell["outcome"] == "removed":
+            if spell["outcome"] == "descoped":
                 allowed.add(reference + "was descoped")
         elif spell["counted"]:
             allowed.add(reference + "was added as extra")

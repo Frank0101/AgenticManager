@@ -12,7 +12,7 @@ from datetime import date
 import os
 import re
 
-from common import (CONTENT, DISPLAY_DATE, FENCE, backtick_error, INVESTIGATION, TABLE_HEADINGS, inline_links, ledger_rows, FOLDER_NAME, HEADING, group_of, source_mark, HEADINGS, LEDGER, RECORD_DEFINITION,
+from common import (CONTENT, folder_day, DISPLAY_DATE, FENCE, backtick_error, TABLE_HEADINGS, inline_links, ledger_rows, FOLDER_NAME, HEADING, group_of, source_mark, HEADINGS, LEDGER, RECORD_DEFINITION,
                     REPORT_SUFFIX, anchor_tag, autolink, headings, investigation_dir, link_definitions, markdown, read_json, table, topic_of, unlinked_backticks, unresolved_message, word_count, write_output_file)
 
 # Approximate prose lengths, in words: room to articulate, not quotas. Warn above
@@ -226,8 +226,7 @@ def decision_rows(content, key, items):
 
 
 def architect_section(content, key, stage):
-    """The lines under one Architect summary heading: its text. Diagrams
-    are left out until they are designed again."""
+    """The lines under one Architect summary heading: its text."""
     where = f"architecture.{key}"
     summary = content.paragraphs(stage.get("summary"), f"{where}.summary")
     content.length(summary, TARGETS["summary"], f"{where}.summary")
@@ -243,11 +242,8 @@ def snapshot(content):
     if days:
         day = max(days)
     else:
-        match = INVESTIGATION.fullmatch(
-            os.path.basename(os.path.normpath(content.folder)))
-        assert match, "make_report checked the folder's name with topic_of"
-        yy, mm, dd = match["date"].split("-")
-        day = date(2000 + int(yy), int(mm), int(dd))
+        day = folder_day(os.path.basename(os.path.normpath(content.folder)))
+        assert day, "make_report checked the folder's name with topic_of"
     return day.strftime(DISPLAY_DATE)
 
 

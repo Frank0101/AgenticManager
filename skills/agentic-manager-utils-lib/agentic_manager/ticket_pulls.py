@@ -71,7 +71,8 @@ def first_found(*groups):
 
 def read_events(pulls, run=subprocess.run):
     """(events, gone) of each pull request of `pulls` on GitHub, as
-    github.pull_events() gives them: when each was opened, merged and closed, and
-    GitHub's words for those it says don't exist. Raises GhError for any
-    other gh failure."""
+    github.pull_events() gives them: when each was opened, merged and closed,
+    and GitHub's words for those it says don't exist. An entry whose url
+    isn't a GitHub pull request, such as another code host's, gets no events.
+    Raises GhError for any other gh failure."""
     return pull_events([pr["url"] for pr in pulls if pull_parts(pr.get("url"))], run)

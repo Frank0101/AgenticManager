@@ -10,15 +10,14 @@ calculations per view drifted apart before; one model can't.
 """
 import argparse
 import os
-from datetime import date, datetime, time, timedelta, tzinfo
+from datetime import date, datetime, time, timedelta
 
 from common import (CHANGELOGS_DIR, COMMENTS_DIR, DATA_FILE, META_FILE, OUTCOME_ROWS, OUTCOMES, PARENTS_FILE,
                     PREVIOUS_SPRINT_FILE, PUNTED_ISSUES_FILE, RAW_DIR, SPRINT_FILE,
-                    SPRINT_ISSUES_FILE, SPRINT_REPORT_FILE, STATUSES_FILE, SCOPE_GROUPS, add_and_remove_events, as_of,
-                    PULL_REQUESTS_FILE, PULL_STATES, ISSUE_KEY, in_sprint_at, history_fields, is_blocker_candidate,
-                    key_order, read_json, nested, outcome_total, parse_ts, plain_text, points_value, report_timezone,
-                    set_at_creation, spell_epic, split_ids, standard_issues, status_categories, status_category,
-                    write_json)
+                    SPRINT_ISSUES_FILE, SPRINT_REPORT_FILE, STATUSES_FILE, SCOPE_GROUPS, Context, add_and_remove_events,
+                    as_of, blocker_candidates, PULL_REQUESTS_FILE, PULL_STATES, ISSUE_KEY, in_sprint_at, key_order, known_sum,
+                    read_json, nested, outcome_total, parse_ts, plain_text, report_timezone, spell_epic, sprint_date,
+                    sprint_moves_of, standard_issues, state_at, status_categories, ticket_events, write_json)
 
 # Terms meaning an issue was closed without delivering it (duplicate, won't do,
 # cancelled...), matched against both the status and the resolution: a
@@ -34,22 +33,6 @@ NON_DELIVERY_MARKERS = {
 # When changes share an instant: estimates, then status, then sprint moves, so
 # a ticket completed and removed in one edit is completed, then removed.
 CHANGE_ORDER = {"points": 0, "status": 1, "move": 2}
-
-
-class Context:
-    """What every ticket is built with: the sprint and the previous one, the
-    site's fields and statuses, the epics' names and the reporting timezone."""
-
-    def __init__(self, sprint_id, start_ts, categories, fields, epic_names, reporting_zone: tzinfo,
-                 previous):
-        self.sprint_id, self.start_ts = sprint_id, start_ts
-        self.reporting_zone = reporting_zone
-        self.categories = categories
-        self.flagged_field, self.points_field = fields
-        # {epic id: (key, summary)}
-        self.epic_names = epic_names
-        # The previous sprint, as previous_sprint.json holds it, or None.
-        self.previous = previous
 
 
 def epic_names(raw_issues, parents):
@@ -94,102 +77,6 @@ def load_changelogs(changelog_dir, raw_issues):
     return changes
 
 
-def ticket_events(raw, changes, context, moment):
-    """A ticket's events up to `moment`, the end (the close, or the fetch for
-    a running sprint), in time order: its creation, with each tracked field's
-    value then, and every change of a tracked field. Later events are left
-    out, never read as Jira shows the ticket today, so a report run later
-    gives the same figures. They are kept per ticket, not per spell: a ticket
-    has one history however often it left and came back. Changes at one
-    instant keep the changelog's order."""
-    cutoff, zone = parse_ts(moment), context.reporting_zone
-    tracked = {name for name, ident in history_fields(
-        context.flagged_field, context.points_field).items() if ident}
-    mine = sorted((c for c in changes if c["field"] in tracked),
-                  key=lambda c: parse_ts(c["created"]))
-    category = status_category(raw, context.categories)
-    events = [created_event(raw, mine, context, category)]
-    events += [change_event(c, category, zone)
-               for c in mine if parse_ts(c["created"]) <= cutoff]
-    return sorted(events, key=lambda e: parse_ts(e["at"]))
-
-
-def created_event(raw, changes, context, category):
-    """The ticket's creation, with each tracked field's value then: the old
-    value of its first change, else today's, since Jira logs no change for a
-    value set at creation. Read from the whole changelog, later changes
-    included: they are when Jira logged what the value was at creation."""
-    fields = raw.get("fields") or {}
-    today = {
-        "status": (nested(fields, ["status", "id"]), nested(fields, ["status", "name"])),
-        "resolution": (None, nested(fields, ["resolution", "name"])),
-        "priority": (None, nested(fields, ["priority", "name"])),
-        "parent": (nested(fields, ["parent", "id"]), nested(fields, ["parent", "key"])),
-        "points": (None, fields.get(context.points_field) if context.points_field else None),
-        "flagged": (None, fields.get(context.flagged_field) if context.flagged_field else None),
-    }
-    values = {"sprint": initial_sprints(changes, context.sprint_id)}
-    for field, current in today.items():
-        first = next((c for c in changes if c["field"] == field), None)
-        ident, text = (first["from"], first["fromString"]
-                       ) if first else current
-        values |= {field: field_value(field, ident, text),
-                   **field_extra(field, "", ident, category)}
-    return ticket_event(fields.get("created"), "jira", "created", context.reporting_zone, values=values)
-
-
-def initial_sprints(changes, sprint_id):
-    """The sprints the ticket was in when it was created, as sorted ids: each
-    sprint its changes name that was set at creation, and the reported sprint
-    when no change names it, since it is in it now."""
-    named = {sprint_id}.union(*(split_ids(c["from"]) | split_ids(c["to"])
-                                for c in changes if c["field"] == "sprint"))
-    initial = []
-    for sprint in named:
-        if set_at_creation(*add_and_remove_events(changes, sprint)):
-            initial.append(sprint)
-    return field_value("sprint", ", ".join(initial), None)
-
-
-def change_event(change, category, zone):
-    """A change of a tracked field, from and to the values the report reads,
-    named <field>_changed."""
-    field = change["field"]
-    return ticket_event(change["created"], "jira", f"{field}_changed", zone,
-                        **{"from": field_value(field, change["from"], change["fromString"]),
-                           "to": field_value(field, change["to"], change["toString"])},
-                        **field_extra(field, "from", change["from"], category),
-                        **field_extra(field, "to", change["to"], category))
-
-
-def field_value(field, ident, text):
-    """The value of a tracked field that the report reads, from a changelog's
-    id and string: the sprint ids, the estimate as a number, whether it is
-    flagged, and otherwise the name (an epic's key for the parent)."""
-    if field == "sprint":
-        return sorted(split_ids(ident), key=lambda i: (len(i), i))
-    if field == "points":
-        return points_value(text)
-    if field == "flagged":
-        return bool(text)
-    return text or None
-
-
-def field_extra(field, side, ident, category):
-    """What a status or a parent adds to its value: the status's category,
-    None for one Jira doesn't list, and the parent's id, which names the epic
-    when its key changes. `side` is "from", "to", or "" for the creation."""
-    if field == "status":
-        return {f"{side}Category" if side else "statusCategory": category(ident)}
-    if field == "parent":
-        return {f"{side}Id" if side else "parentId": str(ident) if ident else None}
-    return {}
-
-
-def ticket_event(at, source, kind, zone, **extra):
-    return {"at": at, "date": sprint_date(at, zone), "source": source, "type": kind, **extra}
-
-
 def spells_from_events(raw, events, context, moment):
     """The ticket's spells during the reported period, or [] if it had none,
     worked out from its events (ticket_events) alone. The commitment is what
@@ -208,7 +95,7 @@ def spells_from_events(raw, events, context, moment):
         last = spell[-1]
         inside = last["type"] != "removed"
         outcome = ("completed" if last["done"]
-                   else "not_completed") if inside else "removed"
+                   else "not_completed") if inside else "descoped"
         scope = "original" if spell[0]["type"] == "committed" else "extra"
         state = state_at(
             key, events, cutoff if inside else parse_ts(last["at"]))
@@ -236,25 +123,15 @@ def spells_from_events(raw, events, context, moment):
             "outcome": outcome,
             # Its latest estimate: at the end, or when it left.
             "points": last["points"],
+            # Its estimate when the spell began, before any re-estimate.
+            "firstEstimate": spell[0]["points"],
             # Whether the final-situation figures count it: an extra spell
             # that ended with the ticket leaving was never part of the sprint.
-            "counted": not (scope == "extra" and outcome == "removed"),
+            "counted": not (scope == "extra" and outcome == "descoped"),
             "closedAsNonDelivery": (non_delivery_marker(state["status"], state["resolution"])
                                     if outcome == "completed" else None),
         })
     return spells
-
-
-def sprint_moves_of(events, sprint_id):
-    """The ticket's moves into (+1) and out of (-1) a sprint, as (instant,
-    move, timestamp) in time order, from its events: its creation, if it was
-    in the sprint then, and its sprint changes."""
-    created = next(e for e in events if e["type"] == "created")
-    moves = sorted([(parse_ts(e["at"]), 1 if sprint_id in e["to"] else -1, e["at"]) for e in events
-                    if e["type"] == "sprint_changed" and (sprint_id in e["to"]) != (sprint_id in e["from"])])
-    if sprint_id in created["values"]["sprint"]:
-        moves.insert(0, (parse_ts(created["at"]), 1, created["at"]))
-    return moves
 
 
 def in_sprint_when_closed(events, sprint):
@@ -308,38 +185,8 @@ def spell_events(key, events, moves, start_ts, in_at_start, cutoff, zone):
     return spells
 
 
-def state_at(key, events, instant):
-    """The ticket's tracked fields at `instant`, replayed from its events: its
-    creation's values, then each change up to the instant. Fails on a status
-    Jira's list of statuses doesn't hold, since its category is unknown."""
-    values = dict(next(e["values"] for e in events if e["type"] == "created"))
-    for e in events:
-        field = e["type"].removesuffix("_changed")
-        if e["source"] != "jira" or field in ("created", "sprint") or parse_ts(e["at"]) > instant:
-            continue
-        values[field] = e["to"]
-        values |= {name: e[f"to{suffix}"] for name, suffix in (("statusCategory", "Category"), ("parentId", "Id"))
-                   if f"to{suffix}" in e}
-    if values["statusCategory"] is None:
-        raise SystemExit(f"{key}: status {values['status']!r} is not in Jira's list of statuses; "
-                         "fetch the sprint again")
-    return {"status": values["status"], "statusCategory": values["statusCategory"],
-            "resolution": values["resolution"], "storyPoints": values["points"], "flagged": values["flagged"],
-            "priority": values["priority"] or "", "parentId": values["parentId"], "parentKey": values["parent"]}
-
-
 def event(at, kind, points, done, zone, **extra):
     return {"at": at, "date": sprint_date(at, zone), "type": kind, "points": points, "done": done, **extra}
-
-
-def sprint_date(ts, zone):
-    """Calendar date of a timestamp in the reporting timezone, including its
-    daylight-saving rules. An end at 00:00 names the day Jira shows, which
-    teams read as the sprint's last day, included: an end of 00:00 on the
-    8th means the sprint runs through the 8th."""
-    if not ts:
-        return None
-    return parse_ts(ts).astimezone(zone).date().isoformat()
 
 
 def non_delivery_marker(status, resolution):
@@ -351,16 +198,17 @@ def non_delivery_marker(status, resolution):
 
 def outcome_breakdown(spells):
     """(counts, points) of the counted spells by row (original, its carried_in
-    and new parts, extra) and outcome, at each spell's latest estimate."""
+    and new parts, extra) and outcome, at each spell's latest estimate, the
+    pts by known_sum's rule."""
     keys = [f"{row}_{outcome}" for row in OUTCOME_ROWS for outcome in OUTCOMES]
-    counts, points = {k: 0 for k in keys}, {k: 0 for k in keys}
+    estimates = {k: [] for k in keys}
     for spell in (s for s in spells if s["counted"]):
         rows = (["extra"] if spell["scope"] == "extra"
                 else ["original", "carried_in" if spell["carriedIn"] else "new"])
         for row in rows:
-            counts[f"{row}_{spell['outcome']}"] += 1
-            points[f"{row}_{spell['outcome']}"] += spell["points"] or 0
-    return counts, points
+            estimates[f"{row}_{spell['outcome']}"].append(spell["points"])
+    return ({k: len(found) for k, found in estimates.items()},
+            {k: known_sum(found) for k, found in estimates.items()})
 
 
 def non_delivery_closures(spells):
@@ -368,7 +216,7 @@ def non_delivery_closures(spells):
     how many, their pts and each one's key, status, resolution, estimate,
     marker and summary."""
     closures = [s for s in spells if s["counted"] and s["closedAsNonDelivery"]]
-    return {"count": len(closures), "points": sum(s["points"] or 0 for s in closures),
+    return {"count": len(closures), "points": known_sum(s["points"] for s in closures),
             "issues": [{"key": s["key"], "status": s["status"], "resolution": s["resolution"],
                         "storyPoints": s["points"], "marker": s["closedAsNonDelivery"], "summary": s["summary"]}
                        for s in closures]}
@@ -382,26 +230,27 @@ def target_completion(spells):
     original = [s for s in spells if s["scope"] == "original"]
     done = [s for s in original if s["outcome"] == "completed"]
     return {"completed": len(done), "total": len(original),
-            "completed_points": sum(s["points"] or 0 for s in done),
-            "total_points": sum(s["points"] or 0 for s in original)}
+            "completed_points": known_sum(s["points"] for s in done),
+            "total_points": known_sum(s["points"] for s in original)}
 
 
 def build_epics(spells, descriptions=None):
     """Per-epic delivery of the counted spells: done is completed; the total
-    adds not completed and descoped. Descoped original work is also counted
-    apart. Each epic also carries its description and its spells sorted into
-    the commentary's groups (see scope_group)."""
+    adds not completed and descoped. The pts follow known_sum's rule. Each epic also carries its
+    description and its spells sorted into the commentary's groups (see
+    scope_group)."""
     descriptions = descriptions or {}
-    epics = {}
+    epics, estimates = {}, {}
     for spell in (s for s in spells if s["counted"]):
         key, name = spell_epic(spell)
         epic = epics.setdefault(key, {
             "key": key, "name": name,
             "original_stories_done": 0, "original_stories_total": 0,
-            "original_points_done": 0, "original_points_total": 0,
+            "original_points_done": None, "original_points_total": None,
             "extra_stories_done": 0, "extra_stories_total": 0,
-            "extra_points_done": 0, "extra_points_total": 0,
-            "removed_stories": 0, "removed_points": 0,
+            "extra_points_done": None, "extra_points_total": None,
+            # Completed pts, commitment and extra together.
+            "points_done": None,
             "description": descriptions.get(key, ""),
             "scope_groups": {group: [] for group in SCOPE_GROUPS},
             "left_out": [],
@@ -415,17 +264,24 @@ def build_epics(spells, descriptions=None):
             epic["scope_groups"][group].append(ticket)
         else:
             epic["left_out"].append({**ticket, "reason": reason})
-        points, scope = spell["points"] or 0, spell["scope"]
+        # The estimates each pts field adds up, by epic and field.
+        mine = estimates.setdefault(key, {field: [] for field in (
+            "original_points_done", "original_points_total", "extra_points_done", "extra_points_total",
+            "points_done")})
+        points, scope = spell["points"], spell["scope"]
         epic[f"{scope}_stories_total"] += 1
-        epic[f"{scope}_points_total"] += points
+        mine[f"{scope}_points_total"].append(points)
         if spell["outcome"] == "completed":
             epic[f"{scope}_stories_done"] += 1
-            epic[f"{scope}_points_done"] += points
-        elif spell["outcome"] == "removed":
-            epic["removed_stories"] += 1
-            epic["removed_points"] += points
+            mine[f"{scope}_points_done"].append(points)
+            mine["points_done"].append(points)
+    for key, epic in epics.items():
+        epic |= {field: known_sum(found)
+                 for field, found in estimates[key].items()}
+    # Largest first, unestimated work weighing nothing.
     return sorted(epics.values(),
-                  key=lambda e: (-(e["original_points_total"] + e["extra_points_total"]), key_order(e["key"])))
+                  key=lambda e: (-((e["original_points_total"] or 0) + (e["extra_points_total"] or 0)),
+                                 key_order(e["key"])))
 
 
 def scope_group(spell):
@@ -435,7 +291,7 @@ def scope_group(spell):
     still count it, but the AI text mustn't describe it. Descoped work is
     always described as descoped, even if it was already Done, since the
     figures count it as descoped."""
-    if spell["outcome"] == "removed":
+    if spell["outcome"] == "descoped":
         return "descoped", None
     if spell["outcome"] == "not_completed":
         return ("in_review" if "review" in (spell["status"] or "").lower() else "not_completed"), None
@@ -498,7 +354,7 @@ def build_status_checks(spells, pulls_of, epics):
     order = {epic["key"]: index for index, epic in enumerate(epics)}
     rows = []
     for spell in spells:
-        if not spell["counted"] or spell["outcome"] == "removed":
+        if not spell["counted"] or spell["outcome"] == "descoped":
             continue
         key, pulls = spell["key"], pulls_of.get(spell["key"], [])
         flag = status_flag(spell["statusCategory"], pulls)
@@ -551,10 +407,17 @@ def build_timeline(spells, status, start, end, complete, today):
     return [rows[day] for day in sorted(rows)]
 
 
+def burndown_baseline(spells):
+    """The burndown's first point: the whole commitment's estimates at the
+    start, Done or not, by known_sum's rule; the start day's end-of-day
+    reading then shows what was open."""
+    return known_sum(t["firstEstimate"] for t in spells if t["scope"] == "original")
+
+
 def build_burndown(spells, start_date, last_date, moment, zone):
     """Open tickets and pts at the end of each local day, from the
     events of every spell, counted or not: the original commitment's, and with
-    the extra work's too.
+    the extra work's too, the pts by known_sum's rule.
     The closing day stops at the exact close, an active snapshot's current day
     at the fetch."""
     rows = []
@@ -562,17 +425,15 @@ def build_burndown(spells, start_date, last_date, moment, zone):
     while day <= end:
         cutoff = min(datetime.combine(
             day, time.max, tzinfo=zone), parse_ts(moment))
-        committed = total = committed_stories = total_stories = 0
+        committed, total = [], []
         for spell in spells:
             state = replay(spell["events"], cutoff)
             if state and state[0] and not state[1]:
-                total += state[2] or 0
-                total_stories += 1
+                total.append(state[2])
                 if spell["scope"] == "original":
-                    committed += state[2] or 0
-                    committed_stories += 1
-        rows.append({"date": day.isoformat(), "committed": committed, "total": total,
-                     "committed_stories": committed_stories, "total_stories": total_stories})
+                    committed.append(state[2])
+        rows.append({"date": day.isoformat(), "committed": known_sum(committed), "total": known_sum(total),
+                     "committed_stories": len(committed), "total_stories": len(total)})
         day += timedelta(days=1)
     return rows
 
@@ -638,22 +499,6 @@ def membership_sets(events_of, sprint_id, moment):
         elif any(move < 0 and when <= cutoff for when, move, _ in moves):
             removed.append(key)
     return in_scope, completed, removed
-
-
-def blocker_candidates(events_of, sprint_id, moment):
-    """The keys of the tickets in the sprint at the cutoff that were flagged,
-    blocked or high priority and not done then (common.is_blocker_candidate),
-    from their events (`events_of`, {key: ticket_events()}), in its order:
-    the tickets whose comments the fetch read, as it picks them from the
-    changelogs by the same rule."""
-    cutoff, keys = parse_ts(moment), []
-    for key, events in events_of.items():
-        if not in_sprint_at(sprint_moves_of(events, sprint_id), cutoff):
-            continue
-        then = state_at(key, events, cutoff)
-        if is_blocker_candidate(then["flagged"], then["status"], then["statusCategory"], then["priority"]):
-            keys.append(key)
-    return keys
 
 
 def blocker_comments(comment_dir, keys, moment, zone):
@@ -784,9 +629,7 @@ def main():
     # The pull requests of each ticket in the sprint at the end, the only
     # tickets whose status the report checks.
     pulls_of = {t["key"]: ticket_pulls(pull_requests, t["key"], moment) for t in counted
-                if t["outcome"] != "removed"}
-    original = [t for t in spells if t["scope"] == "original"]
-
+                if t["outcome"] != "descoped"}
     data = {
         "sprint_id": sprint["id"],
         "sprint_name": sprint.get("name"),
@@ -829,9 +672,7 @@ def main():
         "ticket_pull_requests": {key: pulls_of[key] for key in sorted(pulls_of, key=key_order)},
         "status_checks": build_status_checks(spells, pulls_of, epics),
         "timeline": build_timeline(spells, status, start, end, complete, today),
-        # The burndown's first point: the whole commitment at the start, Done or
-        # not; the start day's end-of-day reading then shows what was open.
-        "burndown_baseline": sum(t["events"][0]["points"] or 0 for t in original),
+        "burndown_baseline": burndown_baseline(spells),
         "burndown": build_burndown(spells, start, sprint_date(moment, zone), moment, zone),
     }
     out = os.path.join(args.report_dir, DATA_FILE)
@@ -839,7 +680,7 @@ def main():
 
     print(f"original commitment: {outcome_total(counts, 'original')} spell(s), "
           f"{counts['original_completed']} completed, {counts['original_not_completed']} not completed, "
-          f"{counts['original_removed']} descoped; extra: {outcome_total(counts, 'extra')} spell(s), "
+          f"{counts['original_descoped']} descoped; extra: {outcome_total(counts, 'extra')} spell(s), "
           f"{counts['extra_completed']} completed "
           + ("[matches Jira's sprint report for comparable issues]" if later_moves
              else "[matches Jira's sprint report]"))

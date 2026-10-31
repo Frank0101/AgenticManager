@@ -2,11 +2,10 @@
 library shares: how many things in one call, and how many calls at a time,
 and gather(), which makes many calls that way.
 
-A batch keeps each call light and limits what one failed call takes down; a
-page, how a service splits its answer, is the largest it allows, as a smaller
-one only adds calls. A call that still fails once retry.py gives up stops
-gather(), and the skill with it: a partial answer is easy to take for a whole
-one. A thing the service says isn't there is an answer (failures.py).
+A batch keeps each call light and limits what one failed call takes down. A
+call that still fails once retry.py gives up stops gather(), and the skill
+with it: a partial answer is easy to take for a whole one. A thing the
+service says isn't there is an answer (failures.py).
 """
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor

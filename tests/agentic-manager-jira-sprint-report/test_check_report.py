@@ -213,12 +213,12 @@ class ChecksTest(unittest.TestCase):
                      ("(5 pts) changed", "(2 pts) changed", "vocabulary")]),
             ("estimate when descoped", sprint_data(spells=[
                 ticket("PROJ-1", [ev(2, "committed", 2),
-                       ev(4, "removed", 2)], "removed"),
+                       ev(4, "removed", 2)], "descoped"),
                 ticket("PROJ-1", [ev(5, "joined", 5)], "not_completed", scope="extra")]),
              retro, [("PROJ-1) (2 pts) was descoped", "PROJ-1) (5 pts) was descoped", "vocabulary"),
                      ("(5 pts) changed", "(2 pts) changed", "vocabulary")]),
             ("estimate when added and descoped again", sprint_data(spells=[
-                ticket("PROJ-1", [ev(3, "joined", 5), ev(4, "removed", 5)], "removed", scope="extra")]),
+                ticket("PROJ-1", [ev(3, "joined", 5), ev(4, "removed", 5)], "descoped", scope="extra")]),
              retro, [("PROJ-1) (5 pts) was added and descoped", "PROJ-1) (2 pts) was added and descoped",
                       "vocabulary")]),
             # Copied Jira text keeps its wording; the same words in generated
@@ -376,7 +376,7 @@ class ChecksTest(unittest.TestCase):
 
     def test_data_that_drifts_from_the_events_fails(self):
         cases = [
-            ("an outcome", lambda d: d["spells"][0].update(outcome="removed"),
+            ("an outcome", lambda d: d["spells"][0].update(outcome="descoped"),
              "model: PROJ-1 ends completed, as its events give"),
             ("a latest estimate", lambda d: d["spells"][0].update(points=2),
              "model: PROJ-1 ends completed, as its events give"),
@@ -384,11 +384,17 @@ class ChecksTest(unittest.TestCase):
                 {"at": "2026-03-06T10:00:00.000+0000", "date": "2026-03-06", "type": "reopened", "points": 1,
                  "done": True}), "model: PROJ-4 ends completed, as its events give"),
             ("an extra spell that ended descoped, still counted", lambda d: d["spells"][3].update(
-                outcome="removed", events=d["spells"][3]["events"] + [
+                outcome="descoped", events=d["spells"][3]["events"] + [
                     {"at": "2026-03-07T10:00:00.000+0000", "date": "2026-03-07", "type": "removed", "points": 1,
-                     "done": True}]), "model: PROJ-3 ends removed, not counted, as its events give"),
+                     "done": True}]), "model: PROJ-3 ends descoped, not counted, as its events give"),
             ("a stored flag that its events don't give", lambda d: d["spells"][0].update(reopened=True),
-             "model: PROJ-1's doneAtStart, reopened, reestimated and cameBack flags are what its events give"),
+             "model: PROJ-1's doneAtStart, reopened, reestimated and cameBack flags and first estimate are what its "
+             "events give"),
+            ("a first estimate that its events don't give", lambda d: d["spells"][0].update(firstEstimate=9),
+             "model: PROJ-1's doneAtStart, reopened, reestimated and cameBack flags and first estimate are what its "
+             "events give"),
+            ("an epic's completed pts", lambda d: d["epics"][0].update(points_done=99),
+             "model: PROJ-100's completed pts are its completed spells'"),
             ("a sprint target that isn't the commitment's", lambda d: d["target_completion"].update(completed=0),
              "model: the sprint target is the original commitment's spells, and those completed"),
             ("a non-delivery count", lambda d: d["non_delivery_closures"].update(count=0),
@@ -441,10 +447,10 @@ class ChecksTest(unittest.TestCase):
              "model: the timeline holds exactly the spells' events"),
             ("the breakdown", lambda d: d["outcome_breakdown_points"].update(extra_completed=5),
              "model: the charts' extra completed is the counted spells' 1 ticket (5 pts)"),
-            ("the carry-over split", lambda d: d["outcome_breakdown_counts"].update(new_removed=0),
-             "model: the charts' new removed is the counted spells'"),
-            ("the charted commitment", lambda d: d["outcome_breakdown_counts"].update(original_removed=0),
-             "model: the charts' original removed is the counted spells'"),
+            ("the carry-over split", lambda d: d["outcome_breakdown_counts"].update(new_descoped=0),
+             "model: the charts' new descoped is the counted spells'"),
+            ("the charted commitment", lambda d: d["outcome_breakdown_counts"].update(original_descoped=0),
+             "model: the charts' original descoped is the counted spells'"),
             # The commentary groups are recomputed from the spells too.
             ("completed work described as descoped", lambda d: d["epics"][0]["scope_groups"].update(
                 completed=[], descoped=[{"key": "PROJ-1"}] + d["epics"][0]["scope_groups"]["descoped"]),

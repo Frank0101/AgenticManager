@@ -1,7 +1,7 @@
-"""Helpers shared by the sprint-report scripts: file names, blocker candidates, an
-issue's moves into and out of the sprint, its state at a past moment, the kinds
-of event a ticket's history holds, and the report's vocabulary, formats, goal
-verdicts and commentary groups.
+"""Helpers shared by the sprint-report scripts: file names, a ticket's events and
+what they say at a past moment (its state, its sprint moves, whether it was a
+blocker candidate), the kinds of event a ticket's history holds, and the
+report's vocabulary, formats, goal verdicts and commentary groups.
 
 It also puts the agentic-manager-utils-lib skill, installed next to this one, on
 sys.path and imports what the scripts need from it. The scripts import those
@@ -12,7 +12,7 @@ import os
 import re
 import subprocess
 import sys
-from datetime import date
+from datetime import date, tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
@@ -117,13 +117,13 @@ GOAL_VERDICTS = {"closed": ("Fully met", "Partially met", "Not met"),
 
 # How each piece of work in the outcome charts ended, and their rows: the
 # original commitment, split into carry-over and new work, and the extra scope.
-OUTCOMES = ("completed", "not_completed", "removed")
+OUTCOMES = ("completed", "not_completed", "descoped")
 OUTCOME_ROWS = ("original", "carried_in", "new", "extra")
 
 # Each outcome's (background, text) colours, shared by the outcome charts and
 # the timeline's tags, so an outcome looks the same wherever it shows.
 OUTCOME_COLOURS = {"completed": ("#0ca30c", "#ffffff"), "not_completed": ("#fab219", "#1a1a1a"),
-                   "removed": ("#b5b2aa", "#1a1a1a")}
+                   "descoped": ("#b5b2aa", "#1a1a1a")}
 
 # The groups of an epic's commentary, in the order it shows them (see
 # build_sprint_data.py's scope_group).
@@ -185,27 +185,20 @@ def report_timezone(name):
                          "and fetch the sprint again")
 
 
-def blocker_candidate_keys(issues, changes, categories, flagged_field, sprint_id, moment):
-    """The keys of the standard issues in the sprint at `moment` that were
-    flagged, blocked or high priority and not done then, from their
-    changelogs: the tickets whose comments the fetch reads, before any events
-    exist. build_sprint_data.py works out data.json's from the events by the
-    same rule, is_blocker_candidate(), so the two are the same tickets."""
-    keys = []
-    for issue in standard_issues(issues):
-        if not in_sprint_at(issue_moves(issue, changes[issue["key"]], sprint_id), moment):
+def blocker_candidates(events_of, sprint_id, moment):
+    """The keys of the tickets in the sprint at `moment` that were flagged,
+    blocked or high priority and not done then (is_blocker_candidate), from
+    their events (`events_of`, {key: ticket_events()}), in `events_of`'s order: the
+    tickets whose comments the fetch reads and data.json's blocker
+    candidates, so the two are the same tickets."""
+    cutoff, keys = parse_ts(moment), []
+    for key, events in events_of.items():
+        if not in_sprint_at(sprint_moves_of(events, sprint_id), cutoff):
             continue
-        then = History(issue, changes[issue["key"]], categories,
-                       flagged_field).state_at(moment)
+        then = state_at(key, events, cutoff)
         if is_blocker_candidate(then["flagged"], then["status"], then["statusCategory"], then["priority"]):
-            keys.append(issue["key"])
+            keys.append(key)
     return keys
-
-
-def standard_issues(issues):
-    """The issues that aren't sub-tasks: Jira's sprint report and board totals
-    count only these, with sub-task work rolled into the parent."""
-    return [i for i in issues if not nested(i.get("fields"), ["issuetype", "subtask"])]
 
 
 def is_blocker_candidate(flagged, status, status_category, priority):
@@ -213,6 +206,154 @@ def is_blocker_candidate(flagged, status, status_category, priority):
     if flagged or (status or "").lower() in BLOCKED_STATUSES:
         return True
     return status_category != "done" and (priority or "").lower() in HIGH_PRIORITIES
+
+
+class Context:
+    """What every ticket is built with: the sprint and the previous one, the
+    site's fields and statuses, the epics' names and the reporting timezone.
+    A ticket's events (ticket_events) need only the sprint, the fields, the
+    statuses and the timezone."""
+
+    def __init__(self, sprint_id, start_ts, categories, fields, epic_names, reporting_zone: tzinfo,
+                 previous):
+        self.sprint_id, self.start_ts = sprint_id, start_ts
+        self.reporting_zone = reporting_zone
+        self.categories = categories
+        self.flagged_field, self.points_field = fields
+        # {epic id: (key, summary)}
+        self.epic_names = epic_names
+        # The previous sprint, as previous_sprint.json holds it, or None.
+        self.previous = previous
+
+
+def ticket_events(raw, changes, context, moment):
+    """A ticket's events up to `moment`, the end (the close, or the fetch for
+    a running sprint), in time order: its creation, with each tracked field's
+    value then, and every change of a tracked field. Later events are left
+    out, never read as Jira shows the ticket today, so a report run later
+    gives the same figures. They are kept per ticket, not per spell: a ticket
+    has one history however often it left and came back. Changes at one
+    instant keep the changelog's order."""
+    cutoff, zone = parse_ts(moment), context.reporting_zone
+    tracked = {name for name, ident in history_fields(
+        context.flagged_field, context.points_field).items() if ident}
+    mine = sorted((c for c in changes if c["field"] in tracked),
+                  key=lambda c: parse_ts(c["created"]))
+    category = status_category(raw, context.categories)
+    events = [created_event(raw, mine, context, category)]
+    events += [change_event(c, category, zone)
+               for c in mine if parse_ts(c["created"]) <= cutoff]
+    return sorted(events, key=lambda e: parse_ts(e["at"]))
+
+
+def created_event(raw, changes, context, category):
+    """The ticket's creation, with each tracked field's value then: the old
+    value of its first change, else today's, since Jira logs no change for a
+    value set at creation. Read from the whole changelog, later changes
+    included: they are when Jira logged what the value was at creation."""
+    fields = raw.get("fields") or {}
+    today = {
+        "status": (nested(fields, ["status", "id"]), nested(fields, ["status", "name"])),
+        "resolution": (None, nested(fields, ["resolution", "name"])),
+        "priority": (None, nested(fields, ["priority", "name"])),
+        "parent": (nested(fields, ["parent", "id"]), nested(fields, ["parent", "key"])),
+        "points": (None, fields.get(context.points_field) if context.points_field else None),
+        "flagged": (None, fields.get(context.flagged_field) if context.flagged_field else None),
+    }
+    values = {"sprint": initial_sprints(changes, context.sprint_id)}
+    for field, current in today.items():
+        first = next((c for c in changes if c["field"] == field), None)
+        ident, text = (first["from"], first["fromString"]
+                       ) if first else current
+        values |= {field: field_value(field, ident, text),
+                   **field_extra(field, "", ident, category)}
+    return ticket_event(fields.get("created"), "jira", "created", context.reporting_zone, values=values)
+
+
+def initial_sprints(changes, sprint_id):
+    """The sprints the ticket was in when it was created, as sorted ids: each
+    sprint its changes name that was set at creation, and the reported sprint
+    when no change names it, since it is in it now."""
+    named = {sprint_id}.union(*(split_ids(c["from"]) | split_ids(c["to"])
+                                for c in changes if c["field"] == "sprint"))
+    initial = []
+    for sprint in named:
+        if set_at_creation(*add_and_remove_events(changes, sprint)):
+            initial.append(sprint)
+    return field_value("sprint", ", ".join(initial), None)
+
+
+def change_event(change, category, zone):
+    """A change of a tracked field, from and to the values the report reads,
+    named <field>_changed."""
+    field = change["field"]
+    return ticket_event(change["created"], "jira", f"{field}_changed", zone,
+                        **{"from": field_value(field, change["from"], change["fromString"]),
+                           "to": field_value(field, change["to"], change["toString"])},
+                        **field_extra(field, "from", change["from"], category),
+                        **field_extra(field, "to", change["to"], category))
+
+
+def field_value(field, ident, text):
+    """The value of a tracked field that the report reads, from a changelog's
+    id and string: the sprint ids, the estimate as a number, whether it is
+    flagged, and otherwise the name (an epic's key for the parent)."""
+    if field == "sprint":
+        return sorted(split_ids(ident), key=lambda i: (len(i), i))
+    if field == "points":
+        return points_value(text)
+    if field == "flagged":
+        return bool(text)
+    return text or None
+
+
+def field_extra(field, side, ident, category):
+    """What a status or a parent adds to its value: the status's category,
+    None for one Jira doesn't list, and the parent's id, which names the epic
+    when its key changes. `side` is "from", "to", or "" for the creation."""
+    if field == "status":
+        return {f"{side}Category" if side else "statusCategory": category(ident)}
+    if field == "parent":
+        return {f"{side}Id" if side else "parentId": str(ident) if ident else None}
+    return {}
+
+
+def ticket_event(at, source, kind, zone, **extra):
+    """An event of a ticket's history: when, its local date, its source and
+    type, and what `extra` adds."""
+    return {"at": at, "date": sprint_date(at, zone), "source": source, "type": kind, **extra}
+
+
+def state_at(key, events, instant):
+    """The ticket's tracked fields at `instant`, replayed from its events: its
+    creation's values, then each change up to the instant. Fails on a status
+    Jira's list of statuses doesn't hold, since its category is unknown."""
+    values = dict(next(e["values"] for e in events if e["type"] == "created"))
+    for e in events:
+        field = e["type"].removesuffix("_changed")
+        if e["source"] != "jira" or field in ("created", "sprint") or parse_ts(e["at"]) > instant:
+            continue
+        values[field] = e["to"]
+        values |= {name: e[f"to{suffix}"] for name, suffix in (("statusCategory", "Category"), ("parentId", "Id"))
+                   if f"to{suffix}" in e}
+    if values["statusCategory"] is None:
+        raise SystemExit(f"{key}: status {values['status']!r} is not in Jira's list of statuses; "
+                         "fetch the sprint again")
+    return {"status": values["status"], "statusCategory": values["statusCategory"],
+            "resolution": values["resolution"], "storyPoints": values["points"], "flagged": values["flagged"],
+            "priority": values["priority"] or "", "parentId": values["parentId"], "parentKey": values["parent"]}
+
+
+def sprint_moves_of(events, sprint_id):
+    """The ticket's moves into (+1) and out of (-1) a sprint, as (instant,
+    move, timestamp) in time order, from its events: its creation, if it was
+    in the sprint then, and its sprint changes."""
+    created = next(e for e in events if e["type"] == "created")
+    moves = sorted([(parse_ts(e["at"]), 1 if sprint_id in e["to"] else -1, e["at"]) for e in events
+                    if e["type"] == "sprint_changed" and (sprint_id in e["to"]) != (sprint_id in e["from"])])
+    if sprint_id in created["values"]["sprint"]:
+        moves.insert(0, (parse_ts(created["at"]), 1, created["at"]))
+    return moves
 
 
 def in_sprint_at(moves, instant):
@@ -223,13 +364,6 @@ def in_sprint_at(moves, instant):
             break
         state = move > 0
     return state
-
-
-def issue_moves(raw, changes, sprint_id):
-    """An issue's moves into and out of the sprint (see sprint_moves), from its
-    changelog."""
-    added, removed = add_and_remove_events(changes, sprint_id)
-    return sprint_moves(added, removed, nested(raw.get("fields"), ["created"]))
 
 
 def add_and_remove_events(changes, sprint_id):
@@ -252,18 +386,6 @@ def split_ids(value):
     return {piece.strip() for piece in (value or "").split(",") if piece.strip()}
 
 
-def sprint_moves(added, removed, created):
-    """An issue's moves into (+1) and out of (-1) the sprint, as (instant, move,
-    timestamp) in time order. If the first move isn't an add, the sprint was set
-    when the issue was created: Jira logs no change for a field's initial
-    value, so the creation counts as the first add."""
-    moves = sorted([(parse_ts(t), 1, t) for t in added] +
-                   [(parse_ts(t), -1, t) for t in removed])
-    if set_at_creation(added, removed):
-        moves.insert(0, (parse_ts(created), 1, created))
-    return moves
-
-
 def set_at_creation(added, removed):
     """Whether the sprint was set when the issue was created: its first move,
     of the timestamps `added` and `removed`, isn't an add, a removal coming
@@ -271,48 +393,6 @@ def set_at_creation(added, removed):
     first = min([(parse_ts(t), 1) for t in added] +
                 [(parse_ts(t), -1) for t in removed], default=None)
     return first is None or first[1] < 0
-
-
-class History:
-    """An issue's fields that make it a blocker candidate, rebuilt at a past
-    moment from current values and changelog changes, for the fetch, which
-    has no events yet. These fields use current values only when the
-    changelog shows they held then too, so a rerun picks the same tickets."""
-
-    def __init__(self, raw, changes, categories, flagged_field):
-        self.fields = raw.get("fields") or {}
-        self.key = raw["key"]
-        self.changes = changes
-        self.category_of = status_category(raw, categories)
-        self.flagged_field = flagged_field
-
-    def _current(self, path):
-        return nested(self.fields, path)
-
-    def _at(self, field, instant, current):
-        return value_at(self.changes, field, instant, current)
-
-    def category(self, status_id):
-        category = self.category_of(status_id)
-        if category is None:
-            raise SystemExit(f"{self.key}: status {status_id} is not in Jira's list of statuses; "
-                             "fetch the sprint again")
-        return category
-
-    def status_at(self, instant):
-        """(status name, status category key) at the instant."""
-        status_id, name = self._at("status", instant, (self._current(["status", "id"]),
-                                                       self._current(["status", "name"])))
-        return name, self.category(status_id)
-
-    def state_at(self, instant):
-        """{status, statusCategory, flagged, priority} at the instant."""
-        status, category = self.status_at(instant)
-        flagged = (bool(self._at("flagged", instant, (None, self.fields.get(self.flagged_field)))[1])
-                   if self.flagged_field else False)
-        _, priority = self._at("priority", instant,
-                               (None, self._current(["priority", "name"])))
-        return {"status": status, "statusCategory": category, "flagged": flagged, "priority": priority or ""}
 
 
 def status_category(raw, categories):
@@ -328,6 +408,16 @@ def status_category(raw, categories):
             found = nested(fields, ["status", "statusCategory", "key"])
         return found
     return category
+
+
+def sprint_date(ts, zone):
+    """Calendar date of a timestamp in the reporting timezone, including its
+    daylight-saving rules. An end at 00:00 names the day Jira shows, which
+    teams read as the sprint's last day, included: an end of 00:00 on the
+    8th means the sprint runs through the 8th."""
+    if not ts:
+        return None
+    return parse_ts(ts).astimezone(zone).date().isoformat()
 
 
 def status_categories(statuses):
@@ -357,6 +447,12 @@ def history_fields(flagged_field, points_field):
 # creation of the ticket and each change of a tracked field.
 TICKET_EVENT_TYPES = {"jira": (
     "created", *(f"{field}_changed" for field in history_fields(None, None)))}
+
+
+def standard_issues(issues):
+    """The issues that aren't sub-tasks: Jira's sprint report and board totals
+    count only these, with sub-task work rolled into the parent."""
+    return [i for i in issues if not nested(i.get("fields"), ["issuetype", "subtask"])]
 
 
 def as_of(sprint, fetched_at):
@@ -411,6 +507,17 @@ def report_label(project_key, sprint_name):
     return re.sub(r"[^A-Za-z0-9.-]+", "_", name).strip("_")
 
 
+def outcome_total(breakdown, row, counts=None):
+    """All the work of an outcome_breakdown row, however it ended. For the pts
+    breakdown, `counts` is the tickets breakdown: the pts add up by known_sum's
+    rule, over the outcomes that hold tickets, so a row of unestimated tickets
+    totals None."""
+    cells = [f"{row}_{outcome}" for outcome in OUTCOMES]
+    if counts is None:
+        return sum(breakdown[cell] for cell in cells)
+    return known_sum(breakdown[cell] for cell in cells if counts[cell])
+
+
 # --- The report's vocabulary and formats
 #
 # Exec readers compare reports sprint to sprint, so each idea has one word and
@@ -428,7 +535,11 @@ def report_label(project_key, sprint_name):
 #               (34/74 pts)", never a bare ratio; a share "6 tickets (27% of
 #               commitment)" or "13 pts (18% of commitment)"; inside a chart
 #               bar, for space only, "3 (50%)".
-#   Tickets     one as "KEY (N pts)", or "KEY (– pts)" with no estimate; several
+#   Estimates   one unestimated ticket is "– pts"; pts of several add up the
+#               set estimates, an unestimated ticket counting as 0, and are
+#               "– pts" when none is set, with "–" for them in a ratio or a
+#               share: "0/2 tickets (0/– pts)" (known_sum).
+#   Tickets    one as "KEY (N pts)", or "KEY (– pts)" with no estimate; several
 #               as the amount then the keys, sorted: "3 tickets (5 pts) were
 #               descoped (PROJ-11, PROJ-12, PROJ-13)"; a re-estimate as
 #               "PROJ-15 (5 → 3 pts)". The timeline's commentary quotes each
@@ -448,10 +559,16 @@ def report_label(project_key, sprint_name):
 
 
 def known_sum(estimates):
-    """The sum of the estimates that are set, or None if none is, so work with
-    no estimate shows as "– pts", never "0 pts"."""
+    """The pts of some work, the rule every amount of pts follows: the sum of
+    the estimates that are set, an unestimated ticket counting as 0; None,
+    shown as "– pts", when there are estimates to add and none is set, so
+    unestimated work never shows as "0 pts"; and 0 for no work at all. A
+    partial sum is None only when all its work is unestimated, so sums of the
+    partial sums of non-empty parts, such as outcome_total's, follow the same
+    rule."""
+    estimates = list(estimates)
     known = [e for e in estimates if e is not None]
-    return sum(known) if known else None
+    return sum(known) if known or not estimates else None
 
 
 def qty(count, points):
@@ -488,8 +605,9 @@ def number(value):
 
 
 def ratio(done, total, done_points, total_points):
-    """Done out of total: "11/22 tickets (34/74 pts)"."""
-    return f"{done}/{total} {unit(total)} ({number(done_points)}/{number(total_points)} pts)"
+    """Done out of total: "11/22 tickets (34/74 pts)", with "–" for pts
+    that are unestimated (known_sum's None): "0/2 tickets (0/– pts)"."""
+    return f"{done}/{total} {unit(total)} ({estimate(done_points)}/{estimate(total_points)} pts)"
 
 
 def ticket_ref(key, points):
@@ -499,7 +617,10 @@ def ticket_ref(key, points):
 
 def whole_percentage(part, whole):
     """A share as a whole percentage, "<1%" or ">99%" where rounding would
-    show a share as none or all of the whole."""
+    show a share as none or all of the whole, and "–" when either is
+    unestimated pts (known_sum's None)."""
+    if part is None or whole is None:
+        return "–"
     if not whole:
         return "n/a"
     share = part * 100 / whole
@@ -603,8 +724,3 @@ def scope_group_label(group, status):
 def epic_groups(epic):
     """The commentary groups an epic has tickets to describe in, in order."""
     return [g for g in SCOPE_GROUPS if epic["scope_groups"][g]]
-
-
-def outcome_total(breakdown, row):
-    """All the work of an outcome_breakdown row, however it ended."""
-    return sum(breakdown[f"{row}_{outcome}"] for outcome in OUTCOMES)

@@ -487,8 +487,8 @@ class SlideParser(HTMLParser):
 def build(content, texts, image_credits, depth=1):
     """The deck's HTML page from valid content and the slides' HTML problems()
     returned for it, crediting each downloaded image in `image_credits` on
-    every slide that shows it, `depth` folders below the skill's output
-    folder."""
+    every slide that shows it, for a page `depth` folders below the skill's
+    output folder (1 for a deck, 2 for a kept example)."""
     charts, rings = content.get("charts", {}), content.get("rings", {})
     style = "\n".join(content.get("style", []))
     slides = []

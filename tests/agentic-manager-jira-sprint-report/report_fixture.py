@@ -56,20 +56,20 @@ def ticket(key, events, outcome, status="Done", scope="original", carried=False,
             "parentKey": parent, "parentSummary": "Login <beta>" if parent else None,
             "scope": scope, "carriedIn": carried, "events": events, "outcome": outcome,
             "points": events[-1]["points"], "closedAsNonDelivery": marker,
-            "counted": not (scope == "extra" and outcome == "removed"), **event_flags(events)}
+            "counted": not (scope == "extra" and outcome == "descoped"), **event_flags(events)}
 
 
 def event_flags(events):
     """The facts the model stores on a spell from its own events."""
     kinds = [e["type"] for e in events]
     return {"doneAtStart": events[0]["done"], "reopened": "reopened" in kinds,
-            "reestimated": "reestimated" in kinds, "cameBack": False}
+            "reestimated": "reestimated" in kinds, "cameBack": False, "firstEstimate": events[0]["points"]}
 
 
 TICKETS = [
     ticket("PROJ-1", [ev(2, "committed", 2), ev(3, "reestimated", 3, fromPoints=2),
                       ev(4, "completed", 3, done=True)], "completed"),
-    ticket("PROJ-2", [ev(2, "committed", 2), ev(4, "removed", 2)], "removed", status="In Progress",
+    ticket("PROJ-2", [ev(2, "committed", 2), ev(4, "removed", 2)], "descoped", status="In Progress",
            carried=True, priority="High"),
     ticket("PROJ-2", [ev(5, "joined", 2)], "not_completed",
            status="In Progress", scope="extra", priority="High"),
@@ -79,7 +79,7 @@ TICKETS = [
     ticket("PROJ-5", [ev(2, "committed", 2), ev(5, "completed", 2, done=True)], "completed", status="Duplicate",
            marker="duplicate"),
     ticket("PROJ-6", [ev(2, "committed", 2),
-           ev(4, "removed", 2)], "removed", status="To Do"),
+           ev(4, "removed", 2)], "descoped", status="To Do"),
 ]
 
 
@@ -183,13 +183,12 @@ def sprint_data(**changes):
     # Each ticket in the sprint at the end has its pull requests: none unless
     # a test gives some, as ticket_pulls() stores them.
     present = [t["key"]
-               for t in tickets if t["counted"] and t["outcome"] != "removed"]
+               for t in tickets if t["counted"] and t["outcome"] != "descoped"]
     pulls_of = {key: data.get("ticket_pull_requests", {}).get(
         key, []) for key in present}
     data["ticket_pull_requests"] = pulls_of
     counts, points = build.outcome_breakdown(tickets)
     counted = [t for t in tickets if t["counted"]]
-    original = [t for t in tickets if t["scope"] == "original"]
     data.update({
         "outcome_breakdown_counts": counts, "outcome_breakdown_points": points,
         "non_delivery_closures": build.non_delivery_closures(tickets),
@@ -200,7 +199,7 @@ def sprint_data(**changes):
         "timeline": build.build_timeline(tickets, data["sprint_status"], data["sprint_start"], data["sprint_end"],
                                          data["sprint_complete_date"], data["today"]),
         "target_completion": build.target_completion(tickets),
-        "burndown_baseline": sum(t["events"][0]["points"] or 0 for t in original),
+        "burndown_baseline": build.burndown_baseline(tickets),
         "burndown": build.build_burndown(tickets, data["sprint_start"], cutoff_day, data["as_of_instant"],
                                          timezone.utc),
     })

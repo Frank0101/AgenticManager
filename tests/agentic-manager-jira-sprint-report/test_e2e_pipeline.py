@@ -127,14 +127,14 @@ class BuildTest(ReportTest):
         cases = {
             "PROJ-1": [("original", "completed", ["committed 04", "completed 06"])],
             "PROJ-2": [("original", "not_completed", ["committed 04"])],
-            "PROJ-3": [("original", "removed", ["committed 04 done", "removed 05"])],
-            "PROJ-4": [("original", "removed", ["committed 04", "removed 09"])],
+            "PROJ-3": [("original", "descoped", ["committed 04 done", "removed 05"])],
+            "PROJ-4": [("original", "descoped", ["committed 04", "removed 09"])],
             "PROJ-5": [("extra", "completed", ["joined 04", "completed 10"])],
             # Left, then came back as extra work and closed as a Duplicate.
-            "PROJ-6": [("original", "removed", ["committed 04", "removed 05"]),
+            "PROJ-6": [("original", "descoped", ["committed 04", "removed 05"]),
                        ("extra", "completed", ["joined 06", "completed 11"])],
             "PROJ-7": [("extra", "not_completed", ["joined 10"])],
-            "PROJ-8": [("original", "removed", ["committed 04", "completed 05", "removed 06"])],
+            "PROJ-8": [("original", "descoped", ["committed 04", "completed 05", "removed 06"])],
             "PROJ-10": [("original", "completed", ["committed 04 done"])],
         }
         found = self.spells(self.build())
@@ -151,7 +151,7 @@ class BuildTest(ReportTest):
         self.assertEqual(
             [i["key"] for i in data["non_delivery_closures"]["issues"]], ["PROJ-6"])
         self.assertEqual(data["blocker_candidate_keys"], ["PROJ-7"])
-        outcomes = ("completed", "not_completed", "removed")
+        outcomes = ("completed", "not_completed", "descoped")
         self.assertEqual({row: [data["outcome_breakdown_counts"][f"{row}_{o}"] for o in outcomes]
                           for row in ("original", "extra")}, {"original": [2, 1, 4], "extra": [2, 1, 0]})
         self.assertEqual([data["outcome_breakdown_points"]
@@ -160,7 +160,7 @@ class BuildTest(ReportTest):
         # descoped; PROJ-6 completed again as extra work.
         epics = {e["key"]: e for e in data["epics"]}
         self.assertEqual(set(epics), {"PROJ-100", "PROJ-101", "__no_epic__"})
-        self.assertEqual(epics["PROJ-101"]["removed_stories"], 2)
+        self.assertEqual(len(epics["PROJ-101"]["scope_groups"]["descoped"]), 2)
         self.assertEqual((epics["PROJ-100"]["original_stories_done"], epics["PROJ-100"]["original_stories_total"],
                           epics["PROJ-100"]["extra_stories_done"]), (2, 5, 1))
 
@@ -182,7 +182,7 @@ class BuildTest(ReportTest):
             data).items() if t["carriedIn"]], ["PROJ-1", "PROJ-3"])
         self.assertEqual(data["previous_sprint"]["name"], "Sprint 6")
         counts, points = data["outcome_breakdown_counts"], data["outcome_breakdown_points"]
-        outcomes = ("completed", "not_completed", "removed")
+        outcomes = ("completed", "not_completed", "descoped")
         self.assertEqual(([counts[f"carried_in_{o}"] for o in outcomes], [points[f"carried_in_{o}"] for o in outcomes]),
                          ([1, 0, 1], [3, 0, 2]))
         for c in (counts, points):
@@ -344,7 +344,7 @@ class ReopenedAtTheStartTest(ReportTest):
         before = self.build()
         self.add_scenarios()
         data, md = self.make_report()
-        outcomes = ("completed", "not_completed", "removed")
+        outcomes = ("completed", "not_completed", "descoped")
 
         def grew(field, key):
             return data[field][key] - before[field][key]
@@ -585,6 +585,11 @@ class MakeReportTest(ReportTest):
             self.raw["sprint.json"]["goal"] = None
             self.content["goal_verdict"] = "No goal set in Jira for this sprint"
 
+        def no_estimates():
+            self.raw["_meta.json"]["story_points_field"] = None
+            self.content["retro_notes"] = [note.replace("PROJ-6 (1 pt)", "PROJ-6 (– pts)")
+                                           for note in self.content["retro_notes"]]
+
         def jira_text():
             self.raw["sprint.json"].update(name=source, goal=source)
             self.raw["previous_sprint.json"]["name"] = source
@@ -610,6 +615,13 @@ class MakeReportTest(ReportTest):
                 "*No goal was set in Jira for this sprint*",
                 "| Goal outcome <sup style=\"font-size:0.6rem;font-weight:normal\">[AI Gen.]</sup> "
                 "| No goal set in Jira for this sprint |"], []),
+            # With no estimate at all, every pts figure is "– pts", and a
+            # ratio's unestimated pts "–"; a sum of no ticket stays 0.
+            ("no estimates", no_estimates, [
+                "| Sprint target completion | 29%, 2/7 tickets (–/– pts) completed |",
+                "<td>0%, 0/2 tickets (0/– pts)</td>",
+                "<b>Commitment:</b><br>7 tickets (– pts)",
+                "Of the 7 tickets (– pts) in the commitment"], ["0 pts", "0/0 pts"]),
             # Em dashes are a tell of AI text: the agent's are replaced...
             ("em dash in content.json",
              lambda: self.content.update(
@@ -634,34 +646,18 @@ class MakeReportTest(ReportTest):
 
     def test_bad_content_fails(self):
         # content.json is checked against data.json before anything is
-        # written: make_report.py exits 1 naming the field to fix.
-        cases = [
-            # The verdicts allowed depend on the sprint: closed or running,
-            # with a goal or without.
-            ({}, {"goal_verdict": "On track"}, "goal_verdict must be one of"),
-            ({"goal": None}, {"goal_verdict": "Partially met"},
-             "goal_verdict must be one of"),
-            ({}, {"key_achievements": ["One.", "Two."]},
-             "key_achievements must be a non-empty string"),
-            # Every epic needs a sentence for each group it has tickets in.
-            ({}, {"epic_commentary": {}}, "epic_commentary.PROJ-101 needs a sentence for exactly these "
-                                          "groups: not_completed, descoped"),
-        ]
-        for sprint_changes, content_changes, expected in cases:
-            with self.subTest(expected, sprint=sprint_changes):
-                self.raw = copy.deepcopy(fixture.raw_files())
-                self.raw["sprint.json"].update(sprint_changes)
-                content = copy.deepcopy(fixture.CONTENT)
-                content["epic_commentary"] = fixture.epic_commentary(
-                    self.build())
-                content.update(content_changes)
-                with open(os.path.join(self.dir, "content.json"), "w", encoding="utf-8") as f:
-                    json.dump(content, f)
-                proc = self.run_script("make_report.py")
-                self.assertEqual(proc.returncode, 1)
-                self.assertIn(expected, proc.stderr)
-                self.assertFalse(os.path.exists(
-                    os.path.join(self.dir, REPORT)))
+        # written: make_report.py exits 1 naming the field to fix. Which
+        # content fails, and how, is unit-tested in test_make_report.py.
+        content = copy.deepcopy(fixture.CONTENT)
+        content["epic_commentary"] = fixture.epic_commentary(self.build())
+        content["key_achievements"] = ["One.", "Two."]
+        with open(os.path.join(self.dir, "content.json"), "w", encoding="utf-8") as f:
+            json.dump(content, f)
+        proc = self.run_script("make_report.py")
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn(
+            "key_achievements must be a non-empty string", proc.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.dir, REPORT)))
 
 
 class FinishReportTest(ReportTest):
@@ -691,45 +687,28 @@ class FinishReportTest(ReportTest):
                 self.assertIn("(4/12.5 pts)", md)
 
     def test_outcomes(self):
-        # A report from content
-        # the agent must fix is never written, so a stale or half-right one
-        # isn't left to be shared; a crash isn't a content.json problem, so
-        # it is shown whole, without that advice.
+        # The scripts it runs fit together: a passing run prints only the
+        # summary and the report's path; content the agent must fix writes
+        # no report, so a stale or half-right one isn't left to be shared.
+        # What each script's outcome prints is unit-tested in
+        # test_finish_report.py.
         path = re.escape(os.path.join(self.dir, REPORT))
-
-        def breakdown_drift(data):
-            # A breakdown that no longer matches the spells it was built from.
-            data["outcome_breakdown_counts"]["carried_in_completed"] += 1
-
-        def crash(data):
-            # A field only the check reads, so the report is still written.
-            del data["as_of_instant"]
-        # name: (changes to content.json, change to data.json, exit code,
-        # stdout as a regex, whether the report and charts are written)
+        # name: (changes to content.json, exit code, stdout as a regex,
+        # whether the report and charts are written)
         cases = [
-            ("passing", {}, None, 0, rf"all \d+ checks passed\nreport: {path}\n", True),
-            ("bad content", {"key_achievements": "PROJ-1 shipped."}, None, 1,
+            ("passing", {}, 0, rf"all \d+ checks passed\nreport: {path}\n", True),
+            ("bad content", {"key_achievements": "PROJ-1 shipped."}, 1,
              re.escape(
                  "content.json:\n  - key_achievements: names tickets ['PROJ-1']; describe the work instead\n"),
              False),
-            ("failed checks", {}, breakdown_drift, 1,
-             rf"(  FAIL  .*\n)+\d+ check\(s\) failed\nreport \(inspect the failed checks before rerunning\): {path}\n",
-             True),
-            ("crashed check", {}, crash, 1,
-             r"(?s)Traceback.*as_of_instant.*", True),
         ]
-        for name, changes, change_data, code, stdout, written in cases:
+        for name, changes, code, stdout, written in cases:
             with self.subTest(name):
                 for old in (REPORT, *CHARTS):
                     if os.path.exists(os.path.join(self.dir, old)):
                         os.remove(os.path.join(self.dir, old))
                 self.content = copy.deepcopy(fixture.CONTENT)
-                data = self.build()
-                self.write_content(data, **changes)
-                if change_data:
-                    change_data(data)
-                    with open(os.path.join(self.dir, "data.json"), "w", encoding="utf-8") as f:
-                        json.dump(data, f)
+                self.write_content(self.build(), **changes)
                 proc = self.run_script("finish_report.py")
                 self.assertEqual(proc.returncode, code,
                                  proc.stdout + proc.stderr)

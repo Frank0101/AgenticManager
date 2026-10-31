@@ -3,7 +3,7 @@
 The ledger is long, and a hand-made patch has to match its text exactly once, so
 every write goes through here: IDs, order, anchors and links are mechanical;
 what goes in the cells is the agent's judgment, which reaches it through
-investigate.py's submissions. A row is checked as it is written, with the rules
+submissions.py. A row is checked as it is written, with the rules
 check_report.py applies to the whole ledger at handover.
 """
 import os

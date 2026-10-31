@@ -1,4 +1,4 @@
-"""Prepares an investigation's new folder, replacing any earlier one of the same day.
+"""Prepares an investigation's new folder, replacing any earlier one of the same topic and day.
 
 Every run starts from scratch, so a report is always built from fresh research:
 a folder of the same topic and day is deleted first, and nothing an earlier run

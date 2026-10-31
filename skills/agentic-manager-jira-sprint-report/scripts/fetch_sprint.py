@@ -17,10 +17,10 @@ from datetime import datetime, timezone
 
 from common import (CHANGELOGS_DIR, COMMENTS_DIR, META_FILE, PARENTS_FILE, PREVIOUS_SPRINT_FILE, PULL_REQUESTS_FILE,
                     PUNTED_ISSUES_FILE, RAW_DIR, REPORTS_FOLDER, SPRINT_FILE, SPRINT_ISSUES_FILE,
-                    SPRINT_REPORT_FILE, STATUSES_FILE, GH_UNAVAILABLE, GITHUB_FAILED, JiraClient, as_of, blocker_candidate_keys,
-                    clear_folder, day_folder, gather, gh_available, history_fields, nested, output_folder, parse_ts,
+                    SPRINT_REPORT_FILE, STATUSES_FILE, GH_UNAVAILABLE, GITHUB_FAILED, Context, JiraClient, as_of,
+                    blocker_candidates, clear_folder, day_folder, gather, gh_available, history_fields, nested, output_folder, parse_ts,
                     project_of, pulls_by_ticket, read_events, report_label, report_timezone,
-                    standard_issues, status_categories, stops_on_failure, write_json)
+                    standard_issues, status_categories, stops_on_failure, ticket_events, write_json)
 
 # Issue fields the report needs, besides the site's Flagged and story points fields.
 BASE_FIELDS = [
@@ -217,7 +217,7 @@ def main():
         flagged_field, points_field = client.flagged_and_points_fields(
             board_id)
         if not points_field:
-            log("warning: no story points field found; tickets will have no estimate (– pts)")
+            log("warning: no story points field found; no ticket will have an estimate, so every ticket and total shows – pts")
         fields = BASE_FIELDS + [f for f in (flagged_field, points_field) if f]
 
         sprint_issues = client.sprint_issues(sprint_id, fields)
@@ -234,7 +234,7 @@ def main():
                 f"removed issue(s) could not be fetched: {sorted(missing)}")
 
         fetched_at = datetime.now(timezone.utc).isoformat()
-        moment = parse_ts(as_of(sprint, fetched_at))
+        moment = as_of(sprint, fetched_at)
         statuses = client.statuses()
         categories = status_categories(statuses)
         # Read in batches: a request for many issues, not one each.
@@ -251,10 +251,15 @@ def main():
         parents = client.issues_by_ids(parent_ids, ["summary", "description"])
 
         # Comments are fetched only for the tickets that were blocker candidates
-        # at the moment the report describes, worked out from the changelogs,
-        # as no events exist yet.
-        blocker_keys = blocker_candidate_keys(sprint_issues + punted_issues, changelogs, categories,
-                                              flagged_field, sprint_id, moment)
+        # at the moment the report describes, worked out from the tickets'
+        # events, as build_sprint_data.py works out data.json's. The events
+        # need neither the epics' names nor the previous sprint.
+        context = Context(sprint_id, sprint.get("startDate"), categories, (flagged_field, points_field), {},
+                          reporting_zone, None)
+        blocker_keys = blocker_candidates({issue["key"]: ticket_events(issue, changelogs[issue["key"]], context,
+                                                                       moment)
+                                           for issue in standard_issues(sprint_issues + punted_issues)},
+                                          sprint_id, moment)
         comments = dict(
             zip(blocker_keys, gather(blocker_keys, client.comments)))
 

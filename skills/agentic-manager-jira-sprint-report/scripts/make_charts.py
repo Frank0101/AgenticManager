@@ -12,7 +12,8 @@ import math
 import os
 from datetime import date, timedelta
 
-from common import (number, CHART_FILES, DATA_FILE, OUTCOME_COLOURS, OUTCOMES, display_date, read_json, outcome_total,
+from common import (number, CHART_FILES, DATA_FILE, OUTCOME_COLOURS, OUTCOME_ROWS, OUTCOMES, display_date, known_sum,
+                    read_json, outcome_total,
                     pts, scope_group_label, unit, whole_percentage, write_report_file)
 
 FONT = "-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
@@ -34,9 +35,9 @@ SERIES = {
     "ideal": {"label": "Ideal (commitment)", "color": "#1a7f37", "width": 1.8, "dash": "7 5"},
     "spread": {"label": "Spread vs ideal", "color": "#d92d20", "width": 1.8, "dash": "2 4"},
 }
-# The outcome rows that split the original commitment; the third is the extra
-# scope.
-ORIGINAL_ROWS = ("carried_in", "new")
+# The outcome rows that split the original commitment, between its total and
+# the extra scope.
+ORIGINAL_ROWS = OUTCOME_ROWS[1:3]
 # Both outcome charts share one layout: this width (more only if the labels
 # need it), with the bars taking this share of it, flush with the right margin.
 OUTCOME_WIDTH = 960
@@ -74,7 +75,7 @@ def outcome_chart(data, is_points):
     width, bracket_x, left = outcome_layout(data)
     bar_w = width - OUTCOME_MARGIN - left
     row_h, top, bar_h = 56, 56, 40
-    scale = bar_w / (max(totals[row] for row, *_ in rows) or 1)
+    scale = bar_w / (max(totals[row] or 0 for row, *_ in rows) or 1)
     body = [text(OUTCOME_MARGIN, 30, title, size=16, bold=True)]
     for index, (row, row_label, sub) in enumerate(rows):
         y = top + index * row_h
@@ -159,12 +160,17 @@ def outcome_chart(data, is_points):
 
 def outcome_labels(data, is_points):
     """What one outcome chart writes beside its bars: (breakdown, totals,
-    grand total, [(row, label, sublabel)], the bracket's lines)."""
-    breakdown = data["outcome_breakdown_points" if is_points else "outcome_breakdown_counts"]
+    grand total, [(row, label, sublabel)], the bracket's lines). The pts add
+    up by known_sum's rule: those of unestimated work alone are None."""
+    counts = data["outcome_breakdown_counts"]
+    breakdown = data["outcome_breakdown_points"] if is_points else counts
     rows = outcome_rows(data)
-    totals = {row: outcome_total(breakdown, row)
-              for row in ("original", *(r for r, _ in rows))}
-    grand = totals["original"] + totals["extra"]
+    names = ("original", *(r for r, _ in rows))
+    tickets = {row: outcome_total(counts, row) for row in names}
+    totals = {row: outcome_total(breakdown, row, counts if is_points else None)
+              for row in names}
+    grand = known_sum(totals[row]
+                      for row in ("original", "extra") if tickets[row])
 
     def sublabel(row):
         text_ = amount_text(totals[row], is_points)
@@ -216,7 +222,7 @@ def outcome_layout(data):
 
 def outcome_segments(data):
     """The outcome segments, labelled with the report's outcome words."""
-    return [(seg, scope_group_label({"removed": "descoped"}.get(seg, seg), data["sprint_status"]), color, ink)
+    return [(seg, scope_group_label(seg, data["sprint_status"]), color, ink)
             for seg, color, ink in OUTCOME_SEGMENTS]
 
 
@@ -248,7 +254,10 @@ def build_series(data):
     """The burndown's rows, from data.json's daily readings. The start day has
     two points at the same x, so the drop between them is vertical: the whole
     commitment at the start, Done or not, then that day's reading, as that
-    drop is work already Done and the day's changes, not delivery pace."""
+    drop is work already Done and the day's changes, not delivery pace.
+    Unestimated pts (known_sum's None) are drawn at 0, as the lines need a
+    value, and each row's `unestimated` names the series whose value is
+    labelled "–" for it."""
     actuals = {date.fromisoformat(
         row["date"]): row for row in data["burndown"]}
     sprint_start, sprint_end = date.fromisoformat(
@@ -256,11 +265,12 @@ def build_series(data):
     last_actual = max(actuals)
 
     baseline = data["burndown_baseline"]
+    level = baseline or 0
     weekdays = sum(1 for d in daterange(
         sprint_start + timedelta(days=1), sprint_end) if is_weekday(d))
 
-    rows = [{"date": sprint_start, "label": "start", "committed": baseline, "total": baseline,
-             "ideal": baseline, "spread": 0}]
+    rows = [{"date": sprint_start, "label": "start", "committed": level, "total": level,
+             "ideal": level, "spread": 0, "unestimated": {"committed", "total"} if baseline is None else set()}]
     # Actuals after the planned end run to the close or fetch; the ideal keeps
     # its final planned value (the baseline when there were no later weekdays).
     last_day = max(sprint_end, last_actual)
@@ -268,13 +278,15 @@ def build_series(data):
     for day in daterange(sprint_start, last_day):
         if sprint_start < day <= sprint_end and is_weekday(day):
             burned += 1
-        ideal = round(baseline * (1 - burned / weekdays),
-                      2) if weekdays else baseline
+        ideal = round(level * (1 - burned / weekdays),
+                      2) if weekdays else level
         row = {"date": day, "label": "close", "ideal": ideal,
-               "committed": None, "total": None, "spread": None}
+               "committed": None, "total": None, "spread": None, "unestimated": set()}
         if day <= last_actual:
-            row["committed"] = actuals[day]["committed"]
-            row["total"] = actuals[day]["total"]
+            for key in ("committed", "total"):
+                row[key] = actuals[day][key] or 0
+                if actuals[day][key] is None:
+                    row["unestimated"].add(key)
             row["spread"] = round(row["committed"] - ideal, 2)
         rows.append(row)
 
@@ -365,13 +377,13 @@ def burndown_chart(data, series):
             continue
         x = x_of(row["date"])
         if row["label"] == "start":
-            body.append(text(x - 6, y_of(row["committed"]) + 4, number(row["committed"]), size=10,
+            body.append(text(x - 6, y_of(row["committed"]) + 4, value_text(row, "committed"), size=10,
                              color=SERIES["committed"]["color"], anchor="end", bold=True))
             continue
-        body.append(text(x, y_of(row["committed"]) + 14, number(row["committed"]), size=10,
+        body.append(text(x, y_of(row["committed"]) + 14, value_text(row, "committed"), size=10,
                          color=SERIES["committed"]["color"], anchor="middle", bold=True))
-        if row["total"] != row["committed"]:
-            body.append(text(x, y_of(row["total"]) - 7, number(row["total"]), size=10,
+        if (row["total"], "total" in row["unestimated"]) != (row["committed"], "committed" in row["unestimated"]):
+            body.append(text(x, y_of(row["total"]) - 7, value_text(row, "total"), size=10,
                              color=SERIES["total"]["color"], anchor="middle", bold=True))
 
     axis_y = top + plot_h + 14
@@ -391,6 +403,12 @@ def burndown_chart(data, series):
     return svg(width, legend_y + 16, body)
 
 
+def value_text(row, key):
+    """A burndown row's value of a series as its label: "–" for unestimated
+    pts."""
+    return "–" if key in row["unestimated"] else number(row[key])
+
+
 def nice_step(span):
     for step in (1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000):
         if span / step <= 8:
@@ -403,7 +421,7 @@ def print_series(series):
           f"ideal over {series['weekdays']} later weekdays; actuals to {series['last_actual']}")
     print(f"{'date':<12}{'dow':<5}{'point':<7}{'committed':>10}{'total':>8}{'ideal':>8}{'spread':>8}")
     for r in series["rows"]:
-        cells = ["-" if r[k] is None else number(r[k])
+        cells = ["-" if r[k] is None else value_text(r, k)
                  for k in ("committed", "total", "ideal", "spread")]
         print(f"{r['date'].isoformat():<12}{r['date'].strftime('%a'):<5}{r['label']:<7}"
               f"{cells[0]:>10}{cells[1]:>8}{cells[2]:>8}{cells[3]:>8}")

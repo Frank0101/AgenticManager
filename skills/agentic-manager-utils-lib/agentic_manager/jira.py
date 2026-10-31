@@ -35,6 +35,8 @@ EXCLUDED = "excluded-projects"
 # usually use "Story Points", team-managed ones "Story point estimate".
 STORY_POINT_FIELD_NAMES = ("Story Points", "Story point estimate")
 
+# A page, how Jira splits its answer, is the largest it allows: a smaller one
+# only adds calls.
 PAGE_SIZE = 100
 # Jira's "bulk fetch" of many issues' changelogs: a request for each batch of
 # issues (batch.py) rather than one per issue.

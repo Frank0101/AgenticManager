@@ -15,9 +15,9 @@
   "findings": [
     {
       "key": "[[f1]]",
-      "claim": "The search API sends index updates to a queue, never to the index directly.",
+      "claim": "The search API queries the index over HTTP for every search.",
       "sources": "[[s1]] (lines 40-60)",
-      "limits": "[[s1]]: the unread lines are the index's admin commands, which don't send updates."
+      "limits": "[[s1]]: the unread lines are the index's admin commands, which don't serve searches."
     }
   ],
   "boundaries": [

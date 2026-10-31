@@ -89,14 +89,11 @@ class CheckDeckTest(unittest.TestCase):
         self.assertTrue(make_deck.make_deck(DECK)["ok"])
         with open(os.path.join(self.deck, PAGE), encoding="utf-8") as f:
             page = f.read()
-        # A link that doesn't reach the image's file fails: the check reads
-        # where each link leads.
-        broken = "../_assets/acme-logo/image"
-        errors = self.errors_of(page.replace(
-            "../_assets/acme-logo/image.svg", broken))
-        self.assertTrue(
-            any(f"the page links the images ['{broken}']" in e for e in errors), errors)
-        cases = [("another image", lambda p: p.replace("acme-logo/image.svg", "other/image.svg"),
+        # The check reads where each link leads: one that reaches no file, or
+        # another image, fails.
+        cases = [("a link that reaches no file", lambda p: p.replace("acme-logo/image.svg", "acme-logo/image"),
+                  "the page links the images ['../_assets/acme-logo/image']"),
+                 ("another image", lambda p: p.replace("acme-logo/image.svg", "other/image.svg"),
                   "the page links the images ['../_assets/other/image.svg']; slides.json places ['acme-logo']"),
                  ("an image by its path", lambda p: p.replace("../_assets/acme-logo/image.svg", "/tmp/acme-logo.svg"),
                   "the page links the images ['/tmp/acme-logo.svg']")]

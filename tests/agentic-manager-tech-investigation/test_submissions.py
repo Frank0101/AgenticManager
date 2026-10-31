@@ -22,6 +22,7 @@ import init_investigation  # noqa: E402
 import ledger  # noqa: E402
 import submissions  # noqa: E402
 import protocol  # noqa: E402
+import common  # noqa: E402
 from common import ID_LETTERS  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from investigation_fixture import INVESTIGATION, temp_output  # noqa: E402
@@ -131,37 +132,39 @@ class SubmissionTest(unittest.TestCase):
         # What a read covers is added to what the ledger holds: a later,
         # smaller read never shrinks it.
         file = "[f](https://git.example/acme/api/blob/abc/server.py)"
-        page = "[d](https://docs.example.com/design)"
-        # name: (the Coverage held, this read, kind, reference, the Coverage written)
-        cases = [("two line ranges", "partial: lines 1-80 of 352", {"read": "partial", "lines": [[200, 240]]},
-                  "code", file, "partial: lines 1-80, 200-240 of 352"),
-                 ("touching ranges join", "partial: lines 1-80", {"read": "partial", "lines": [[81, 120]]},
-                  "code", file, "partial: lines 1-120"),
-                 ("a smaller read", "partial: lines 1-200; routes", {"read": "partial", "lines": [[10, 20]]},
-                  "code", file, "partial: lines 1-200; routes"),
+        # name: (the Coverage held, this read, the Coverage written)
+        cases = [("two line ranges", "partial: lines 1-80 of 352", {"read": "partial", "lines": [[200, 240]]}, "partial: lines 1-80, 200-240 of 352"),
+                 ("touching ranges join", "partial: lines 1-80",
+                  {"read": "partial", "lines": [[81, 120]]}, "partial: lines 1-120"),
+                 ("a smaller read", "partial: lines 1-200; routes",
+                  {"read": "partial", "lines": [[10, 20]]}, "partial: lines 1-200; routes"),
                  ("then in full", "partial: lines 1-80",
-                  {"read": "full"}, "code", file, "full"),
+                  {"read": "full"}, "full"),
                  ("full stays full", "full", {
-                  "read": "partial", "lines": [[1, 9]]}, "code", file, "full"),
-                 ("more sections", "partial: sections: Proposal", {"read": "partial", "sections": ["Risks"]},
-                  "documentation", page, "partial: sections: Proposal, Risks"),
-                 ("found after all", "can't access: not on main", {"read": "partial", "lines": [[1, 5]], "note": "x"},
-                  "code", file, "partial: lines 1-5; not on main; x")]
-        for name, held, now, kind, reference, expected in cases:
+                  "read": "partial", "lines": [[1, 9]]}, "full"),
+                 ("more sections", "partial: sections: Proposal", {
+                  "read": "partial", "sections": ["Risks"]}, "partial: sections: Proposal, Risks"),
+                 ("found after all", "can't access: not on main", {"read": "partial", "lines": [[1, 5]], "note": "x"}, "partial: lines 1-5; not on main; x")]
+        for name, held, now, expected in cases:
             with self.subTest(name):
                 grown = submissions.grown_coverage(
-                    submissions.coverage_fields(held), now, kind, reference)
-                self.assertEqual(submissions.coverage_text(
-                    grown, kind, reference), expected)
-        # Through a submission: the second read keeps the first one's lines.
+                    submissions.coverage_fields(held), now)
+                self.assertEqual(submissions.coverage_text(grown), expected)
+        # Through a submission: the second read keeps the first one's lines,
+        # and the source stays superseded, as the second answer doesn't say
+        # otherwise.
         source = {"key": "[[s1]]", "kind": "code",
                   "reference": file, "revision": "abc"}
-        self.answered(sources=[{**source, "coverage": {"read": "partial", "lines": [[1, 80]], "of": 352}}],
+        newer = {"key": "[[s2]]", "kind": "code", "reference": "[g](https://git.example/acme/api/blob/abc/v2.py)",
+                 "revision": "abc", "coverage": {"read": "full"}}
+        self.answered(sources=[{**source, "coverage": {"read": "partial", "lines": [[1, 80]], "of": 352},
+                                "superseded_by": "[[s2]]"}, newer],
                       findings=[finding(sources="[[s1]]", limits="[[s1]]: the rest is admin routes.")])
         self.answered("Q02", sources=[{**source, "coverage": {"read": "partial", "lines": [[200, 240]]}}],
                       findings=[finding(sources="[[s1]]", limits="[[s1]]: the rest is admin routes.")])
-        self.assertEqual(self.rows("sources"), ["S01"])
-        self.assertIn("| partial: lines 1-80, 200-240 of 352 |", self.plain())
+        self.assertEqual(self.rows("sources"), ["S01", "S02"])
+        self.assertIn(
+            "| partial: lines 1-80, 200-240 of 352 | F01, F02 | S02 |", self.plain())
 
     def test_references_are_written_in_double_brackets(self):
         # A reference in double brackets, [[F07]] or a key such as [[f1]], is
@@ -209,47 +212,41 @@ class SubmissionTest(unittest.TestCase):
             "outcome": {"answered": "[[f1]]"}})
         self.assertIn(
             "| Routes read. S01: the unread lines are admin routes. |", self.plain())
-        # The field that once held the reason is refused.
-        self.assertIn("has no field partial_read", self.refused("research", "Q02", {
-            "findings": [finding(partial_read="x")], "outcome": {"answered": "[[f1]]"}}))
 
     def test_coverage_is_written_from_its_fields(self):
-        # name: (coverage, kind, reference, the Coverage written, or the
-        # start of the problem): a partial read names what was read, by what
-        # the source is.
-        file = "[f](https://git.example/acme/api/blob/abc/server.py)"
-        pull = "[p](https://git.example/acme/api/pull/42)"
-        page = "[d](https://docs.example.com/design)"
-        cases = [("full", {"read": "full"}, "code", file, "full"),
+        # name: (coverage, kind, the Coverage written, or the start of the
+        # problem): the script writes the text, and a partial read names what
+        # was read, by what the source is (common.coverage_problem).
+        cases = [("full", {"read": "full"}, "code", "full"),
                  ("lines of a file", {"read": "partial", "lines": [[1, 80], [200, 240]], "of": 352, "note": "routes"},
-                  "code", file, "partial: lines 1-80, 200-240 of 352; routes"),
+                  "code", "partial: lines 1-80, 200-240 of 352; routes"),
                  ("files of a pull request", {"read": "partial", "files": ["api/routes.py"]}, "code: pull request",
-                  pull, "partial: files: api/routes.py"),
-                 ("sections of a page", {"read": "partial", "sections": ["Proposal"]}, "documentation", page,
+                  "partial: files: api/routes.py"),
+                 ("sections of a page", {"read": "partial", "sections": ["Proposal"]}, "documentation",
                   "partial: sections: Proposal"),
-                 ("a path not found", {"read": "can't access", "note": "not on the main branch at abc"}, "code", file,
+                 ("a path not found", {"read": "can't access", "note": "not on the main branch at abc"}, "code",
                   "can't access: not on the main branch at abc"),
-                 ("a file in part with no lines", {"read": "partial", "note": "routes"}, "code", file,
-                  "a partial read of this source names the lines read"),
-                 ("a pull request in part with no files", {"read": "partial"}, "code: pull request", pull,
-                  "a partial read of this source names the files read"),
-                 ("a folder in part with no files", {"read": "partial", "note": "the handlers"}, "code",
-                  "[d](https://git.example/acme/api/tree/abc/api)", "a partial read of this source names the files read"),
-                 ("a page in part with no sections", {"read": "partial"}, "documentation", page,
-                  "a partial read of this source names the sections read"),
-                 ("lines beyond the file", {"read": "partial", "lines": [[300, 400]], "of": 352}, "code", file,
+                 ("code in part naming nothing read", {"read": "partial", "note": "routes"}, "code",
+                  "S01: Coverage of code read in part names the lines read"),
+                 ("a document in part with no sections", {"read": "partial"}, "documentation",
+                  "S01: Coverage of a document read in part names the sections read"),
+                 ("lines beyond the file", {"read": "partial", "lines": [[300, 400]], "of": 352}, "code",
                   "lines lists the ranges read"),
                  ("a word, not a read", {"read": "skimmed"},
-                  "code", file, "coverage is an object"),
-                 ("text", "full", "code", file, "coverage is an object")]
-        for name, given, kind, reference, expected in cases:
+                  "code", "coverage is an object"),
+                 ("text", "full", "code", "coverage is an object")]
+        for name, given, kind, expected in cases:
             with self.subTest(name):
                 try:
-                    self.assertEqual(submissions.coverage_text(
-                        given, kind, reference), expected)
+                    text = submissions.coverage_text(given)
                 except SystemExit as refused:
                     self.assertTrue(str(refused.code).startswith(
                         expected), refused.code)
+                    continue
+                problem = common.coverage_problem(
+                    ["S01", kind, "[x](https://x.example/x)", "abc", text, "", "None"])
+                self.assertEqual(problem[:len(expected)]
+                                 if problem else text, expected)
 
     def test_every_problem_is_listed_by_field_and_nothing_is_written(self):
         data = {"sources": [{"key": "[[s1]]", "kind": "source_control", "reference": "[api](https://example.com/api)",
@@ -386,7 +383,7 @@ class SubmissionTest(unittest.TestCase):
             protocol.example("review")), 1)
         self.assertEqual(result["ids"], {"[[q1]]": "Q06"})
         self.assertIn(
-            "| Q06 | Review round 1 | Does the index build job run in production", self.plain())
+            "| Q06 | Review round 1 | Which identity does the index build job use", self.plain())
         self.submit("review", {"raised": []}, 2)
         self.submit("review", {"stopped": "Enough."}, 3)
         self.assertIn(

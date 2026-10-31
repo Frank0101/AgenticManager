@@ -15,6 +15,7 @@ import re
 import shutil
 import sys
 import tempfile
+from datetime import datetime
 
 if not __package__:
     # Run as a script: import the package from the folder that holds it.
@@ -36,6 +37,7 @@ DESCRIPTION_TITLE = re.compile(r"# (.+)")
 LABELLED_LINE = re.compile(r"^\*\*([^*\n]+):\*\* (.+)$", re.M)
 # The name day_folder() gives, read back: its subject and its YY-MM-DD date.
 DAY_FOLDER = re.compile(r"(?P<subject>.+)_(?P<date>\d\d-\d\d-\d\d)")
+DAY_FORMAT = "%y-%m-%d"
 
 
 def output_folder(name):
@@ -77,7 +79,14 @@ def folder_name(value):
 def day_folder(subject, day):
     """The name of a subject's folder for a day, <subject>_<YY-MM-DD>, such as
     PROJ_Sprint_3_26-03-16; `day` is a date or a datetime."""
-    return f"{subject}_{day.strftime('%y-%m-%d')}"
+    return f"{subject}_{day.strftime(DAY_FORMAT)}"
+
+
+def folder_day(name):
+    """The day of a subject's folder named by day_folder(), as a date, or
+    None for a name of another form."""
+    match = DAY_FOLDER.fullmatch(name)
+    return datetime.strptime(match["date"], DAY_FORMAT).date() if match else None
 
 
 def clear_folder(path):

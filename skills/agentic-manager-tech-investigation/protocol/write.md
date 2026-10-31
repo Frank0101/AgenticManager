@@ -2,6 +2,8 @@ Write the report's text from the brief below, which holds everything the report 
 
 Link each claim to the ledger, such as [F03](ledger:F03); the script writes the title, the evidence date and the references. Report, don't recommend: describe what the evidence shows, never your own recommendations, preferred options, plans or owners; what the sources don't settle is reported as open. Name roles, never people: "the platform team", "the feature's owner". Approximate lengths are room to explain, not quotas: write less when the point is simple or the evidence thin.
 
+{{links}}
+
 The executive layer:
 
 - purpose (about 150 words): the problem, who it affects, why it matters and the intended outcome, in plain language. End with each topic the brief's Scope boundaries mark mention only, in one line on how it connects.

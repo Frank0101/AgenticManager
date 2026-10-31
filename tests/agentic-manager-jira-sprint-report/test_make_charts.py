@@ -31,9 +31,9 @@ import make_charts as charts  # noqa: E402
 
 
 def breakdown(**rows):
-    """An outcome breakdown from (completed, not completed, removed) per row."""
+    """An outcome breakdown from (completed, not completed, descoped) per row."""
     return {f"{row}_{outcome}": value for row, values in rows.items()
-            for outcome, value in zip(("completed", "not_completed", "removed"), values)}
+            for outcome, value in zip(("completed", "not_completed", "descoped"), values)}
 
 
 def sprint(**changes):
@@ -187,6 +187,11 @@ class OutcomeChartTest(unittest.TestCase):
             original=(1, 1, 1), carried_in=(0, 0, 0), new=(1, 1, 1), extra=(1, 0, 0)))
         running = {"sprint_status": "active",
                    "sprint_complete_date": None, "today": "2026-03-05"}
+        # Unestimated pts are None where tickets are, 0 where none are.
+        unestimated = breakdown(original=(None, None, None), carried_in=(None, 0, 0), new=(0, None, None),
+                                extra=(None, 0, 0))
+        extra_unestimated = breakdown(original=(4, 2, 1), carried_in=(4, 0, 0), new=(0, 2, 1),
+                                      extra=(None, 0, 0))
         cases = [
             ("tickets", sprint(), False,
              ["Sprint 7: Sprint Outcome (4 tickets)</text>", ">3 tickets</text>", ">(75% of total)</text>",
@@ -206,6 +211,14 @@ class OutcomeChartTest(unittest.TestCase):
             # Work not done yet isn't "not completed" while the sprint runs.
             ("running sprint", sprint(**running), False,
              [">Open</text>"], ["Not completed"]),
+            # Pts of unestimated tickets alone are "– pts", and so is a share
+            # of them; the rest add up the set estimates.
+            ("no estimates", sprint(outcome_breakdown_points=unestimated, points_estimated_issue_count=0), True,
+             ["Sprint Outcome (– pts) (0/4 tickets estimated)", ">– pts</text>"], ["0 pts", "% of"]),
+            ("extra unestimated", sprint(outcome_breakdown_points=extra_unestimated,
+                                         points_estimated_issue_count=3), True,
+             ["Sprint Outcome (7 pts) (3/4 tickets estimated)", "– pts (– of total)", ">(100% of total)</text>",
+              "4 pts (57% of commitment)"], []),
             # Nothing to share out: no percentages rather than "n/a".
             ("empty sprint", sprint(outcome_breakdown_counts=empty), False,
              ["Sprint Outcome (0 tickets)", ">0 tickets</text>"], ["% of", "n/a"]),
@@ -241,7 +254,9 @@ class OutcomeChartTest(unittest.TestCase):
             # Carry-over (4 pts) is the longest.
             ("pts", sprint(), True, [4, 2, 1, 3], 4),
             ("fractional", sprint(outcome_breakdown_points=breakdown(
-                original=(0.5, 0, 0), carried_in=(0, 0, 0), new=(0.5, 0, 0), extra=(0.25, 0, 0))),
+                original=(0.5, 0, 0), carried_in=(0, 0, 0), new=(0.5, 0, 0), extra=(0.25, 0, 0)),
+                outcome_breakdown_counts=breakdown(
+                original=(1, 0, 0), carried_in=(0, 0, 0), new=(1, 0, 0), extra=(1, 0, 0))),
              True, [0.5, 0.25], 0.5),
         ]
         for name, data, is_points, values, longest in cases:
@@ -335,9 +350,11 @@ class OutcomeChartTest(unittest.TestCase):
             for values in ((60, 1, 1), (1, 60, 1), (1, 1, 60)):
                 for is_points in (False, True):
                     with self.subTest(name=name, values=values, is_points=is_points):
-                        field = "outcome_breakdown_points" if is_points else "outcome_breakdown_counts"
+                        # The pts breakdown holds pts only where tickets are.
                         data = sprint(previous_sprint={"id": 6, "name": name},
-                                      **{field: single_row("new", values)})
+                                      outcome_breakdown_counts=single_row(
+                                          "new", values),
+                                      outcome_breakdown_points=single_row("new", values))
                         chart = charts.outcome_chart(data, is_points)
                         labels = []
                         for x, y, anchor, label in re.findall(
@@ -413,6 +430,17 @@ class BurndownChartTest(unittest.TestCase):
                          "6", "6", "6", "2", "2", "2", "2", "2", "2", "2", "2", "2"])
         self.assertEqual([v for _, v in values("total")],
                          ["9", "5", "5", "5", "5"])
+
+    def test_unestimated_values(self):
+        # Unestimated pts are drawn at 0 and labelled "–", never "0".
+        data = sprint(burndown_baseline=None)
+        for row in data["burndown"][3:]:
+            row.update(committed=None, total=None)
+        chart = charts.burndown_chart(data, charts.build_series(data))
+        self.assertIn("Commitment of – pts at the start", chart)
+        committed = re.findall(rf'fill="{charts.SERIES["committed"]["color"]}" text-anchor="\w+" '
+                               r'font-weight="bold">([^<]+)</text>', chart)
+        self.assertEqual(committed, ["–", "6", "6", "6"] + ["–"] * 9)
 
     def test_cutoff(self):
         # The label names why the actuals stop, right of the line or, near

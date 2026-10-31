@@ -9,7 +9,7 @@ problem is collected by field, and the ledger changes only when there is none.
 """
 import re
 
-from common import (COVERAGE, LEFT_OUT, group_of, OUTSIDE_SCOPE, SCOPE_ANSWERS, links, SCOPE_QUESTION, USER_DECIDED, citation, claim_length_problem, ids,
+from common import (COVERAGE, LEFT_OUT, OUTSIDE_SCOPE, SCOPE_ANSWERS, SCOPE_QUESTION, USER_DECIDED, citation, claim_length_problem, ids,
                     recorded_ids,
                     read_in_part)
 from ledger import (TABLES, as_written, basis, duplicate_of, finish_write, find_row,
@@ -150,10 +150,15 @@ def write_reading(lines, sources, findings, keys, problems):
             cells[1] = problems.guard(
                 where, lambda c=cells: search_reference(c[1]))
         if cells is not None:
-            held = {row[0]: row[4] for row in table_rows(
+            # A source read again keeps what the ledger holds of it: its
+            # coverage grows, and it stays superseded unless the answer says
+            # otherwise.
+            held = {row[0]: row for row in table_rows(
                 lines, "sources")}.get(read_before(lines, item) or "")
             cells[3] = problems.guard(f"{where}.coverage", lambda c=cells, h=held: coverage_text(
-                c[3] if h is None else grown_coverage(coverage_fields(h), c[3], c[0], c[1]), c[0], c[1]))
+                c[3] if h is None else grown_coverage(coverage_fields(h[4]), c[3])))
+            if held is not None and "superseded_by" not in item:
+                cells[4] = held[6]
         if cells is not None and cells[1] is not None and cells[3] is not None:
             written += problems.put(lines, "sources",
                                     keys.get(key_of(item)), cells, where, keys)
@@ -248,11 +253,12 @@ def submit_review(lines, data, round_number):
     return {"ids": written_keys(keys)}
 
 
-def coverage_text(given, kind, reference):
+def coverage_text(given):
     """A source's Coverage as the ledger writes it, from the submitted object:
     {"read": ..., "lines": [[1, 80]], "of": 352, "sections": [...], "files":
-    [...], "note": ...}, under the rule COVERAGE states. Exits on anything
-    else."""
+    [...], "note": ...}, as COVERAGE describes; exits on a malformed object.
+    Whether a partial read names enough is coverage_problem()'s, checked when
+    the row is written."""
     shape = ('coverage is an object such as {"read": "partial", "lines": [[1, 80], [200, 240]], "of": 352}; read is '
              f'one of: {", ".join(COVERAGE)}, and lines, of, sections, files and note are optional')
     if not isinstance(given, dict) or given.get("read") not in COVERAGE \
@@ -275,16 +281,6 @@ def coverage_text(given, kind, reference):
     note = given.get("note", "")
     if not isinstance(note, str):
         raise SystemExit("note is a text")
-    if given["read"] == "partial":
-        url = next((url for _, _, _, url in links(reference, {})
-                   if url), "") if isinstance(reference, str) else ""
-        group = group_of([None, kind])
-        if group == "source_control" and not (spans or named["files"]):
-            raise SystemExit("a partial read of this source names the "
-                             + ("lines" if "/blob/" in url else "files") + " read")
-        if group == "documentation" and not named["sections"]:
-            raise SystemExit(
-                "a partial read of this source names the sections read")
     parts = []
     if spans:
         parts.append(
@@ -295,12 +291,12 @@ def coverage_text(given, kind, reference):
     return given["read"] + (": " + "; ".join(parts) if parts else "")
 
 
-def grown_coverage(before, now, kind, reference):
+def grown_coverage(before, now):
     """The coverage of a source read again: `before`, as the ledger holds it,
     and `now`, what this read covers, together. The fuller read wins, as full
     covers everything; the lines, sections and files read are merged, and the
     notes kept. Exits on a `now` coverage_text() refuses."""
-    coverage_text(now, kind, reference)
+    coverage_text(now)
     read = min(before["read"], now["read"], key=COVERAGE.index)
     notes = list(dict.fromkeys(n for n in (
         before.get("note"), now.get("note")) if n))

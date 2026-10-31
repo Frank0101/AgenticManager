@@ -28,10 +28,11 @@ SAVED = {"issues": {"nodes": [
 
 class ExtractSavedTest(unittest.TestCase):
     def test_at(self):
+        # A dotted path is split into its steps, "" being the item itself;
+        # following the steps is json_path.nested(), tested there.
         item = SAVED["issues"]["nodes"][0]
         # path: value
-        cases = [("key", "PROJ-1"), ("fields.status.name", "Done"), ("fields.fixVersions.0.name", "1.0"),
-                 ("fields.fixVersions.5.name", None), ("fields.missing.name", None), ("", item)]
+        cases = [("fields.status.name", "Done"), ("", item)]
         for path, expected in cases:
             with self.subTest(path):
                 self.assertEqual(extract_saved._at(item, path), expected)

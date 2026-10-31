@@ -10,7 +10,6 @@ import os
 import sys
 import tempfile
 import unittest
-from datetime import timedelta, timezone
 from unittest import mock
 from zoneinfo import ZoneInfo
 
@@ -24,99 +23,16 @@ import common  # noqa: E402
 from agentic_manager import output_file  # noqa: E402
 from common import NO_EPIC, parse_ts  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from sprint_fixture import STATUS, moved  # noqa: E402
+from sprint_fixture import moved  # noqa: E402
+from ticket_fixture import (CATEGORIES, CLOSE, PLUS_ONE, PREVIOUS, START, START_DATE, at, carried, changed,  # noqa: E402
+                            context, done, events, joined, left, points, raw)
 from report_fixture import ev, pull, ticket  # noqa: E402
-
-START = "2026-03-02T09:00:00.000+0100"
-START_DATE = "2026-03-02"
-CLOSE = "2026-03-13T17:00:00.000+0100"
-FIELDS = ("customfield_flag", "customfield_points")
-PLUS_ONE = timezone(timedelta(hours=1))
-CATEGORIES = {i: category for i, category in STATUS.values()}
-
-
-def at(day, time="10:00"):
-    return f"2026-{day}T{time}:00.000+0100"
-
-
-def raw(key, created="2026-02-20T10:00:00.000+0100", status="To Do", points=None, resolution=None,
-        parent=None, **fields):
-    """A raw issue as Jira's API returns it today."""
-    return {"key": key, "fields": {
-        "summary": f"Summary of {key}", "created": created,
-        "status": {"id": STATUS[status][0], "name": status, "statusCategory": {"key": STATUS[status][1]}},
-        "resolution": {"name": resolution} if resolution else None,
-        "issuetype": {"name": "Story"}, "priority": {"name": "Medium"},
-        "parent": ({"id": f"id-{parent}", "key": parent, "fields": {"summary": f"Epic {parent}"}}
-                   if parent else None),
-        "customfield_points": points, **fields}}
-
-
-def done(key, **kwargs):
-    return raw(key, status="Done", resolution="Done", **kwargs)
-
-
-def joined(created, sprint="7"):
-    return {"created": created, "field": "sprint", "from": "", "to": sprint,
-            "fromString": None, "toString": None}
-
-
-def left(created, sprint="7"):
-    return {"created": created, "field": "sprint", "from": sprint, "to": "",
-            "fromString": None, "toString": None}
-
-
-def changed(created, field, old, new, old_id=None, new_id=None):
-    return {"created": created, "field": field, "from": old_id, "fromString": old,
-            "to": new_id, "toString": new}
-
-
-def context(epics=None, previous=None):
-    return build.Context("7", START, CATEGORIES, FIELDS, epics or {}, PLUS_ONE, previous)
-
-
-# Sprint 6 closed an hour before Sprint 7 started.
-PREVIOUS = {"id": 6, "name": "Sprint 6",
-            "completeDate": "2026-03-02T08:00:00.000+0100"}
-
-
-def carried(created=PREVIOUS["completeDate"]):
-    """Moved from Sprint 6 into Sprint 7 when Sprint 6 closed; Jira keeps
-    Sprint 6 in the field."""
-    return {"created": created, "field": "sprint", "from": "6", "to": "6, 7",
-            "fromString": None, "toString": None}
-
-
-def events(issue, changes):
-    """The ticket's events, from which the model works out its spells."""
-    return build.ticket_events(issue, changes, context(), CLOSE)
 
 
 def spells_of(issue, changes, ctx=None, moment=CLOSE):
     """The ticket's spells, from its events as main() works them out."""
     ctx = ctx or context()
-    return build.spells_from_events(issue, build.ticket_events(issue, changes, ctx, moment), ctx, moment)
-
-
-def points(created, old, new):
-    return changed(created, "points", old, new)
-
-
-class DatesTest(unittest.TestCase):
-    def test_sprint_date(self):
-        cases = [
-            ("converted to the site offset",
-             "2026-03-01T23:30:00.000Z", "2026-03-02"),
-            ("none", None, None),
-            # 00:00 on the 8th at +01:00: the day Jira shows, the 8th, is the
-            # sprint's last day, included.
-            ("an end on midnight names the day Jira shows",
-             "2026-03-07T23:00:00.000Z", "2026-03-08"),
-            ("an end during the day", "2026-03-07T16:00:00.000Z", "2026-03-07"),
-        ]
-        for name, ts, expected in cases:
-            with self.subTest(name):
-                self.assertEqual(build.sprint_date(ts, PLUS_ONE), expected)
+    return build.spells_from_events(issue, common.ticket_events(issue, changes, ctx, moment), ctx, moment)
 
 
 class FieldsTest(unittest.TestCase):
@@ -205,15 +121,15 @@ class SpellsTest(unittest.TestCase):
             ("joined and left before the start", [
              joined(before), left(at("02-28"))], None, []),
             ("extra work that left for good is shown, not counted", [joined(at("03-03")), left(at("03-05"))], None,
-             [("extra", "removed", False)]),
+             [("extra", "descoped", False)]),
             ("original work that left for good", [joined(before), left(at("03-05"))], None,
-             [("original", "removed", True)]),
+             [("original", "descoped", True)]),
             ("leaving and coming back: descoped, then extra", [joined(before), left(at("03-04")), joined(at("03-06"))],
-             None, [("original", "removed", True), extra]),
+             None, [("original", "descoped", True), extra]),
             ("leaving and coming back the same day", [joined(before), left(at("03-04")), joined(at("03-04", "15:00"))],
-             None, [("original", "removed", True), extra]),
+             None, [("original", "descoped", True), extra]),
             ("out, back, out again", [joined(before), left(at("03-03")), joined(at("03-05")), left(at("03-07"))],
-             None, [("original", "removed", True), ("extra", "removed", False)]),
+             None, [("original", "descoped", True), ("extra", "descoped", False)]),
             ("moves after the close are ignored", [
              joined(before), left(at("03-14"))], None, [original]),
             ("extra work that left after the close", [
@@ -240,13 +156,13 @@ class SpellsTest(unittest.TestCase):
                                                    left(at("03-05"))],
              done("PROJ-1", points=2), [[("committed", False, 2),
                                          ("completed", True, 2), ("removed", True, 2)]],
-             ["removed"]),
+             ["descoped"]),
             ("changed while out of the sprint, read afresh when it comes back",
              [joined(at("02-27")), left(at("03-03")), points(at("03-04"), "2", "4"),
               moved(at("03-04"), "To Do", "Done"), joined(at("03-05"))],
              done("PROJ-1", points=4), [[("committed", False, 2),
                                          ("removed", False, 2)], [("joined", True, 4)]],
-             ["removed", "completed"]),
+             ["descoped", "completed"]),
         ]
         for name, changes, issue, expected, outcomes in cases:
             with self.subTest(name):
@@ -256,6 +172,8 @@ class SpellsTest(unittest.TestCase):
                 self.assertEqual([s["outcome"] for s in found], outcomes)
                 self.assertEqual([s["points"] for s in found], [
                                  events[-1][2] for events in expected])
+                self.assertEqual([s["firstEstimate"] for s in found], [
+                                 events[0][2] for events in expected])
 
     def test_events_carry_the_old_estimate_and_the_local_date(self):
         found = self.build([joined(at("02-27")), points("2026-03-03T23:30:00.000+0000", "2", "5")],
@@ -270,7 +188,7 @@ class SpellsTest(unittest.TestCase):
             ("done outside the sprint after leaving: as when it left",
              [joined(at("02-27")), left(at("03-04")),
               moved(at("03-06"), "To Do", "Done")], done("PROJ-1"),
-             ("To Do", "removed", None)),
+             ("To Do", "descoped", None)),
             ("done after the close: as at the close",
              [joined(at("02-27")), moved(at("03-14"),
                                          "To Do", "Done")], done("PROJ-1"),
@@ -304,53 +222,8 @@ class SpellsTest(unittest.TestCase):
                 self.assertNotIn("parentId", found)
 
 
-class TicketEventsTest(unittest.TestCase):
-    """A ticket's events, which its spells are worked out from."""
-
-    def test_events(self):
-        # Each tracked field's value at creation is its first change's old
-        # value, else today's; a change after the close is left out of the
-        # events but still says what the value was at creation.
-        issue = done("PROJ-1", points=5, parent="PROJ-100")
-        changes = [joined(at("02-27")), points(at("03-03"), "2", "5"), moved(at("03-04"), "To Do", "Done"),
-                   changed(at("03-05"), "parent", "PROJ-90",
-                           "PROJ-100", "id-PROJ-90", "id-PROJ-100"),
-                   moved(at("03-14"), "Done", "In Progress")]
-        jira = {"source": "jira"}
-        self.assertEqual(build.ticket_events(issue, changes, context(), CLOSE), [
-            {"at": "2026-02-20T10:00:00.000+0100", "date": "2026-02-20", **jira, "type": "created", "values": {
-                "sprint": [], "status": "To Do", "statusCategory": "new", "resolution": "Done", "priority": "Medium",
-                "parent": "PROJ-90", "parentId": "id-PROJ-90", "points": 2, "flagged": False}},
-            {"at": at("02-27"), "date": "2026-02-27", **jira,
-             "type": "sprint_changed", "from": [], "to": ["7"]},
-            {"at": at("03-03"), "date": "2026-03-03", **jira,
-             "type": "points_changed", "from": 2, "to": 5},
-            {"at": at("03-04"), "date": "2026-03-04", **jira, "type": "status_changed", "from": "To Do", "to": "Done",
-             "fromCategory": "new", "toCategory": "done"},
-            {"at": at("03-05"), "date": "2026-03-05", **jira, "type": "parent_changed", "from": "PROJ-90",
-             "to": "PROJ-100", "fromId": "id-PROJ-90", "toId": "id-PROJ-100"}])
-
-    def test_initial_sprints(self):
-        # Jira logs no change for the sprints a ticket is created in: each
-        # sprint whose first move isn't an add, and the reported sprint when
-        # no change names it.
-        def change(created, old, new):
-            return {"created": created, "field": "sprint", "from": old, "to": new}
-        cases = [
-            ("no sprint change", [], ["7"]),
-            ("added later", [joined(at("02-27"))], []),
-            ("removed first", [left(at("02-27"))], ["7"]),
-            ("carried over from the previous sprint", [carried()], ["6"]),
-            ("removed and added at one instant", [
-             joined(at("02-27")), left(at("02-27"))], ["7"]),
-            ("a later sprint added after this one", [joined(at("02-27")),
-                                                     change(at("03-14"), "7", "7, 8")], []),
-            ("sorted as numbers", [
-             change(at("02-27"), "10", "")], ["7", "10"]),
-        ]
-        for name, changes, expected in cases:
-            with self.subTest(name):
-                self.assertEqual(build.initial_sprints(changes, "7"), expected)
+class SpellsFromEventsTest(unittest.TestCase):
+    """A ticket's spells, worked out from its events alone."""
 
     def test_spells_come_from_the_events_alone(self):
         # Hand-written events, with no changelog: committed at the start,
@@ -375,7 +248,7 @@ class TicketEventsTest(unittest.TestCase):
                   "PROJ-1: status 'Old' is not in Jira's list of statuses")]
         for name, changes, failure in cases:
             with self.subTest(name):
-                events = build.ticket_events(
+                events = common.ticket_events(
                     raw("PROJ-1"), changes, context(), CLOSE)
                 self.assertIsNone(events[0]["values"]["statusCategory"])
                 if failure:
@@ -407,23 +280,23 @@ class BreakdownAndEpicsTest(unittest.TestCase):
                   ticket("PROJ-2", [ev(2, "committed")], "not_completed"),
                   ticket("PROJ-3", [ev(3, "joined", done=True)],
                          "completed", scope="extra"),
-                  ticket("PROJ-4", [ev(2, "committed", 1), ev(4, "removed", 1)], "removed")]
+                  ticket("PROJ-4", [ev(2, "committed", 1), ev(4, "removed", 1)], "descoped")]
         self.assertEqual(build.target_completion(spells), {
             "completed": 1, "total": 3, "completed_points": 3, "total_points": 6})
 
     TICKETS = [ticket("PROJ-1", [ev(2, "committed", 3, done=True)], "completed", carried=True),
                ticket("PROJ-2", [ev(2, "committed", 1),
-                      ev(4, "removed", 1)], "removed"),
+                      ev(4, "removed", 1)], "descoped"),
                ticket("PROJ-3", [ev(2, "committed", None)], "not_completed"),
                ticket("PROJ-4", [ev(3, "joined", 5, done=True)], "completed", scope="extra", parent="PROJ-200")]
 
     def test_outcome_breakdown(self):
         counts, points_ = build.outcome_breakdown(self.TICKETS)
         self.assertEqual({k: v for k, v in counts.items() if v}, {
-            "original_completed": 1, "original_removed": 1, "original_not_completed": 1,
-            "carried_in_completed": 1, "new_removed": 1, "new_not_completed": 1, "extra_completed": 1})
+            "original_completed": 1, "original_descoped": 1, "original_not_completed": 1,
+            "carried_in_completed": 1, "new_descoped": 1, "new_not_completed": 1, "extra_completed": 1})
         self.assertEqual({k: v for k, v in points_.items() if v}, {
-            "original_completed": 3, "original_removed": 1, "carried_in_completed": 3, "new_removed": 1,
+            "original_completed": 3, "original_descoped": 1, "carried_in_completed": 3, "new_descoped": 1,
             "extra_completed": 5})
 
     def test_non_delivery_closures(self):
@@ -431,7 +304,7 @@ class BreakdownAndEpicsTest(unittest.TestCase):
         # estimates; an uncounted spell is left out.
         duplicate = ticket("PROJ-1", [ev(2, "committed", 3), ev(4, "completed", 3, done=True)], "completed",
                            status="Duplicate", marker="duplicate")
-        uncounted = dict(ticket("PROJ-2", [ev(3, "joined", 5), ev(4, "removed", 5)], "removed", scope="extra"),
+        uncounted = dict(ticket("PROJ-2", [ev(3, "joined", 5), ev(4, "removed", 5)], "descoped", scope="extra"),
                          closedAsNonDelivery="won't do")
         self.assertEqual(build.non_delivery_closures(self.TICKETS + [duplicate, uncounted]), {
             "count": 1, "points": 3,
@@ -439,7 +312,7 @@ class BreakdownAndEpicsTest(unittest.TestCase):
                         "marker": "duplicate", "summary": "Work item PROJ-1"}]})
 
     def test_extra_spells_that_ended_descoped_are_not_counted(self):
-        uncounted = ticket("PROJ-9", [ev(3, "joined", 8), ev(4, "removed", 8)], "removed", scope="extra",
+        uncounted = ticket("PROJ-9", [ev(3, "joined", 8), ev(4, "removed", 8)], "descoped", scope="extra",
                            parent="PROJ-300")
         self.assertEqual(build.outcome_breakdown(
             self.TICKETS + [uncounted]), build.outcome_breakdown(self.TICKETS))
@@ -453,10 +326,16 @@ class BreakdownAndEpicsTest(unittest.TestCase):
                          "PROJ-200", "PROJ-100", NO_EPIC])
         proj_100 = epics[1]
         self.assertEqual([proj_100[k] for k in ("original_stories_done", "original_stories_total",
-                                                "original_points_done", "original_points_total",
-                                                "removed_stories", "removed_points")], [1, 3, 3, 4, 1, 1])
+                                                "original_points_done", "original_points_total")], [1, 3, 3, 4])
+        self.assertEqual([t["points"]
+                         for t in proj_100["scope_groups"]["descoped"]], [1])
         self.assertEqual((epics[2]["extra_stories_total"],
                          epics[2]["extra_stories_done"]), (1, 0))
+        # Completed pts add up the commitment's and the extra work's.
+        self.assertEqual([e["points_done"] for e in epics], [5, 3, 0])
+        both = build.build_epics([self.TICKETS[0], ticket("PROJ-5", [ev(3, "joined", 2), ev(4, "completed", 2, done=True)],
+                                                          "completed", scope="extra")])
+        self.assertEqual(both[0]["points_done"], 5)
 
     def test_epic_scope_groups(self):
         # Completed holds only work completed during the spell; work done
@@ -477,15 +356,15 @@ class BreakdownAndEpicsTest(unittest.TestCase):
             ticket("PROJ-6", [ev(2, "committed")],
                    "not_completed", status="To Do"),
             ticket("PROJ-7", [ev(2, "committed"), ev(4, "removed")],
-                   "removed", status="In Review"),
+                   "descoped", status="In Review"),
             ticket("PROJ-8", [ev(3, "joined"), ev(4, "removed")],
-                   "removed", scope="extra"),  # not counted
+                   "descoped", scope="extra"),  # not counted
             # joined already Done
             ticket("PROJ-9", [ev(3, "joined", done=True)],
                    "completed", scope="extra"),
             # Done, then descoped: described as descoped all the same
             ticket("PROJ-10", [ev(2, "committed", done=True),
-                   ev(4, "removed", done=True)], "removed"),
+                   ev(4, "removed", done=True)], "descoped"),
         ]
         spells[3]["flagged"] = True
         epic = build.build_epics(spells, {"PROJ-100": "Staff sign-in"})[0]
@@ -616,7 +495,7 @@ class StatusChecksTest(unittest.TestCase):
                          ev(4, "completed", done=True)], "completed"),
                   ticket("PROJ-6", [ev(2, "committed")],
                          "not_completed", status="In Review"),
-                  not_started(ticket("PROJ-5", [ev(2, "committed"), ev(4, "removed")], "removed"))]
+                  not_started(ticket("PROJ-5", [ev(2, "committed"), ev(4, "removed")], "descoped"))]
         pulls_of = {"PROJ-1": [pull(41, "PROJ-1 a", "merged", "PROJ-1")],
                     "PROJ-2": [pull(43, "PROJ-1 c", "open", "PROJ-1"), pull(42, "PROJ-9 b", "open", "PROJ-1")],
                     "PROJ-3": [pull(44, "PROJ-1 d", "merged", "PROJ-1")],
@@ -672,10 +551,10 @@ class BurndownTest(unittest.TestCase):
             ticket("PROJ-2", [ev(2, "committed", 2), ev(4, "reestimated", 5, fromPoints=2)],
                    "not_completed"),
             ticket("PROJ-3", [ev(2, "committed", 1),
-                   ev(5, "removed", 1)], "removed"),
+                   ev(5, "removed", 1)], "descoped"),
             # Joined, left (an uncounted spell), then came back done: a new spell.
             ticket("PROJ-4", [ev(3, "joined", 4), ev(4, "removed", 4)],
-                   "removed", scope="extra"),
+                   "descoped", scope="extra"),
             ticket("PROJ-4", [ev(5, "joined", 4, done=True)],
                    "completed", scope="extra"),
             ticket("PROJ-5", [ev(2, "committed", 6, done=True),
@@ -685,6 +564,49 @@ class BurndownTest(unittest.TestCase):
             tickets, "2026-03-02", "2026-03-05", "2026-03-05T12:00:00.000+0100", PLUS_ONE)
         self.assertEqual([(r["committed"], r["total"])
                          for r in rows], [(6, 6), (3, 7), (6, 6), (11, 11)])
+
+
+class UnestimatedPtsTest(unittest.TestCase):
+    def test_pts_totals_follow_known_sum(self):
+        # Every pts total the report shows adds up the set estimates; one of
+        # unestimated tickets alone is None ("– pts"), and of no ticket 0.
+        # PROJ-1 is completed on 04/03, PROJ-2 stays open; PROJ-3 is extra.
+        # name: (PROJ-1's and PROJ-2's estimates, then the target's completed
+        # and total pts, the epic's done and total pts, the breakdown's
+        # completed and not completed original pts, the burndown's open
+        # commitment on 02/03 and on 05/03, and its baseline)
+        cases = [
+            ("all unestimated", (None, None), (None, None),
+             (None, None), (None, None), (None, None), None),
+            ("partly estimated", (3, None), (3, 3),
+             (3, 3), (3, None), (3, None), 3),
+            ("fully estimated", (3, 2), (3, 5), (3, 5), (3, 2), (5, 2), 5),
+        ]
+        for name, (first, second), target, epic, breakdown, burndown, baseline in cases:
+            with self.subTest(name):
+                spells = [ticket("PROJ-1", [ev(2, "committed", first), ev(4, "completed", first, done=True)],
+                                 "completed"),
+                          ticket(
+                              "PROJ-2", [ev(2, "committed", second)], "not_completed"),
+                          ticket("PROJ-3", [ev(3, "joined", 1)], "not_completed", scope="extra")]
+                found = build.target_completion(spells)
+                self.assertEqual(
+                    (found["completed_points"], found["total_points"]), target)
+                proj_100 = build.build_epics(spells)[0]
+                self.assertEqual(
+                    (proj_100["original_points_done"], proj_100["original_points_total"]), epic)
+                self.assertEqual(proj_100["points_done"], epic[0])
+                counts, points_ = build.outcome_breakdown(spells)
+                self.assertEqual((points_["original_completed"], points_[
+                                 "original_not_completed"]), breakdown)
+                # No ticket ended descoped: 0, never None.
+                self.assertEqual((points_["original_descoped"], points_[
+                                 "extra_not_completed"]), (0, 1))
+                rows = build.build_burndown(
+                    spells, "2026-03-02", "2026-03-05", "2026-03-05T12:00:00.000+0100", PLUS_ONE)
+                self.assertEqual(
+                    (rows[0]["committed"], rows[-1]["committed"]), burndown)
+                self.assertEqual(build.burndown_baseline(spells), baseline)
 
 
 class CrossCheckTest(unittest.TestCase):
@@ -740,47 +662,6 @@ class MembershipSetsTest(unittest.TestCase):
         events_of = {i["key"]: events(i, changes[i["key"]]) for i in issues}
         self.assertEqual(build.membership_sets(events_of, "7", CLOSE),
                          (["PROJ-1", "PROJ-2", "PROJ-5"], ["PROJ-2"], ["PROJ-3", "PROJ-4"]))
-
-
-def flag(created, on=True):
-    return changed(created, "flagged", None if on else "Impediment", "Impediment" if on else None,
-                   None if on else "[10000]", "[10000]" if on else None)
-
-
-class BlockerCandidatesTest(unittest.TestCase):
-    def test_blocker_candidates(self):
-        # A ticket in the sprint at the close that was flagged, blocked or
-        # high priority and not done then, from its events; the fetch picks
-        # the same tickets from the changelogs, by the same rule.
-        # name: (the ticket today, its changes, a candidate)
-        cases = [
-            ("flagged at the close", raw("PROJ-1"), [flag(at("03-04"))], True),
-            ("flag cleared before the close", raw("PROJ-1"),
-             [flag(at("03-04")), flag(at("03-06"), on=False)], False),
-            ("flagged after the close", raw("PROJ-1", customfield_flag=[{"value": "Impediment"}]),
-             [flag(at("03-14"))], False),
-            ("in a blocked status", raw("PROJ-1"),
-             [moved(at("03-04"), "To Do", "Blocked")], True),
-            ("unblocked before the close", raw("PROJ-1", status="In Progress"),
-             [moved(at("03-04"), "To Do", "Blocked"), moved(at("03-05"), "Blocked", "In Progress")], False),
-            ("high priority and open", raw("PROJ-1"),
-             [changed(at("03-04"), "priority", "Medium", "High")], True),
-            ("high priority but done", done("PROJ-1", priority={"name": "High"}),
-             [moved(at("03-04"), "To Do", "Done")], False),
-            ("high priority only after the close", raw("PROJ-1", priority={"name": "High"}),
-             [changed(at("03-14"), "priority", "Medium", "High")], False),
-            ("flagged but left before the close", raw("PROJ-1"),
-             [flag(at("03-04")), left(at("03-05"))], False),
-            ("flagged and done", done("PROJ-1"),
-             [flag(at("03-04")), moved(at("03-05"), "To Do", "Done")], True),
-        ]
-        for name, issue, changes, expected in cases:
-            with self.subTest(name):
-                found = build.blocker_candidates(
-                    {"PROJ-1": events(issue, changes)}, "7", CLOSE)
-                self.assertEqual(found, ["PROJ-1"] if expected else [])
-                self.assertEqual(common.blocker_candidate_keys([issue], {"PROJ-1": changes}, CATEGORIES,
-                                                               FIELDS[0], "7", parse_ts(CLOSE)), found)
 
 
 class BlockerCommentsTest(unittest.TestCase):

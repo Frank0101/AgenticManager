@@ -306,7 +306,7 @@ class ProseTest(unittest.TestCase):
             ticket("PROJ-7", [ev(2, "committed", 1, done=True),
                    ev(5, "reopened", 1)], "not_completed"),
             ticket("PROJ-8", [ev(3, "joined", 1),
-                   ev(4, "removed", 1)], "removed", scope="extra"),
+                   ev(4, "removed", 1)], "descoped", scope="extra"),
             ticket("PROJ-9", [ev(3, "joined", None)], "not_completed", scope="extra")]
         for today in ("2026-03-10", "2026-03-12", "2026-03-13", "2026-03-14", "2026-03-16"):
             with self.subTest(today=today):
@@ -335,7 +335,7 @@ class ProseTest(unittest.TestCase):
         for n in range(10, 40):
             spells.append(ticket(
                 f"PROJ-{n}", [ev(3, "joined", 1)], "not_completed", status="To Do", scope="extra"))
-            spells.append(ticket(f"PROJ-{n + 100}", [ev(3, "joined", 1), ev(4, "removed", 1)], "removed",
+            spells.append(ticket(f"PROJ-{n + 100}", [ev(3, "joined", 1), ev(4, "removed", 1)], "descoped",
                                  status="To Do", scope="extra"))
         for n in range(40, 44):
             spells.append(ticket(f"PROJ-{n}", [ev(2, "committed", 1, done=True), ev(5, "reopened", 1)],
@@ -471,6 +471,7 @@ class ValidateContentTest(unittest.TestCase):
     def test_validate_content(self):
         # None: the content is valid. Otherwise each problem names the
         # content.json field to fix, so it is fixed where it was written.
+        # A case may end with changes to the sprint's data.
         commentary = CONTENT["epic_commentary"]
         cases = [
             (None, {}),
@@ -493,12 +494,20 @@ class ValidateContentTest(unittest.TestCase):
             ('goal_verdict must be one of: "Fully met", "Partially met", "Not met"', {
              "goal_verdict": ""}),
             ("goal_verdict must be one of", {"goal_verdict": "Mostly met"}),
+            # The verdicts allowed depend on the sprint: closed or running,
+            # with a goal or without.
+            ("goal_verdict must be one of", {"goal_verdict": "On track"}),
+            (None, {"goal_verdict": "On track"}, ACTIVE),
+            ('goal_verdict must be one of: "No goal set in Jira for this sprint"',
+             {"goal_verdict": "Partially met"}, {"sprint_goal": ""}),
             ("epic_commentary must map each epic key to its groups' sentences",
              {"epic_commentary": []}),
             ("epic_commentary.PROJ-100 must map each group to a sentence",
              {"epic_commentary": {"PROJ-100": "x", NO_EPIC: {"completed": "x"}}}),
             (f"epic_commentary.{NO_EPIC} needs a sentence for exactly these groups: completed",
              {"epic_commentary": {**commentary, NO_EPIC: {}}}),
+            (f"epic_commentary.{NO_EPIC} needs a sentence for exactly these groups: completed",
+             {"epic_commentary": {"PROJ-100": commentary["PROJ-100"]}}),
             ("epic_commentary.PROJ-100 needs a sentence for exactly these groups: completed, not_completed, descoped",
              {"epic_commentary": {**commentary,
                                   "PROJ-100": {**commentary["PROJ-100"], "in_review": "x"}}}),
@@ -548,14 +557,15 @@ class ValidateContentTest(unittest.TestCase):
             ("retro_notes[1]: a single ticket reads KEY (N pts), its latest estimate, found ['PROJ-2']",
              {"retro_notes": ["Fine?", "Should PROJ-2 have stayed out?"]}),
         ]
-        for expected, changes in cases:
+        for expected, changes, *data_changes in cases:
             with self.subTest(expected, changes=changes if expected is None else None):
                 content = {**copy.deepcopy(CONTENT), **changes}
+                data = sprint_data(**(data_changes[0] if data_changes else {}))
                 if expected is None:
-                    make_report.validate_content(content, sprint_data())
+                    make_report.validate_content(content, data)
                     continue
                 with self.assertRaises(SystemExit) as raised:
-                    make_report.validate_content(content, sprint_data())
+                    make_report.validate_content(content, data)
                 self.assertIn(expected, str(raised.exception))
 
 

@@ -316,7 +316,7 @@ class LedgerTest(unittest.TestCase):
     def test_inline_links_become_reference_links(self):
         # A URL keeps one key, however many times it is written inline.
         self.write(("sources", "S01", source("[Spec doc](https://example.com/spec)", "documentation", "2026-10-01",
-                                             "partial: [Spec doc](https://example.com/spec) and "
+                                             "partial: sections: [Spec doc](https://example.com/spec) and "
                                              "[Other](https://example.com/spec)")),
                    ("sources", "S02", source("[Spec](https://example.com/other)", "documentation")))
         text = self.text()

@@ -117,11 +117,14 @@ class DayFolderTest(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(output_folder.day_folder(
                     "PROJ_Sprint_3", day), expected)
-                # DAY_FOLDER reads the name back.
+                # folder_day() and DAY_FOLDER read the name back.
+                self.assertEqual(output_folder.folder_day(expected), datetime.strptime(
+                    expected[-8:], "%y-%m-%d").date())
                 match = output_folder.DAY_FOLDER.fullmatch(expected)
                 assert match
                 self.assertEqual((match["subject"], match["date"]),
                                  ("PROJ_Sprint_3", expected[-8:]))
+        self.assertIsNone(output_folder.folder_day("_examples"))
 
     def test_clear_folder(self):
         # Only what is at the path goes: a link's target and the folder

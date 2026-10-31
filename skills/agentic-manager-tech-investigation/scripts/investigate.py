@@ -17,7 +17,7 @@ import shutil
 import sys
 import tempfile
 
-from common import (CONTENT, group_of, ids, read_in_part, FOLDER_NAME, LEDGER, REPORT_SUFFIX, TABLE_HEADINGS, SCOPE_QUESTION, investigation_dir,
+from common import (CONTENT, ids, read_in_part, FOLDER_NAME, LEDGER, REPORT_SUFFIX, TABLE_HEADINGS, SCOPE_QUESTION, investigation_dir,
                     last_review,
                     ledger_rows, plain, reviewed, stops_on_failure, strip_anchors, topic_of, write_output_file)
 from init_investigation import init, usable_sources
@@ -30,8 +30,7 @@ import protocol
 
 # A question's task, such as research:Q03.
 RESEARCH_TASK = re.compile(r"research:(Q\d+)")
-# Beside a source read only in part, in a research task: the rule a finding
-# citing it must meet, where the agent sees the source.
+# Marks a source read only in part wherever a task lists the sources.
 PARTIAL_NOTE = " (read in part)"
 # What separates tasks handed out together.
 SEPARATOR = "\n\n" + "=" * 72 + "\n\n"

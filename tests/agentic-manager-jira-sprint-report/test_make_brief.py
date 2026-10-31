@@ -63,8 +63,8 @@ class BriefTest(unittest.TestCase):
     def test_goal_tickets_include_all_original_outcomes(self):
         tickets = self.brief["goal_tickets"]
         self.assertEqual([(t["key"], t["outcome"]) for t in tickets], [
-            ("PROJ-1", "completed"), ("PROJ-2", "removed"),
-            ("PROJ-4", "completed"), ("PROJ-5", "completed"), ("PROJ-6", "removed")])
+            ("PROJ-1", "completed"), ("PROJ-2", "descoped"),
+            ("PROJ-4", "completed"), ("PROJ-5", "completed"), ("PROJ-6", "descoped")])
         self.assertEqual(tickets[0], {
             "key": "PROJ-1", "summary": "Work item PROJ-1", "points": 3,
             "outcome": "completed", "epic_key": "PROJ-100", "epic_name": "Login <beta>"})

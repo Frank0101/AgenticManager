@@ -21,7 +21,7 @@ from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
 from agentic_manager.jira import BROWSE_URL as TICKET_URL, GROUP as JIRA_GROUP, NAME as JIRA_API, PROJECT_KEY, JiraClient, JiraError, browse_url, plain_text, project_of  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
-from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, KEPT_EXAMPLES, description, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
+from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, KEPT_EXAMPLES, description, read_description, clear_folder, day_folder, folder_day, output_folder  # noqa: E402,F401
 from agentic_manager.text import DEFINITION, DISPLAY_DATE, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, free_name, headings, inline_links, link_definitions, link_text, links, local_link, markdown, reference_key, same_document, slug, word_count  # noqa: E402,F401
 from agentic_manager.ticket_pulls import pulls_by_ticket  # noqa: E402,F401
 
@@ -111,11 +111,12 @@ SOURCE_FINDINGS_COLUMN = SOURCE_HEADER.index("Findings")
 # How much of a source was read: its Coverage starts with one of these, and
 # the script writes it from a submission's fields, so its form never varies. A
 # listing or a search hit says where to look, not what the code does, so only
-# the first two count as read. A partial read names what was read, the lines
-# of a code file or the files of a pull request, which with the pinned
-# revision find it again however the source changes since, and each finding
-# citing it says why the rest can't change its claim; the report marks every
-# source not read in full as limited. A source that can't be accessed, such
+# the first two count as read. A partial read names what was read
+# (coverage_problem): the lines of a code file, the files of a pull request or
+# a folder, the sections of a document, which with the pinned revision find it
+# again however the source changes since; each finding citing it says why the
+# rest can't change its claim; the report marks every source not read in full
+# as limited. A source that can't be accessed, such
 # as a private repository or a path not on the main branch, is still where
 # the agent looked.
 COVERAGE = ["full", "partial", "listing", "search hit", "can't access"]
@@ -616,14 +617,19 @@ def group_of(row):
 
 
 def coverage_problem(row):
-    """Why a source row's Coverage doesn't start with one of COVERAGE, or None:
-    code read in part also names the lines read."""
+    """Why a source row's Coverage breaks the rule COVERAGE states, or None:
+    it starts with one of COVERAGE, and a partial read names what was read,
+    the lines or files of code, the sections of a document."""
     if not any(row[4].strip().casefold().startswith(c) for c in COVERAGE):
         return (f"{row[0]}: Coverage starts with one of: {', '.join(COVERAGE)}, then any detail, such as "
                 "'partial: lines 1-80, 200-240 of 352'")
-    if group_of(row) == "source_control" and read_in_part(row) and not (LINE_RANGE.search(row[4]) or "files:" in row[4]):
-        return (f"{row[0]}: Coverage of code read in part names the lines read, such as 'partial: lines 1-80, "
-                "200-240 of 352', or the files of a pull request")
+    if not read_in_part(row):
+        return None
+    if group_of(row) == "source_control" and not (LINE_RANGE.search(row[4]) or "files:" in row[4]):
+        return (f'{row[0]}: Coverage of code read in part names the lines read, "lines": [[1, 80]], or for a '
+                'pull request or a folder the files read, "files": [...]')
+    if group_of(row) == "documentation" and "sections:" not in row[4]:
+        return f'{row[0]}: Coverage of a document read in part names the sections read, "sections": [...]'
     return None
 
 

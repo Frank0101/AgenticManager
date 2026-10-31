@@ -31,7 +31,7 @@ TAGS = {
     "already_done": ("Already done", "#1a7f37", "#ffffff"),
     "completed": ("Completed", *OUTCOME_COLOURS["completed"]),
     "reopened": ("Reopened", *OUTCOME_COLOURS["not_completed"]),
-    "removed": ("Descoped", *OUTCOME_COLOURS["removed"]),
+    "removed": ("Descoped", *OUTCOME_COLOURS["descoped"]),
     "reestimated": ("Re-estimated", "#9c27b0", "#ffffff"),
 }
 
@@ -183,9 +183,8 @@ class Report:
         day of the burndown, what was open at its end, as the burndown shows."""
         d, parts = self.data, []
         if "sprint_start" in row["labels"]:
-            original = [t for t in d["spells"] if t["scope"] == "original"]
             parts.append(
-                f"<b>Commitment:</b><br>{qty(len(original), d['burndown_baseline'])}")
+                f"<b>Commitment:</b><br>{qty(d['target_completion']['total'], d['burndown_baseline'])}")
         reading = next(
             (r for r in d["burndown"] if r["date"] == row["date"]), None)
         if reading:
@@ -384,9 +383,7 @@ class Report:
         """Re-estimated tickets: one as "KEY (old → new pts) was re-estimated",
         a list as "N tickets (old → new pts) were re-estimated (KEY, KEY)",
         from the estimates before the first re-estimate to the latest."""
-        def before(spell):
-            return next(e["fromPoints"] for e in spell["events"] if e["type"] == "reestimated")
-        change = (f"{estimate(known_sum(before(s) for s in spells))} → "
+        change = (f"{estimate(known_sum(s['firstEstimate'] for s in spells))} → "
                   f"{pts(known_sum(s['points'] for s in spells))}")
         if len(spells) == 1 and name_up_to:
             return f"{self.md_key(spells[0]['key'])} ({change}) was re-estimated"
@@ -401,21 +398,22 @@ class Report:
         original = [s for s in spells if s["scope"] == "original"]
         sentences = []
 
-        already = [dict(s, points=s["events"][0]["points"])
+        already = [dict(s, points=s["firstEstimate"])
                    for s in original if s["doneAtStart"]]
-        descoped = [s for s in original if s["outcome"] == "removed"]
+        descoped = [s for s in original if s["outcome"] == "descoped"]
         parts = []
         if already:
             parts.append(say(already, "was already Done at the start",
                          "were already Done at the start"))
         if descoped:
             parts.append(say(descoped, "was descoped", "were descoped"))
-        committed = qty(len(original), d["burndown_baseline"])
-        if not original:
+        total = d["target_completion"]["total"]
+        committed = qty(total, d["burndown_baseline"])
+        if not total:
             sentences.append("Nothing was committed at the start")
         else:
             sentences.append(f"Of the {committed} in the commitment, " + ", and ".join(parts) if parts
-                             else f"{'The' if len(original) == 1 else 'All'} {committed} in the commitment stayed in "
+                             else f"{'The' if total == 1 else 'All'} {committed} in the commitment stayed in "
                              "the sprint")
 
         extra = [s for s in spells if s["scope"] == "extra" and s["counted"]]
@@ -448,23 +446,24 @@ class Report:
                 parts[:-1]) + (" and " if len(parts) > 1 else "") + parts[-1]
             sentences.append(sentence[0].upper() + sentence[1:])
 
-        open_spells = [s for s in spells if s["counted"]
-                       and s["outcome"] == "not_completed"]
-        open_original = [s for s in open_spells if s["scope"] == "original"]
-        total = amount(open_spells)
-        if len(open_original) == len(open_spells):
+        # What is still open is the burndown's last reading, at the close or
+        # the fetch.
+        last = d["burndown"][-1]
+        open_count, open_original = last["total_stories"], last["committed_stories"]
+        total = qty(open_count, last["total"])
+        if open_original == open_count:
             of_them = ""
         elif not open_original:
             of_them = ", all of it extra"
         else:
-            of_them = f", {amount(open_original)} {FROM_COMMITMENT[0]}"
+            of_them = f", {qty(open_original, last['committed'])} {FROM_COMMITMENT[0]}"
         if d["sprint_status"] == "active":
             left = self.days_left()
-            sentences.append(f"{total} {plural(len(open_spells), 'is', 'are')} open{of_them}{left}"
-                             if open_spells else f"Nothing is open{left}")
+            sentences.append(f"{total} {plural(open_count, 'is', 'are')} open{of_them}{left}"
+                             if open_count else f"Nothing is open{left}")
         else:
-            sentences.append(f"At the close, {total} {were(len(open_spells))} not completed{of_them}"
-                             if open_spells else "Everything in the sprint was completed by the close")
+            sentences.append(f"At the close, {total} {were(open_count)} not completed{of_them}"
+                             if open_count else "Everything in the sprint was completed by the close")
         return " ".join(s + "." for s in sentences)
 
     def commentary_caveats(self):

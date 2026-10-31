@@ -16,6 +16,11 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
 from agentic_manager import output_file  # noqa: E402
+from common import parse_ts  # noqa: E402
+sys.path.insert(0, TEST_DIR)
+from sprint_fixture import moved  # noqa: E402
+from ticket_fixture import (CATEGORIES, CLOSE, FIELDS, PLUS_ONE, START, at, carried, changed, context,  # noqa: E402
+                            done, events, flag, joined, left, points, raw)
 
 
 class ChunksTest(unittest.TestCase):
@@ -118,62 +123,7 @@ class SprintEventsTest(unittest.TestCase):
                          (["2026-03-03T10:00:00.000+0100"], ["2026-03-04T10:00:00.000+0100"]))
 
 
-class SprintMovesTest(unittest.TestCase):
-    CREATED = "2026-03-01T10:00:00.000+0100"
-    ADD = "2026-03-03T10:00:00.000+0100"
-    REMOVE = "2026-03-02T10:00:00.000+0100"
-
-    def test_sprint_moves(self):
-        # The creation counts as the first add when no add comes first.
-        cases = [
-            ("in time order", [self.ADD], [self.REMOVE],
-             [(1, self.CREATED), (-1, self.REMOVE), (1, self.ADD)]),
-            ("no moves", [], [], [(1, self.CREATED)]),
-            ("an add first", [self.ADD], [], [(1, self.ADD)]),
-        ]
-        for name, added, removed, expected in cases:
-            with self.subTest(name):
-                moves = common.sprint_moves(added, removed, self.CREATED)
-                self.assertEqual([(move, ts)
-                                 for _, move, ts in moves], expected)
-
-    def test_issue_moves(self):
-        raw = {"key": "PROJ-1", "fields": {"created": self.CREATED}}
-        changes = [{"created": self.REMOVE, "field": "sprint", "from": "7", "to": ""},
-                   {"created": self.ADD, "field": "sprint", "from": "", "to": "7"}]
-        self.assertEqual([(move, ts) for _, move, ts in common.issue_moves(raw, changes, "7")],
-                         [(1, self.CREATED), (-1, self.REMOVE), (1, self.ADD)])
-
-    def test_membership_at_exact_instants(self):
-        moves = common.sprint_moves([self.ADD], [self.REMOVE], self.CREATED)
-        # Before its creation the issue was in no sprint.
-        before = "2026-02-28T10:00:00.000+0100"
-        for instant, expected in [(before, False), (self.CREATED, True), (self.REMOVE, False), (self.ADD, True)]:
-            with self.subTest(instant=instant):
-                self.assertIs(common.in_sprint_at(
-                    moves, common.parse_ts(instant)), expected)
-
-
-class HistoryTest(unittest.TestCase):
-    CATEGORIES = {"1": "new", "3": "indeterminate", "10": "done", "11": "done"}
-
-    def raw(self, status=("1", "To Do", "new"), **fields):
-        return {"key": "PROJ-1", "fields": {
-            "created": "2026-03-01T10:00:00.000+0100",
-            "status": {"id": status[0], "name": status[1], "statusCategory": {"key": status[2]}},
-            "resolution": None, "priority": {"name": "Medium"}, "parent": None, **fields}}
-
-    def moved(self, day, old, new, names=("To Do", "In Progress", "Done", "Duplicate")):
-        by_id = dict(zip(("1", "3", "10", "11"), names))
-        return {"created": f"2026-03-{day:02d}T10:00:00.000+0100", "field": "status",
-                "from": old, "fromString": by_id[old], "to": new, "toString": by_id[new]}
-
-    def at(self, day):
-        return common.parse_ts(f"2026-03-{day:02d}T12:00:00.000+0100")
-
-    def history(self, raw, changes, flagged=None):
-        return common.History(raw, changes, self.CATEGORIES, flagged)
-
+class ValuesTest(unittest.TestCase):
     def test_points_value(self):
         for value, expected in [(None, None), ("", None), (3.0, 3), ("2", 2), ("2.5", 2.5)]:
             with self.subTest(value=value):
@@ -196,55 +146,177 @@ class HistoryTest(unittest.TestCase):
             with self.subTest(sprint=sprint):
                 self.assertEqual(common.as_of(sprint, "F"), expected)
 
-    def test_status_at(self):
-        # Done on the 4th, moved to Duplicate on the 6th, reopened on the 9th.
-        history = self.history(self.raw(), [self.moved(4, "3", "10"), self.moved(6, "10", "11"),
-                                            self.moved(9, "11", "1")])
-        cases = [(3, ("In Progress", "indeterminate")), (5, ("Done", "done")),
-                 (7, ("Duplicate", "done")), (10, ("To Do", "new"))]
-        for day, status in cases:
-            with self.subTest(day=day):
-                self.assertEqual(history.status_at(self.at(day)), status)
+
+class DatesTest(unittest.TestCase):
+    def test_sprint_date(self):
+        cases = [
+            ("converted to the site offset",
+             "2026-03-01T23:30:00.000Z", "2026-03-02"),
+            ("none", None, None),
+            # 00:00 on the 8th at +01:00: the day Jira shows, the 8th, is the
+            # sprint's last day, included.
+            ("an end on midnight names the day Jira shows",
+             "2026-03-07T23:00:00.000Z", "2026-03-08"),
+            ("an end during the day", "2026-03-07T16:00:00.000Z", "2026-03-07"),
+        ]
+        for name, ts, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(common.sprint_date(ts, PLUS_ONE), expected)
+
+
+class TicketEventsTest(unittest.TestCase):
+    """A ticket's events, and what they say at a past moment."""
+
+    def test_events(self):
+        # Each tracked field's value at creation is its first change's old
+        # value, else today's; a change after the close is left out of the
+        # events but still says what the value was at creation.
+        issue = done("PROJ-1", points=5, parent="PROJ-100")
+        changes = [joined(at("02-27")), points(at("03-03"), "2", "5"), moved(at("03-04"), "To Do", "Done"),
+                   changed(at("03-05"), "parent", "PROJ-90",
+                           "PROJ-100", "id-PROJ-90", "id-PROJ-100"),
+                   moved(at("03-14"), "Done", "In Progress")]
+        jira = {"source": "jira"}
+        self.assertEqual(common.ticket_events(issue, changes, context(), CLOSE), [
+            {"at": "2026-02-20T10:00:00.000+0100", "date": "2026-02-20", **jira, "type": "created", "values": {
+                "sprint": [], "status": "To Do", "statusCategory": "new", "resolution": "Done", "priority": "Medium",
+                "parent": "PROJ-90", "parentId": "id-PROJ-90", "points": 2, "flagged": False}},
+            {"at": at("02-27"), "date": "2026-02-27", **jira,
+             "type": "sprint_changed", "from": [], "to": ["7"]},
+            {"at": at("03-03"), "date": "2026-03-03", **jira,
+             "type": "points_changed", "from": 2, "to": 5},
+            {"at": at("03-04"), "date": "2026-03-04", **jira, "type": "status_changed", "from": "To Do", "to": "Done",
+             "fromCategory": "new", "toCategory": "done"},
+            {"at": at("03-05"), "date": "2026-03-05", **jira, "type": "parent_changed", "from": "PROJ-90",
+             "to": "PROJ-100", "fromId": "id-PROJ-90", "toId": "id-PROJ-100"}])
+
+    def test_initial_sprints(self):
+        # Jira logs no change for the sprints a ticket is created in: each
+        # sprint whose first move isn't an add, and the reported sprint when
+        # no change names it.
+        def change(created, old, new):
+            return {"created": created, "field": "sprint", "from": old, "to": new}
+        cases = [
+            ("no sprint change", [], ["7"]),
+            ("added later", [joined(at("02-27"))], []),
+            ("removed first", [left(at("02-27"))], ["7"]),
+            ("carried over from the previous sprint", [carried()], ["6"]),
+            ("removed and added at one instant", [
+             joined(at("02-27")), left(at("02-27"))], ["7"]),
+            ("a later sprint added after this one", [joined(at("02-27")),
+                                                     change(at("03-14"), "7", "7, 8")], []),
+            ("sorted as numbers", [
+             change(at("02-27"), "10", "")], ["7", "10"]),
+        ]
+        for name, changes, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(common.initial_sprints(
+                    changes, "7"), expected)
 
     def test_state_at(self):
-        raw = self.raw(customfield_points=8.0, customfield_flag=None,
-                       resolution={"name": "Done"}, priority={"name": "Low"},
-                       parent={"id": "200", "key": "PROJ-200"})
-        changes = [
-            {"created": "2026-03-08T10:00:00.000+0100", "field": "points",
-             "from": None, "fromString": "3", "to": None, "toString": "8"},
-            {"created": "2026-03-04T10:00:00.000+0100", "field": "flagged",
-             "from": None, "fromString": None, "to": "[10000]", "toString": "Impediment"},
-            {"created": "2026-03-08T10:00:00.000+0100", "field": "flagged",
-             "from": "[10000]", "fromString": "Impediment", "to": None, "toString": None},
-            {"created": "2026-03-08T10:00:00.000+0100", "field": "resolution",
-             "from": None, "fromString": None, "to": "1", "toString": "Done"},
-            {"created": "2026-03-08T10:00:00.000+0100", "field": "priority",
-             "from": "2", "fromString": "High", "to": "4", "toString": "Low"},
-            {"created": "2026-03-08T10:00:00.000+0100", "field": "parent",
-             "from": "100", "fromString": "PROJ-100", "to": "200", "toString": "PROJ-200"},
-        ]
-        history = self.history(raw, changes, "customfield_flag")
-        # Only what makes a blocker candidate.
-        self.assertEqual(history.state_at(self.at(5)), {
-            "status": "To Do", "statusCategory": "new", "flagged": True, "priority": "High"})
-        self.assertEqual(history.state_at(self.at(9)), {
-            "status": "To Do", "statusCategory": "new", "flagged": False, "priority": "Low"})
-        # With no changelog the current fields held throughout; without the
-        # site's Flagged field the issue has no flag.
-        unset = self.history(self.raw(priority=None), [])
-        self.assertEqual(unset.state_at(self.at(5)), {
-            "status": "To Do", "statusCategory": "new", "flagged": False, "priority": ""})
+        # Replayed from the events: the creation's values, then each change
+        # up to the instant, a change counting from its exact instant.
+        issue = done("PROJ-1", points=8, priority={"name": "Low"}, parent="PROJ-200",
+                     customfield_flag=None)
+        changes = [moved(at("03-04"), "To Do", "Done"), moved(at("03-06"), "Done", "Duplicate"),
+                   flag(at("03-04")), flag(at("03-08"),
+                                           on=False), points(at("03-08"), "3", "8"),
+                   changed(at("03-08"), "priority", "High", "Low"),
+                   changed(at("03-08"), "parent", "PROJ-100", "PROJ-200", "id-PROJ-100", "id-PROJ-200")]
+        found = events(issue, changes)
+        before = {"status": "To Do", "statusCategory": "new", "resolution": "Done", "storyPoints": 3,
+                  "flagged": False, "priority": "High", "parentId": "id-PROJ-100", "parentKey": "PROJ-100"}
+        cases = [(at("03-03"), before),
+                 (at("03-04"), {**before, "status": "Done",
+                  "statusCategory": "done", "flagged": True}),
+                 (at("03-07"), {**before, "status": "Duplicate",
+                  "statusCategory": "done", "flagged": True}),
+                 (at("03-09"), {**before, "status": "Duplicate", "statusCategory": "done", "storyPoints": 8,
+                                "priority": "Low", "parentId": "id-PROJ-200", "parentKey": "PROJ-200"})]
+        for instant, expected in cases:
+            with self.subTest(instant=instant):
+                self.assertEqual(common.state_at(
+                    "PROJ-1", found, parse_ts(instant)), expected)
 
     def test_unknown_status(self):
-        # Not in Jira's list of statuses: the current status's category, else a failure.
-        history = self.history(self.raw(status=("50", "Custom", "indeterminate")),
-                               [{"created": "2026-03-04T10:00:00.000+0100", "field": "status",
-                                 "from": "60", "fromString": "Gone", "to": "50", "toString": "Custom"}])
-        self.assertEqual(history.status_at(self.at(5)),
-                         ("Custom", "indeterminate"))
-        with self.assertRaisesRegex(SystemExit, "PROJ-1: status 60 is not in Jira's list of statuses"):
-            history.status_at(self.at(3))
+        # Not in Jira's list of statuses: the current status's category, else
+        # a failure when the state is read while it held.
+        issue = raw("PROJ-1", status="In Progress")
+        found = common.ticket_events(issue, [changed(at("03-04"), "status", "Gone", "In Progress", "60", "3")],
+                                     common.Context("7", START, {}, FIELDS, {}, PLUS_ONE, None), CLOSE)
+        self.assertEqual(common.state_at("PROJ-1", found, parse_ts(at("03-05")))["statusCategory"],
+                         "indeterminate")
+        with self.assertRaisesRegex(SystemExit, "PROJ-1: status 'Gone' is not in Jira's list of statuses"):
+            common.state_at("PROJ-1", found, parse_ts(at("03-03")))
+
+    def test_sprint_moves_of(self):
+        # The creation counts as the first add when the ticket was in the
+        # sprint then; membership changes at each move's exact instant.
+        issue = raw("PROJ-1", created=at("03-01"))
+        cases = [
+            ("in the sprint since creation", [left(at("03-02")), joined(at("03-03"))],
+             [(1, at("03-01")), (-1, at("03-02")), (1, at("03-03"))]),
+            ("no moves", [], [(1, at("03-01"))]),
+            ("added later", [joined(at("03-03"))], [(1, at("03-03"))]),
+        ]
+        for name, changes, expected in cases:
+            with self.subTest(name):
+                moves = common.sprint_moves_of(events(issue, changes), "7")
+                self.assertEqual([(move, ts)
+                                 for _, move, ts in moves], expected)
+        moves = common.sprint_moves_of(events(issue, cases[0][1]), "7")
+        for instant, expected in [(at("02-28"), False), (at("03-01"), True), (at("03-02"), False),
+                                  (at("03-03"), True)]:
+            with self.subTest(instant=instant):
+                self.assertIs(common.in_sprint_at(
+                    moves, parse_ts(instant)), expected)
+
+
+class BlockerCandidatesTest(unittest.TestCase):
+    def test_blocker_candidates(self):
+        # A ticket in the sprint at the close that was flagged, blocked or
+        # high priority and not done then, from its events: the tickets whose
+        # comments the fetch reads and data.json's blocker candidates.
+        # name: (the ticket today, its changes, a candidate)
+        cases = [
+            ("flagged at the close", raw("PROJ-1"), [flag(at("03-04"))], True),
+            ("flag cleared before the close", raw("PROJ-1"),
+             [flag(at("03-04")), flag(at("03-06"), on=False)], False),
+            ("flagged after the close", raw("PROJ-1", customfield_flag=[{"value": "Impediment"}]),
+             [flag(at("03-14"))], False),
+            ("in a blocked status", raw("PROJ-1"),
+             [moved(at("03-04"), "To Do", "Blocked")], True),
+            ("unblocked before the close", raw("PROJ-1", status="In Progress"),
+             [moved(at("03-04"), "To Do", "Blocked"), moved(at("03-05"), "Blocked", "In Progress")], False),
+            ("high priority and open", raw("PROJ-1"),
+             [changed(at("03-04"), "priority", "Medium", "High")], True),
+            ("high priority but done", done("PROJ-1", priority={"name": "High"}),
+             [moved(at("03-04"), "To Do", "Done")], False),
+            ("high priority only after the close", raw("PROJ-1", priority={"name": "High"}),
+             [changed(at("03-14"), "priority", "Medium", "High")], False),
+            ("flagged but left before the close", raw("PROJ-1"),
+             [flag(at("03-04")), left(at("03-05"))], False),
+            ("flagged and done", done("PROJ-1"),
+             [flag(at("03-04")), moved(at("03-05"), "To Do", "Done")], True),
+            ("flagged, joined only after the close", raw("PROJ-1"),
+             [joined(at("02-27"), "6"), flag(at("03-04")), joined(at("03-14"))], False),
+            ("flagged, left and came back before the close", raw("PROJ-1"),
+             [flag(at("03-04")), left(at("03-05")), joined(at("03-06"))], True),
+        ]
+        for name, issue, changes, expected in cases:
+            with self.subTest(name):
+                found = common.blocker_candidates(
+                    {"PROJ-1": events(issue, changes)}, "7", CLOSE)
+                self.assertEqual(found, ["PROJ-1"] if expected else [])
+
+    def test_without_the_flagged_field(self):
+        # A site without a Flagged field has no flagged tickets, whatever
+        # the issue's fields hold.
+        issue = raw("PROJ-1", customfield_flag=[{"value": "Impediment"}])
+        ctx = common.Context("7", START, CATEGORIES,
+                             (None, FIELDS[1]), {}, PLUS_ONE, None)
+        self.assertEqual(common.blocker_candidates(
+            {"PROJ-1": common.ticket_events(issue, [], ctx, CLOSE)}, "7", CLOSE), [])
 
 
 class FilesTest(unittest.TestCase):
@@ -312,13 +384,20 @@ class QuantitiesTest(unittest.TestCase):
             (common.qty, (1, 3.0), "1 ticket (3 pts)"), (common.qty,
                                                          (7, 7), "7 tickets (7 pts)"),
             (common.qty, (4, None), "4 tickets (– pts)"),
-            # Only the estimates that are set add up; none set is no estimate.
+            # Only the estimates that are set add up; none set is no
+            # estimate; no work at all is 0.
+            (common.known_sum, ([2, 3],), 5),
             (common.known_sum, ([2, None, 0.5],), 2.5),
             (common.known_sum, ([None, None],), None),
+            (common.known_sum, ([],), 0),
             # The unit follows the total: "1/1 ticket", "0/2 tickets".
             (common.ratio, (11, 22, 34, 74), "11/22 tickets (34/74 pts)"),
             (common.ratio, (1, 1, 2.0, 2), "1/1 ticket (2/2 pts)"),
             (common.ratio, (0, 2, 0, 1), "0/2 tickets (0/1 pts)"),
+            # Unestimated pts read "–".
+            (common.ratio, (1, 2, None, None), "1/2 tickets (–/– pts)"),
+            (common.ratio, (0, 2, 0, None), "0/2 tickets (0/– pts)"),
+            (common.ratio, (1, 2, None, 3), "1/2 tickets (–/3 pts)"),
             (common.ticket_ref, ("PROJ-20", 2), "PROJ-20 (2 pts)"),
             (common.ticket_ref, ("PROJ-13", None), "PROJ-13 (– pts)"),
             (common.estimate, (5,), "5"), (common.estimate,
@@ -337,11 +416,33 @@ class QuantitiesTest(unittest.TestCase):
             (common.whole_percentage, (199, 200),
              ">99%"), (common.whole_percentage, (299, 300), ">99%"),
             (common.whole_percentage, (99, 100), "99%"),
+            # A share of unestimated pts, or in them, is unknown.
+            (common.whole_percentage, (None, 5), "–"),
+            (common.whole_percentage, (0, None), "–"),
             (common.display_date, ("2026-03-02",), "02/03/2026"),
         ]
         for function, args, expected in cases:
             with self.subTest(function=function.__name__, args=args):
                 self.assertEqual(function(*args), expected)
+
+
+class OutcomeTotalTest(unittest.TestCase):
+    def test_outcome_total(self):
+        # A row's tickets add up; its pts by known_sum's rule over the
+        # outcomes that hold tickets: unestimated tickets alone are None,
+        # and a row with no tickets is 0.
+        def cells(completed, not_completed, descoped):
+            return {"new_completed": completed, "new_not_completed": not_completed, "new_descoped": descoped}
+        counts = cells(1, 2, 0)
+        cases = [("fully estimated", cells(3, 2, 0), 5), ("partly estimated", cells(None, 2, 0), 2),
+                 ("all unestimated", cells(None, None, 0), None)]
+        for name, points, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(common.outcome_total(
+                    points, "new", counts), expected)
+        self.assertEqual(common.outcome_total(counts, "new"), 3)
+        self.assertEqual(common.outcome_total(
+            cells(0, 0, 0), "new", cells(0, 0, 0)), 0)
 
 
 class ExpectedFilesTest(unittest.TestCase):

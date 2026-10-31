@@ -62,7 +62,7 @@ def enabled_sources(group):
 def tool_channel(name):
     """(tool, channel) of a source named "<tool>-<channel>", such as
     ("notion", "mcp") for "notion-mcp": the one place a source's name is
-    split, for a script that picks sources by channel."""
+    split."""
     tool, _, channel = name.rpartition("-")
     return tool, channel
 
