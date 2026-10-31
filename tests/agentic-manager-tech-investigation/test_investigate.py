@@ -91,7 +91,7 @@ class InvestigateTest(unittest.TestCase):
         # The other open questions are shown, so a new one doesn't repeat them.
         self.assertIn("## Other open questions", text)
         self.assertIn(
-            "- Q03: What target design and decisions do the documents record for Acme Search?", text)
+            "- Q03: What target design and decisions do the design records, documents and tickets set for Acme Search", text)
         self.assertNotIn("- Q01:", text)
         self.assertEqual([row[0] for row in ledger.table_rows(
             self.lines(), "queue-in-progress")], ["Q01"])

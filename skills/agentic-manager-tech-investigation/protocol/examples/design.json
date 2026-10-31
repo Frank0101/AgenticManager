@@ -1,4 +1,25 @@
 {
+  "sources": [
+    {
+      "key": "[[s1]]",
+      "kind": "code",
+      "reference": "[api index.py](https://github.com/acme/api/blob/1a2b3c4/index.py)",
+      "revision": "1a2b3c4",
+      "coverage": {
+        "read": "partial",
+        "lines": [[40, 60]],
+        "of": 200
+      }
+    }
+  ],
+  "findings": [
+    {
+      "key": "[[f1]]",
+      "claim": "The search API sends index updates to a queue, never to the index directly.",
+      "sources": "[[s1]] (lines 40-60)",
+      "limits": "[[s1]]: the unread lines are the index's admin commands, which don't send updates."
+    }
+  ],
   "boundaries": [
     {
       "key": "[[b1]]",
@@ -24,7 +45,7 @@
       "code": "[server.py](https://github.com/acme/api/blob/1a2b3c4/server.py)",
       "status": "🟩 Implemented",
       "how_much_was_read": "Routes read",
-      "evidence": "[[F01]]",
+      "evidence": "[[F01]], [[f1]]",
       "next_steps": "Unchanged",
       "boundary": "[[b1]]"
     },

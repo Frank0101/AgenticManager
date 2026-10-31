@@ -12,7 +12,7 @@ import re
 from common import (COVERAGE, LEFT_OUT, group_of, OUTSIDE_SCOPE, SCOPE_ANSWERS, links, SCOPE_QUESTION, USER_DECIDED, citation, claim_length_problem, ids,
                     recorded_ids,
                     read_in_part)
-from ledger import (TABLES, as_written, duplicate_of, finish_write, find_row,
+from ledger import (TABLES, as_written, basis, duplicate_of, finish_write, find_row,
                     header_of, move_row, next_id, put_row, refuse_cited, search_reference, set_design_basis,
                     table_rows, write_rows, record_review)
 
@@ -112,17 +112,37 @@ def submit_research(lines, question, data):
     findings = problems.items(data, "findings", required=False)
     questions = problems.items(data, "new_questions", required=False)
     outcome = data.get("outcome") if isinstance(data, dict) else None
-    # Every key first, so records can cite each other in any order. A source
-    # read again keeps its ID, and what was read this time is added to its
-    # coverage, which only ever grows.
+    # Every key first, so records can cite each other in any order.
     keys = {}
+    claim_reading(lines, sources, findings, keys, allocator, problems)
+    for number, item in enumerate(questions):
+        allocator.claim(keys, "questions", item,
+                        f"new_questions[{number}]", problems)
+    written += write_reading(lines, sources, findings, keys, problems)
+    written += add_questions(lines, questions, keys, problems)
+    written += close(lines, question, outcome, keys, allocator, problems)
+    problems.stop()
+    problems.guard("the answer", lambda: finish_write(lines, written))
+    problems.stop()
+    return {"ids": written_keys(keys)}
+
+
+def claim_reading(lines, sources, findings, keys, allocator, problems):
+    """Give the sources and findings of a submission their IDs in `keys`: a
+    source read again keeps its ID, and what was read this time is added to
+    its coverage, which only ever grows."""
     for number, item in enumerate(sources):
         allocator.claim(keys, "sources", item,
                         f"sources[{number}]", problems, same=read_before(lines, item))
-    for table, items in (("findings", findings), ("questions", questions)):
-        for number, item in enumerate(items):
-            allocator.claim(keys, table, item,
-                            f"{label(table)}[{number}]", problems)
+    for number, item in enumerate(findings):
+        allocator.claim(keys, "findings", item,
+                        f"findings[{number}]", problems)
+
+
+def write_reading(lines, sources, findings, keys, problems):
+    """Write a submission's sources and findings, checked as research's are;
+    returns the values written."""
+    written = []
     for number, item in enumerate(sources):
         where = f"sources[{number}]"
         cells = problems.cells(item, "sources", where, keys, extra=["key"])
@@ -148,27 +168,27 @@ def submit_research(lines, question, data):
             problems.add(too_long)
         written += problems.put(lines, "findings",
                                 keys.get(key_of(item)), cells, where, keys)
-    written += add_questions(lines, questions, keys, problems)
-    written += close(lines, question, outcome, keys, allocator, problems)
-    problems.stop()
-    problems.guard("the answer", lambda: finish_write(lines, written))
-    problems.stop()
-    return {"ids": written_keys(keys)}
+    return written
 
 
-def submit_design(lines, data, basis):
+def submit_design(lines, data):
     """Replace the system design with the one submitted, keeping the IDs given
-    as keys and assigning new ones, then add its new questions and record
-    `basis`, what it was built from; returns {key: ID}."""
+    as keys and assigning new ones, with the sources and findings of what was
+    read again to build it, then add its new questions and record what it was
+    built from; returns {key: ID}."""
     problems = Problems(lines)
-    problems.only(data, [*DESIGN_ORDER, "new_questions"])
+    problems.only(data, ["sources", "findings",
+                  *DESIGN_ORDER, "new_questions"])
     allocator = Allocator(lines)
     before = {table: {row[0] for row in table_rows(
         lines, table)} for table in DESIGN_ORDER}
     items = {table: problems.items(data, table, required=False)
              for table in DESIGN_ORDER}
     questions = problems.items(data, "new_questions", required=False)
+    sources = problems.items(data, "sources", required=False)
+    findings = problems.items(data, "findings", required=False)
     keys = {}
+    claim_reading(lines, sources, findings, keys, allocator, problems)
     for table in DESIGN_ORDER:
         for number, item in enumerate(items[table]):
             allocator.claim(keys, table, item,
@@ -178,7 +198,7 @@ def submit_design(lines, data, basis):
                         f"new_questions[{number}]", problems)
     for table in DESIGN_ORDER:
         write_rows(lines, table, [], header_of(lines, table))
-    written = []
+    written = write_reading(lines, sources, findings, keys, problems)
     for table in DESIGN_ORDER:
         for number, item in enumerate(items[table]):
             where = f"{table}[{number}]"
@@ -193,7 +213,9 @@ def submit_design(lines, data, basis):
             problems.guard(f"{table} {ident}, left out",
                            lambda i=ident: refuse_cited(lines, i))
     problems.stop()
-    set_design_basis(lines, basis)
+    # Recorded after its own findings are in, so a design never looks out of
+    # date for what it read itself.
+    set_design_basis(lines, basis(lines))
     problems.guard("the design", lambda: finish_write(lines, written))
     problems.stop()
     return {"ids": written_keys(keys)}
@@ -353,11 +375,6 @@ def referenced(text):
 def written_keys(keys):
     """{key as the agent writes it: ID} of a submission's records."""
     return {f"[[{key}]]": ident for key, ident in keys.items()}
-
-
-def label(table):
-    """The submission's name for a list of `table`'s records."""
-    return "new_questions" if table == "questions" else table
 
 
 def check_partial(lines, cells, where, problems, keys):

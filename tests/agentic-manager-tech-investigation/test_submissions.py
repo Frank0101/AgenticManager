@@ -337,11 +337,14 @@ class SubmissionTest(unittest.TestCase):
         design["components"][0]["status"] = "🟨 Planned"
         design["connections"][0]["state"] = "🟨 Planned"
         design["components"][1]["next_steps"] = "Unchanged"
-        result = self.submit("design", design, (1, 1, 0))
-        self.assertEqual(result["ids"], {"[[b1]]": "B01", "[[i1]]": "I01", "[[c1]]": "C01", "[[c2]]": "C02", "[[e1]]": "E01",
-                                         "[[p1]]": "P01"})
+        result = self.submit("design", design)
+        self.assertEqual(result["ids"], {"[[s1]]": "S02", "[[f1]]": "F02", "[[b1]]": "B01", "[[i1]]": "I01",
+                                         "[[c1]]": "C01", "[[c2]]": "C02", "[[e1]]": "E01", "[[p1]]": "P01"})
+        # What the design read again is recorded as research is, and the
+        # design counts as built from it, so it isn't out of date at once.
+        self.assertIn("| partial: lines 40-60 of 200 | F02 |", self.plain())
         self.assertEqual(ledger.design_basis(
-            self.text().split("\n")), (1, 1, 0))
+            self.text().split("\n")), (2, 1, 0))
         # Submitted again with its own IDs, a row is kept; one left out is removed,
         # and a new one takes a number never used.
         current = submissions.design_rows(self.text().split("\n"))
@@ -349,7 +352,7 @@ class SubmissionTest(unittest.TestCase):
                                                             "name_and_type": "Worker (job)"}]
         current["connections"] = []
         current["flows"] = []
-        result = self.submit("design", current, (1, 1, 0))
+        result = self.submit("design", current)
         self.assertEqual(result["ids"]["[[c1]]"], "C03")
         self.assertEqual(self.rows("components"), ["C01", "C03"])
         self.assertEqual(self.rows("connections"), [])
@@ -362,10 +365,10 @@ class SubmissionTest(unittest.TestCase):
                      "boundary": "None"}
         self.submit("design", {"components": [component],
                                "new_questions": [{"key": "[[q1]]", "question": "Is it live?", "raised_by": "[[c1]]",
-                                                  "depends_on": "None"}]}, (1, 0, 0))
+                                                  "depends_on": "None"}]})
         self.assertIn("| Q06 | C01 | Is it live? |", self.plain())
         self.assertIn("C01 is still cited by Q06",
-                      self.refused("design", {}, (1, 0, 0)))
+                      self.refused("design", {}))
 
     def test_a_design_claiming_code_needs_it_read(self):
         self.answered()
@@ -374,7 +377,7 @@ class SubmissionTest(unittest.TestCase):
                      "how_much_was_read": "None", "evidence": "[[F01]]", "next_steps": "n", "boundary": "None"}
         # The problem names the row by its key, not the ID it would have had.
         problems = self.refused(
-            "design", {"components": [component]}, (1, 0, 0))
+            "design", {"components": [component]})
         self.assertIn("- components[0]: a component marked", problems)
         self.assertIn("[[c1]] links acme/api: api", problems)
 

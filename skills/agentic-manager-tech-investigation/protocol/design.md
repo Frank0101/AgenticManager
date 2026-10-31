@@ -7,6 +7,12 @@ Build the system design from the findings below: enough to draw an accurate diag
 5. Flows: for each entry point that matters, the connections it uses, in order.
 6. Unknowns: a component or connection you can't establish is ⬜ Unverified, with the gap that explains it in evidence; a caller you can't identify is a component of unknown type. Never guess one.
 
-Each piece you're missing that could change what the report says about {{aims}}, such as a component claimed as implemented whose code nobody read, or a connection whose identity no finding names, is a new question: add it in new_questions, with raised_by naming the row or finding that raised it, and research resumes before the design is built again. {{scope}} A scope question has "for": "user". For something the user decided as mention only or exclude, draw at most how {{topic}} connects to it, and raise no research question about it.
+Draw a topic the user decided as mention only as one component, with its connection to {{topic}} and nothing inside it; draw nothing the user excluded, even where a finding names a connection to it.
+
+The findings name their sources, and each source's coverage names exactly what was read. When a finding is there but too thin to fill a row, re-open its source at that place first: that makes known evidence precise, it adds nothing new. Submit what you read with the design, as sources and findings the rows cite:
+
+{{reading}}
+
+Raise a question only for what no finding or source read so far establishes, and only if it could change what the report says about {{aims}}: a component the documents or tickets name whose code nobody read, a connection whose identity, data or direction no source gives, a step of a flow nobody traced, a boundary nothing establishes. Add it in new_questions, with raised_by naming the row or finding that raised it; research answers it before the design is updated. {{scope}} A scope question has "for": "user". Raise no question about a topic the user decided as mention only or exclude.
 
 {{links}}

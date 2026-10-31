@@ -125,7 +125,7 @@ def submit(relative, task, data):
         raise SystemExit(
             f"{task} isn't a task now; the task now is {current}: run next")
     elif phase == "design":
-        result = submit_design(lines, data, basis(lines))
+        result = submit_design(lines, data)
     elif phase == "review":
         result = submit_review(lines, data, len(rounds(lines)) + 1)
     else:
@@ -296,16 +296,21 @@ def question_context(lines, ident):
             "than look again.", ""]
     out += [f"- {row[0]}: {plain(row[1])} (blocked by: {plain(row[4])})" for row in table_rows(lines, "gaps")] \
         or ["None."]
-    out += ["", "## Sources already read", ""]
-    out += [f"- {row[0]}: {plain(row[1])}; {as_written(lines, row[2])}; {plain(row[3])}; coverage: {plain(row[4])}"
+    return out + ["", "## Sources already read", "", *sources_read(lines)]
+
+
+def sources_read(lines):
+    """One line for each source the ledger holds: its kind, reference,
+    revision and coverage, marked when read in part."""
+    return [f"- {row[0]}: {plain(row[1])}; {as_written(lines, row[2])}; {plain(row[3])}; coverage: {plain(row[4])}"
             + (PARTIAL_NOTE if read_in_part(row) else "")
             for row in table_rows(lines, "sources")] or ["None yet."]
-    return out
 
 
 def design_context(lines):
     """What the design is built from: the scope the user decided, every
-    finding, gap and decision, the code sources with their coverage, and the
+    finding, gap and decision, every source with what was read of it, so a
+    finding too thin for a row can be read again exactly there, and the
     current design to change."""
     out = ["## The scope the user decided", "", *
            (scope_decisions(lines) or ["None yet."]), "", "## Findings", ""]
@@ -315,9 +320,8 @@ def design_context(lines):
         out += ["", f"## {name.capitalize()}", ""]
         out += [f"- {row[0]}: " + "; ".join(plain(cell) for cell in row[1:]) for row in table_rows(lines, name)] \
             or ["None."]
-    out += ["", "## Code read, with its coverage", ""]
-    out += [f"- {row[0]}: {as_written(lines, row[2])} at {plain(row[3])}; coverage: {plain(row[4])}"
-            for row in table_rows(lines, "sources") if group_of(row) == "source_control"] or ["None."]
+    out += ["", "## Sources, with what was read of each",
+            "", *sources_read(lines)]
     current = design_rows(lines)
     if any(current.values()):
         out += ["", "## The current design, to change and submit again whole", "",

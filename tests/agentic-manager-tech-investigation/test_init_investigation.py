@@ -90,13 +90,16 @@ class InitTest(unittest.TestCase):
              "What problem does Acme Search solve, for whom, and with what impact and success measures?",
              "[Q01](#q01)"],
             ["Q03", "Seed (documentation)",
-             "What target design and decisions do the documents record for Acme Search?", "[Q01](#q01)"],
+             "What target design and decisions do the design records, documents and tickets set for Acme Search, "
+             "which are accepted or only proposed, and what does each change from today: components, connections, "
+             "identities, boundaries and flows?", "[Q01](#q01)"],
             ["Q04", "Seed (tracker)",
              "What is done, in progress and planned for Acme Search, and what evidence backs each Done ticket?",
              "[Q01](#q01)"],
             ["Q05", "Seed (code)",
-             "What code for Acme Search is merged or in an open pull request, and how does it work: components, "
-             "connections, identities?", "[Q01](#q01)"]])
+             "What code for Acme Search is merged or in an open pull request, and how does it work today: which "
+             "components run where, how they connect, with what data and which identities, what groups them, and "
+             "which flows the main entry points follow?", "[Q01](#q01)"]])
         # The scope boundaries hold the user's decisions, made as research meets them.
         self.assertIn("## Scope boundaries\n\nNone yet.\n", body)
         self.assertEqual(check_report.check_ledger(ledger), ([], []))
