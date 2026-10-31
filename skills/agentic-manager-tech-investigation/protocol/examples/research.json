@@ -5,7 +5,7 @@
       "kind": "code",
       "reference": "[api server.py](https://github.com/acme/api/blob/1a2b3c4/server.py)",
       "revision": "1a2b3c4",
-      "coverage": "entry points: routes, lines 1-200 of 900"
+      "coverage": "full"
     },
     {
       "key": "[[s2]]",

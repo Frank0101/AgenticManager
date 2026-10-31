@@ -6,6 +6,7 @@ import os
 import tempfile
 from unittest import mock
 
+import common
 from common import COMPONENT_HEADER, FINDING_HEADER, QUEUE_HEADER, REVIEW_HEADER, SOURCE_HEADER, anchored, table
 from agentic_manager import config, output_folder
 from init_investigation import ledger_skeleton
@@ -16,6 +17,10 @@ INVESTIGATION = "Acme-Search_26-10-05"
 SOURCES = {"documentation": {"notion-mcp": {"enabled": True}},
            "workflow": {"jira-api": {"enabled": True}},
            "source_control": {"gitlab-cli": {"enabled": True}}}
+
+
+# The code host pull requests link to in the tests.
+CODE_HOST = "https://git.example"
 
 
 def with_queue(ledger, subsection, rows):
@@ -87,7 +92,8 @@ def content():
 
 def temp_output(test):
     """The skill's output folder in a temporary folder, for `test`: a config
-    of its own setting the output root, never the developer's."""
+    of its own setting the output root, never the developer's, and CODE_HOST
+    as the code host, so no test asks gh."""
     tmp = tempfile.TemporaryDirectory()
     test.addCleanup(tmp.cleanup)
     root = os.path.realpath(tmp.name)
@@ -96,7 +102,9 @@ def temp_output(test):
         json.dump({"sources": SOURCES, "output": {
                   "root": os.path.join(root, "out")}}, f)
     for target, attribute, value in ((config, "CONFIG_PATH", path),
-                                     (output_folder, "TEMP_ROOT", os.path.join(root, "temp"))):
+                                     (output_folder, "TEMP_ROOT",
+                                      os.path.join(root, "temp")),
+                                     (common, "CODE_HOST", {"host": CODE_HOST})):
         patcher = mock.patch.object(target, attribute, value)
         patcher.start()
         test.addCleanup(patcher.stop)

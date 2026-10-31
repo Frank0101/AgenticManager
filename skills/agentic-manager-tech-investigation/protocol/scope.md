@@ -4,5 +4,5 @@ These are scope questions, for the user: each asks whether the investigation of 
    - include: researched like the rest of the topic;
    - mention only: named in the report, with one line on how it connects; not researched;
    - exclude: left out of the report.
-2. Write each decision: its topic names the thing decided briefly, by what it is, as the user would recognise it, not in the words of the question, which may carry detail from research. Check that no two decisions overlap, among these or with those decided so far, and that none takes in something the investigation already covers; ask again where one does.
+2. Write each decision: its topic names the thing decided briefly, by what it is, as the user would recognise it, not in the words of the question, which may carry detail from research. Where it shares parts with {{topic}}, the topic says where the line falls, such as "the payments platform, beyond the parts built only for {{topic}}". Check that no two decisions overlap, among these or with those decided so far, and that none takes in something the investigation already covers; ask again where one does.
 3. For each thing the user includes, add in new_questions the research questions that explore it, each raised by the question it comes from.

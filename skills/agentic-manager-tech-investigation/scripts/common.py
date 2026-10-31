@@ -16,7 +16,7 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.config import enabled_sources, is_enabled  # noqa: E402,F401
-from agentic_manager.github import NAME as GITHUB_CLI, GH_UNAVAILABLE, GhError, gh_available, gh_found, gh_signed_in, pull_parts  # noqa: E402,F401
+from agentic_manager.github import NAME as GITHUB_CLI, GH_UNAVAILABLE, GhError, gh_available, gh_found, gh_hosts, gh_signed_in, pull_parts  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
 from agentic_manager.jira import BROWSE_URL as TICKET_URL, GROUP as JIRA_GROUP, NAME as JIRA_API, PROJECT_KEY, JiraClient, JiraError, browse_url, plain_text, project_of  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
@@ -109,12 +109,18 @@ SOURCE_HEADER = ["ID", "Kind", "Reference", "Revision", "Coverage", "Findings",
                  "Superseded by"]
 SOURCE_FINDINGS_COLUMN = SOURCE_HEADER.index("Findings")
 # How much of a source was read: its Coverage starts with one of these. A
-# listing, a search hit or a partial read says what the authors meant or where
-# to look, not what the code does, so only the first two count as read; the
+# listing or a search hit says where to look, not what the code does, so only
+# the first two count as read. A partial read of code names the lines read,
+# which with the pinned revision find them again however the file changes since,
+# and each finding citing it says why the rest can't change its claim; the
 # report marks every source not read in full as limited.
-COVERAGE = ["full", "entry points", "partial",
-            "listing", "search hit", "no access"]
-READ_COVERAGE = ("full", "entry points")
+COVERAGE = ["full", "partial", "listing", "search hit", "no access"]
+READ_COVERAGE = ("full", "partial")
+LINE_RANGE = re.compile(r"\blines? \d+\s*[-–]\s*\d+")
+# A file written for people beside the code, such as a README: it helps to
+# read the code but isn't code, so reading it never shows what the code does.
+DOC_FILE = re.compile(
+    r"/(?:readme[^/]*|[^/]+\.(?:md|markdown|rst|adoc|txt))$", re.I)
 FINDING_HEADER = ["ID", "Claim", "Sources", "Limits"]
 DECISION_HEADER = ["ID", "Decision", "Established position or unresolved choice",
                    "Candidates, constraints", "Source authority and status",
@@ -172,8 +178,8 @@ TICKET = re.compile(rf"(?<![\w/\[-])({PROJECT_KEY})-\d+(?![\w\]-])")
 REPO_PR = re.compile(
     r"(?<![\w/.\[-])([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#(\d{1,6})\b")
 BARE_PR = re.compile(r"(?<![\w/&#\[])#\d{1,6}\b")
-REPO_URL = re.compile(
-    r"^(https?://[^/\s]+)/([\w.-]+/[\w.-]+)/(?:pull|issues|blob|tree|commit|commits)\b")
+# The code host, as code_host() found it: asked of gh once per run.
+CODE_HOST = {}
 # What a reference inside them is already part of: code, links and bare URLs.
 PROTECTED = re.compile(
     r"`[^`\n]*`|!?\[[^\]\n]*\]\([^)\n]*\)|!?\[[^\]\n]+\]\[[^\]\n]*\]|https?://\S+")
@@ -288,14 +294,9 @@ def autolink(text, definitions, site_of=None):
     [what couldn't be linked]). The Jira site of a key's project comes from the
     links already defined, else from `site_of(project)`, which gives the site
     that has the project, or None; a key of a project neither knows is written
-    as code. A pull request's host comes from the links: one on a host nothing
-    links yet, or a bare #123, can't be resolved."""
+    as code. A pull request links to code_host(); a bare #123, or any while
+    there is no code host, can't be resolved."""
     sites = ticket_sites(definitions.values())
-    hosts, repos = set(), {}
-    for url in definitions.values():
-        if match := REPO_URL.match(url):
-            hosts.add(match[1])
-            repos[match[2].casefold()] = match[1]
     unresolved = []
 
     def ticket(match):
@@ -305,8 +306,7 @@ def autolink(text, definitions, site_of=None):
         return f"[{match[0]}]({browse_url(site, match[0])})"
 
     def pull(match):
-        host = repos.get(match[1].casefold()) or (
-            next(iter(hosts)) if len(hosts) == 1 else None)
+        host = code_host()
         if host is None:
             unresolved.append(match[0])
             return match[0]
@@ -341,10 +341,23 @@ def upgraded_tickets(line, sites):
     return re.sub(rf"`(({PROJECT_KEY})-\d+)`", upgrade, line)
 
 
+def code_host():
+    """The address of the code host pull requests link to, such as
+    https://github.com, or None: the one host gh is signed in to, with the
+    github-cli source enabled. Asked once, when the first pull request is
+    linked; never hard-coded, so a GitHub Enterprise site works alike. Raises
+    GhError when gh fails, which stops the write."""
+    if "host" not in CODE_HOST:
+        hosts = gh_hosts() if gh_available() else []
+        CODE_HOST["host"] = f"https://{hosts[0]}" if len(hosts) == 1 else None
+    return CODE_HOST["host"]
+
+
 def unresolved_message(unresolved):
     """Why pull requests couldn't be linked, and how to fix them."""
-    return (f"{', '.join(dict.fromkeys(unresolved))}: write a pull request as owner/repo#123, "
-            "after linking any page of that host once")
+    return (f"{', '.join(dict.fromkeys(unresolved))}: write a pull request as owner/repo#123; it links to the "
+            "host gh is signed in to, so it needs the github-cli source enabled and gh signed in to one host "
+            "(gh auth status)")
 
 
 # The rules below are each defined once: ledger.py applies them to a row as it
@@ -591,11 +604,14 @@ def group_of(row):
 
 
 def coverage_problem(row):
-    """Why a source row's Coverage doesn't start with one of COVERAGE, or None."""
-    if any(row[4].strip().casefold().startswith(c) for c in COVERAGE):
-        return None
-    return (f"{row[0]}: Coverage starts with one of: {', '.join(COVERAGE)}, then any detail, such as "
-            "'partial: lines 1-80 of 352'")
+    """Why a source row's Coverage doesn't start with one of COVERAGE, or None:
+    code read in part also names the lines read."""
+    if not any(row[4].strip().casefold().startswith(c) for c in COVERAGE):
+        return (f"{row[0]}: Coverage starts with one of: {', '.join(COVERAGE)}, then any detail, such as "
+                "'partial: lines 1-80, 200-240 of 352'")
+    if group_of(row) == "source_control" and read_in_part(row) and not LINE_RANGE.search(row[4]):
+        return f"{row[0]}: Coverage of code read in part names the lines read, such as 'partial: lines 1-80, 200-240 of 352'"
+    return None
 
 
 def superseded_problem(row):
@@ -670,13 +686,13 @@ def unread_components(components, sources, definitions):
     """{component ID: the paths it links} of the components whose Status
     claims code (🟩, 🟦) without a code source read at READ_COVERAGE of one of
     those paths, of a file or folder under it, or of a folder above it, which
-    covers the files in it. `components` are rows (ID, ..., repository cell
+    covers the files in it; a README or other DOC_FILE isn't code. `components` are rows (ID, ..., repository cell
     at 3, status at 4); `sources` the sources table's rows."""
     def urls(cell):
         return [url for _, _, _, url in links(cell, definitions) if url]
     read = [same_document(url) for row in sources
             if group_of(row) == "source_control" and read_enough(row)
-            for url in urls(row[2])]
+            for url in urls(row[2]) if not DOC_FILE.search(same_document(url))]
     found = {}
     for row in components:
         if not row[4].startswith(CODE_STATUSES):

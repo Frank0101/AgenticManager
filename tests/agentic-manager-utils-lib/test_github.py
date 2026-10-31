@@ -248,6 +248,18 @@ class GithubTest(unittest.TestCase):
                     self.assertIs(github.gh_signed_in(run), expected)
                 self.assertEqual(run.calls, [["gh", "auth", "status"]])
 
+    def test_gh_hosts(self):
+        # Only the hosts with an account signed in count.
+        answer = {"hosts": {"github.com": [{"state": "success", "active": True, "host": "github.com"}],
+                            "git.acme.example": [{"state": "error", "active": True, "host": "git.acme.example"}]}}
+        run = answering(answer)
+        self.assertEqual(github.gh_hosts(run), ["github.com"])
+        self.assertEqual(
+            run.calls, [["gh", "auth", "status", "--json", "hosts"]])
+        with self.assertRaises(github.GhError):
+            github.gh_hosts(
+                Runner(code=1, stderr="You are not logged into any GitHub hosts."))
+
     def test_pull_url(self):
         # The one rule for a pull request's address: its parts by name;
         # None for anything else, an owner GitHub wouldn't allow included.

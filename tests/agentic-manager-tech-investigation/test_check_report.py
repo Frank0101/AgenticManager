@@ -366,19 +366,19 @@ class CheckReportTest(unittest.TestCase):
         def read(path, coverage, kind="code"):
             return [["S01", kind, f"[routes](https://github.com/acme/app/blob/abc/services/search/{path})", "abc",
                      coverage, "F01", "None"]]
-        readme = read("README.md", "partial: the README")
+        listing = read("", "listing")
         cases = [
             # A question a gap stops is blocked, never completed.
             ("a question closed on a gap", "G01", "⬜ Unverified",
-             readme, "Q01: a completed question"),
+             listing, "Q01: a completed question"),
             ("a question closed on its finding",
-             "F01", "⬜ Unverified", readme, None),
+             "F01", "⬜ Unverified", listing, None),
             ("a status not allowed", "F01", "Done",
-             readme, "C01: Status starts with"),
-            ("code claimed from a README", "F01", "🟩 Implemented",
-             readme, "C01 links acme/app: services/search"),
+             listing, "C01: Status starts with"),
+            ("code claimed from a listing", "F01", "🟩 Implemented",
+             listing, "C01 links acme/app: services/search"),
             ("code claimed from its routes", "F01", "🟩 Implemented",
-             read("src/routes.py", "entry points"), None),
+             read("src/routes.py", "partial: lines 1-80"), None),
         ]
         for name, outcome, status, sources, expected in cases:
             with self.subTest(name):

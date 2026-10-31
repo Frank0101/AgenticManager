@@ -74,6 +74,15 @@ def gh_signed_in(run=subprocess.run):
     return _ran(["auth", "status"], ["auth", "status"], run).returncode == 0
 
 
+def gh_hosts(run=subprocess.run):
+    """The hosts gh is signed in to, such as ["github.com"], for a skill that
+    links to pull requests without hard-coding their host. Raises GhError when
+    gh fails, as gh_json() does."""
+    answer = gh_json(["auth", "status", "--json", "hosts"], run)
+    return sorted(host for host, accounts in (answer.get("hosts") or {}).items()
+                  if any(account.get("state") == "success" for account in accounts))
+
+
 def pull_events(urls, run=subprocess.run):
     """(events, gone) of the pull requests at `urls`: events as {url: {url,
     state, createdAt, mergedAt, closedAt}}, when each was opened and, if it

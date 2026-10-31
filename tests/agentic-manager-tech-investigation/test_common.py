@@ -8,6 +8,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
@@ -15,7 +16,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from investigation_fixture import INVESTIGATION, temp_output  # noqa: E402
+from investigation_fixture import CODE_HOST, INVESTIGATION, temp_output  # noqa: E402
 
 
 class StructureTest(unittest.TestCase):
@@ -58,8 +59,11 @@ class MarkdownTest(unittest.TestCase):
 
 
 class ReferencesTest(unittest.TestCase):
-    DEFINED = {"proj-1": "https://acme.example/browse/PROJ-1",
-               "api": "https://git.example/acme/api/tree/abc"}
+    DEFINED = {"proj-1": "https://acme.example/browse/PROJ-1"}
+
+    def setUp(self):
+        self.enterContext(mock.patch.object(
+            common, "CODE_HOST", {"host": CODE_HOST}))
 
     def test_autolink(self):
         # text: (written, unresolved). A ticket links once the ledger links one of
@@ -79,9 +83,27 @@ class ReferencesTest(unittest.TestCase):
         for text, expected in cases:
             with self.subTest(text):
                 self.assertEqual(common.autolink(text, self.DEFINED), expected)
-        # Two hosts and an unlinked repository: no host to choose.
-        two = {**self.DEFINED, "b": "https://other.example/x/y/blob/abc/f"}
-        self.assertEqual(common.autolink("z/w#1", two)[1], ["z/w#1"])
+        # With no code host, no pull request can be linked.
+        with mock.patch.object(common, "CODE_HOST", {"host": None}):
+            self.assertEqual(common.autolink(
+                "z/w#1", self.DEFINED)[1], ["z/w#1"])
+
+    def test_the_code_host_is_the_one_gh_is_signed_in_to(self):
+        # name: (github-cli usable, gh's hosts, the code host)
+        cases = [("one host", True, ["github.com"], "https://github.com"),
+                 ("an enterprise host", True, [
+                  "git.acme.example"], "https://git.acme.example"),
+                 ("two hosts", True, ["a.example", "b.example"], None),
+                 ("signed in to none", True, [], None),
+                 ("github-cli not enabled", False, ["github.com"], None)]
+        for name, usable, hosts, expected in cases:
+            with self.subTest(name), mock.patch.object(common, "CODE_HOST", {}), \
+                    mock.patch.object(common, "gh_available", return_value=usable), \
+                    mock.patch.object(common, "gh_hosts", return_value=hosts) as asked:
+                self.assertEqual(common.code_host(), expected)
+                common.code_host()
+                # gh is asked once a run, and not at all without github-cli.
+                self.assertEqual(asked.call_count, 1 if usable else 0)
 
     def test_id_order_and_cited_sources(self):
         # IDs sort by number; a source is cited by the findings whose Sources name it.
@@ -237,10 +259,17 @@ class ReferencesTest(unittest.TestCase):
                 self.assertEqual(common.group_problem(row) is None, accepted)
 
     def test_a_sources_coverage_and_replacement_give_its_mark(self):
-        # (Coverage, Superseded by, the report's mark, the problem's text or None)
+        # (Coverage, Superseded by, the report's mark, the problem's text or
+        # None, and the kind when not documentation): code read in part names
+        # the lines read; a page, anything.
         cases = [("full", "None", None, None), ("Full: every line", "None", None, None),
-                 ("entry points: routes", "None", "limited", None),
-                 ("partial: lines 1-80 of 352", "None", "limited", None),
+                 ("partial: lines 1-80 of 352", "None", "limited", None, "code"),
+                 ("partial: lines 1-80, 200-240 of 352",
+                  "None", "limited", None, "code"),
+                 ("partial: the routes", "None", "limited",
+                  "names the lines read", "code"),
+                 ("entry points: routes", "None", "limited",
+                  "Coverage starts with one of", "code"),
                  ("listing", "None", "limited",
                   None), ("search hit", "None", "limited", None),
                  ("No access: repository not visible", "None", "limited", None),
@@ -251,9 +280,11 @@ class ReferencesTest(unittest.TestCase):
                  ("full", "the 2026 design", "superseded", "Superseded by is None"),
                  ("full", "S01", "superseded", "Superseded by is None"),
                  ("full", "S02, S03", "superseded", "Superseded by is None")]
-        for coverage, superseded, mark, expected in cases:
+        for case in cases:
+            coverage, superseded, mark, expected, kind = (
+                *case, "documentation")[:5]
             with self.subTest(coverage=coverage, superseded=superseded):
-                row = ["S01", "documentation", "[x](https://example.com/x)", "2026-10-01", coverage, "None",
+                row = ["S01", kind, "[x](https://example.com/x)", "2026-10-01", coverage, "None",
                        superseded]
                 self.assertEqual(common.source_mark(row), mark)
                 problem = common.coverage_problem(
@@ -280,9 +311,10 @@ class ReferencesTest(unittest.TestCase):
                     self.assertIn(expected, problem or "")
 
     def test_unread_components(self):
-        # A component claiming code needs a code source, read in full or at its
-        # entry points, of its path, a file under it, or a folder above it,
-        # which covers its files.
+        # A component claiming code needs a code source, read in full or in
+        # part, of its path, a file under it, or a folder above it, which
+        # covers its files; a README or another document beside the code
+        # isn't code.
         definitions = {"search": "https://git.example/acme/api/tree/abc/services/search",
                        "client": "https://git.example/acme/api/blob/abc/app/plugins/client.ts"}
         unread = {"C01": ["acme/api: services/search"]}
@@ -290,8 +322,10 @@ class ReferencesTest(unittest.TestCase):
         def source(path, coverage, kind="code"):
             return ["S01", kind, f"[f](https://git.example/acme/api/{path})", "abc", coverage, "None", "None"]
         cases = [("nothing read", "[search][search]", [], unread),
-                 ("a README in part", "[search][search]",
-                  [source("blob/abc/services/search/README.md", "partial: the README")], unread),
+                 ("its README in full", "[search][search]",
+                  [source("blob/abc/services/search/README.md", "full")], unread),
+                 ("a design note under it", "[search][search]",
+                  [source("blob/abc/services/search/docs/design.md", "full")], unread),
                  ("a listing of it", "[search][search]", [
                   source("tree/abc/services/search", "listing")], unread),
                  ("a sibling folder", "[search][search]",
@@ -300,8 +334,8 @@ class ReferencesTest(unittest.TestCase):
                   [source("blob/abc/services/search/main.py", "full", "documentation")], unread),
                  ("a file under it", "[search][search]",
                   [source("blob/abc/services/search/main.py", "Full")], {}),
-                 ("its entry points", "[search][search]",
-                  [source("blob/abc/services/search/main.py", "entry points: routes")], {}),
+                 ("lines of it", "[search][search]",
+                  [source("blob/abc/services/search/main.py", "partial: lines 1-80")], {}),
                  ("a folder above it", "[client][client]", [source("tree/abc/app/plugins", "full")], {})]
         for name, repository, sources, expected in cases:
             with self.subTest(name):

@@ -35,10 +35,22 @@ class InvestigationTest(unittest.TestCase):
         config = os.path.join(self.root, ".config",
                               "agentic-manager", "config.json")
         os.makedirs(os.path.dirname(config))
+        # The code through github-cli, answered by a stand-in gh signed in to
+        # one host, so pull requests link as they do for the user.
+        sources = {**SOURCES,
+                   "source_control": {"github-cli": {"enabled": True}}}
         with open(config, "w", encoding="utf-8") as f:
-            json.dump({"sources": SOURCES, "output": {
+            json.dump({"sources": sources, "output": {
                       "root": os.path.join(self.root, "out")}}, f)
-        self.env = dict(os.environ, HOME=self.root, TMPDIR=self.root)
+        bin_dir = os.path.join(self.root, "bin")
+        os.makedirs(bin_dir)
+        gh = os.path.join(bin_dir, "gh")
+        with open(gh, "w", encoding="utf-8") as f:
+            f.write("#!/bin/sh\necho '" +
+                    json.dumps({"hosts": {"github.com": [{"state": "success"}]}}) + "'\n")
+        os.chmod(gh, 0o755)
+        self.env = dict(os.environ, HOME=self.root, TMPDIR=self.root,
+                        PATH=bin_dir + os.pathsep + os.environ["PATH"])
 
     def run_script(self, path, *args, stdin="", ok=True):
         proc = subprocess.run([sys.executable, path, *args], env=self.env, input=stdin.encode("utf-8"),

@@ -478,7 +478,7 @@ class LedgerTest(unittest.TestCase):
 
     def test_a_code_status_needs_the_code_read(self):
         # A component claiming code needs a code source of its path read in
-        # full or at its entry points: one case each way, as test_common.py
+        # full or in part: one case each way, as test_common.py
         # has the rule's own.
         self.records("F01")
         tree = "https://git.example/acme/api/tree/abc/services/search"
@@ -486,14 +486,14 @@ class LedgerTest(unittest.TestCase):
             "search", "r", f"[search]({tree})", "🟩 Implemented", "d", "F01", "next", "None"]
         with self.assertRaisesRegex(SystemExit, "C01 links acme/api: services/search"):
             self.write(("components", "C01", component))
-        self.write(("sources", "S01", source("[f](https://git.example/acme/api/blob/abc/services/search/README.md)",
-                                             coverage="partial: the README")))
+        self.write(("sources", "S01", source("[f](https://git.example/acme/api/tree/abc/services/search)",
+                                             coverage="listing")))
         with self.assertRaisesRegex(SystemExit, "needs its code read"):
             self.write(("components", "C01", component))
         self.write(
             ("components", "C01", component[:3] + ["🟨 Planned"] + component[4:]))
         self.write(("sources", "S02", source("[f](https://git.example/acme/api/blob/abc/services/search/src/routes.py)",
-                                             coverage="entry points: lines 1-80")))
+                                             coverage="partial: lines 1-80")))
         self.write(("components", "C01", component))
         self.assertIn("| 🟩 Implemented |", self.text())
 
