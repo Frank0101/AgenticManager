@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import re
 
-from common import (CELL_PIPE, CITATION, DECISION_HEADER, DEFINITION, DESIGN_ORDER, FLOW_HEADER, GAP_FIX, GAP_HEADER,
+from common import (CELL_PIPE, CITATION, mention_only_ids, DECISION_HEADER, DEFINITION, DESIGN_ORDER, FLOW_HEADER, GAP_FIX, GAP_HEADER,
                     HEADING, IDENTITY_HEADER, LEDGER, LEDGER_SECTIONS, LINKS, QUERY, QUEUE, QUEUE_HEADER,
                     QUEUE_SUBSECTIONS, REFERENCE_LINK, SOURCE_FINDINGS_COLUMN, SOURCE_LINK_FIX, TABLE_HEADINGS, UNUSED,
                     anchor_ids, backtick_error, blocked_problem, cited_evidence_problem, cited_sources,
@@ -328,7 +328,8 @@ def closing_problems(body):
                  for row in records(body, "decisions")]
     problems += [scope_problem(row)
                  for row in records(body, "scope")]
-    unread = unread_components(components, sources, link_definitions(body))
+    unread = unread_components(components, sources, link_definitions(body),
+                               mention_only_ids(records(body, "scope")))
     if unread:
         problems.append(unread_message(unread))
     return [p for p in problems if p]

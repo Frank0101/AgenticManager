@@ -293,8 +293,9 @@ def coverage_text(given):
 def grown_coverage(before, now):
     """The coverage of a source read again: `before`, as the ledger holds it,
     and `now`, what this read covers, together. The fuller read wins, as full
-    covers everything; the lines, sections and files read are merged, and the
-    notes kept. Exits on a `now` coverage_text() refuses."""
+    covers everything; the lines, sections and files read are merged, lines
+    covering a whole file making it full, and the notes kept. Exits on a `now`
+    coverage_text() refuses."""
     coverage_text(now)
     read = min(before["read"], now["read"], key=COVERAGE.index)
     notes = list(dict.fromkeys(n for n in (
@@ -309,9 +310,13 @@ def grown_coverage(before, now):
             merged[-1][1] = max(merged[-1][1], last)
         else:
             merged.append([first, last])
+    size = now.get("of") or before.get("of")
+    # Reads that together cover a file's every line read it in full.
+    if size and merged == [[1, size]]:
+        return {**grown, "read": "full"}
     if merged:
         grown["lines"] = merged
-    if size := now.get("of") or before.get("of"):
+    if size:
         grown["of"] = size
     for name in ("sections", "files"):
         if items := list(dict.fromkeys(before.get(name, []) + now.get(name, []))):

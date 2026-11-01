@@ -480,13 +480,21 @@ class ReferencesTest(unittest.TestCase):
                              repository, "🟩 Live", "Unchanged", "F01"]
                 self.assertEqual(common.unread_components(
                     [component], sources, definitions), expected)
-        self.assertEqual(common.unread_components(
-            [["C01", "n", "service", "None", "r", "[search][search]", "⬜ Unverified", "Unchanged", "G01"]], [], definitions), {})
-        # An external product is live once it is shown to exist, with no code.
-        self.assertEqual(common.unread_components(
-            [["C01", "GitHub", "external product", "None", "r",
-                "None", "🟩 Live", "Unchanged", "F01"]], [],
-            definitions), {})
+        # No code is asked of an unverified row, of an external product, or of
+        # a part of a mention-only topic citing that decision (U02 here, not
+        # U01, which included its topic).
+        # name: (kind, state, evidence, unread)
+        cases = [("unverified", "service", "⬜ Unverified", "G01", {}),
+                 ("an external product", "external product",
+                  "🟩 Live", "F01", {}),
+                 ("a mention-only part", "store", "🟩 Live", "F01, U02", {}),
+                 ("a part of an included topic", "store", "🟩 Live", "F01, U01", unread)]
+        for name, kind, state, evidence, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(common.unread_components(
+                    [["C01", "n", kind, "None", "r", "[search][search]",
+                        state, "Unchanged", evidence]], [],
+                    definitions, {"U02"}), expected)
         # The message names the path to read.
         self.assertIn("C01 links acme/api: services/search",
                       common.unread_message(unread))

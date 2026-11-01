@@ -138,6 +138,8 @@ class SubmissionTest(unittest.TestCase):
                   {"read": "partial", "lines": [[81, 120]]}, "partial: lines 1-120"),
                  ("a smaller read", "partial: lines 1-200; routes",
                   {"read": "partial", "lines": [[10, 20]]}, "partial: lines 1-200; routes"),
+                 ("every line, in two reads", "partial: lines 1-120, 224-361 of 361",
+                  {"read": "partial", "lines": [[121, 223]], "of": 361}, "full"),
                  ("then in full", "partial: lines 1-80",
                   {"read": "full"}, "full"),
                  ("full stays full", "full", {

@@ -9,7 +9,7 @@ check_report.py applies to the whole ledger at handover.
 import os
 import re
 
-from common import (CITATION, DESIGN, DESIGN_ORDER, FOLDER_NAME, GAP_FIX, ID_LETTERS, INLINE_LINK, JIRA_API, JIRA_GROUP,
+from common import (CITATION, mention_only_ids, DESIGN, DESIGN_ORDER, FOLDER_NAME, GAP_FIX, ID_LETTERS, INLINE_LINK, JIRA_API, JIRA_GROUP,
                     LEDGER, LINKS, QUERY, QUEUE_HEADER, QUEUE_TABLES, REVIEW_HEADER, REVIEW_NONE, REVIEW_STOPPED,
                     ROW_START, SOURCE_FINDINGS_COLUMN, SOURCE_HEADER, SOURCE_LINK_FIX, TABLE_HEADINGS, TABLES, UNUSED,
                     anchored, autolink, backtick_error, blocked_problem, citation, cited_sources, coverage_problem,
@@ -266,7 +266,9 @@ def check_cells(lines, name, row):
     if problem:
         raise SystemExit(f"{name} {problem}")
     if unread := name == "components" and unread_components([row], table_rows(lines, "sources"),
-                                                            links_section(lines)):
+                                                            links_section(
+                                                                lines),
+                                                            mention_only_ids(table_rows(lines, "scope"))):
         raise SystemExit(unread_message(unread))
     # A search's query is the one backticked text allowed outside a link.
     check_backticks(lines, [c for i, c in enumerate(
