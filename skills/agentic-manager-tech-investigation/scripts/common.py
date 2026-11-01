@@ -139,6 +139,9 @@ COMPONENT_HEADER = ["ID", "Name", "Kind", "Boundary", "Responsibility", "Reposit
 # investigation names the same kinds alike and a diagram can draw each its way.
 COMPONENT_TYPES = ("service", "application", "job", "script", "library", "store", "queue",
                    "external product", "person", "role", "unknown")
+# The kinds that have no code of their own: one is live once a finding shows it
+# exists; whether the topic uses it yet is its connections' state.
+OUTSIDE_KINDS = ("external product", "person", "role")
 # How a connection is made, the kind its How starts with, and whether its
 # caller waits: fixed values, so connections read alike and a diagram can draw
 # each kind its way; any detail follows.
@@ -185,7 +188,7 @@ TABLES = {
 # A component's or a connection's state: its State cell starts with one of these.
 # Code is the source of truth, so the two that claim code exists need the code
 # read (READ_COVERAGE above); the others say what the evidence can't establish.
-STATUSES = [("🟩 Live", "merged to the main branch, or an external product, person or role that merged code uses"),
+STATUSES = [("🟩 Live", "merged to the main branch, or, for an external product, a person or a role, shown to exist"),
             ("🟦 In development",
              "code written but not merged: an open pull request or a branch"),
             ("🟨 Planned", "in the tracker, with no code"),
@@ -891,8 +894,9 @@ def unread_components(components, sources, definitions):
     """{component ID: the paths it links} of the components whose State
     claims code (🟩, 🟦) without a code source read at READ_COVERAGE of one of
     those paths, of a file or folder under it, or of a folder above it, which
-    covers the files in it; a README or other DOC_FILE isn't code.
-    `components` and `sources` are the tables' rows."""
+    covers the files in it; a README or other DOC_FILE isn't code. An external
+    product, a person or a role has no code of its own: a finding shows it
+    exists. `components` and `sources` are the tables' rows."""
     def urls(cell):
         return [url for _, _, _, url in links(cell, definitions) if url]
     read = [same_document(url) for row in sources
@@ -901,8 +905,9 @@ def unread_components(components, sources, definitions):
     found = {}
     state, code = COMPONENT_HEADER.index("State"), COMPONENT_HEADER.index(
         "Repository, paths, revision")
+    kind = COMPONENT_HEADER.index("Kind")
     for row in components:
-        if not row[state].startswith(CODE_STATUSES):
+        if not row[state].startswith(CODE_STATUSES) or starts_with_one(row[kind], OUTSIDE_KINDS):
             continue
         paths = [same_document(url) for url in urls(row[code])]
         if not any(r == p or r.startswith(p + "/") or p.startswith(r + "/") for p in paths for r in read):

@@ -482,6 +482,11 @@ class ReferencesTest(unittest.TestCase):
                     [component], sources, definitions), expected)
         self.assertEqual(common.unread_components(
             [["C01", "n", "service", "None", "r", "[search][search]", "⬜ Unverified", "Unchanged", "G01"]], [], definitions), {})
+        # An external product is live once it is shown to exist, with no code.
+        self.assertEqual(common.unread_components(
+            [["C01", "GitHub", "external product", "None", "r",
+                "None", "🟩 Live", "Unchanged", "F01"]], [],
+            definitions), {})
         # The message names the path to read.
         self.assertIn("C01 links acme/api: services/search",
                       common.unread_message(unread))
