@@ -9,17 +9,19 @@ check_report.py applies to the whole ledger at handover.
 import os
 import re
 
-from common import (SCOPE_HEADER, read_in_part, CITATION, citation, DESIGN, BOUNDARY_HEADER, COMPONENT_HEADER, CONNECTION_HEADER, DECISION_HEADER, DESIGN_TABLES,
-                    FINDING_HEADER, FLOW_HEADER, FOLDER_NAME, GAP_FIX, GAP_HEADER, ID_LETTERS,
+from common import (BOUNDARY_HEADER, CITATION, COMPONENT_HEADER, CONNECTION_HEADER, DECISION_HEADER, DESIGN,
+                    DESIGN_TABLES, FINDING_HEADER, FLOW_HEADER, FOLDER_NAME, GAP_FIX, GAP_HEADER, ID_LETTERS,
                     IDENTITY_HEADER, INLINE_LINK, JIRA_API, JIRA_GROUP, LEDGER, LINKS, QUERY, QUEUE_HEADER,
-                    QUEUE_TABLES, REVIEW_HEADER, REVIEW_NONE, REVIEW_STOPPED, ROW_START, SOURCE_FINDINGS_COLUMN,
-                    SOURCE_HEADER, SOURCE_LINK_FIX, TABLE_HEADINGS, JiraClient, anchored, autolink, backtick_error,
-                    blocked_problem, cited_sources, coverage_problem, design_problem, finding_problem, free_name,
-                    gap_problem, group_problem, id_order, ids, inline_links, investigation_dir, is_enabled,
-                    ledger_rows, link_definitions, link_text, links, outcome_problem, plain, same_document, scope_problem,
-                    section_span, slug, source_reference_missing, status_problem, strip_anchors, superseded_problem,
-                    table, table_cells, table_row, ticket_sites, unlinked_backticks, unread_components,
-                    unread_message, unrecorded_citations, unresolved_message, upgraded_tickets, write_output_file)
+                    QUEUE_TABLES, REVIEW_HEADER, REVIEW_NONE, REVIEW_STOPPED, ROW_START, SCOPE_HEADER,
+                    SOURCE_FINDINGS_COLUMN, SOURCE_HEADER, SOURCE_LINK_FIX, TABLE_HEADINGS, UNUSED, anchored, autolink,
+                    backtick_error, blocked_problem, citation, cited_sources, coverage_problem, design_problem,
+                    finding_problem, flow_order_problem, flow_states, free_name, gap_problem, group_problem, id_order,
+                    identity_states, ids, inline_links, investigation_dir, is_enabled, JiraClient, ledger_rows,
+                    link_definitions, link_text, links, outcome_problem, plain, read_in_part, row_evidence_problem,
+                    same_document, scope_problem, section_span, slug, source_reference_missing, status_problem,
+                    strip_anchors, superseded_problem, table, table_cells, table_row, ticket_sites, unlinked_backticks,
+                    unread_components, unread_message, unrecorded_citations, unresolved_message, upgraded_tickets,
+                    write_output_file)
 
 # table name: (heading it sits under, default header, ID letter)
 TABLES = {
@@ -36,8 +38,10 @@ TABLES = {
     "flows": (TABLE_HEADINGS["flows"], FLOW_HEADER, "P"),
 }
 # The columns the script writes, which a row's input leaves out: a source's
-# Findings, from the findings that cite it.
-GENERATED = {"sources": SOURCE_HEADER[SOURCE_FINDINGS_COLUMN]}
+# Findings, from the findings that cite it, and the State of an identity or a
+# flow, from its connections.
+GENERATED = {"sources": SOURCE_HEADER[SOURCE_FINDINGS_COLUMN],
+             "identities": IDENTITY_HEADER[-1], "flows": FLOW_HEADER[-1]}
 PLACEHOLDERS = {"None yet.", "None."}
 LINKS_HEADING = f"## {LINKS}"
 # The Jira site of each project looked up in this run, or None: a key-shaped
@@ -155,7 +159,7 @@ def put_row(lines, name, row_id, cells):
             f"{name} takes {len(columns)} texts after the ID: {' | '.join(columns)}")
     written = linked(lines, [c.replace("\n", " ") for c in cells])
     if name in GENERATED:
-        # Written by sync_sources once the row is in.
+        # Written by sync_sources or sync_states once the row is in.
         written.insert(TABLES[name][1].index(GENERATED[name]) - 1, "None")
     set_row(lines, name, row_id, written)
     # A question is in one part of the queue: writing it in one takes it out of the others.
@@ -257,9 +261,11 @@ def check_cells(lines, name, row):
     """Exit if a cell holds a value its column doesn't allow."""
     problem = None
     if name == "components":
-        problem = status_problem(row[0], row[4]) or design_problem(name, row)
+        problem = status_problem(row[0], row[4]) or design_problem(
+            name, row) or row_evidence_problem(name, row, *evidence_of(lines))
     elif name in DESIGN_TABLES:
-        problem = design_problem(name, row)
+        problem = design_problem(name, row) or row_evidence_problem(name, row, *evidence_of(lines)) or (
+            name == "flows" and flow_order_problem(row, table_rows(lines, "connections")))
     elif name == "findings":
         problem = finding_problem(row)
     elif name == "scope":
@@ -282,6 +288,13 @@ def check_cells(lines, name, row):
     # A search's query is the one backticked text allowed outside a link.
     check_backticks(lines, [c for i, c in enumerate(
         row) if not (name == "sources" and i == 2)], name)
+
+
+def evidence_of(lines):
+    """({finding ID: row}, {source ID: row}) of the ledger, what a design row's
+    evidence reaches."""
+    return ({row[0]: row for row in table_rows(lines, "findings")},
+            {row[0]: row for row in table_rows(lines, "sources")})
 
 
 def check_backticks(lines, values, where):
@@ -367,11 +380,12 @@ def next_id(text, kind):
 def finish_write(lines, written):
     """Bring the ledger in step after a write whose new values are `written`:
     no question waits on itself in a circle, one waiting on a blocked question is blocked, sources name the
-    findings citing them, ticket keys are linked, and every record cited exists.
+    findings citing them, identities and flows have the state of their connections, ticket keys are linked, and every record cited exists.
     Run once the write's records are all in, so records may cite each other."""
     check_dependencies(lines)
     block_dependents(lines)
     sync_sources(lines)
+    sync_states(lines)
     upgrade_tickets(lines)
     missing = unrecorded_citations(written, "\n".join(lines))
     if missing:
@@ -389,6 +403,18 @@ def sync_sources(lines):
             citation(f) for f in found) or "None"
     if rows:
         write_rows(lines, "sources", rows, header_of(lines, "sources"))
+
+
+def sync_states(lines):
+    """Write each identity's and each flow's State from their connections."""
+    connections = table_rows(lines, "connections")
+    for name, states in (("identities", identity_states(connections)),
+                         ("flows", flow_states(table_rows(lines, "flows"), connections))):
+        rows = table_rows(lines, name)
+        for row in rows:
+            row[-1] = states.get(row[0], UNUSED)
+        if rows:
+            write_rows(lines, name, rows, header_of(lines, name))
 
 
 def check_dependencies(lines):

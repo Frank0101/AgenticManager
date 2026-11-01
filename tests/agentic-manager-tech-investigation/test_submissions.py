@@ -34,7 +34,7 @@ GAP = {"gap": "Billing callers", "established_and_missing": "The API is merged; 
 
 def finding(key="[[f1]]", claim="Search reads the index.", sources="[[S01]]", **more):
     """A finding as a submission gives it."""
-    return {"key": key, "claim": claim, "sources": sources, "limits": "Read in full.", **more}
+    return {"key": key, "claim": claim, "sources": sources, "limits": "None", **more}
 
 
 class SubmissionTest(unittest.TestCase):
@@ -159,9 +159,9 @@ class SubmissionTest(unittest.TestCase):
                  "revision": "abc", "coverage": {"read": "full"}}
         self.answered(sources=[{**source, "coverage": {"read": "partial", "lines": [[1, 80]], "of": 352},
                                 "superseded_by": "[[s2]]"}, newer],
-                      findings=[finding(sources="[[s1]]", limits="[[s1]]: the rest is admin routes.")])
+                      findings=[finding(sources="[[s1]]", partial={"[[s1]]": "the rest is admin routes"})])
         self.answered("Q02", sources=[{**source, "coverage": {"read": "partial", "lines": [[200, 240]]}}],
-                      findings=[finding(sources="[[s1]]", limits="[[s1]]: the rest is admin routes.")])
+                      findings=[finding(sources="[[s1]]", partial={"[[s1]]": "the rest is admin routes"})])
         self.assertEqual(self.rows("sources"), ["S01", "S02"])
         self.assertIn(
             "| partial: lines 1-80, 200-240 of 352 | F01, F02 | S02 |", self.plain())
@@ -185,6 +185,9 @@ class SubmissionTest(unittest.TestCase):
                   "write each reference in double brackets, such as [[S01]]"),
                  ("a key declared bare", [
                   finding("f1")], "findings[0].key is [[f1]]"),
+                 ("a key written bare in prose", [finding(), finding("[[f2]]", "P95 latency is 2s.",
+                                                                     limits="Contradicts f1.")],
+                  "write each reference in double brackets, such as [[f1]]"),
                  ("a key nothing declares", [
                   finding(limits="See [[f9]].")], "[[f9]] is no key of this submission"),
                  ("an ID the ledger doesn't hold", [finding(sources="[[S09]]")], "cites S09, which the ledger")]
@@ -197,21 +200,43 @@ class SubmissionTest(unittest.TestCase):
         self.submit("research", "Q02", {"findings": [finding(sources="[[S01]], version V2")],
                                         "outcome": {"answered": "[[f1]]"}})
         self.assertIn("| S01, version V2 |", self.plain())
+        # So is a key inside an address or a dotted name, such as an S3 bucket.
+        self.submit("research", "Q03", {"sources": DECLARED, "findings": [
+            finding(claim="Exports land in s1://acme-exports, served by s1.example.com.", sources="[[s1]]")],
+            "outcome": {"answered": "[[f1]]"}})
+        self.assertIn("Exports land in s1://acme-exports", self.plain())
 
-    def test_a_partial_read_is_explained_in_the_limits(self):
-        # A finding citing a source read only in part cites it again in its
-        # limits, saying why the unread part can't change the claim.
+    def test_a_partial_read_is_explained_for_each_claim(self):
+        # A finding citing a source read only in part gives, by source, why
+        # the unread part can't change its claim; the script writes the
+        # reason into its Limits.
         partial = [{"key": "[[s1]]", "kind": "code", "reference": "[api](https://example.com/api)", "revision": "abc",
                     "coverage": {"read": "partial", "lines": [[1, 80]]}}]
-        problems = self.refused("research", "Q01", {"sources": partial, "findings": [finding(sources="[[s1]]")],
-                                                    "outcome": {"answered": "[[f1]]"}})
-        self.assertIn("findings[0]: cites [[s1]], read only in part: read the rest, or say in limits, citing [[s1]], "
-                      "why the unread part can't change the claim", problems)
-        self.submit("research", "Q01", {"sources": partial, "findings": [finding(
-            sources="[[s1]] (lines 1-40)", limits="Routes read. [[s1]]: the unread lines are admin routes.")],
-            "outcome": {"answered": "[[f1]]"}})
+        # name: (the finding's extra fields, a problem they list)
+        cases = [("no reason", {}, "findings[0]: cites [[s1]], read only in part: read the rest, or say in partial, "
+                  "for [[s1]], why the unread part can't change this claim"),
+                 ("a reason in limits only", {"limits": "[[s1]]: the rest is admin routes."},
+                  "say in partial, for [[s1]]"),
+                 ("a reason for a source it doesn't cite", {"partial": {"[[s1]]": "admin routes", "[[S07]]": "x"}},
+                  "findings[0].partial: [[S07]] isn't a source this finding cites that was read only in part"),
+                 ("an empty reason", {"partial": {
+                  "[[s1]]": " "}}, "findings[0].partial.[[s1]] needs text"),
+                 ("not an object", {"partial": "admin routes"}, "findings[0].partial is an object")]
+        for name, extra, expected in cases:
+            with self.subTest(name):
+                self.assertIn(expected, self.refused("research", "Q01", {
+                    "sources": partial, "findings": [finding(sources="[[s1]]", **extra)],
+                    "outcome": {"answered": "[[f1]]"}}))
+        self.submit("research", "Q01", {"sources": partial, "findings": [
+            finding(sources="[[s1]] (lines 1-40)", limits="The index job not read.",
+                    partial={"[[s1]]": "the unread lines are admin routes."}),
+            finding("[[f2]]", "Search is public.", sources="[[s1]]",
+                    partial={"[[s1]]": "the unread lines are admin routes"})],
+            "outcome": {"answered": "[[f1]], [[f2]]"}})
         self.assertIn(
-            "| Routes read. S01: the unread lines are admin routes. |", self.plain())
+            "| The index job not read. S01 read in part: the unread lines are admin routes. |", self.plain())
+        self.assertIn(
+            "| S01 | S01 read in part: the unread lines are admin routes. |", self.plain())
 
     def test_coverage_is_written_from_its_fields(self):
         # name: (coverage, kind, the Coverage written, or the start of the
@@ -327,13 +352,15 @@ class SubmissionTest(unittest.TestCase):
         self.assertEqual(self.rows("queue-completed"), ["Q01", "Q03"])
 
     def test_a_design_replaces_the_last_one_and_keeps_ids(self):
-        self.answered()
+        self.answered(sources=[{"key": "[[s1]]", "kind": "tracker", "reference": "[t](https://example.com/t)",
+                                "revision": "Done", "coverage": {"read": "full"}}])
         self.submit("research", "Q02", {"outcome": {"blocked": {"gap": GAP}}})
-        design = copy.deepcopy(protocol.example("design"))
+        design = {**copy.deepcopy(protocol.example("design")),
+                  "new_questions": []}
         design["components"][0]["code"] = "None"
         design["components"][0]["status"] = "🟨 Planned"
         design["connections"][0]["state"] = "🟨 Planned"
-        design["components"][1]["next_steps"] = "Unchanged"
+        design["components"][1]["in_the_target"] = "Unchanged"
         result = self.submit("design", design)
         self.assertEqual(result["ids"], {"[[s1]]": "S02", "[[f1]]": "F02", "[[b1]]": "B01", "[[i1]]": "I01",
                                          "[[c1]]": "C01", "[[c2]]": "C02", "[[e1]]": "E01", "[[p1]]": "P01"})
@@ -356,9 +383,10 @@ class SubmissionTest(unittest.TestCase):
         self.assertEqual(check_report.check_ledger(self.path)[0], [])
 
     def test_a_design_row_still_cited_cant_be_left_out(self):
-        self.answered()
+        self.answered(sources=[{"key": "[[s1]]", "kind": "tracker", "reference": "[t](https://example.com/t)",
+                                "revision": "Done", "coverage": {"read": "full"}}])
         component = {"key": "[[c1]]", "name_and_type": "API (service)", "responsibility": "r", "code": "None",
-                     "status": "🟨 Planned", "how_much_was_read": "None", "evidence": "[[F01]]", "next_steps": "n",
+                     "status": "🟨 Planned", "evidence": "[[F01]]", "in_the_target": "Unchanged",
                      "boundary": "None"}
         self.submit("design", {"components": [component],
                                "new_questions": [{"key": "[[q1]]", "question": "Is it live?", "raised_by": "[[c1]]",
@@ -371,7 +399,7 @@ class SubmissionTest(unittest.TestCase):
         self.answered()
         component = {"key": "[[c1]]", "name_and_type": "API (service)", "responsibility": "r",
                      "code": "[api](https://git.example/acme/api/tree/abc/api)", "status": "🟩 Implemented",
-                     "how_much_was_read": "None", "evidence": "[[F01]]", "next_steps": "n", "boundary": "None"}
+                     "evidence": "[[F01]]", "in_the_target": "Unchanged", "boundary": "None"}
         # The problem names the row by its key, not the ID it would have had.
         problems = self.refused(
             "design", {"components": [component]})

@@ -11,7 +11,7 @@ The executive layer:
 - direction (about 200 words): what comes next, in the order the sources give, separating what the tracker plans from what only the documentation proposes. Give timing only where a source commits to it.
 - key_decisions: only the decisions, blockers and risks that need a leader's attention, each with why it matters and its evidence. An empty list is fine.
 
-The architect layer cites the system design's rows, such as a component (C03) or a connection (E05), as well as findings, so an engineer can go from a sentence to what it describes:
+The architect layer cites the system design's rows, such as a component, [C03](ledger:C03), or a connection, [E05](ledger:E05), as well as findings, so an engineer can go from a sentence to what it describes:
 
 - architecture.today (about 300 words): the system design as the ledger records it, saying why each main component exists, not only its name. Cover the entry points, the boundaries of trust, data and identity, and the technical limits, and mark what is only in development.
 - architecture.target (about 300 words): what the target keeps, adds, changes or removes compared with today, and why. Keep what the tracker plans apart from what only the documentation proposes, and name the technical choices still open.

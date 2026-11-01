@@ -22,6 +22,7 @@ import check_report  # noqa: E402
 from common import FINDING_HEADER, HEADINGS, SOURCE_HEADER, table  # noqa: E402
 from init_investigation import ledger_skeleton  # noqa: E402
 sys.path.insert(0, TEST_DIR)
+import investigation_fixture  # noqa: E402
 from investigation_fixture import with_queue, with_reviews  # noqa: E402
 
 # A ledger as handover needs it: a finding, a gap, its queue worked and its
@@ -360,8 +361,8 @@ class CheckReportTest(unittest.TestCase):
         # claiming code rests on a code source read under its path.
         tree = "https://github.com/acme/app/tree/abc/services/search"
         component = ("### Components\n\n| ID | Name | Responsibility | Repository | Status |"
-                     " Read | Evidence | Next |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n"
-                     "| C01 | search | Serves | [search][search] | {} | d | G01 | n |\n")
+                     " Evidence | Next | Boundary |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n"
+                     "| C01 | search (service) | Serves | [search][search] | {} | G01 | Unchanged | None |\n")
 
         def read(path, coverage, kind="code"):
             return [["S01", kind, f"[routes](https://github.com/acme/app/blob/abc/services/search/{path})", "abc",
@@ -390,6 +391,43 @@ class CheckReportTest(unittest.TestCase):
                 self.assertEqual(result["ok"], expected is None, result)
                 if expected:
                     self.assertIn(expected, " ".join(result["errors"]))
+
+    def test_the_design_is_checked_again_at_handover(self):
+        # The rules applied on write hold in the ledger handed over: a status
+        # its evidence reaches, flows in order, and the State the script
+        # derives for identities and flows.
+        ledger = investigation_fixture.LEDGER
+        connections = ("### Connections\n\n| ID | From | To | How | Data | Waits for reply | Identity | State | "
+                       "Evidence |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+                       "| E01 | C01 | C03 | HTTP | q | yes | I01 | 🟨 Planned | F02 |\n"
+                       "| E02 | C03 | C01 | HTTP | q | yes | None | 🟨 Planned | F02 |\n")
+        identities = ("### Identities\n\n| ID | Name | Kind | What it can reach | Evidence | State |\n"
+                      "| --- | --- | --- | --- | --- | --- |\n| I01 | token | service account | C03 | F02 | {} |\n")
+        flows = ("### Flows\n\n| ID | Entry point | Connections in order | Evidence | State |\n"
+                 "| --- | --- | --- | --- | --- |\n| P01 | A search | {} | F02 | 🟨 Planned |\n")
+
+        def design(state="🟨 Planned", walked="E01, E02", evidence="F02"):
+            return (ledger.replace("### Connections\n\nNone yet.", connections)
+                    .replace("### Identities\n\nNone yet.", identities.format(state))
+                    .replace("### Flows\n\nNone yet.", flows.format(walked))
+                    .replace("| 🟨 Planned | F02 |", f"| 🟨 Planned | {evidence} |", 1))
+        # name: (the ledger, a problem it has, or None)
+        cases = [("a design that holds", design(), None),
+                 ("a planned component resting on code only",
+                  design(evidence="F01"), "C01: Status 🟨 Planned needs a finding read in the tracker"),
+                 ("a flow that comes back", design(walked="E01, E02, E01"), None),
+                 ("a flow that jumps", design(walked="E01, E02").replace("| C03 | C01 |", "| C04 | C01 |"),
+                  "E02 starts from C04"),
+                 ("an identity's State edited by hand", design(state="🟩 Implemented"),
+                  "I01 has State 🟩 Implemented, its connections give 🟨 Planned")]
+        for name, text, expected in cases:
+            with self.subTest(name):
+                problems = [p for p in check_report.closing_problems(text) if p] + \
+                    check_report.derived_state_problems(text)
+                if expected is None:
+                    self.assertEqual(problems, [])
+                else:
+                    self.assertIn(expected, " ".join(problems))
 
     def test_reference_links_need_definitions(self):
         # `[text][key]` takes its URL from a definition in ## Links: an undefined key is an error, an unused one a warning.

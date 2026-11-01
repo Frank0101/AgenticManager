@@ -138,13 +138,40 @@ GAP_HEADER = ["ID", "Gap", "What is established and what is missing",
               "What would close it", "Blocked by", "Source authority and status",
               "Owner and next check"]
 COMPONENT_HEADER = ["ID", "Name and type", "Responsibility", "Repository, paths, revision",
-                    "Status", "How much was read",
-                    "Evidence", "Current → next steps", "Boundary"]
+                    "Status", "Evidence", "In the target", "Boundary"]
+# A component's type, in brackets after its name: a fixed list, so every
+# investigation names the same kinds alike and a diagram can draw each its way.
+COMPONENT_TYPES = ("service", "application", "job", "script", "library", "store", "queue",
+                   "external product", "person", "role", "unknown")
+# How a connection is made, the kind its How starts with, and whether its
+# caller waits: fixed values, so connections read alike and a diagram can draw
+# each kind its way; any detail follows.
+CONNECTION_KINDS = ("HTTP", "queue", "file", "SDK", "in-process",
+                    "command line", "UI", "unknown")
+WAITS = ("yes", "no", "unknown")
+# What an identity is, the kind its Kind starts with, for the same reasons.
+IDENTITY_KINDS = ("service account", "cloud role", "person's access", "user session",
+                  "app installation", "API key", "agent principal", "unknown")
+# What a boundary groups by, the kind its Kind starts with, for the same reasons.
+BOUNDARY_KINDS = ("network", "cluster", "cloud account", "environment", "trust zone", "team",
+                  "workstation", "external service")
+# The kind of source a status other than code rests on: what is planned is in
+# the tracker, a vision in the documentation. 🟩 and 🟦 have their own check,
+# unread_components, and ⬜ rests on what explains it.
+STATUS_GROUPS = {"🟨": "workflow", "🟪": "documentation"}
 BOUNDARY_HEADER = ["ID", "Name", "Kind", "Evidence"]
 CONNECTION_HEADER = ["ID", "From", "To", "How", "Data",
                      "Waits for reply", "Identity", "State", "Evidence"]
-IDENTITY_HEADER = ["ID", "Name", "Kind", "What it can reach", "Evidence"]
-FLOW_HEADER = ["ID", "Entry point", "Connections in order", "Evidence"]
+IDENTITY_HEADER = ["ID", "Name", "Kind",
+                   "What it can reach", "Evidence", "State"]
+# An identity's State is the script's: the most advanced state of the
+# connections that use it, since an identity is live once a live connection
+# uses it; the agent never writes it, so it can't disagree with them. A flow's
+# State is the least advanced of its connections', since it works only once
+# every step does.
+UNUSED = "None: no connection uses it"
+FLOW_HEADER = ["ID", "Entry point",
+               "Connections in order", "Evidence", "State"]
 # A component's implementation status: the Status cell starts with one of these.
 # Code is the source of truth, so the two that claim code exists need the code
 # read (READ_COVERAGE above); the others say what the evidence can't establish.
@@ -153,7 +180,7 @@ STATUSES = [("🟩 Implemented", "merged to the main branch"),
              "code written but not merged: an open pull request or a branch"),
             ("🟨 Planned", "in the tracker, with no code"),
             ("🟪 Vision", "only in the documentation"),
-            ("⬜ Unverified", "not established: name the gap that explains it")]
+            ("⬜ Unverified", "not established: name the gap, or the scope decision, that explains it")]
 CODE_STATUSES = ("🟩", "🟦")
 # Each independent review round is a row of its own table, written when its
 # task is submitted: the questions it raised, or REVIEW_NONE. A strict reviewer
@@ -515,10 +542,11 @@ def anchor_ids(text):
     return set(re.findall(rf'<a id="({ANCHOR_ID})"></a>', text))
 
 
-def component_rows(body):
-    """The system design's component rows, as cells."""
-    return [row for row in ledger_rows(body, TABLE_HEADINGS["components"])
-            if re.fullmatch(r"C\d+", row[0]) and len(row) > 4]
+def records(body, table, letter, width):
+    """The rows of the ledger table `table` in `body` that are records, IDs
+    of `letter` with all `width` cells, leaving out placeholder rows."""
+    return [row for row in ledger_rows(body, TABLE_HEADINGS[table])
+            if re.fullmatch(rf"{letter}\d+", row[0]) and len(row) == width]
 
 
 def ledger_rows(text, heading):
@@ -653,52 +681,175 @@ def source_mark(row):
 def finding_problem(row):
     """Why a finding row breaks a rule, or None: it holds a claim, names the
     sources it was read in, or the findings an inference rests on, and its
-    limits."""
+    limits, or None."""
     if not row[1].strip():
         return f"{row[0]}: Claim holds the claim, in your words"
     if not ids(row[2], "SF"):
         return (f"{row[0]}: Sources names the sources the claim was read in (S03), or for an inference the "
                 "findings it rests on (F02)")
     if not row[3].strip():
-        return f"{row[0]}: Limits says how the claim was validated and what it leaves out"
+        return f"{row[0]}: Limits says what the claim leaves out, or None"
     return None
 
 
 def design_problem(name, row):
     """Why a components or system design row breaks a rule of the design, or
-    None: each row rests on findings or a gap, an unverified one on the gap
-    that explains it, a connection joins two components with a state and an
-    identity, a flow walks connections, and a component sits in a boundary."""
+    None: each row rests on findings, a gap, an open decision or a scope
+    decision, an unverified one on the gap or the scope decision that explains
+    it; a component names its type, how the target changes it and its boundary,
+    or None; a boundary and an identity start their Kind with one of their
+    kinds; a connection joins two components with a state, an identity, a How
+    of its kinds and whether it waits; and a flow walks connections."""
     header = {"components": COMPONENT_HEADER, "boundaries": BOUNDARY_HEADER, "connections": CONNECTION_HEADER,
               "identities": IDENTITY_HEADER, "flows": FLOW_HEADER}[name]
     cell = dict(zip(header, row))
     evidence = cell["Evidence"]
-    if not ids(evidence, "FG"):
-        return f"{row[0]}: Evidence names the findings it rests on (F01), or the gap that explains it (G01)"
-    state = cell.get("Status") or cell.get("State")
-    if state and state.startswith("⬜") and not ids(evidence, "G"):
-        return f"{row[0]}: an unverified row names the gap that explains it (G01) in Evidence"
-    if name == "components" and not (ids(cell["Boundary"], "B") or cell["Boundary"].strip() == "None"):
-        return f"{row[0]}: Boundary names the boundary it sits in (B01), or None"
+    if not ids(evidence, "FGUD"):
+        return (f"{row[0]}: Evidence names the findings it rests on (F01), or the gap (G01), open decision (D01) "
+                "or scope decision (U01) that explains it")
+    # An identity's or a flow's State is the script's, from its connections.
+    state = cell.get("Status") or (cell.get(
+        "State") if name == "connections" else None)
+    if state and state.startswith("⬜") and not ids(evidence, "GU"):
+        return (f"{row[0]}: an unverified row names the gap (G01), or the scope decision (U01), that explains it "
+                "in Evidence")
+    if name == "components":
+        kind = re.search(r"\(([^()]*)\)\s*$", cell["Name and type"])
+        if not kind or kind[1].strip() not in COMPONENT_TYPES:
+            return (f"{row[0]}: Name and type ends with its type in brackets, one of: "
+                    + ", ".join(COMPONENT_TYPES))
+        if cell["In the target"].strip() != "Unchanged" and not ids(cell["In the target"], "FGDU"):
+            return (f"{row[0]}: In the target says how the target changes it, citing the evidence (F01, D01), "
+                    "or Unchanged")
+        if not (ids(cell["Boundary"], "B") or cell["Boundary"].strip() == "None"):
+            return f"{row[0]}: Boundary names the boundary it sits in (B01), or None"
+    if name == "identities" and not starts_with_one(cell["Kind"], IDENTITY_KINDS):
+        return f"{row[0]}: Kind starts with one of: {', '.join(IDENTITY_KINDS)}, then any detail"
+    if name == "boundaries" and not starts_with_one(cell["Kind"], BOUNDARY_KINDS):
+        return f"{row[0]}: Kind starts with one of: {', '.join(BOUNDARY_KINDS)}, then any detail"
     if name == "connections":
         for end in ("From", "To"):
             if len(ids(cell[end], "C")) != 1:
                 return f"{row[0]}: {end} names one component (C01)"
         if not (ids(cell["Identity"], "I") or cell["Identity"].strip() in ("None", "Unknown")):
             return f"{row[0]}: Identity names the identity it uses (I01), None or Unknown"
+        if not starts_with_one(cell["How"], CONNECTION_KINDS):
+            return f"{row[0]}: How starts with one of: {', '.join(CONNECTION_KINDS)}, then any detail"
+        if not starts_with_one(cell["Waits for reply"], WAITS):
+            return f"{row[0]}: Waits for reply starts with {', '.join(WAITS)}, then any detail"
         return status_problem(row[0], state, "State")
     if name == "flows" and not ids(cell["Connections in order"], "E"):
         return f"{row[0]}: Connections in order names the connections it uses (E01, E02)"
     return None
 
 
+def starts_with_one(text, words):
+    """Whether `text` starts with one of `words`, whole, in any case."""
+    return any(re.match(rf"{re.escape(word)}(?![\w-])", text.strip(), re.I) for word in words)
+
+
 def status_problem(row_id, status, column="Status"):
     """Why a component's Status cell, or a connection's State, isn't one of
     STATUSES, or None."""
-    if any(status.startswith(label) for label, _ in STATUSES):
+    if status_rank(status) is not None:
         return None
     return (f"{row_id}: {column} starts with one of: "
             + "; ".join(f"{label} ({meaning})" for label, meaning in STATUSES))
+
+
+def status_rank(text):
+    """The index in STATUSES of the status `text` starts with, or None."""
+    return next((i for i, (label, _) in enumerate(STATUSES) if text.strip().startswith(label)), None)
+
+
+def row_evidence_problem(name, row, findings, sources):
+    """Why a component's Status or a connection's State claims what its
+    evidence doesn't reach, or None for any other row. `findings` and
+    `sources` are {ID: row}."""
+    if name not in ("components", "connections"):
+        return None
+    header = COMPONENT_HEADER if name == "components" else CONNECTION_HEADER
+    column = "Status" if name == "components" else "State"
+    cell = dict(zip(header, row))
+    return evidence_problem(row[0], cell[column], cell["Evidence"], findings, sources, column)
+
+
+def evidence_problem(row_id, status, evidence, findings, sources, column="Status"):
+    """Why a design row's status claims what its evidence doesn't reach, or
+    None: a 🟨 Planned row needs a finding read in the tracker, a 🟪 Vision row
+    one read in the documentation, a conclusion followed to the findings it
+    rests on. `findings` and `sources` are {ID: row}."""
+    group = next((g for mark, g in STATUS_GROUPS.items()
+                 if status.strip().startswith(mark)), None)
+    if group is None or group in groups_reached(ids(evidence, "F"), findings, sources):
+        return None
+    return (f"{row_id}: {column} {status.strip().split(':')[0]} needs a finding read in the {GROUPS[group]} "
+            "among its evidence")
+
+
+def groups_reached(cited, findings, sources):
+    """The source groups the findings `cited` were read in, following a
+    conclusion to the findings it rests on."""
+    groups, seen, todo = set(), set(), list(cited)
+    while todo:
+        ident = todo.pop()
+        if ident in seen or ident not in findings:
+            continue
+        seen.add(ident)
+        cell = findings[ident][2]
+        todo += ids(cell, "F")
+        groups |= {group_of(sources[s])
+                   for s in ids(cell, "S") if s in sources}
+    return groups
+
+
+def identity_states(connections):
+    """{identity ID: its State} from the connection rows that use it: the
+    most advanced of their states."""
+    ranks, found = connection_ranks(connections), {}
+    for row in connections:
+        if (rank := ranks.get(row[0])) is None:
+            continue
+        for identity in ids(dict(zip(CONNECTION_HEADER, row))["Identity"], "I"):
+            found[identity] = min(rank, found.get(identity, rank))
+    return {ident: STATUSES[rank][0] for ident, rank in found.items()}
+
+
+def flow_states(flows, connections):
+    """{flow ID: its State} from the flow rows and the connections they walk:
+    the least advanced of their states."""
+    ranks = connection_ranks(connections)
+    found = {}
+    for row in flows:
+        walked = [ranks[e] for e in ids(row[2], "E") if e in ranks]
+        if walked:
+            found[row[0]] = STATUSES[max(walked)][0]
+    return found
+
+
+def connection_ranks(connections):
+    """{connection ID: the index of its State in STATUSES}, for the rows
+    whose State is one of them."""
+    ranks = {row[0]: status_rank(dict(zip(CONNECTION_HEADER, row)).get("State", ""))
+             for row in connections}
+    return {ident: rank for ident, rank in ranks.items() if rank is not None}
+
+
+def flow_order_problem(row, connections):
+    """Why a flow's connections are out of order, or None: each after the
+    first starts from a component the flow has already reached."""
+    rows = {row[0]: row for row in connections}
+    reached = set()
+    for ident in ids(row[2], "E"):
+        if ident not in rows:
+            continue
+        cell = dict(zip(CONNECTION_HEADER, rows[ident]))
+        start, end = ids(cell["From"], "C"), ids(cell["To"], "C")
+        if reached and not set(start) & reached:
+            return (f"{row[0]}: {ident} starts from {', '.join(start)}, which the flow hasn't reached yet: "
+                    "list its connections in the order they happen")
+        reached |= set(start) | set(end)
+    return None
 
 
 def unread_components(components, sources, definitions):

@@ -17,7 +17,7 @@ import shutil
 import sys
 import tempfile
 
-from common import (CONTENT, ids, read_in_part, FOLDER_NAME, LEDGER, REPORT_SUFFIX, TABLE_HEADINGS, SCOPE_QUESTION, investigation_dir,
+from common import (CONTENT, ids, FOLDER_NAME, LEDGER, REPORT_SUFFIX, TABLE_HEADINGS, SCOPE_QUESTION, investigation_dir,
                     last_review,
                     ledger_rows, plain, reviewed, stops_on_failure, strip_anchors, topic_of, write_output_file)
 from init_investigation import init, usable_sources
@@ -30,8 +30,6 @@ import protocol
 
 # A question's task, such as research:Q03.
 RESEARCH_TASK = re.compile(r"research:(Q\d+)")
-# Marks a source read only in part wherever a task lists the sources.
-PARTIAL_NOTE = " (read in part)"
 # What separates tasks handed out together.
 SEPARATOR = "\n\n" + "=" * 72 + "\n\n"
 
@@ -300,9 +298,8 @@ def question_context(lines, ident):
 
 def sources_read(lines):
     """One line for each source the ledger holds: its kind, reference,
-    revision and coverage, marked when read in part."""
+    revision and coverage."""
     return [f"- {row[0]}: {plain(row[1])}; {as_written(lines, row[2])}; {plain(row[3])}; coverage: {plain(row[4])}"
-            + (PARTIAL_NOTE if read_in_part(row) else "")
             for row in table_rows(lines, "sources")] or ["None yet."]
 
 
@@ -324,7 +321,7 @@ def design_context(lines):
     current = design_rows(lines)
     if any(current.values()):
         out += ["", "## The current design, to change and submit again whole", "",
-                json.dumps(current, ensure_ascii=False, indent=2)]
+                protocol.compact(current)]
     return out
 
 

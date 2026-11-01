@@ -108,13 +108,13 @@ class InvestigationTest(unittest.TestCase):
             self.assertTrue(self.next().startswith(
                 f"# Task research:{question}"))
             self.submit(f"research:{question}", {"findings": [{"key": "[[f1]]", "claim": f"Fact for {question}.",
-                                                               "sources": "[[S02]]", "limits": "[[S02]]: the unread sections can't change it."}],
+                                                               "sources": "[[S02]]", "limits": "None", "partial": {"[[S02]]": "the unread sections can't change it"}}],
                                                  "outcome": {"answered": "[[f1]]"}})
         # The last finds a fact and then waits on a choice someone has to
         # make: an open decision, which the report's example cites.
         self.assertTrue(self.next().startswith("# Task research:Q08"))
         self.submit("research:Q08", {"findings": [{"key": "[[f1]]", "claim": "Fact for Q08.", "sources": "[[S02]]",
-                                                   "limits": "[[S02]]: the unread sections can't change it."}],
+                                                   "limits": "None", "partial": {"[[S02]]": "the unread sections can't change it"}}],
                                      "outcome": {"blocked": {"decision": {
                                          "decision": "Which queue to use", "position": "Unresolved: Kafka or SQS",
                                          "candidates_and_constraints": "Kafka keeps replay; SQS costs less", "authority": "The team's design doc",
@@ -122,7 +122,8 @@ class InvestigationTest(unittest.TestCase):
         task = self.next()
         self.assertTrue(task.startswith("# Task design"))
         self.assertIn(protocol.compact(protocol.example("design")), task)
-        self.submit("design", protocol.example("design"))
+        self.submit(
+            "design", {**protocol.example("design"), "new_questions": []})
         # A refused answer lists its problems and writes nothing.
         self.assertTrue(self.next().startswith("# Task review:1"))
         refused = self.refused("review:1", {"raised": [

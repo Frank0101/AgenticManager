@@ -11,7 +11,8 @@ import json
 import os
 import re
 
-from common import BLOCKERS, COVERAGE, GROUPS, READ_COVERAGE, STATUSES
+from common import (BLOCKERS, BOUNDARY_KINDS, COMPONENT_TYPES, CONNECTION_KINDS, COVERAGE, GROUPS, IDENTITY_KINDS,
+                    READ_COVERAGE, STATUSES, WAITS)
 
 FOLDER = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "..", "protocol")
@@ -23,6 +24,11 @@ VALUES = {
     "coverage": ", ".join(COVERAGE),
     "read_coverage": " or ".join(READ_COVERAGE),
     "blockers": " or ".join(BLOCKERS),
+    "boundary_kinds": ", ".join(BOUNDARY_KINDS),
+    "component_types": ", ".join(COMPONENT_TYPES),
+    "connection_kinds": ", ".join(CONNECTION_KINDS),
+    "identity_kinds": ", ".join(IDENTITY_KINDS),
+    "waits": ", ".join(WAITS),
     "statuses": "; ".join(f"{label} ({meaning})" for label, meaning in STATUSES),
 }
 PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")

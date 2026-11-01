@@ -9,15 +9,17 @@ import os
 from pathlib import Path
 import re
 
-from common import (CELL_PIPE, CITATION, COMPONENT_HEADER, DEFINITION, DESIGN_TABLES, GAP_FIX, HEADING, LEDGER, LEDGER_SECTIONS,
-                    LINKS, QUERY, QUEUE, QUEUE_HEADER, QUEUE_SUBSECTIONS, REFERENCE_LINK, SOURCE_FINDINGS_COLUMN,
-                    SOURCE_LINK_FIX, TABLE_HEADINGS, anchor_ids, backtick_error, blocked_problem, cited_sources,
-                    claim_length_problem, component_rows, coverage_problem, design_problem, expected_files,
-                    finding_problem, gap_problem, group_problem, headings, id_order, ids, ledger_rows,
-                    link_definitions, link_text, links, listed, local_link, markdown, outcome_problem, reference_key,
-                    report_headings, review_problem, scope_problem, section_span, source_reference_missing, status_problem,
-                    strip_anchors, superseded_problem, table_cells, unlinked_backticks, unlinked_references,
-                    unread_components, unread_message, unrecorded_ids)
+from common import (BOUNDARY_HEADER, CELL_PIPE, CITATION, COMPONENT_HEADER, CONNECTION_HEADER, DEFINITION,
+                    FINDING_HEADER, FLOW_HEADER, GAP_FIX, HEADING, IDENTITY_HEADER, LEDGER, LEDGER_SECTIONS, LINKS,
+                    QUERY, QUEUE, QUEUE_HEADER, QUEUE_SUBSECTIONS, REFERENCE_LINK, SCOPE_HEADER, SOURCE_FINDINGS_COLUMN,
+                    SOURCE_HEADER, SOURCE_LINK_FIX, TABLE_HEADINGS, UNUSED, anchor_ids, backtick_error, blocked_problem,
+                    cited_sources, claim_length_problem, coverage_problem, design_problem, expected_files,
+                    finding_problem, flow_order_problem, flow_states, gap_problem, group_problem, headings, id_order,
+                    identity_states, ids, ledger_rows, link_definitions, link_text, links, listed, local_link, markdown,
+                    outcome_problem, records, reference_key, report_headings, review_problem, row_evidence_problem,
+                    scope_problem, section_span, source_reference_missing, status_problem, strip_anchors,
+                    superseded_problem, table_cells, unlinked_backticks, unlinked_references, unread_components,
+                    unread_message, unrecorded_ids)
 
 
 def check_report(report, handover=False):
@@ -188,9 +190,10 @@ def check_ledger(path, handover=False):
         if register:
             errors.append(f"{LEDGER}: sources without a link to their reference: "
                           + ", ".join(register) + "; " + SOURCE_LINK_FIX)
-        mismatched = source_finding_problems(body)
+        mismatched = source_finding_problems(
+            body) + derived_state_problems(body)
         if mismatched:
-            errors.append(f"{LEDGER}: a source's Findings differ from the findings whose Sources name it ("
+            errors.append(f"{LEDGER}: a column the script writes differs from what it is written from ("
                           + "; ".join(mismatched) + "). The ledger was edited by hand: change it only through investigate.py submit, "
                           "which keeps them in step")
         spans = unlinked_backticks(without_queries(body))
@@ -247,6 +250,18 @@ def source_finding_problems(body):
     return problems
 
 
+def derived_state_problems(body):
+    """Identity and flow rows whose State differs from their connections'."""
+    connections = records(body, "connections", "E", len(CONNECTION_HEADER))
+    flows = records(body, "flows", "P", len(FLOW_HEADER))
+    identities = records(body, "identities", "I", len(IDENTITY_HEADER))
+    problems = []
+    for rows, states in ((identities, identity_states(connections)), (flows, flow_states(flows, connections))):
+        problems += [f"{row[0]} has State {row[-1]}, its connections give {states.get(row[0], UNUSED)}"
+                     for row in rows if row[-1].strip() != states.get(row[0], UNUSED)]
+    return problems
+
+
 def without_queries(body):
     """`body` with the queries of the sources' rows blanked. A search
     has no URL to pin, so its reference cell holds its exact query in plain
@@ -287,21 +302,31 @@ def closing_problems(body):
     depends = QUEUE_HEADER.index("Depends on")
     problems += [blocked_problem(row[0], row[depends] if len(row) > depends else "", blocked_ids)
                  for row in blocked]
-    components = component_rows(body)
+    components = records(body, "components", "C", len(COMPONENT_HEADER))
     problems += [status_problem(row[0], row[4]) for row in components]
     # The rules ledger.py applies on write.
-    problems += [design_problem("components", row)
-                 for row in components if len(row) == len(COMPONENT_HEADER)]
-    problems += [design_problem(table, row) for table in DESIGN_TABLES
-                 for row in ledger_rows(body, TABLE_HEADINGS[table]) if re.fullmatch(r"[BEIP]\d+", row[0])]
-    sources = [row for row in ledger_rows(body, TABLE_HEADINGS["sources"])
-               if re.fullmatch(r"S\d+", row[0]) and len(row) > 6]
+    problems += [design_problem(table, row)
+                 for table, letter, header in (("components", "C", COMPONENT_HEADER), ("boundaries", "B", BOUNDARY_HEADER),
+                                               ("connections", "E", CONNECTION_HEADER), (
+                                                   "identities", "I", IDENTITY_HEADER),
+                                               ("flows", "P", FLOW_HEADER))
+                 for row in records(body, table, letter, len(header))]
+    findings = records(body, "findings", "F", len(FINDING_HEADER))
+    sources = records(body, "sources", "S", len(SOURCE_HEADER))
+    connections = records(body, "connections", "E", len(CONNECTION_HEADER))
+    evidence = ({row[0]: row for row in findings}, {
+                row[0]: row for row in sources})
+    problems += [flow_order_problem(row, connections)
+                 for row in records(body, "flows", "P", len(FLOW_HEADER))]
+    problems += [row_evidence_problem("components", row, *evidence)
+                 for row in components]
+    problems += [row_evidence_problem("connections", row, *evidence)
+                 for row in connections]
     problems += [group_problem(row) or coverage_problem(row)
                  or superseded_problem(row) for row in sources]
-    problems += [finding_problem(row) for row in ledger_rows(body, TABLE_HEADINGS["findings"])
-                 if re.fullmatch(r"F\d+", row[0]) and len(row) > 3]
-    problems += [scope_problem(row) for row in ledger_rows(body, TABLE_HEADINGS["scope"])
-                 if re.fullmatch(r"U\d+", row[0]) and len(row) > 3]
+    problems += [finding_problem(row) for row in findings]
+    problems += [scope_problem(row)
+                 for row in records(body, "scope", "U", len(SCOPE_HEADER))]
     unread = unread_components(components, sources, link_definitions(body))
     if unread:
         problems.append(unread_message(unread))

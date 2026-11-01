@@ -25,8 +25,8 @@ FIELDS = {
     "decisions": ["decision", "position", "candidates_and_constraints", "authority", "owner_and_next_check"],
     "boundaries": ["name", "kind", "evidence"],
     "identities": ["name", "kind", "reaches", "evidence"],
-    "components": ["name_and_type", "responsibility", "code", "status", "how_much_was_read", "evidence",
-                   "next_steps", "boundary"],
+    "components": ["name_and_type", "responsibility", "code", "status", "evidence",
+                   "in_the_target", "boundary"],
     "connections": ["from", "to", "how", "data", "waits_for_reply", "identity", "state", "evidence"],
     "flows": ["entry_point", "connections", "evidence"],
 }
@@ -37,7 +37,9 @@ DEFAULTS = {"superseded_by": "None"}
 # which stands out in any field, so every citation of one is found and replaced,
 # and none is left in the ledger pointing nowhere.
 KEY_REFERENCE = re.compile(r"\[\[([A-Za-z]\d+)\]\]")
-BARE_REFERENCE = re.compile(r"\b[A-Za-z]\d+\b")
+# A word shaped like an ID, but not part of an address such as s3://bucket or
+# a dotted name such as s3.amazonaws.com.
+BARE_REFERENCE = re.compile(r"\b[A-Za-z]\d+\b(?![-:/]|\.\w)")
 RECORD_ID = re.compile(r"[A-Z]\d{2,}")
 # The fields that only cite other records, where the name of a record written
 # bare, not as [[s1]], is refused: it would be left as prose, its citation
@@ -165,10 +167,10 @@ def write_reading(lines, sources, findings, keys, problems):
     for number, item in enumerate(findings):
         where = f"findings[{number}]"
         cells = problems.cells(item, "findings", where,
-                               keys, extra=["key"])
+                               keys, extra=["key", "partial"])
         if cells is None:
             continue
-        check_partial(lines, cells, where, problems, keys)
+        cells[2] = partial_limits(lines, item, cells, where, problems, keys)
         if too_long := claim_length_problem(where, cells[0]):
             problems.add(too_long)
         written += problems.put(lines, "findings",
@@ -373,21 +375,43 @@ def written_keys(keys):
     return {f"[[{key}]]": ident for key, ident in keys.items()}
 
 
-def check_partial(lines, cells, where, problems, keys):
-    """Record a finding citing a source read only in part whose Limits don't
-    cite it too, saying why the unread part can't change the claim: the reason
-    sits beside the other limits, where a reader of the finding looks."""
+def partial_limits(lines, item, cells, where, problems, keys):
+    """The finding's Limits cell: its limits, then, for each source it cites
+    read only in part, why the unread part can't change this claim. The
+    submission gives the reasons by source, so the script asks for exactly
+    one for each such source, and a reason given for another claim can't
+    stand in for it; it sits in Limits, where a reader of the finding looks."""
     partly = {row[0]
               for row in table_rows(lines, "sources") if read_in_part(row)}
-    cited = [ident for ident in ids(cells[1], "S") if ident in partly]
-    missing = [ident for ident in dict.fromkeys(
-        cited) if not re.search(rf"\b{ident}\b", cells[2])]
-    if missing:
+    cited = [ident for ident in dict.fromkeys(
+        ids(cells[1], "S")) if ident in partly]
+    given = item.get("partial", {})
+    if not isinstance(given, dict):
+        problems.add(
+            f'{where}.partial is an object, such as {{"[[s1]]": "the unread lines are admin routes"}}')
+        return cells[2]
+    reasons = {}
+    for written, reason in given.items():
+        match = KEY_REFERENCE.fullmatch(written.strip())
+        ident = keys.get(match[1], match[1]) if match else None
+        if ident not in cited:
+            problems.add(
+                f"{where}.partial: {written} isn't a source this finding cites that was read only in part")
+        elif not isinstance(reason, str) or not reason.strip():
+            problems.add(f"{where}.partial.{written} needs text")
+        else:
+            reasons[ident] = problems.cite(
+                reason, f"{where}.partial", keys, citing=False).strip().rstrip(".")
+    if missing := [ident for ident in cited if ident not in reasons]:
         named = {ident: f"[[{key}]]" for key, ident in keys.items() if ident}
         sources = ", ".join(
             named.get(ident) or f"[[{ident}]]" for ident in missing)
-        problems.add(f"{where}: cites {sources}, read only in part: read the rest, or say in limits, citing "
-                     f"{sources}, why the unread part can't change the claim")
+        problems.add(f"{where}: cites {sources}, read only in part: read the rest, or say in partial, for "
+                     f"{sources}, why the unread part can't change this claim")
+    notes = [
+        f"{citation(ident)} read in part: {reasons[ident]}." for ident in cited if ident in reasons]
+    limits = "" if notes and cells[2] == "None" else cells[2]
+    return " ".join([limits, *notes]).strip()
 
 
 def add_questions(lines, questions, keys, problems, where="new_questions"):
@@ -609,9 +633,9 @@ class Problems:
 
     def cite(self, value, where, keys, citing=True):
         """`value` with each [[F07]] or [[f1]] written as the citation of its
-        record, recording a key no record of the submission has, and, in a
-        field that only cites, the ID of a record the ledger holds or a key
-        of the submission written bare."""
+        record, recording a key no record of the submission has, a key of the
+        submission written bare, which no reader could follow, and, in a field
+        that only cites, the ID of a record the ledger holds written bare."""
         if not isinstance(value, str):
             self.add(f"{where} needs text")
             return ""
@@ -620,8 +644,9 @@ class Problems:
         if unknown:
             self.add(
                 f"{where}: {', '.join(f'[[{key}]]' for key in unknown)} is no key of this submission")
-        if citing and (bare := [word for word in BARE_REFERENCE.findall(KEY_REFERENCE.sub("", value))
-                                if word in keys or word in self.held]):
+        if bare := [word for word in BARE_REFERENCE.findall(KEY_REFERENCE.sub("", value))
+                    if (word in keys and not RECORD_ID.fullmatch(word))
+                    or (citing and (word in keys or word in self.held))]:
             self.add(
                 f"{where}: write each reference in double brackets, such as [[{bare[0]}]]")
         return KEY_REFERENCE.sub(lambda m: citation(keys.get(m[1], m[1])) if m[1] in keys or RECORD_ID.fullmatch(m[1])

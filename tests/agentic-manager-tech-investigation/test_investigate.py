@@ -31,7 +31,7 @@ GAP = {"gap": "Billing callers", "established_and_missing": "Callers aren't read
 
 def answer(claim="A fact.", **outcome):
     """An answer resting on a source the ledger holds, read in full."""
-    return {"findings": [{"key": "[[f1]]", "claim": claim, "sources": "[[S02]]", "limits": "[[S02]]: the unread sections can't change it."}],
+    return {"findings": [{"key": "[[f1]]", "claim": claim, "sources": "[[S02]]", "limits": "None", "partial": {"[[S02]]": "the unread sections can't change it"}}],
             "outcome": outcome or {"answered": "[[f1]]"}}
 
 
@@ -63,7 +63,17 @@ class InvestigateTest(unittest.TestCase):
                         answer(f"Fact for {question}."))
 
     def design(self):
-        return copy.deepcopy(protocol.example("design"))
+        """The example design, raising no question, so the review comes next."""
+        return {**copy.deepcopy(protocol.example("design")), "new_questions": []}
+
+    def test_a_design_question_goes_back_to_research(self):
+        # A question the design raises is research's to answer before the
+        # design is built again.
+        self.research()
+        self.submit("design", protocol.example("design"))
+        self.assertEqual(self.phase(), "research")
+        self.assertIn("Which identity does the index build job use",
+                      investigate.next_tasks(INVESTIGATION))
 
     def test_the_phase_follows_the_ledger(self):
         # Each step's submission moves the investigation on, in order: the
@@ -105,7 +115,7 @@ class InvestigateTest(unittest.TestCase):
                          ["# Task research:Q01"])
         # A question waiting on an open one isn't handed out.
         self.submit("research:Q01", {**answer(), "sources": protocol.example("research")["sources"],
-                                     "findings": [{"key": "[[f1]]", "claim": "x", "sources": "[[s2]]", "limits": "[[s2]]: y"}],
+                                     "findings": [{"key": "[[f1]]", "claim": "x", "sources": "[[s2]]", "limits": "None", "partial": {"[[s2]]": "y"}}],
                                      "new_questions": [{"key": "[[q1]]", "question": "Then?", "raised_by": "[[f1]]",
                                                         "depends_on": "[[Q04]]"}]})
         text = investigate.next_tasks(INVESTIGATION, 9)
@@ -185,7 +195,8 @@ class InvestigateTest(unittest.TestCase):
         data = protocol.example("research")
         data["sources"][0]["coverage"] = {
             "read": "partial", "lines": [[1, 200]], "of": 900, "note": "routes"}
-        data["findings"][0]["limits"] += " [[s1]]: the unread lines hold admin routes."
+        data["findings"][0]["partial"] = {
+            "[[s1]]": "the unread lines hold admin routes"}
         self.submit("research:Q01", {**data, "new_questions": [
             {"key": "[[q1]]", "question": "Which job builds the index?", "raised_by": "[[f1]]", "depends_on": "None"}]})
         self.submit("research:Q02", answer())
@@ -196,7 +207,7 @@ class InvestigateTest(unittest.TestCase):
         for expected in ("# Task research:Q06", "Q06: Which job builds the index?", "Raised by: F01",
                          "It builds on these findings:\n- F01: The search API answers /search",
                          "- S01: code; [api server.py](https://github.com/acme/api/blob/1a2b3c4/server.py); "
-                         "1a2b3c4; coverage: partial", "(read in part)",
+                         "1a2b3c4; coverage: partial",
                          "### Reading the tracker",
                          f"python3 {os.path.join(SCRIPTS, 'tickets.py')}",
                          f"submit --investigation {INVESTIGATION} --task research:Q06 <<'EOF'"):

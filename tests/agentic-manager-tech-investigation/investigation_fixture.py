@@ -55,12 +55,15 @@ CONTENT = {
                                "evidence": "[gap](ledger:G01)"}],
 }
 
-# The fixture's one finding, read in the code source.
+# The fixture's findings: one read in the code, one in the tracker, which the
+# planned components rest on.
 FINDINGS = table(FINDING_HEADER, [
-    [anchored("F01"), "The search API is merged.", "S01", "Routes read in full."]])
+    [anchored("F01"), "The search API is merged.",
+     "S01", "Routes read in full."],
+    [anchored("F02"), "The publish job is planned.", "S02", "None"]])
 # The fixture's components.
 COMPONENTS = table(COMPONENT_HEADER, [
-    [ident, name, "Role", "—", status, "None", "G01" if status.startswith("⬜") else "F01", "Unchanged",
+    [ident, name, "Role", "—", status, "G01" if status.startswith("⬜") else "F02", "Unchanged",
      "None"]
     for ident, name, status in (("C01", "Search API (service)", "🟨 Planned"),
                                 ("C02", "Search index (store)", "⬜ Unverified"),
@@ -74,7 +77,7 @@ SOURCES_READ = table(SOURCE_HEADER, [
     ["S01", "code",
         "[Search API](https://example.com/code)", "abc", "full", "F01", "None"],
     ["S02", "tracker",
-        "[PROJ-1](https://example.com/PROJ-1)", "Done", "full", "None", "S03"],
+        "[PROJ-1](https://example.com/PROJ-1)", "Done", "full", "F02", "S03"],
     ["S03", "tracker", "[PROJ-2](https://example.com/PROJ-2)", "In progress", "partial: description only",
      "None", "None"]])
 LEDGER = (with_reviews(with_queue(ledger_skeleton("Acme-Search"), "Completed", [

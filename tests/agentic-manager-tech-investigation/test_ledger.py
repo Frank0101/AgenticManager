@@ -145,11 +145,12 @@ class LedgerTest(unittest.TestCase):
 
     def test_the_brief_holds_what_the_report_reads(self):
         self.records("S02")
-        self.write(("sources", "S01", source("[api](https://example.com/api)", superseded="S02")),
+        self.write(("sources", "S01", source("[api](https://example.com/api)", kind="tracker",
+                                             superseded="S02")),
                    ("findings", "F01", [
                     "Search reads the index.", "S01", "code read"]),
                    ("components", "C01", ["Search API (service)", "Serves search", "[search](https://example.com/search)",
-                                          "🟨 Planned", "Manifest only", "F01", "Unchanged", "None"]),
+                                          "🟨 Planned", "F01", "Unchanged", "None"]),
                    ("decisions", "D01", [
                     "Which index", "Unresolved", "Two options", "Design doc", "Owner not named"]),
                    ("queue-ready", "Q01", QUEUE_ROW))
@@ -212,7 +213,7 @@ class LedgerTest(unittest.TestCase):
                  ("decisions", "D01", ["See `app.py`", "b", "c", "d", "e"],
                   "references in backticks without a link: `app.py`"),
                  ("components", "C01", [
-                  "n", "r", "p", "Done", "d", "F01", "next", "None"], "Status starts with"),
+                  "n (service)", "r", "p", "Done", "F01", "Unchanged", "None"], "Status starts with"),
                  ("queue-completed", "Q01",
                   QUEUE_ROW[:-1] + [""], "names the findings")]
         before = self.text()
@@ -245,16 +246,17 @@ class LedgerTest(unittest.TestCase):
             self.assertEqual(self.text(), before)
 
     def test_the_system_design_is_written_in_its_tables(self):
-        self.records("F01", "S01")
+        self.write(("sources", "S01", source(kind="tracker")),
+                   ("findings", "F01", ["Web and search are planned.", "S01", "None"]))
         component = ["{} (service)", "Serves", "[x](https://example.com/x)",
-                     "🟨 Planned", "d", "F01", "n", "B01"]
+                     "🟨 Planned", "F01", "Unchanged", "B01"]
         self.write(("boundaries", "B01", ["Production cluster", "network", "F01"]),
                    ("components", "C01", [
                     component[0].format("Web")] + component[1:]),
                    ("components", "C02", [component[0].format(
                        "Search API")] + component[1:]),
                    ("identities", "I01", ["web token",
-                    "token", "the search API", "F01"]),
+                    "service account: token", "the search API", "F01"]),
                    ("connections", "E01", [
                     "C01", "C02", "HTTP", "the query", "yes", "I01", "🟨 Planned", "F01"]),
                    ("flows", "P01", ["A user searches", "E01", "F01"]))
@@ -263,9 +265,24 @@ class LedgerTest(unittest.TestCase):
             with self.subTest(heading):
                 self.assertIn(heading, brief)
         self.assertIn("E01 | C01 | C02 | HTTP", brief)
-        # A flow can only walk connections the ledger holds, and a connection
-        # joins two components.
+        # The script gives the identity the state of the connection using it.
+        self.assertIn(
+            "I01 | web token | service account: token | the search API | F01 | 🟨 Planned", brief)
+        self.assertIn("P01 | A user searches | E01 | F01 | 🟨 Planned", brief)
+        # A flow can only walk connections the ledger holds, in order, a
+        # connection joins two components, and a planned row rests on the
+        # tracker.
+        self.write(("sources", "S02", source("[c](https://example.com/c)")),
+                   ("findings", "F02", ["Code.", "S02", "None"]),
+                   ("components", "C03", [
+                    "Job (job)", "r", "p", "🟨 Planned", "F01", "Unchanged", "B01"]),
+                   ("connections", "E02", ["C03", "C01", "HTTP", "q", "yes", "None", "🟨 Planned", "F01"]))
         cases = [("an unrecorded connection", ("flows", "P02", ["Admin", c("E09"), "F01"]), "E09"),
+                 ("a flow that jumps", ("flows", "P02", ["Admin", "E01, E02", "F01"]),
+                  "E02 starts from C03, which the flow hasn't reached yet"),
+                 ("a planned row resting on code only", ("components", "C04", [
+                     "Cache (store)", "r", "p", "🟨 Planned", "F02", "Unchanged", "B01"]),
+                  "needs a finding read in the tracker"),
                  ("an end that is no component", ("connections", "E02", ["C01", "the index", "SQL", "rows", "yes",
                                                                          "None", "🟨 Planned", "F01"]),
                   "To names one component")]
@@ -429,8 +446,10 @@ class LedgerTest(unittest.TestCase):
     def test_a_record_still_cited_is_reported(self):
         # Leaving out a design row still cited elsewhere would leave a citation
         # of a record that isn't there.
-        self.records("S01", "S02", "F01")
-        self.write(("components", "C01", ["n", "r", "p", "🟨 Planned", "d", "F01", "next", "None"]),
+        self.records("S01", "S02")
+        self.write(("sources", "S03", source("[t](https://example.com/t)", kind="tracker")),
+                   ("findings", "F01", ["Planned.", "S03", "None"]))
+        self.write(("components", "C01", ["n (service)", "r", "p", "🟨 Planned", "F01", "Unchanged", "None"]),
                    ("queue-ready", "Q01", ["C01", "Is it live?", "None", ""]))
         self.change(lambda lines: ledger.record_review(lines, raised=["S02"]))
         cases = [("a row", "F01", "F01 is still cited by C01"),
@@ -476,11 +495,13 @@ class LedgerTest(unittest.TestCase):
     def test_a_code_status_needs_the_code_read(self):
         # A component claiming code needs a code source of its path read in
         # full or in part: one case each way, as test_common.py
-        # has the rule's own.
-        self.records("F01")
+        # has the rule's own. The finding is the tracker's, so the component
+        # can also be planned.
+        self.write(("sources", "S09", source("[t](https://example.com/t)", kind="tracker")),
+                   ("findings", "F01", ["Search is planned.", "S09", "None"]))
         tree = "https://git.example/acme/api/tree/abc/services/search"
         component = [
-            "search", "r", f"[search]({tree})", "🟩 Implemented", "d", "F01", "next", "None"]
+            "search (service)", "r", f"[search]({tree})", "🟩 Implemented", "F01", "Unchanged", "None"]
         with self.assertRaisesRegex(SystemExit, "C01 links acme/api: services/search"):
             self.write(("components", "C01", component))
         self.write(("sources", "S01", source("[f](https://git.example/acme/api/tree/abc/services/search)",

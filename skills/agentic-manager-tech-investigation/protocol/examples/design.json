@@ -17,7 +17,10 @@
       "key": "[[f1]]",
       "claim": "The search API queries the index over HTTP for every search.",
       "sources": "[[s1]] (lines 40-60)",
-      "limits": "[[s1]]: the unread lines are the index's admin commands, which don't serve searches."
+      "limits": "None",
+      "partial": {
+        "[[s1]]": "the unread lines are the index's admin commands, which don't serve searches"
+      }
     }
   ],
   "boundaries": [
@@ -44,9 +47,8 @@
       "responsibility": "Serves search queries",
       "code": "[server.py](https://github.com/acme/api/blob/1a2b3c4/server.py)",
       "status": "🟩 Implemented",
-      "how_much_was_read": "Routes read",
       "evidence": "[[F01]], [[f1]]",
-      "next_steps": "Unchanged",
+      "in_the_target": "Unchanged",
       "boundary": "[[b1]]"
     },
     {
@@ -55,9 +57,8 @@
       "responsibility": "Holds the searchable documents",
       "code": "None",
       "status": "⬜ Unverified",
-      "how_much_was_read": "Not read",
       "evidence": "[[G01]]",
-      "next_steps": "Moves to a managed index ([[F02]])",
+      "in_the_target": "Moves to a managed index ([[F02]])",
       "boundary": "[[b1]]"
     }
   ],
@@ -82,5 +83,12 @@
       "evidence": "[[F01]]"
     }
   ],
-  "new_questions": []
+  "new_questions": [
+    {
+      "key": "[[q1]]",
+      "question": "Which identity does the index build job use to write to the index?",
+      "raised_by": "[[c2]]",
+      "depends_on": "None"
+    }
+  ]
 }

@@ -1,7 +1,7 @@
 Answer this one research question, with evidence. The investigation will end with an evidence-backed account of {{aims}}; this question serves it.
 
 1. Read only what this question needs: the least that answers it. Before opening something, look in Sources already read. A source already read can be read again for what this question needs; submit it again only if you read more of it than before, with what you read this time: the script adds it to what was read before.
-2. Anything else the reading makes you want to know, such as a link to follow, another component or a claim to check, is a new question, not part of this one: ask what you want to know, not what to read, and check it isn't one of the other open questions. Add it only if its answer could change what the investigation says about one of the aims, naming in depends_on the open questions it can't be answered without.
+2. Anything else the reading makes you want to know, such as a link to follow, another component or a claim to check, is a new question, not part of this one: ask what you want to know, not what to read, and check it isn't one of the other open questions. Add it only if its answer could change what the investigation says about one of the aims.
 3. Keep to the scope. {{scope}} Never ask the user how much evidence is enough: you decide that, and say in limits what you left out.
 4. Close the question: answered, with the findings that answer it; outside the scope, if a scope boundary the user decided leaves it out: {"outside_scope": "[[U01]]"}; or blocked, by evidence you can't get yourself (a gap, such as a repository you have no access to, or a source a call fails to read) or by a choice that waits on a person (a decision). Never fill a hole with assumptions.
 
@@ -39,7 +39,7 @@ When a tool's result is too large and saved to a file, list what you need from i
 
 ### What you submit
 
-Write every reference to a record in double brackets, in any field: [[F07]] for one the ledger holds, by its ID, and a key for one new in this submission, which you declare the same way: its record's letter in lower case and a number, such as [[s1]], [[f1]] or [[q1]]: the lower case is what tells it from a record the ledger holds. The script assigns the IDs and links every reference. Anything not in double brackets is prose, even a word that looks like an ID, such as P95.
+Write every reference to a record in double brackets, in any field: [[F07]] for one the ledger holds, by its ID, and a key for one new in this submission, which you declare the same way: its record's letter in lower case and a number, such as [[s1]], [[f1]] or [[q1]]: the lower case is what tells it from a record the ledger holds. The script assigns the IDs and links every reference. A word that only looks like an ID, such as P95, stays prose.
 
 {{reading}}
 

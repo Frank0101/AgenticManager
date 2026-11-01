@@ -128,25 +128,106 @@ class ReferencesTest(unittest.TestCase):
         self.assertEqual(common.unlinked_references(text),
                          ["PROJ-1", "acme/app#3", "#4"])
 
+    def test_an_identity_has_the_state_of_its_connections(self):
+        # The most advanced state of the connections that use it; one no
+        # connection uses has none.
+        def connection(ident, identity, state):
+            return [ident, "C01", "C02", "HTTP", "q", "yes", identity, state, "F01"]
+        states = common.identity_states([connection("E01", "I01", "🟨 Planned"),
+                                         connection(
+                                             "E02", "I01", "🟩 Implemented"),
+                                         connection(
+                                             "E03", "I02", "🟪 Vision"),
+                                         connection("E04", "Unknown", "🟩 Implemented")])
+        self.assertEqual(
+            states, {"I01": "🟩 Implemented", "I02": "🟪 Vision"})
+
+    def test_a_flow_has_the_state_of_its_least_advanced_step_and_runs_in_order(self):
+        def connection(ident, start, end, state="🟩 Implemented"):
+            return [ident, start, end, "HTTP", "q", "yes", "None", state, "F01"]
+        connections = [connection("E01", "C01", "C02"), connection("E02", "C02", "C03", "🟨 Planned"),
+                       connection("E03", "C02", "C04"), connection("E04", "C05", "C06")]
+        self.assertEqual(common.flow_states([["P01", "x", "E01, E02", "F01", ""], ["P02", "x", "E01, E03", "F01", ""]],
+                                            connections), {"P01": "🟨 Planned", "P02": "🟩 Implemented"})
+        # name: (the connections in order, the problem's text, or None)
+        cases = [("a chain", "E01, E02", None),
+                 ("a branch from a component reached", "E01, E02, E03", None),
+                 ("out of order", "E02, E01",
+                  "E01 starts from C01, which the flow hasn't reached yet"),
+                 ("a jump", "E01, E04", "E04 starts from C05")]
+        for name, walked, expected in cases:
+            with self.subTest(name):
+                problem = common.flow_order_problem(
+                    ["P01", "x", walked, "F01", ""], connections)
+                if expected is None:
+                    self.assertIsNone(problem)
+                else:
+                    self.assertIn(expected, problem or "")
+
+    def test_a_status_rests_on_the_kind_of_source_it_claims(self):
+        # A planned row needs a finding read in the tracker, a vision one in
+        # the documentation, reached through a conclusion too.
+        sources = {"S01": ["S01", "code"], "S02": ["S02", "tracker: story"],
+                   "S03": ["S03", "documentation: page"]}
+        findings = {"F01": ["F01", "c", "S01"], "F02": ["F02", "c", "S02"],
+                    "F03": ["F03", "c", "S03"], "F04": ["F04", "c", "F02"]}
+        # name: (status, evidence, the problem's text, or None)
+        cases = [("planned, from the tracker", "🟨 Planned", "F02", None),
+                 ("planned, from code only", "🟨 Planned",
+                  "F01", "needs a finding read in the tracker"),
+                 ("planned, through a conclusion", "🟨 Planned", "F04", None),
+                 ("a vision, from the documentation", "🟪 Vision", "F03", None),
+                 ("a vision, from the tracker only", "🟪 Vision",
+                  "F02", "needs a finding read in the documentation"),
+                 ("code, checked elsewhere", "🟩 Implemented", "F02", None)]
+        for name, status, evidence, expected in cases:
+            with self.subTest(name):
+                problem = common.evidence_problem(
+                    "C01", status, evidence, findings, sources)
+                if expected is None:
+                    self.assertIsNone(problem)
+                else:
+                    self.assertIn(expected, problem or "")
+
     def test_design_problem(self):
         # name: (table, row, the problem's text, or None when the row is allowed)
         component = ["C01", "Search API (service)", "Serves",
-                     "p", "🟩 Implemented", "d", "F01", "n", "B01"]
+                     "p", "🟩 Implemented", "F01", "Unchanged", "B01"]
         connection = ["E01", "C01", "C02", "HTTP",
                       "query", "yes", "I01", "🟩 Implemented", "F02"]
         cases = [
             ("a component in a boundary", "components", component, None),
             ("a component outside any", "components",
-             component[:8] + ["None"], None),
+             component[:7] + ["None"], None),
+            ("a component with no type", "components",
+             ["C01", "Search API"] + component[2:], "ends with its type in brackets"),
+            ("a component of a type not listed", "components",
+             ["C01", "Search API (gizmo)"] + component[2:], "ends with its type in brackets"),
+            ("a change in the target with no evidence", "components",
+             component[:6] + ["Replaced by sync"] + component[7:], "In the target says how"),
+            ("a change in the target citing its evidence", "components",
+             component[:6] + ["Replaced by sync (F02)"] + component[7:], None),
+            ("a component waiting on an open decision", "components",
+             component[:5] + ["D01"] + component[6:], None),
             ("a component with no boundary", "components",
-             component[:8] + [""], "Boundary names"),
+             component[:7] + [""], "Boundary names"),
             ("a component resting on nothing", "components",
-             component[:6] + ["", "n", "B01"], "Evidence names"),
+             component[:5] + ["", "n", "B01"], "Evidence names"),
             ("an unverified component with no gap", "components",
              component[:4] + ["⬜ Unverified"] + component[5:], "names the gap"),
             ("an unverified component with its gap", "components",
-             component[:4] + ["⬜ Unverified"] + component[5:6] + ["G01"] + component[7:], None),
+             component[:4] + ["⬜ Unverified", "G01"] + component[6:], None),
+            ("an unverified component with its scope decision", "components",
+             component[:4] + ["⬜ Unverified", "U02"] + component[6:], None),
             ("a connection", "connections", connection, None),
+            ("a connection whose how has detail", "connections",
+             connection[:3] + ["in-process: a library call"] + connection[4:], None),
+            ("a connection of a kind not listed", "connections",
+             connection[:3] + ["GitHub API"] + connection[4:], "How starts with one of"),
+            ("a reply waited for, with detail", "connections",
+             connection[:5] + ["yes, within 12 s"] + connection[6:], None),
+            ("a reply neither waited for nor not", "connections",
+             connection[:5] + ["sometimes"] + connection[6:], "Waits for reply starts with"),
             ("a connection of unknown identity", "connections",
              connection[:6] + ["Unknown"] + connection[7:], None),
             ("a connection from two components", "connections", connection[:1] + ["C01, C03"] + connection[2:],
@@ -159,6 +240,14 @@ class ReferencesTest(unittest.TestCase):
              "E01: State starts with"),
             ("a boundary", "boundaries", [
              "B01", "Production cluster", "network", "F04"], None),
+            ("a boundary with detail", "boundaries", [
+             "B01", "Billing account", "cloud account: eu-west-2", "F04"], None),
+            ("a boundary of a kind not listed", "boundaries", [
+             "B01", "Billing", "external SaaS", "F04"], "Kind starts with one of"),
+            ("an identity", "identities", ["I01", "web token", "service account: token", "the API", "F01",
+                                           "None: no connection uses it"], None),
+            ("an identity of a kind not listed", "identities", ["I01", "web token", "token", "the API", "F01",
+                                                                "None: no connection uses it"], "Kind starts with one of"),
             ("an identity resting on nothing", "identities", ["I01", "token", "token", "the API", "-"],
              "Evidence names"),
             ("a flow", "flows", [
@@ -309,7 +398,7 @@ class ReferencesTest(unittest.TestCase):
                  (["F01", " ", "S01", "Read."], "Claim holds the claim"),
                  (["F01", "A claim.", "the code", "Read."],
                   "Sources names the sources"),
-                 (["F01", "A claim.", "S01", ""], "Limits says how")]
+                 (["F01", "A claim.", "S01", ""], "Limits says what")]
         for row, expected in cases:
             with self.subTest(row=row):
                 problem = common.finding_problem(row)
