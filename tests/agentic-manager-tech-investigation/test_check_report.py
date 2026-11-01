@@ -365,7 +365,7 @@ class CheckReportTest(unittest.TestCase):
         tree = "https://github.com/acme/app/tree/abc/services/search"
         component = ("### Components\n\n| ID | Name | Kind | Boundary | Responsibility | Repository | State |"
                      " In the target | Evidence |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
-                     "| C01 | search | service | None | Serves | [search][search] | {} | Unchanged | G01 |\n")
+                     "| C01 | search | service | None | Serves | [search][search] | {} | Unchanged | {} |\n")
 
         def read(path, coverage, kind="code"):
             return [["S01", kind, f"[routes](https://github.com/acme/app/blob/abc/services/search/{path})", "abc",
@@ -387,7 +387,8 @@ class CheckReportTest(unittest.TestCase):
         for name, outcome, status, sources, expected in cases:
             with self.subTest(name):
                 text = (with_sources(sources).replace("| — | F01 |", f"| — | {outcome} |")
-                        .replace("### Components\n\nNone yet.", component.format(status))
+                        .replace("### Components\n\nNone yet.", component.format(
+                            status, "F01" if status.startswith("🟩") else "G01"))
                         .replace("## Links\n\nNone yet.", f"## Links\n\n[search]: {tree}"))
                 (self.folder / "ledger.md").write_text(text, encoding="utf-8")
                 result = check_report.check_report(self.report, handover=True)
@@ -424,6 +425,15 @@ class CheckReportTest(unittest.TestCase):
                   "E02 starts from C04"),
                  ("an identity's State edited by hand", design(state="🟩 Live"),
                   "I01 has State 🟩 Live, its connections give 🟨 Planned")]
+        # A part of a mention-only topic, citing that decision, needs no code
+        # read; one citing a decision that included its topic does.
+        scope = ("## Scope boundaries\n\n| ID | Topic | Decision | Asked in |\n| --- | --- | --- | --- |\n"
+                 "| U01 | Payments | mention only | Q01 |\n| U02 | Billing | include | Q01 |")
+        for answer, expected in (("U01", None), ("U02", "C01 links")):
+            cases.append((f"a live part citing {answer}",
+                          design().replace("## Scope boundaries\n\nNone yet.", scope)
+                          .replace("| 🟨 Planned | Unchanged | F02 |", f"| 🟩 Live | Unchanged | F02, {answer} |", 1),
+                          expected))
         for name, text, expected in cases:
             with self.subTest(name):
                 problems = [p for p in check_report.closing_problems(text) if p] + \

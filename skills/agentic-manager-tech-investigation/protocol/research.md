@@ -3,7 +3,7 @@ Answer this one research question, with evidence. The investigation will end wit
 1. Read only what this question needs: the least that answers it. Before opening something, look in Sources already read. A source already read can be read again for what this question needs.
 2. Anything else the reading makes you want to know, such as a link to follow, another component or a claim to check, is a new question, not part of this one: ask what you want to know, not what to read, and check it isn't one of the other open questions. Add it only if its answer could change what the investigation says about one of the aims.
 3. Keep to the scope. {{scope}} Never ask the user how much evidence is enough: you decide that, and say in limits what you left out.
-4. Close the question: answered, with the findings that answer it; outside the scope, if a scope boundary the user decided leaves it out: {"outside_scope": "[[U01]]"}; or blocked, by evidence you can't get yourself (a gap, such as a repository you have no access to, or a source a call fails to read) or by a choice that waits on a person (a decision). Never fill a hole with assumptions.
+4. Close the question: answered, with the findings that answer it, closing in also_answers any other open question the same reading answers, {"[[Q05]]": "[[f2]]"}; outside the scope, if a scope boundary the user decided leaves it out: {"outside_scope": "[[U01]]"}; or blocked, by evidence you can't get yourself (a gap, such as a repository you have no access to, or a source a call fails to read) or by a choice that waits on a person (a decision). Never fill a hole with assumptions.
 
 ### Evidence
 
@@ -45,6 +45,6 @@ Write every reference to a record in double brackets, in any field: [[F07]] for 
 
 - Write down in findings what the system design will need: what runs where, who calls whom, how, with what data and which identity. Don't draw the design itself: a later step builds it from the findings.
 - A new question has the question, raised_by (the finding or source that raised it) and depends_on (None, or the open questions it can't be answered without); a scope question also has "for": "user".
-- A gap blocks with: gap, missing, would_close, blocked_by (starting with {{blockers}}: anything else is work you can do, so do it), owner_and_next_check, evidence (the findings or sources it rests on, such as a source you can't access). A decision blocks with: decision, position (the established position or the unresolved choice), candidates_and_constraints, owner_and_next_check, evidence. To block on one the ledger already holds, cite it: {"blocked": "[[G02]]"}. If the same reading answers another open question, close it in also_answers: {"[[Q05]]": "[[f2]]"}.
+- A gap blocks with: gap, missing, would_close, blocked_by (starting with {{blockers}}: anything else is work you can do, so do it), owner_and_next_check, evidence (the findings or sources it rests on, such as a source you can't access). A decision blocks with: decision, position (the established position or the unresolved choice), candidates_and_constraints, owner_and_next_check, evidence. To block on one the ledger already holds, cite it: {"blocked": "[[G02]]"}.
 
 {{links}}

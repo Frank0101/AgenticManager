@@ -77,6 +77,17 @@ class InvestigateTest(unittest.TestCase):
         """The example design, raising no question, so the review comes next."""
         return {**copy.deepcopy(protocol.example("design")), "new_questions": []}
 
+    def test_a_mention_only_part_needs_no_code_read(self):
+        # A part of a topic the user decided as mention only, citing that
+        # decision, is live with no code of its own read.
+        self.research()
+        design = self.design()
+        design["components"].append({"key": "[[c3]]", "name": "Payments gateway", "kind": "service",
+                                     "boundary": "None", "responsibility": "Takes payments", "code": "None",
+                                     "state": "🟩 Live", "in_the_target": "Unchanged", "evidence": "[[F01]], [[U01]]"})
+        self.submit("design", design)
+        self.assertEqual(self.phase(), "review")
+
     def test_a_design_question_goes_back_to_research(self):
         # A question the design raises is research's to answer before the
         # design is built again, and its task shows the row that raised it,

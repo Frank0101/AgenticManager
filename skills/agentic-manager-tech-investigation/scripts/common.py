@@ -140,9 +140,7 @@ COMPONENT_HEADER = ["ID", "Name", "Kind", "Boundary", "Responsibility", "Reposit
 COMPONENT_TYPES = ("service", "application", "job", "script", "library", "store", "queue",
                    "external product", "person", "role", "unknown")
 # The kinds that have no code of their own: one is live once a finding shows it
-# exists; whether the topic uses it yet is its connections' state. A part of a
-# mention-only topic, which cites the scope decision, is the same: its code is
-# outside the research.
+# exists; whether the topic uses it yet is its connections' state.
 OUTSIDE_KINDS = ("external product", "person", "role")
 # How a connection is made, the kind its How starts with, and whether its
 # caller waits: fixed values, so connections read alike and a diagram can draw
@@ -736,6 +734,10 @@ def design_problem(name, row):
         "components", "connections") else None
     if state is not None and (wrong := status_problem(row[0], state)):
         return wrong
+    # Live or in development rests on a finding: code read, or for what has
+    # no code of its own, one that shows it exists.
+    if state and state.startswith(CODE_STATUSES) and not ids(evidence, "F"):
+        return f"{row[0]}: a {state.split(':')[0]} row names in Evidence the finding that shows it (F01)"
     if state and state.startswith("⬜") and not ids(evidence, "GU"):
         return (f"{row[0]}: an unverified row names the gap (G01), or the scope decision (U01), that explains it "
                 "in Evidence")
