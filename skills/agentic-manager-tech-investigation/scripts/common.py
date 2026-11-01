@@ -213,7 +213,7 @@ STATUSES = [("🟩 Live", "merged to the main branch, or, for an external produc
             ("🟨 Planned", "in the tracker, with no code"),
             ("🟪 Vision", "only in the documentation"),
             ("⬜ Unverified", "not established: name the gap, or the scope decision, that explains it"),
-            ("✖ Ruled out", "thought to exist, shown not to: the finding showing it is in its evidence")]
+            ("✖ Ruled out", "shown not to exist today, whether never built or since removed: the finding showing it is in its evidence")]
 CODE_STATUSES = ("🟩", "🟦")
 UNVERIFIED, RULED_OUT = STATUSES[-2][0], STATUSES[-1][0]
 # Each independent review round is a row of its own table, written when its
