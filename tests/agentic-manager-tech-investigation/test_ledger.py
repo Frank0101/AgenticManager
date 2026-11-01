@@ -114,6 +114,12 @@ class LedgerTest(unittest.TestCase):
         self.assertIn("| S10 | code |", self.plain())
         self.assertNotIn("| S10 | tracker |", self.plain())
 
+    def test_the_links_section_says_what_it_holds(self):
+        # Previews hide link definitions, so a line above them counts them.
+        self.records("S01", "S02")
+        self.assertIn(
+            "## Links\n\nLink definitions: 2 (Markdown previews hide them;", self.text())
+
     def test_a_table_is_created_where_there_was_a_placeholder(self):
         for section, table, ident, cells in (("Open decisions", "decisions", "D01", ["a", "b", "c", "d", "e"]),
                                              ("Sources", "sources", "S01", source())):
@@ -149,16 +155,16 @@ class LedgerTest(unittest.TestCase):
                                              superseded="S02")),
                    ("findings", "F01", [
                     "Search reads the index.", "S01", "code read"]),
-                   ("components", "C01", ["Search API (service)", "Serves search", "[search](https://example.com/search)",
-                                          "🟨 Planned", "F01", "Unchanged", "None"]),
+                   ("components", "C01", ["Search API", "service", "None", "Serves search",
+                                          "[search](https://example.com/search)", "🟨 Planned", "Unchanged", "F01"]),
                    ("decisions", "D01", [
-                    "Which index", "Unresolved", "Two options", "Design doc", "Owner not named"]),
+                    "Which index", "Unresolved", "Two options", "Owner not named", "F01"]),
                    ("queue-ready", "Q01", QUEUE_ROW))
         self.write(("scope", "U01", ["Search", "include", c("Q01")]))
         brief = ledger.brief(self.lines())
         kept = ["## Scope boundaries\n\nID | Topic | Decision | Asked in\nU01 | Search | include | Q01", "S01: [api](https://example.com/api), abc; coverage: full; superseded by S02",
                 "## Findings\n\nID | Claim | Sources | Limits\nF01 | Search reads the index. | S01 | code read",
-                "C01 | Search API (service) | Serves search | search | 🟨 Planned", "D01 | Which index",
+                "C01 | Search API | service | None | Serves search | search | 🟨 Planned", "D01 | Which index",
                 "## Evidence gaps\n\nNone."]
         # The queue and the link definitions are for research and review.
         left_out = ["Read the code", "[api]:",
@@ -213,7 +219,7 @@ class LedgerTest(unittest.TestCase):
                  ("decisions", "D01", ["See `app.py`", "b", "c", "d", "e"],
                   "references in backticks without a link: `app.py`"),
                  ("components", "C01", [
-                  "n (service)", "r", "p", "Done", "F01", "Unchanged", "None"], "Status starts with"),
+                  "n", "service", "None", "r", "p", "Done", "Unchanged", "F01"], "State starts with"),
                  ("queue-completed", "Q01",
                   QUEUE_ROW[:-1] + [""], "names the findings")]
         before = self.text()
@@ -248,18 +254,18 @@ class LedgerTest(unittest.TestCase):
     def test_the_system_design_is_written_in_its_tables(self):
         self.write(("sources", "S01", source(kind="tracker")),
                    ("findings", "F01", ["Web and search are planned.", "S01", "None"]))
-        component = ["{} (service)", "Serves", "[x](https://example.com/x)",
-                     "🟨 Planned", "F01", "Unchanged", "B01"]
-        self.write(("boundaries", "B01", ["Production cluster", "network", "F01"]),
+        component = ["{}", "service", "B01", "Serves", "[x](https://example.com/x)",
+                     "🟨 Planned", "Unchanged", "F01"]
+        self.write(("boundaries", "B01", ["Production cluster", "network", "None", "F01"]),
                    ("components", "C01", [
                     component[0].format("Web")] + component[1:]),
                    ("components", "C02", [component[0].format(
                        "Search API")] + component[1:]),
                    ("identities", "I01", ["web token",
-                    "service account: token", "the search API", "F01"]),
+                    "service account: token", "read on C02", "Unchanged", "F01"]),
                    ("connections", "E01", [
-                    "C01", "C02", "HTTP", "the query", "yes", "I01", "🟨 Planned", "F01"]),
-                   ("flows", "P01", ["A user searches", "E01", "F01"]))
+                    "C01", "C02", "HTTP", "the query", "yes", "I01", "🟨 Planned", "Unchanged", "F01"]),
+                   ("flows", "P01", ["A user searches", "E01", "Unchanged", "F01"]))
         brief = ledger.brief(self.lines())
         for heading in ("### Boundaries", "### Connections", "### Identities", "### Flows"):
             with self.subTest(heading):
@@ -267,24 +273,25 @@ class LedgerTest(unittest.TestCase):
         self.assertIn("E01 | C01 | C02 | HTTP", brief)
         # The script gives the identity the state of the connection using it.
         self.assertIn(
-            "I01 | web token | service account: token | the search API | F01 | 🟨 Planned", brief)
-        self.assertIn("P01 | A user searches | E01 | F01 | 🟨 Planned", brief)
+            "I01 | web token | service account: token | read on C02 | 🟨 Planned | Unchanged | F01", brief)
+        self.assertIn(
+            "P01 | A user searches | E01 | 🟨 Planned | Unchanged | F01", brief)
         # A flow can only walk connections the ledger holds, in order, a
         # connection joins two components, and a planned row rests on the
         # tracker.
         self.write(("sources", "S02", source("[c](https://example.com/c)")),
                    ("findings", "F02", ["Code.", "S02", "None"]),
                    ("components", "C03", [
-                    "Job (job)", "r", "p", "🟨 Planned", "F01", "Unchanged", "B01"]),
-                   ("connections", "E02", ["C03", "C01", "HTTP", "q", "yes", "None", "🟨 Planned", "F01"]))
-        cases = [("an unrecorded connection", ("flows", "P02", ["Admin", c("E09"), "F01"]), "E09"),
-                 ("a flow that jumps", ("flows", "P02", ["Admin", "E01, E02", "F01"]),
+                    "Job", "job", "B01", "r", "p", "🟨 Planned", "Unchanged", "F01"]),
+                   ("connections", "E02", ["C03", "C01", "HTTP", "q", "yes", "None", "🟨 Planned", "Unchanged", "F01"]))
+        cases = [("an unrecorded connection", ("flows", "P02", ["Admin", c("E09"), "Unchanged", "F01"]), "E09"),
+                 ("a flow that jumps", ("flows", "P02", ["Admin", "E01, E02", "Unchanged", "F01"]),
                   "E02 starts from C03, which the flow hasn't reached yet"),
                  ("a planned row resting on code only", ("components", "C04", [
-                     "Cache (store)", "r", "p", "🟨 Planned", "F02", "Unchanged", "B01"]),
+                     "Cache", "store", "B01", "r", "p", "🟨 Planned", "Unchanged", "F02"]),
                   "needs a finding read in the tracker"),
                  ("an end that is no component", ("connections", "E02", ["C01", "the index", "SQL", "rows", "yes",
-                                                                         "None", "🟨 Planned", "F01"]),
+                                                                         "None", "🟨 Planned", "Unchanged", "F01"]),
                   "To names one component")]
         for name, row, expected in cases:
             before = self.text()
@@ -299,7 +306,7 @@ class LedgerTest(unittest.TestCase):
         self.change(lambda lines: ledger.set_design_basis(
             lines, ledger.basis(lines)))
         self.assertEqual(ledger.design_basis(self.lines()), (2, 1, 0))
-        self.assertIn("## System design\n\nBuilt from 2 findings, 1 gaps and 0 decisions.\n\n### Components",
+        self.assertIn("## System design\n\nBuilt from 2 findings, 1 gaps and 0 decisions.\n\n### Boundaries",
                       self.text())
         # Written again, the line is replaced, not added.
         self.records("F03")
@@ -449,7 +456,7 @@ class LedgerTest(unittest.TestCase):
         self.records("S01", "S02")
         self.write(("sources", "S03", source("[t](https://example.com/t)", kind="tracker")),
                    ("findings", "F01", ["Planned.", "S03", "None"]))
-        self.write(("components", "C01", ["n (service)", "r", "p", "🟨 Planned", "F01", "Unchanged", "None"]),
+        self.write(("components", "C01", ["n", "service", "None", "r", "p", "🟨 Planned", "Unchanged", "F01"]),
                    ("queue-ready", "Q01", ["C01", "Is it live?", "None", ""]))
         self.change(lambda lines: ledger.record_review(lines, raised=["S02"]))
         cases = [("a row", "F01", "F01 is still cited by C01"),
@@ -501,7 +508,7 @@ class LedgerTest(unittest.TestCase):
                    ("findings", "F01", ["Search is planned.", "S09", "None"]))
         tree = "https://git.example/acme/api/tree/abc/services/search"
         component = [
-            "search (service)", "r", f"[search]({tree})", "🟩 Implemented", "F01", "Unchanged", "None"]
+            "search", "service", "None", "r", f"[search]({tree})", "🟩 Live", "Unchanged", "F01"]
         with self.assertRaisesRegex(SystemExit, "C01 links acme/api: services/search"):
             self.write(("components", "C01", component))
         self.write(("sources", "S01", source("[f](https://git.example/acme/api/tree/abc/services/search)",
@@ -509,11 +516,11 @@ class LedgerTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "needs its code read"):
             self.write(("components", "C01", component))
         self.write(
-            ("components", "C01", component[:3] + ["🟨 Planned"] + component[4:]))
+            ("components", "C01", component[:5] + ["🟨 Planned"] + component[6:]))
         self.write(("sources", "S02", source("[f](https://git.example/acme/api/blob/abc/services/search/src/routes.py)",
                                              coverage="partial: lines 1-80")))
         self.write(("components", "C01", component))
-        self.assertIn("| 🟩 Implemented |", self.text())
+        self.assertIn("| 🟩 Live |", self.text())
 
     def test_review_rounds_are_recorded(self):
         self.write(("queue-ready", "Q01", QUEUE_ROW))

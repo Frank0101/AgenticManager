@@ -1,6 +1,6 @@
 """End-to-end test of an investigation through investigate.py's command line, as
 the agent runs it: start, then next and submit for every task, with the worked
-examples each task prints, until it is finished, then save_example.py.
+examples each task prints, until it is finished.
 Run with: python3 tests/run.py agentic-manager-tech-investigation
 
 HOME points at a temporary folder holding the test's own config, and TMPDIR at
@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
@@ -68,7 +69,12 @@ class InvestigationTest(unittest.TestCase):
         return started, os.path.join(self.root, "tech-investigations", self.investigation)
 
     def next(self):
-        return self.run_script(INVESTIGATE, "next", "--investigation", self.investigation)
+        """The text of the next task, read from the file next names, or what
+        next says instead."""
+        listing = self.run_script(
+            INVESTIGATE, "next", "--investigation", self.investigation)
+        path = re.match(r"Task \S+: (.+)$", listing.strip())
+        return Path(path[1]).read_text(encoding="utf-8") if path else listing
 
     def submit(self, task, data):
         """The result of submitting `data` to `task`."""
@@ -93,7 +99,8 @@ class InvestigationTest(unittest.TestCase):
         # the script would refuse fails here.
         task = self.next()
         self.assertTrue(task.startswith("# Task research:Q01"))
-        self.assertIn(f"under {work}, named after your question", task)
+        # Every task keeps its files in a folder of its own in the run's.
+        self.assertIn(f"in your folder for it, {work}/Q01:", task)
         self.assertIn(protocol.compact(protocol.example("research")), task)
         result = self.submit("research:Q01", protocol.example("research"))
         self.assertEqual(result["ids"]["[[f1]]"], "F01")
@@ -117,10 +124,11 @@ class InvestigationTest(unittest.TestCase):
                                                    "limits": "None", "partial": {"[[S02]]": "the unread sections can't change it"}}],
                                      "outcome": {"blocked": {"decision": {
                                          "decision": "Which queue to use", "position": "Unresolved: Kafka or SQS",
-                                         "candidates_and_constraints": "Kafka keeps replay; SQS costs less", "authority": "The team's design doc",
+                                         "candidates_and_constraints": "Kafka keeps replay; SQS costs less", "evidence": "[[f1]]",
                                          "owner_and_next_check": "The platform team, at the next design review"}}}})
         task = self.next()
         self.assertTrue(task.startswith("# Task design"))
+        self.assertIn(f"in your folder for it, {work}/design:", task)
         self.assertIn(protocol.compact(protocol.example("design")), task)
         self.submit(
             "design", {**protocol.example("design"), "new_questions": []})
@@ -144,13 +152,9 @@ class InvestigationTest(unittest.TestCase):
         self.assertTrue(task.startswith("# Task finished"))
         self.assertEqual(sorted(os.listdir(started["investigation_dir"])),
                          ["Acme-Search_Report.md", "content.json", "ledger.md"])
-        command = re.search(
-            r"`(python3 \S+save_example.py) --investigation", task)
-        self.assertIsNotNone(command)
-        example = json.loads(self.run_script(os.path.join(SCRIPTS, "save_example.py"), "--investigation",
-                                             self.investigation, "--note", "Clear current status."))
-        self.assertEqual(sorted(os.listdir(example["example"])),
-                         ["Acme-Search_Report.md", "description.md", "ledger.md"])
+        # Only the run's own folder is written: nothing is kept beside it.
+        self.assertEqual(sorted(os.listdir(started["folder"])), [
+                         self.investigation])
 
 
 if __name__ == "__main__":

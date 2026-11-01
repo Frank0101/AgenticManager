@@ -237,7 +237,7 @@ def pr_discussion(url, run=subprocess.run):
     many pull requests long."""
     parts = pull_parts(url)
     if not parts:
-        return f"{url}: not a GitHub pull request"
+        return f"{url}: not a GitHub pull request's URL, such as https://github.com/acme/api/pull/42"
     pr, why = gh_found(
         ["pr", "view", url, "--json", GH_DISCUSSION_FIELDS], "pull request", run)
     if why:

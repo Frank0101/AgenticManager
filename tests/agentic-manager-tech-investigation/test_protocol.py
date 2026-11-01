@@ -15,14 +15,15 @@ import protocol  # noqa: E402
 
 # What investigate.py fills for every task.
 FILLS = {"topic": "Acme Search", "documentation": "the notion-mcp source", "code": "the gitlab-cli source", "scripts": "/s", "lib": "/l",
-         "investigation": "Acme_26-10-05", "ledger": "/x/ledger.md", "work": "/w"}
+         "investigation": "Acme_26-10-05", "ledger": "/x/ledger.md", "task_work": "/w"}
 
 
 class ProtocolTest(unittest.TestCase):
     def test_every_file_is_filled(self):
         # A placeholder nothing fills would reach the agent as {{name}}.
         for name in sorted(os.listdir(protocol.FOLDER)):
-            if name.endswith(".md") and not name.startswith("_"):
+            # _work is a task's text too: render adds it to every task.
+            if name.endswith(".md") and (not name.startswith("_") or name == "_work.md"):
                 with self.subTest(name):
                     text = protocol.text(name[:-3], round=4, rounds=3, **FILLS)
                     self.assertNotIn("{{", text)

@@ -132,23 +132,33 @@ class ReferencesTest(unittest.TestCase):
         # The most advanced state of the connections that use it; one no
         # connection uses has none.
         def connection(ident, identity, state):
-            return [ident, "C01", "C02", "HTTP", "q", "yes", identity, state, "F01"]
+            return [ident, "C01", "C02", "HTTP", "q", "yes", identity, state, "Unchanged", "F01"]
         states = common.identity_states([connection("E01", "I01", "🟨 Planned"),
                                          connection(
-                                             "E02", "I01", "🟩 Implemented"),
+                                             "E02", "I01", "🟩 Live"),
                                          connection(
                                              "E03", "I02", "🟪 Vision"),
-                                         connection("E04", "Unknown", "🟩 Implemented")])
+                                         connection("E04", "Unknown", "🟩 Live")])
         self.assertEqual(
-            states, {"I01": "🟩 Implemented", "I02": "🟪 Vision"})
+            states, {"I01": "🟩 Live", "I02": "🟪 Vision"})
 
     def test_a_flow_has_the_state_of_its_least_advanced_step_and_runs_in_order(self):
-        def connection(ident, start, end, state="🟩 Implemented"):
-            return [ident, start, end, "HTTP", "q", "yes", "None", state, "F01"]
+        def connection(ident, start, end, state="🟩 Live"):
+            return [ident, start, end, "HTTP", "q", "yes", "None", state, "Unchanged", "F01"]
         connections = [connection("E01", "C01", "C02"), connection("E02", "C02", "C03", "🟨 Planned"),
                        connection("E03", "C02", "C04"), connection("E04", "C05", "C06")]
-        self.assertEqual(common.flow_states([["P01", "x", "E01, E02", "F01", ""], ["P02", "x", "E01, E03", "F01", ""]],
-                                            connections), {"P01": "🟨 Planned", "P02": "🟩 Implemented"})
+        connections += [connection("E05", "C02", "C07", "⬜ Unverified")]
+        # name: (the connections walked, the flow's State)
+        states = [("all live", "E01, E03", "🟩 Live"),
+                  ("one step planned", "E01, E02", "🟨 Planned"),
+                  ("one step unverified", "E01, E05", "🟩 Live, unverified: E05"),
+                  ("planned, one step unverified", "E01, E02, E05",
+                   "🟨 Planned, unverified: E05"),
+                  ("none verified", "E05", "⬜ Unverified")]
+        for name, walked, expected in states:
+            with self.subTest(name):
+                self.assertEqual(common.flow_states([["P01", "x", walked, "", "Unchanged", "F01"]], connections),
+                                 {"P01": expected})
         # name: (the connections in order, the problem's text, or None)
         cases = [("a chain", "E01, E02", None),
                  ("a branch from a component reached", "E01, E02, E03", None),
@@ -158,7 +168,7 @@ class ReferencesTest(unittest.TestCase):
         for name, walked, expected in cases:
             with self.subTest(name):
                 problem = common.flow_order_problem(
-                    ["P01", "x", walked, "F01", ""], connections)
+                    ["P01", "x", walked, "", "Unchanged", "F01"], connections)
                 if expected is None:
                     self.assertIsNone(problem)
                 else:
@@ -179,7 +189,7 @@ class ReferencesTest(unittest.TestCase):
                  ("a vision, from the documentation", "🟪 Vision", "F03", None),
                  ("a vision, from the tracker only", "🟪 Vision",
                   "F02", "needs a finding read in the documentation"),
-                 ("code, checked elsewhere", "🟩 Implemented", "F02", None)]
+                 ("code, checked elsewhere", "🟩 Live", "F02", None)]
         for name, status, evidence, expected in cases:
             with self.subTest(name):
                 problem = common.evidence_problem(
@@ -190,70 +200,100 @@ class ReferencesTest(unittest.TestCase):
                     self.assertIn(expected, problem or "")
 
     def test_design_problem(self):
-        # name: (table, row, the problem's text, or None when the row is allowed)
-        component = ["C01", "Search API (service)", "Serves",
-                     "p", "🟩 Implemented", "F01", "Unchanged", "B01"]
-        connection = ["E01", "C01", "C02", "HTTP",
-                      "query", "yes", "I01", "🟩 Implemented", "F02"]
+        # Rows are built by column name from one valid row per table, so each
+        # case says only what it changes.
+        valid = {"components": {"ID": "C01", "Name": "Search API", "Kind": "service", "Boundary": "B01",
+                                "Responsibility": "Serves", "Repository, paths, revision": "p", "State": "🟩 Live",
+                                "In the target": "Unchanged", "Evidence": "F01"},
+                 "connections": {"ID": "E01", "From": "C01", "To": "C02", "How": "HTTP", "Data": "query",
+                                 "Waits for reply": "yes", "Identity": "I01", "State": "🟩 Live",
+                                 "In the target": "Unchanged", "Evidence": "F02"},
+                 "boundaries": {"ID": "B01", "Name": "Production cluster", "Kind": "network", "Within": "None",
+                                "Evidence": "F04"},
+                 "identities": {"ID": "I01", "Name": "web token", "Kind": "service account: token",
+                                "What it can reach": "calls on C02", "State": "None: no connection uses it",
+                                "In the target": "Unchanged", "Evidence": "F01"},
+                 "flows": {"ID": "P01", "Entry point": "A user searches", "Connections in order": "E01, E02",
+                           "State": "🟩 Live", "In the target": "Unchanged", "Evidence": "F02"}}
+        headers = {"components": common.COMPONENT_HEADER, "connections": common.CONNECTION_HEADER,
+                   "boundaries": common.BOUNDARY_HEADER, "identities": common.IDENTITY_HEADER,
+                   "flows": common.FLOW_HEADER}
+
+        def row(table, **changed):
+            cells = {**valid[table], **
+                     {column.replace("_", " "): value for column, value in changed.items()}}
+            return [cells[column] for column in headers[table]]
+        # name: (table, the row, the problem's text, or None when the row is allowed)
         cases = [
-            ("a component in a boundary", "components", component, None),
+            ("a component in a boundary", "components", row("components"), None),
             ("a component outside any", "components",
-             component[:7] + ["None"], None),
-            ("a component with no type", "components",
-             ["C01", "Search API"] + component[2:], "ends with its type in brackets"),
-            ("a component of a type not listed", "components",
-             ["C01", "Search API (gizmo)"] + component[2:], "ends with its type in brackets"),
+             row("components", Boundary="None"), None),
+            ("a component with detail after its kind", "components",
+             row("components", Kind="service: Fastify"), None),
+            ("a component of a kind not listed", "components",
+             row("components", Kind="gizmo"), "Kind starts with one of"),
             ("a change in the target with no evidence", "components",
-             component[:6] + ["Replaced by sync"] + component[7:], "In the target says how"),
+             row("components", In_the_target="Replaced by sync"), "In the target says how"),
             ("a change in the target citing its evidence", "components",
-             component[:6] + ["Replaced by sync (F02)"] + component[7:], None),
+             row("components", In_the_target="Replaced by sync (F02)"), None),
             ("a component waiting on an open decision", "components",
-             component[:5] + ["D01"] + component[6:], None),
+             row("components", Evidence="D01"), None),
             ("a component with no boundary", "components",
-             component[:7] + [""], "Boundary names"),
+             row("components", Boundary=""), "Boundary names"),
             ("a component resting on nothing", "components",
-             component[:5] + ["", "n", "B01"], "Evidence names"),
+             row("components", Evidence=""), "Evidence names"),
             ("an unverified component with no gap", "components",
-             component[:4] + ["⬜ Unverified"] + component[5:], "names the gap"),
+             row("components", State="⬜ Unverified"), "names the gap"),
             ("an unverified component with its gap", "components",
-             component[:4] + ["⬜ Unverified", "G01"] + component[6:], None),
+             row("components", State="⬜ Unverified", Evidence="G01"), None),
             ("an unverified component with its scope decision", "components",
-             component[:4] + ["⬜ Unverified", "U02"] + component[6:], None),
-            ("a connection", "connections", connection, None),
+             row("components", State="⬜ Unverified", Evidence="U02"), None),
+            ("a connection", "connections", row("connections"), None),
+            ("a connection that goes away", "connections",
+             row("connections", In_the_target="Removed once sync runs (F03)"), None),
+            ("a connection's change with no evidence", "connections",
+             row("connections", In_the_target="Removed"), "In the target says how"),
             ("a connection whose how has detail", "connections",
-             connection[:3] + ["in-process: a library call"] + connection[4:], None),
+             row("connections", How="in-process: a library call"), None),
             ("a connection of a kind not listed", "connections",
-             connection[:3] + ["GitHub API"] + connection[4:], "How starts with one of"),
+             row("connections", How="GitHub API"), "How starts with one of"),
             ("a reply waited for, with detail", "connections",
-             connection[:5] + ["yes, within 12 s"] + connection[6:], None),
+             row("connections", Waits_for_reply="yes, within 12 s"), None),
             ("a reply neither waited for nor not", "connections",
-             connection[:5] + ["sometimes"] + connection[6:], "Waits for reply starts with"),
+             row("connections", Waits_for_reply="sometimes"), "Waits for reply starts with"),
             ("a connection of unknown identity", "connections",
-             connection[:6] + ["Unknown"] + connection[7:], None),
-            ("a connection from two components", "connections", connection[:1] + ["C01, C03"] + connection[2:],
-             "From names one component"),
-            ("a connection to nothing", "connections", connection[:2] + ["the index"] + connection[3:],
-             "To names one component"),
-            ("a connection with no identity", "connections", connection[:6] + [""] + connection[7:],
-             "Identity names"),
-            ("a connection with no state", "connections", connection[:7] + ["live"] + connection[8:],
-             "E01: State starts with"),
-            ("a boundary", "boundaries", [
-             "B01", "Production cluster", "network", "F04"], None),
-            ("a boundary with detail", "boundaries", [
-             "B01", "Billing account", "cloud account: eu-west-2", "F04"], None),
-            ("a boundary of a kind not listed", "boundaries", [
-             "B01", "Billing", "external SaaS", "F04"], "Kind starts with one of"),
-            ("an identity", "identities", ["I01", "web token", "service account: token", "the API", "F01",
-                                           "None: no connection uses it"], None),
-            ("an identity of a kind not listed", "identities", ["I01", "web token", "token", "the API", "F01",
-                                                                "None: no connection uses it"], "Kind starts with one of"),
-            ("an identity resting on nothing", "identities", ["I01", "token", "token", "the API", "-"],
-             "Evidence names"),
-            ("a flow", "flows", [
-             "P01", "A user searches", "E01, E02", "F02"], None),
-            ("a flow with no connections", "flows", ["P01", "A user searches", "the search", "F02"],
-             "Connections in order names"),
+             row("connections", Identity="Unknown"), None),
+            ("a connection from two components", "connections",
+             row("connections", From="C01, C03"), "From names one component"),
+            ("a connection to nothing", "connections",
+             row("connections", To="the index"), "To names one component"),
+            ("a connection with no identity", "connections",
+             row("connections", Identity=""), "Identity names"),
+            ("a connection with no state", "connections",
+             row("connections", State="live"), "E01: State starts with"),
+            ("a boundary", "boundaries", row("boundaries"), None),
+            ("a boundary with detail", "boundaries",
+             row("boundaries", Kind="cloud account: eu-west-2"), None),
+            ("a boundary of a kind not listed", "boundaries",
+             row("boundaries", Kind="external SaaS"), "Kind starts with one of"),
+            ("a boundary within another", "boundaries",
+             row("boundaries", Within="B02"), None),
+            ("a boundary within itself", "boundaries",
+             row("boundaries", Within="B01"), "Within names the boundary"),
+            ("a boundary within no boundary", "boundaries",
+             row("boundaries", Within="the cloud"), "Within names the boundary"),
+            ("an identity", "identities", row("identities"), None),
+            ("an identity of a kind not listed", "identities",
+             row("identities", Kind="token"), "Kind starts with one of"),
+            ("an identity's change with no evidence", "identities",
+             row("identities", In_the_target="Gains write access"), "In the target says how"),
+            ("an identity reaching no component", "identities",
+             row("identities", What_it_can_reach="the API"), "What it can reach names the components"),
+            ("an identity resting on nothing", "identities",
+             row("identities", Evidence="-"), "Evidence names"),
+            ("a flow", "flows", row("flows"), None),
+            ("a flow with no connections", "flows",
+             row("flows", Connections_in_order="the search"), "Connections in order names"),
         ]
         for name, table, row, expected in cases:
             with self.subTest(name):
@@ -274,7 +314,7 @@ class ReferencesTest(unittest.TestCase):
 
     def test_a_component_status_is_an_allowed_one(self):
         # (status, accepted)
-        for status, accepted in (("🟦 In development (on a branch)", True), ("Implemented", False)):
+        for status, accepted in (("🟦 In development (on a branch)", True), ("Live", False)):
             with self.subTest(status):
                 problem = common.status_problem("X01", status)
                 self.assertEqual(problem is None, accepted, problem)
@@ -436,11 +476,12 @@ class ReferencesTest(unittest.TestCase):
                  ("a folder above it", "[client][client]", [source("tree/abc/app/plugins", "full")], {})]
         for name, repository, sources, expected in cases:
             with self.subTest(name):
-                component = ["C01", "n", "r", repository, "🟩 Implemented"]
+                component = ["C01", "n", "service", "None", "r",
+                             repository, "🟩 Live", "Unchanged", "F01"]
                 self.assertEqual(common.unread_components(
                     [component], sources, definitions), expected)
         self.assertEqual(common.unread_components(
-            [["C01", "n", "r", "[search][search]", "⬜ Unverified"]], [], definitions), {})
+            [["C01", "n", "service", "None", "r", "[search][search]", "⬜ Unverified", "Unchanged", "G01"]], [], definitions), {})
         # The message names the path to read.
         self.assertIn("C01 links acme/api: services/search",
                       common.unread_message(unread))

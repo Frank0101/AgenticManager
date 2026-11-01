@@ -9,10 +9,9 @@ problem is collected by field, and the ledger changes only when there is none.
 """
 import re
 
-from common import (COVERAGE, LEFT_OUT, OUTSIDE_SCOPE, SCOPE_ANSWERS, SCOPE_QUESTION, USER_DECIDED, citation, claim_length_problem, ids,
-                    recorded_ids,
-                    read_in_part)
-from ledger import (TABLES, as_written, basis, duplicate_of, finish_write, find_row,
+from common import (DESIGN_ORDER, COVERAGE, LEFT_OUT, OUTSIDE_SCOPE, SCOPE_ANSWERS, SCOPE_QUESTION, USER_DECIDED, citation,
+                    cited_evidence_problem, claim_length_problem, ids, read_in_part, recorded_ids)
+from ledger import (TABLES, as_written, input_columns, basis, duplicate_of, finish_write, find_row,
                     header_of, move_row, next_id, put_row, refuse_cited, search_reference, set_design_basis,
                     table_rows, write_rows, record_review)
 
@@ -21,14 +20,14 @@ from ledger import (TABLES, as_written, basis, duplicate_of, finish_write, find_
 FIELDS = {
     "sources": ["kind", "reference", "revision", "coverage", "superseded_by"],
     "findings": ["claim", "sources", "limits"],
-    "gaps": ["gap", "established_and_missing", "would_close", "blocked_by", "authority", "owner_and_next_check"],
-    "decisions": ["decision", "position", "candidates_and_constraints", "authority", "owner_and_next_check"],
-    "boundaries": ["name", "kind", "evidence"],
-    "identities": ["name", "kind", "reaches", "evidence"],
-    "components": ["name_and_type", "responsibility", "code", "status", "evidence",
-                   "in_the_target", "boundary"],
-    "connections": ["from", "to", "how", "data", "waits_for_reply", "identity", "state", "evidence"],
-    "flows": ["entry_point", "connections", "evidence"],
+    "gaps": ["gap", "missing", "would_close", "blocked_by", "owner_and_next_check", "evidence"],
+    "decisions": ["decision", "position", "candidates_and_constraints", "owner_and_next_check", "evidence"],
+    "boundaries": ["name", "kind", "within", "evidence"],
+    "identities": ["name", "kind", "reaches", "in_the_target", "evidence"],
+    "components": ["name", "kind", "boundary", "responsibility", "code", "state", "in_the_target", "evidence"],
+    "connections": ["from", "to", "how", "data", "waits_for_reply", "identity", "state", "in_the_target",
+                    "evidence"],
+    "flows": ["entry_point", "connections", "in_the_target", "evidence"],
 }
 # Fields a submission may leave out, with the value written then.
 DEFAULTS = {"superseded_by": "None"}
@@ -37,23 +36,21 @@ DEFAULTS = {"superseded_by": "None"}
 # which stands out in any field, so every citation of one is found and replaced,
 # and none is left in the ledger pointing nowhere.
 KEY_REFERENCE = re.compile(r"\[\[([A-Za-z]\d+)\]\]")
-# A word shaped like an ID, but not part of an address such as s3://bucket or
-# a dotted name such as s3.amazonaws.com.
-BARE_REFERENCE = re.compile(r"\b[A-Za-z]\d+\b(?![-:/]|\.\w)")
+# A word shaped like an ID, but not part of an address such as s3://bucket, a
+# dotted name such as s3.amazonaws.com or a hyphenated one such as kb-s3.
+BARE_REFERENCE = re.compile(r"(?<![-./\w])\b[A-Za-z]\d+\b(?![-:/]|\.\w)")
 RECORD_ID = re.compile(r"[A-Z]\d{2,}")
 # The fields that only cite other records, where the name of a record written
 # bare, not as [[s1]], is refused: it would be left as prose, its citation
 # lost. Any other word shaped like an ID, such as V2, is prose.
-CITING = {"sources": ["superseded_by"], "findings": ["sources"], "boundaries": ["evidence"],
-          "identities": ["evidence"], "components": ["evidence", "boundary"],
+CITING = {"sources": ["superseded_by"], "findings": ["sources"], "gaps": ["evidence"], "decisions": ["evidence"],
+          "boundaries": ["within", "evidence"],
+          "identities": ["reaches", "evidence"], "components": ["evidence", "boundary"],
           "connections": ["from", "to", "identity", "evidence"], "flows": ["connections", "evidence"],
           "questions": ["raised_by", "depends_on"]}
 QUESTION_FIELDS = ["raised_by", "question", "depends_on"]
 # The lines part of a Coverage as coverage_text() writes it.
 COVERAGE_LINES = re.compile(r"lines (\d+-\d+(?:, \d+-\d+)*)(?: of (\d+))?")
-# The order design tables are written in, so each row's citations exist.
-DESIGN_ORDER = ["boundaries", "identities",
-                "components", "connections", "flows"]
 
 
 def submit_scope(lines, data, asked):
@@ -491,6 +488,9 @@ def close(lines, question, outcome, keys, allocator, problems):
         ident = allocator.next(table[0].upper())
         cells = problems.cells(
             blocked[kind], table, f"outcome.blocked.{kind}", keys)
+        evidence = TABLES[table][1].index("Evidence") - 1
+        if cells and (traced := cited_evidence_problem(f"outcome.blocked.{kind}", cells[evidence])):
+            problems.add(traced)
         values = problems.put(lines, table, ident, cells,
                               f"outcome.blocked.{kind}", keys) if cells else []
     else:
@@ -670,5 +670,9 @@ class Problems:
 def design_rows(lines):
     """The current system design as a design submission, each row keyed by its
     ID, so it can be changed and submitted again."""
-    return {table: [{"key": f"[[{row[0]}]]", **dict(zip(FIELDS[table], (as_written(lines, cell) for cell in row[1:])))}
-                    for row in table_rows(lines, table)] for table in DESIGN_ORDER}
+    def fields(table, row):
+        # The script's own columns, such as an identity's State, aren't submitted.
+        cells = dict(zip(TABLES[table][1][1:], row[1:]))
+        return dict(zip(FIELDS[table], (as_written(lines, cells[column]) for column in input_columns(table))))
+    return {table: [{"key": f"[[{row[0]}]]", **fields(table, row)} for row in table_rows(lines, table)]
+            for table in DESIGN_ORDER}

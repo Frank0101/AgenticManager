@@ -27,8 +27,8 @@ from common import ID_LETTERS  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from investigation_fixture import INVESTIGATION, temp_output  # noqa: E402
 
-GAP = {"gap": "Billing callers", "established_and_missing": "The API is merged; its callers aren't read",
-       "would_close": "Read access", "blocked_by": "No access (billing repository)", "authority": "Code",
+GAP = {"gap": "Billing callers", "missing": "The API is merged; its callers aren't read",
+       "would_close": "Read access", "blocked_by": "No access (billing repository)", "evidence": "[[F01]]",
        "owner_and_next_check": "Billing team"}
 
 
@@ -202,7 +202,7 @@ class SubmissionTest(unittest.TestCase):
         self.assertIn("| S01, version V2 |", self.plain())
         # So is a key inside an address or a dotted name, such as an S3 bucket.
         self.submit("research", "Q03", {"sources": DECLARED, "findings": [
-            finding(claim="Exports land in s1://acme-exports, served by s1.example.com.", sources="[[s1]]")],
+            finding(claim="Exports land in s1://acme-exports, served by s1.example.com from bucket kb-s1.", sources="[[s1]]")],
             "outcome": {"answered": "[[f1]]"}})
         self.assertIn("Exports land in s1://acme-exports", self.plain())
 
@@ -337,6 +337,9 @@ class SubmissionTest(unittest.TestCase):
     def test_a_blocked_question_blocks_those_that_need_it(self):
         self.answered(findings=[finding(sources="[[s1]]")],
                       new_questions=[{"key": "[[q1]]", "question": "Next?", "raised_by": "[[f1]]", "depends_on": "[[Q02]]"}])
+        # A gap traces to what it rests on, as every other record does.
+        self.assertIn("outcome.blocked.gap: Evidence names the findings or sources it rests on",
+                      self.refused("research", "Q02", {"outcome": {"blocked": {"gap": {**GAP, "evidence": "the code"}}}}))
         self.submit("research", "Q02", {"outcome": {"blocked": {"gap": GAP}}})
         self.assertEqual(self.rows("gaps"), ["G01"])
         self.assertEqual(self.rows("queue-blocked"), ["Q02", "Q06"])
@@ -358,7 +361,7 @@ class SubmissionTest(unittest.TestCase):
         design = {**copy.deepcopy(protocol.example("design")),
                   "new_questions": []}
         design["components"][0]["code"] = "None"
-        design["components"][0]["status"] = "🟨 Planned"
+        design["components"][0]["state"] = "🟨 Planned"
         design["connections"][0]["state"] = "🟨 Planned"
         design["components"][1]["in_the_target"] = "Unchanged"
         result = self.submit("design", design)
@@ -373,9 +376,10 @@ class SubmissionTest(unittest.TestCase):
         # and a new one takes a number never used.
         current = submissions.design_rows(self.text().split("\n"))
         current["components"] = [current["components"][0], {**current["components"][0], "key": "[[c1]]",
-                                                            "name_and_type": "Worker (job)"}]
+                                                            "name": "Worker", "kind": "job"}]
         current["connections"] = []
         current["flows"] = []
+        current["identities"][0]["reaches"] = "read on [[C01]]"
         result = self.submit("design", current)
         self.assertEqual(result["ids"]["[[c1]]"], "C03")
         self.assertEqual(self.rows("components"), ["C01", "C03"])
@@ -385,8 +389,8 @@ class SubmissionTest(unittest.TestCase):
     def test_a_design_row_still_cited_cant_be_left_out(self):
         self.answered(sources=[{"key": "[[s1]]", "kind": "tracker", "reference": "[t](https://example.com/t)",
                                 "revision": "Done", "coverage": {"read": "full"}}])
-        component = {"key": "[[c1]]", "name_and_type": "API (service)", "responsibility": "r", "code": "None",
-                     "status": "🟨 Planned", "evidence": "[[F01]]", "in_the_target": "Unchanged",
+        component = {"key": "[[c1]]", "name": "API", "kind": "service", "responsibility": "r", "code": "None",
+                     "state": "🟨 Planned", "evidence": "[[F01]]", "in_the_target": "Unchanged",
                      "boundary": "None"}
         self.submit("design", {"components": [component],
                                "new_questions": [{"key": "[[q1]]", "question": "Is it live?", "raised_by": "[[c1]]",
@@ -397,8 +401,8 @@ class SubmissionTest(unittest.TestCase):
 
     def test_a_design_claiming_code_needs_it_read(self):
         self.answered()
-        component = {"key": "[[c1]]", "name_and_type": "API (service)", "responsibility": "r",
-                     "code": "[api](https://git.example/acme/api/tree/abc/api)", "status": "🟩 Implemented",
+        component = {"key": "[[c1]]", "name": "API", "kind": "service", "responsibility": "r",
+                     "code": "[api](https://git.example/acme/api/tree/abc/api)", "state": "🟩 Live",
                      "evidence": "[[F01]]", "in_the_target": "Unchanged", "boundary": "None"}
         # The problem names the row by its key, not the ID it would have had.
         problems = self.refused(

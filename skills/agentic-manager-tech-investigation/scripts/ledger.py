@@ -9,41 +9,27 @@ check_report.py applies to the whole ledger at handover.
 import os
 import re
 
-from common import (BOUNDARY_HEADER, CITATION, COMPONENT_HEADER, CONNECTION_HEADER, DECISION_HEADER, DESIGN,
-                    DESIGN_TABLES, FINDING_HEADER, FLOW_HEADER, FOLDER_NAME, GAP_FIX, GAP_HEADER, ID_LETTERS,
-                    IDENTITY_HEADER, INLINE_LINK, JIRA_API, JIRA_GROUP, LEDGER, LINKS, QUERY, QUEUE_HEADER,
-                    QUEUE_TABLES, REVIEW_HEADER, REVIEW_NONE, REVIEW_STOPPED, ROW_START, SCOPE_HEADER,
-                    SOURCE_FINDINGS_COLUMN, SOURCE_HEADER, SOURCE_LINK_FIX, TABLE_HEADINGS, UNUSED, anchored, autolink,
-                    backtick_error, blocked_problem, citation, cited_sources, coverage_problem, design_problem,
-                    finding_problem, flow_order_problem, flow_states, free_name, gap_problem, group_problem, id_order,
-                    identity_states, ids, inline_links, investigation_dir, is_enabled, JiraClient, ledger_rows,
-                    link_definitions, link_text, links, outcome_problem, plain, read_in_part, row_evidence_problem,
-                    same_document, scope_problem, section_span, slug, source_reference_missing, status_problem,
+from common import (CITATION, DESIGN, DESIGN_ORDER, FOLDER_NAME, GAP_FIX, ID_LETTERS, INLINE_LINK, JIRA_API, JIRA_GROUP,
+                    LEDGER, LINKS, QUERY, QUEUE_HEADER, QUEUE_TABLES, REVIEW_HEADER, REVIEW_NONE, REVIEW_STOPPED,
+                    ROW_START, SOURCE_FINDINGS_COLUMN, SOURCE_HEADER, SOURCE_LINK_FIX, TABLE_HEADINGS, TABLES, UNUSED,
+                    anchored, autolink, backtick_error, blocked_problem, citation, cited_sources, coverage_problem,
+                    design_problem, finding_problem, flow_order_problem, flow_states, free_name, gap_problem,
+                    group_problem, id_order, identity_states, ids, inline_links, investigation_dir, is_enabled,
+                    JiraClient, ledger_rows, link_definitions, link_text, links, outcome_problem, plain, read_in_part,
+                    row_evidence_problem, same_document, scope_problem, section_span, slug, source_reference_missing,
                     strip_anchors, superseded_problem, table, table_cells, table_row, ticket_sites, unlinked_backticks,
                     unread_components, unread_message, unrecorded_citations, unresolved_message, upgraded_tickets,
                     write_output_file)
 
-# table name: (heading it sits under, default header, ID letter)
-TABLES = {
-    **{table: (TABLE_HEADINGS[table], QUEUE_HEADER, "Q") for table in QUEUE_TABLES},
-    "scope": (TABLE_HEADINGS["scope"], SCOPE_HEADER, "U"),
-    "sources": (TABLE_HEADINGS["sources"], SOURCE_HEADER, "S"),
-    "findings": (TABLE_HEADINGS["findings"], FINDING_HEADER, "F"),
-    "decisions": (TABLE_HEADINGS["decisions"], DECISION_HEADER, "D"),
-    "gaps": (TABLE_HEADINGS["gaps"], GAP_HEADER, "G"),
-    "components": (TABLE_HEADINGS["components"], COMPONENT_HEADER, "C"),
-    "boundaries": (TABLE_HEADINGS["boundaries"], BOUNDARY_HEADER, "B"),
-    "connections": (TABLE_HEADINGS["connections"], CONNECTION_HEADER, "E"),
-    "identities": (TABLE_HEADINGS["identities"], IDENTITY_HEADER, "I"),
-    "flows": (TABLE_HEADINGS["flows"], FLOW_HEADER, "P"),
-}
 # The columns the script writes, which a row's input leaves out: a source's
 # Findings, from the findings that cite it, and the State of an identity or a
 # flow, from its connections.
 GENERATED = {"sources": SOURCE_HEADER[SOURCE_FINDINGS_COLUMN],
-             "identities": IDENTITY_HEADER[-1], "flows": FLOW_HEADER[-1]}
+             "identities": "State", "flows": "State"}
 PLACEHOLDERS = {"None yet.", "None."}
 LINKS_HEADING = f"## {LINKS}"
+# Markdown previews hide link definitions, so the section says what it holds.
+LINKS_NOTE = "Link definitions: {} (Markdown previews hide them; open the file as text to see them)."
 # The Jira site of each project looked up in this run, or None: a key-shaped
 # word such as SHA-256 is no ticket, so a key is linked only when the site has
 # its project, and each project is asked about once.
@@ -73,7 +59,7 @@ def brief(lines):
             + ("" if row[6] == "None" else f"; superseded by {plain(row[6])}")
             for row in table_rows(lines, "sources")] or ["None."]
     out.append("")
-    for name in ("findings", "components", *DESIGN_TABLES, "decisions", "gaps"):
+    for name in ("findings", *DESIGN_ORDER, "decisions", "gaps"):
         out += rows_of(name)
     out += partial_lines(lines)
     return "\n".join(out).rstrip() + "\n"
@@ -224,8 +210,8 @@ def set_link(lines, key, url):
     start, end = section(lines, LINKS_HEADING)
     definitions = links_section(lines)
     definitions[key] = url
-    body = ["", *(f"[{k}]: {v}" for k, v in sorted(definitions.items(),
-                  key=lambda kv: kv[0].casefold())), ""]
+    body = ["", LINKS_NOTE.format(len(definitions)), "", *(f"[{k}]: {v}" for k, v in sorted(definitions.items(),
+                                                                                            key=lambda kv: kv[0].casefold())), ""]
     lines[start + 1:end] = body
 
 
@@ -260,10 +246,7 @@ def set_row(lines, name, row_id, cells):
 def check_cells(lines, name, row):
     """Exit if a cell holds a value its column doesn't allow."""
     problem = None
-    if name == "components":
-        problem = status_problem(row[0], row[4]) or design_problem(
-            name, row) or row_evidence_problem(name, row, *evidence_of(lines))
-    elif name in DESIGN_TABLES:
+    if name in DESIGN_ORDER:
         problem = design_problem(name, row) or row_evidence_problem(name, row, *evidence_of(lines)) or (
             name == "flows" and flow_order_problem(row, table_rows(lines, "connections")))
     elif name == "findings":
@@ -410,9 +393,10 @@ def sync_states(lines):
     connections = table_rows(lines, "connections")
     for name, states in (("identities", identity_states(connections)),
                          ("flows", flow_states(table_rows(lines, "flows"), connections))):
-        rows = table_rows(lines, name)
+        rows, column = table_rows(
+            lines, name), TABLES[name][1].index("State")
         for row in rows:
-            row[-1] = states.get(row[0], UNUSED)
+            row[column] = states.get(row[0], UNUSED)
         if rows:
             write_rows(lines, name, rows, header_of(lines, name))
 

@@ -5,7 +5,8 @@ drift from it: the research questions, those for the user asked first, all
 together, while research that doesn't wait on their answers goes on; then the
 system design once none is open, built again whenever research has added to
 what it rests on; then the review rounds, the report and the handover.
-A task holds everything needed to do it, so it can go to a subagent as printed.
+A task holds everything needed to do it, in a file of its own, so a subagent is
+handed it by its path.
 """
 import argparse
 import contextlib
@@ -17,11 +18,11 @@ import shutil
 import sys
 import tempfile
 
-from common import (CONTENT, ids, FOLDER_NAME, LEDGER, REPORT_SUFFIX, TABLE_HEADINGS, SCOPE_QUESTION, investigation_dir,
+from common import (CONTENT, DESIGN_ORDER, ids, FOLDER_NAME, LEDGER, REPORT_SUFFIX, TABLE_HEADINGS, SCOPE_QUESTION, investigation_dir,
                     last_review,
                     ledger_rows, plain, reviewed, stops_on_failure, strip_anchors, topic_of, write_output_file)
 from init_investigation import init, usable_sources
-from ledger import (as_written, basis, brief, design_basis, depends_on, load, move_row, save, scope_decisions,
+from ledger import (TABLES, as_written, basis, brief, design_basis, depends_on, load, move_row, save, scope_decisions,
                     table_rows)
 from submissions import design_rows, submit_research, submit_scope, submit_design, submit_review
 import check_report
@@ -30,8 +31,9 @@ import protocol
 
 # A question's task, such as research:Q03.
 RESEARCH_TASK = re.compile(r"research:(Q\d+)")
-# What separates tasks handed out together.
-SEPARATOR = "\n\n" + "=" * 72 + "\n\n"
+# Each task is written to a file in its own folder, which next prints, so an
+# agent is handed the task by its path and keeps its work beside it.
+TASK_FILE = "task.md"
 
 
 def start(topic):
@@ -66,7 +68,9 @@ def lock_path(relative):
 
 
 def next_tasks(relative, maximum=1, resume=False):
-    """The text of the next tasks, each question in it moved to in progress:
+    """Write the next tasks, each to its folder, and return a line for each
+    with the path of its file, or why nothing is handed out. Each question in
+    a task is moved to in progress:
     the scope questions, as one task, when any is new or nothing else is left;
     else up to `maximum` ready research questions, those that don't wait on
     the user's answers. A question in progress is someone's already, so it is
@@ -75,7 +79,7 @@ def next_tasks(relative, maximum=1, resume=False):
     lines = load(relative).split("\n")
     phase = phase_of(relative, lines)
     if phase != "research":
-        return render(relative, lines, task_of(lines, phase))
+        return write_tasks(relative, lines, [task_of(lines, phase)])
     if scope_due(lines):
         # Only those whose dependencies are completed: one waiting on research
         # is asked once that research is done.
@@ -84,7 +88,7 @@ def next_tasks(relative, maximum=1, resume=False):
             if row in ready:
                 move_row(lines, row[0], "queue-in-progress")
         save(relative, lines)
-        return render(relative, lines, "scope")
+        return write_tasks(relative, lines, ["scope"])
     research = [row for row in questions_to_work(
         lines) if not is_scope_question(row)]
     working = [row for row in research if row in table_rows(
@@ -98,7 +102,20 @@ def next_tasks(relative, maximum=1, resume=False):
         if row not in working:
             move_row(lines, row[0], "queue-in-progress")
     save(relative, lines)
-    return SEPARATOR.join(render(relative, lines, f"research:{row[0]}") for row in handed)
+    return write_tasks(relative, lines, [f"research:{row[0]}" for row in handed])
+
+
+def write_tasks(relative, lines, tasks):
+    """Write each of `tasks` to its file in its folder; returns a line for
+    each, with the task's name and the file's path."""
+    out = []
+    for task in tasks:
+        path = os.path.join(task_folder(relative, task), TASK_FILE)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(render(relative, lines, task) + "\n")
+        out.append(f"Task {task}: {path}")
+    return "\n".join(out)
 
 
 def submit(relative, task, data):
@@ -190,6 +207,7 @@ def render(relative, lines, task):
     the command that submits it."""
     head = [f"# Task {task}", ""]
     values = fills(relative)
+    values["task_work"] = task_folder(relative, task)
     if task == "scope":
         body = [protocol.text("scope", **values), "", *scope_context(lines)]
     elif task.startswith("research:"):
@@ -219,6 +237,8 @@ def render(relative, lines, task):
                           f"- The report: {os.path.join(folder, topic_of(folder) + REPORT_SUFFIX)}",
                           f"- The ledger: {values['ledger']}",
                           f"- The folder is {'temporary' if temporary else 'kept'}"])
+    # Where the task keeps its files: one rule for every task, written once.
+    body += ["", protocol.text("_work", **values)]
     name = task.partition(":")[0]
     example = protocol.compact(protocol.example(name))
     if task == "write":
@@ -241,16 +261,22 @@ def work_dir(relative):
     return os.path.join(tempfile.gettempdir(), "tech-investigations", relative)
 
 
+def task_folder(relative, task):
+    """The folder of `task` in the investigation's working folder, for its
+    file and every file its agent writes: named after its question, such as
+    Q05, or after the task, such as design or review-1."""
+    return os.path.join(work_dir(relative), task.replace(":", "-").removeprefix("research-"))
+
+
 def fills(relative):
     """The values the protocol names for this investigation: the scripts' and
     the library's folders, written as the commands the skill pre-approves need
-    them, the investigation, its topic, its ledger and its working folder,
-    and the sources the config enables for the documentation and the code."""
+    them, the investigation, its topic and its ledger, and the sources the
+    config enables for the documentation and the code."""
     scripts = os.path.dirname(script_path())
     folder, _, _ = investigation_dir(relative)
     sources = usable_sources()
     return {"scripts": scripts, "investigation": relative, "ledger": os.path.join(folder, LEDGER),
-            "work": work_dir(relative),
             "topic": topic_of(folder).replace("-", " "),
             "documentation": " or ".join(f"the {name} source" for name in sources["documentation"]),
             "code": " or ".join(f"the {name} source" for name in sources["source_control"]),
@@ -284,6 +310,8 @@ def question_context(lines, ident):
     if builds_on:
         out += ["", "It builds on these findings:"]
         out += [f"- {f}: {plain(findings[f][1])} ({plain(findings[f][2])})" for f in dict.fromkeys(builds_on)]
+    if raised := design_row_lines(lines, ids(strip_anchors(row[1]), "CBEIP")):
+        out += ["", "It was raised by this row of the system design:", *raised]
     out += ["", "## Other open questions", "",
             "Don't raise one of these again: each is answered in its own task.", ""]
     out += [f"- {other[0]}: {plain(other[2])}" for name in ("queue-in-progress", "queue-ready", "queue-blocked")
@@ -294,6 +322,17 @@ def question_context(lines, ident):
     out += [f"- {row[0]}: {plain(row[1])} (blocked by: {plain(row[4])})" for row in table_rows(lines, "gaps")] \
         or ["None."]
     return out + ["", "## Sources already read", "", *sources_read(lines)]
+
+
+def design_row_lines(lines, cited):
+    """One line for each row of the system design in `cited`: its ID and its
+    cells, each named by its column."""
+    out = []
+    for name in DESIGN_ORDER:
+        header = TABLES[name][1]
+        out += [f"- {row[0]}: " + "; ".join(f"{column}: {plain(cell)}" for column, cell in zip(header[1:], row[1:]))
+                for row in table_rows(lines, name) if row[0] in cited]
+    return out
 
 
 def sources_read(lines):
@@ -400,13 +439,15 @@ def main(argv=None):
     begin = commands.add_parser("start", help="create the investigation's folder and ledger, and empty its working folder",
                                 description="Create the investigation's folder, <Topic>_<YY-MM-DD>, replacing one of "
                                 "the same topic and day, and its ledger. Prints one line of JSON: the investigation's "
-                                "name, its folder, whether it is temporary, the sources it uses, the approved "
-                                "examples, and the command to run next.")
+                                "name, its folder, whether it is temporary, the sources it uses and the command to "
+                                "run next.")
     begin.add_argument("--topic", required=True,
                        help="capitalised words or acronyms joined by hyphens, such as Payments-Retry-Service")
-    take = commands.add_parser("next", help="print the next task, or up to --max research questions",
-                               description="Print the next task: what to do, what the ledger holds for it and the "
-                               "command that submits it.")
+    take = commands.add_parser("next", help="write the next task, or up to --max research questions, and print "
+                               "where each is",
+                               description="Write the next task to a file in its own folder (what to do, what the "
+                               "ledger holds for it and the command that submits it), and print a line for it: "
+                               "'Task <name>: <path>'. With --max, one line for each research question handed out.")
     take.add_argument("--investigation", required=True,
                       help="<Topic>_<YY-MM-DD>, as start printed it")
     take.add_argument("--max", type=int, default=1,

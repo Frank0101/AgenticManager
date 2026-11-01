@@ -63,13 +63,14 @@ FINDINGS = table(FINDING_HEADER, [
     [anchored("F02"), "The publish job is planned.", "S02", "None"]])
 # The fixture's components.
 COMPONENTS = table(COMPONENT_HEADER, [
-    [ident, name, "Role", "—", status, "G01" if status.startswith("⬜") else "F02", "Unchanged",
-     "None"]
-    for ident, name, status in (("C01", "Search API (service)", "🟨 Planned"),
-                                ("C02", "Search index (store)", "⬜ Unverified"),
-                                ("C03", "Publish job (job)",
-                                 "🟨 Planned"),
-                                ("C04", "Embedding API (external product)", "⬜ Unverified"))])
+    [ident, name, kind, "None", "Role", "—", state, "Unchanged",
+     "G01" if state.startswith("⬜") else "F02"]
+    for ident, name, kind, state in (("C01", "Search API", "service", "🟨 Planned"),
+                                     ("C02", "Search index",
+                                      "store", "⬜ Unverified"),
+                                     ("C03", "Publish job",
+                                      "job", "🟨 Planned"),
+                                     ("C04", "Embedding API", "external product", "⬜ Unverified"))])
 # The sources the report's references come from: code read in full, a ticket
 # replaced by a newer one, so superseded, and the newer one read in part, so
 # limited. None records a date, so the evidence date is the investigation's.

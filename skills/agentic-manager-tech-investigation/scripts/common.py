@@ -1,7 +1,7 @@
 """What the skill's scripts share: the investigation's fixed file names, the
 report's fixed structure and the ledger's, the values the ledger's cells
-accept, the rules for a row that ledger.py applies on write and check_report.py
-at handover, the one reader of the ledger's tables, the anchors every recorded
+accept, its tables, the rules for a row that the scripts apply on write and
+check_report.py at handover, the one reader of the ledger's tables, the anchors every recorded
 ID carries and the links to them, the linking of tickets and pull requests,
 and how to find an investigation's folder. Scripts import the shared library's
 names from here, so they don't depend on the order of their imports.
@@ -21,16 +21,13 @@ from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
 from agentic_manager.jira import BROWSE_URL as TICKET_URL, GROUP as JIRA_GROUP, NAME as JIRA_API, PROJECT_KEY, JiraClient, JiraError, browse_url, plain_text, project_of  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
-from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, KEPT_EXAMPLES, description, read_description, clear_folder, day_folder, folder_day, output_folder  # noqa: E402,F401
+from agentic_manager.output_folder import DAY_FOLDER, clear_folder, day_folder, folder_day, output_folder  # noqa: E402,F401
 from agentic_manager.text import DEFINITION, DISPLAY_DATE, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, free_name, headings, inline_links, link_definitions, link_text, links, local_link, markdown, reference_key, same_document, slug, word_count  # noqa: E402,F401
 from agentic_manager.ticket_pulls import pulls_by_ticket  # noqa: E402,F401
 
 FOLDER_NAME = "tech-investigations"
 # What a ticket shows in place of its pull requests when gh can't be used.
 PULLS_UNREAD = f"{GH_UNAVAILABLE}, so pull requests weren't read"
-# An example's own description, beside its copied documents: what makes it
-# good, as the agent wrote it when the user approved it.
-WHY_GOOD = "Why it's good"
 LEDGER = "ledger.md"
 CONTENT = "content.json"
 REPORT_SUFFIX = "_Report.md"
@@ -71,20 +68,21 @@ LEDGER_SECTIONS = [QUEUE, SCOPE, REVIEWS, SOURCES, FINDINGS,
 QUEUE_SUBSECTIONS = ["Ready", "In progress", "Completed", "Blocked"]
 QUEUE_TABLES = ["queue-ready", "queue-in-progress",
                 "queue-completed", "queue-blocked"]
-# The system design: its components, then what joins and groups them, one
-# table each under its own heading, so the design is recorded as rows, never
-# pieced together from prose. DESIGN_TABLES are those beside the components.
-DESIGN_SUBSECTIONS = ["Components", "Boundaries",
-                      "Connections", "Identities", "Flows"]
-DESIGN_TABLES = ["boundaries", "connections", "identities", "flows"]
+# The system design, one table each under its own heading, so the design is
+# recorded as rows, never pieced together from prose. They come in the order
+# a diagram is read, each citing only those above it: where things live, what
+# runs there, the credentials, what calls what with them, and the walks across
+# those calls; so it is also the order they are written in.
+DESIGN_ORDER = ["boundaries", "components",
+                "identities", "connections", "flows"]
+DESIGN_SUBSECTIONS = [table.capitalize() for table in DESIGN_ORDER]
 # The heading each of the ledger's tables sits under, by the name ledger.py
 # gives it: one place, since a heading typed differently elsewhere would
 # leave a check reading an empty table.
 TABLE_HEADINGS = {**{table: f"### {title}" for table, title in zip(QUEUE_TABLES, QUEUE_SUBSECTIONS)},
                   "scope": f"## {SCOPE}", "reviews": f"## {REVIEWS}", "sources": f"## {SOURCES}", "findings": f"## {FINDINGS}",
                   "decisions": f"## {DECISIONS}", "gaps": f"## {GAPS}",
-                  **{table: f"### {title}" for table, title in zip(["components", *DESIGN_TABLES],
-                                                                   DESIGN_SUBSECTIONS)}}
+                  **{table: f"### {title}" for table, title in zip(DESIGN_ORDER, DESIGN_SUBSECTIONS)}}
 # A question, what raised it, the questions it waits for, and the findings that answer it.
 QUEUE_HEADER = ["ID", "Trigger", "Question", "Depends on", "Findings"]
 # Whether the investigation covers something research has reached is the
@@ -128,18 +126,16 @@ DOC_FILE = re.compile(
     r"/(?:readme[^/]*|[^/]+\.(?:md|markdown|rst|adoc|txt))$", re.I)
 FINDING_HEADER = ["ID", "Claim", "Sources", "Limits"]
 DECISION_HEADER = ["ID", "Decision", "Established position or unresolved choice",
-                   "Candidates, constraints", "Source authority and status",
-                   "Owner and next check"]
+                   "Candidates, constraints", "Owner and next check", "Evidence"]
 # What a gap can be blocked by. Anything else is work the agent can do, so it is
 # a ready question in the queue and not a gap; whether the investigation covers
 # something is a scope question in the queue, so no gap waits on the user.
 BLOCKERS = ("No access", "Waiting on decision")
-GAP_HEADER = ["ID", "Gap", "What is established and what is missing",
-              "What would close it", "Blocked by", "Source authority and status",
-              "Owner and next check"]
-COMPONENT_HEADER = ["ID", "Name and type", "Responsibility", "Repository, paths, revision",
-                    "Status", "Evidence", "In the target", "Boundary"]
-# A component's type, in brackets after its name: a fixed list, so every
+GAP_HEADER = ["ID", "Gap", "What is missing",
+              "What would close it", "Blocked by", "Owner and next check", "Evidence"]
+COMPONENT_HEADER = ["ID", "Name", "Kind", "Boundary", "Responsibility", "Repository, paths, revision",
+                    "State", "In the target", "Evidence"]
+# What a component is, the kind its Kind starts with: a fixed list, so every
 # investigation names the same kinds alike and a diagram can draw each its way.
 COMPONENT_TYPES = ("service", "application", "job", "script", "library", "store", "queue",
                    "external product", "person", "role", "unknown")
@@ -151,7 +147,7 @@ CONNECTION_KINDS = ("HTTP", "queue", "file", "SDK", "in-process",
 WAITS = ("yes", "no", "unknown")
 # What an identity is, the kind its Kind starts with, for the same reasons.
 IDENTITY_KINDS = ("service account", "cloud role", "person's access", "user session",
-                  "app installation", "API key", "agent principal", "unknown")
+                  "app installation", "API key", "secret", "agent principal", "unknown")
 # What a boundary groups by, the kind its Kind starts with, for the same reasons.
 BOUNDARY_KINDS = ("network", "cluster", "cloud account", "environment", "trust zone", "team",
                   "workstation", "external service")
@@ -159,23 +155,37 @@ BOUNDARY_KINDS = ("network", "cluster", "cloud account", "environment", "trust z
 # the tracker, a vision in the documentation. 🟩 and 🟦 have their own check,
 # unread_components, and ⬜ rests on what explains it.
 STATUS_GROUPS = {"🟨": "workflow", "🟪": "documentation"}
-BOUNDARY_HEADER = ["ID", "Name", "Kind", "Evidence"]
-CONNECTION_HEADER = ["ID", "From", "To", "How", "Data",
-                     "Waits for reply", "Identity", "State", "Evidence"]
-IDENTITY_HEADER = ["ID", "Name", "Kind",
-                   "What it can reach", "Evidence", "State"]
+BOUNDARY_HEADER = ["ID", "Name", "Kind", "Within", "Evidence"]
+CONNECTION_HEADER = ["ID", "From", "To", "How", "Data", "Waits for reply", "Identity", "State",
+                     "In the target", "Evidence"]
+IDENTITY_HEADER = ["ID", "Name", "Kind", "What it can reach", "State", "In the target",
+                   "Evidence"]
 # An identity's State is the script's: the most advanced state of the
 # connections that use it, since an identity is live once a live connection
 # uses it; the agent never writes it, so it can't disagree with them. A flow's
-# State is the least advanced of its connections', since it works only once
-# every step does.
+# State is the least advanced of its verified connections', since it works
+# only once every step does, naming any step left unverified.
 UNUSED = "None: no connection uses it"
-FLOW_HEADER = ["ID", "Entry point",
-               "Connections in order", "Evidence", "State"]
-# A component's implementation status: the Status cell starts with one of these.
+FLOW_HEADER = ["ID", "Entry point", "Connections in order", "State", "In the target",
+               "Evidence"]
+# table name: (heading it sits under, default header, ID letter)
+TABLES = {
+    **{table: (TABLE_HEADINGS[table], QUEUE_HEADER, "Q") for table in QUEUE_TABLES},
+    "scope": (TABLE_HEADINGS["scope"], SCOPE_HEADER, "U"),
+    "sources": (TABLE_HEADINGS["sources"], SOURCE_HEADER, "S"),
+    "findings": (TABLE_HEADINGS["findings"], FINDING_HEADER, "F"),
+    "decisions": (TABLE_HEADINGS["decisions"], DECISION_HEADER, "D"),
+    "gaps": (TABLE_HEADINGS["gaps"], GAP_HEADER, "G"),
+    "components": (TABLE_HEADINGS["components"], COMPONENT_HEADER, "C"),
+    "boundaries": (TABLE_HEADINGS["boundaries"], BOUNDARY_HEADER, "B"),
+    "connections": (TABLE_HEADINGS["connections"], CONNECTION_HEADER, "E"),
+    "identities": (TABLE_HEADINGS["identities"], IDENTITY_HEADER, "I"),
+    "flows": (TABLE_HEADINGS["flows"], FLOW_HEADER, "P"),
+}
+# A component's or a connection's state: its State cell starts with one of these.
 # Code is the source of truth, so the two that claim code exists need the code
 # read (READ_COVERAGE above); the others say what the evidence can't establish.
-STATUSES = [("🟩 Implemented", "merged to the main branch"),
+STATUSES = [("🟩 Live", "merged to the main branch, or an external product, person or role that merged code uses"),
             ("🟦 In development",
              "code written but not merged: an open pull request or a branch"),
             ("🟨 Planned", "in the tracker, with no code"),
@@ -504,6 +514,15 @@ def gap_problem(row):
     return None
 
 
+def cited_evidence_problem(row_id, evidence):
+    """Why a gap's or a decision's Evidence doesn't trace it to the ledger,
+    or None: it names the findings or sources it rests on, so what is
+    established and how authoritative it is come from them."""
+    if ids(evidence, "FS"):
+        return None
+    return f"{row_id}: Evidence names the findings or sources it rests on (F01, S01)"
+
+
 def source_reference_missing(row):
     """Whether a source row's Reference holds neither a link nor a query."""
     return not LINK.search(row[2]) and not QUERY.search(row[2])
@@ -542,11 +561,12 @@ def anchor_ids(text):
     return set(re.findall(rf'<a id="({ANCHOR_ID})"></a>', text))
 
 
-def records(body, table, letter, width):
+def records(body, table):
     """The rows of the ledger table `table` in `body` that are records, IDs
-    of `letter` with all `width` cells, leaving out placeholder rows."""
-    return [row for row in ledger_rows(body, TABLE_HEADINGS[table])
-            if re.fullmatch(rf"{letter}\d+", row[0]) and len(row) == width]
+    of its letter with all its cells, leaving out placeholder rows."""
+    heading, header, letter = TABLES[table]
+    return [row for row in ledger_rows(body, heading)
+            if re.fullmatch(rf"{letter}\d+", row[0]) and len(row) == len(header)]
 
 
 def ledger_rows(text, heading):
@@ -696,37 +716,44 @@ def design_problem(name, row):
     """Why a components or system design row breaks a rule of the design, or
     None: each row rests on findings, a gap, an open decision or a scope
     decision, an unverified one on the gap or the scope decision that explains
-    it; a component names its type, how the target changes it and its boundary,
-    or None; a boundary and an identity start their Kind with one of their
-    kinds; a connection joins two components with a state, an identity, a How
+    it; a component, a connection, an identity and a flow say how the target
+    changes them; a component, a boundary and an identity start their Kind
+    with one of their kinds; a component and a boundary name the boundary they
+    sit in, or None; an identity names the components it can reach; a connection joins two components with a state, an identity, a How
     of its kinds and whether it waits; and a flow walks connections."""
-    header = {"components": COMPONENT_HEADER, "boundaries": BOUNDARY_HEADER, "connections": CONNECTION_HEADER,
-              "identities": IDENTITY_HEADER, "flows": FLOW_HEADER}[name]
-    cell = dict(zip(header, row))
+    cell = dict(zip(TABLES[name][1], row))
     evidence = cell["Evidence"]
     if not ids(evidence, "FGUD"):
         return (f"{row[0]}: Evidence names the findings it rests on (F01), or the gap (G01), open decision (D01) "
                 "or scope decision (U01) that explains it")
     # An identity's or a flow's State is the script's, from its connections.
-    state = cell.get("Status") or (cell.get(
-        "State") if name == "connections" else None)
+    state = cell.get("State") if name in (
+        "components", "connections") else None
+    if state is not None and (wrong := status_problem(row[0], state)):
+        return wrong
     if state and state.startswith("⬜") and not ids(evidence, "GU"):
         return (f"{row[0]}: an unverified row names the gap (G01), or the scope decision (U01), that explains it "
                 "in Evidence")
+    target = cell.get("In the target")
+    if target is not None and target.strip() != "Unchanged" and not ids(target, "FGDU"):
+        return (f"{row[0]}: In the target says how the target changes it, citing the evidence (F01, D01), "
+                "or Unchanged")
     if name == "components":
-        kind = re.search(r"\(([^()]*)\)\s*$", cell["Name and type"])
-        if not kind or kind[1].strip() not in COMPONENT_TYPES:
-            return (f"{row[0]}: Name and type ends with its type in brackets, one of: "
-                    + ", ".join(COMPONENT_TYPES))
-        if cell["In the target"].strip() != "Unchanged" and not ids(cell["In the target"], "FGDU"):
-            return (f"{row[0]}: In the target says how the target changes it, citing the evidence (F01, D01), "
-                    "or Unchanged")
+        if not starts_with_one(cell["Kind"], COMPONENT_TYPES):
+            return f"{row[0]}: Kind starts with one of: {', '.join(COMPONENT_TYPES)}, then any detail"
         if not (ids(cell["Boundary"], "B") or cell["Boundary"].strip() == "None"):
             return f"{row[0]}: Boundary names the boundary it sits in (B01), or None"
+    if name == "boundaries":
+        within = ids(cell["Within"], "B")
+        if not (within or cell["Within"].strip() == "None") or row[0] in within:
+            return f"{row[0]}: Within names the boundary it sits in (B01), another than itself, or None"
+        if not starts_with_one(cell["Kind"], BOUNDARY_KINDS):
+            return f"{row[0]}: Kind starts with one of: {', '.join(BOUNDARY_KINDS)}, then any detail"
     if name == "identities" and not starts_with_one(cell["Kind"], IDENTITY_KINDS):
         return f"{row[0]}: Kind starts with one of: {', '.join(IDENTITY_KINDS)}, then any detail"
-    if name == "boundaries" and not starts_with_one(cell["Kind"], BOUNDARY_KINDS):
-        return f"{row[0]}: Kind starts with one of: {', '.join(BOUNDARY_KINDS)}, then any detail"
+    if name == "identities" and not ids(cell["What it can reach"], "C"):
+        return (f"{row[0]}: What it can reach names the components it can reach, such as \"Retrieve on C03\", "
+                "so the diagram can show what each credential touches")
     if name == "connections":
         for end in ("From", "To"):
             if len(ids(cell[end], "C")) != 1:
@@ -737,7 +764,7 @@ def design_problem(name, row):
             return f"{row[0]}: How starts with one of: {', '.join(CONNECTION_KINDS)}, then any detail"
         if not starts_with_one(cell["Waits for reply"], WAITS):
             return f"{row[0]}: Waits for reply starts with {', '.join(WAITS)}, then any detail"
-        return status_problem(row[0], state, "State")
+        return None
     if name == "flows" and not ids(cell["Connections in order"], "E"):
         return f"{row[0]}: Connections in order names the connections it uses (E01, E02)"
     return None
@@ -748,12 +775,12 @@ def starts_with_one(text, words):
     return any(re.match(rf"{re.escape(word)}(?![\w-])", text.strip(), re.I) for word in words)
 
 
-def status_problem(row_id, status, column="Status"):
-    """Why a component's Status cell, or a connection's State, isn't one of
+def status_problem(row_id, status):
+    """Why a component's or a connection's State isn't one of
     STATUSES, or None."""
     if status_rank(status) is not None:
         return None
-    return (f"{row_id}: {column} starts with one of: "
+    return (f"{row_id}: State starts with one of: "
             + "; ".join(f"{label} ({meaning})" for label, meaning in STATUSES))
 
 
@@ -763,18 +790,16 @@ def status_rank(text):
 
 
 def row_evidence_problem(name, row, findings, sources):
-    """Why a component's Status or a connection's State claims what its
+    """Why a component's or a connection's State claims what its
     evidence doesn't reach, or None for any other row. `findings` and
     `sources` are {ID: row}."""
     if name not in ("components", "connections"):
         return None
-    header = COMPONENT_HEADER if name == "components" else CONNECTION_HEADER
-    column = "Status" if name == "components" else "State"
-    cell = dict(zip(header, row))
-    return evidence_problem(row[0], cell[column], cell["Evidence"], findings, sources, column)
+    cell = dict(zip(TABLES[name][1], row))
+    return evidence_problem(row[0], cell["State"], cell["Evidence"], findings, sources)
 
 
-def evidence_problem(row_id, status, evidence, findings, sources, column="Status"):
+def evidence_problem(row_id, status, evidence, findings, sources):
     """Why a design row's status claims what its evidence doesn't reach, or
     None: a 🟨 Planned row needs a finding read in the tracker, a 🟪 Vision row
     one read in the documentation, a conclusion followed to the findings it
@@ -783,7 +808,7 @@ def evidence_problem(row_id, status, evidence, findings, sources, column="Status
                  if status.strip().startswith(mark)), None)
     if group is None or group in groups_reached(ids(evidence, "F"), findings, sources):
         return None
-    return (f"{row_id}: {column} {status.strip().split(':')[0]} needs a finding read in the {GROUPS[group]} "
+    return (f"{row_id}: State {status.strip().split(':')[0]} needs a finding read in the {GROUPS[group]} "
             "among its evidence")
 
 
@@ -817,13 +842,23 @@ def identity_states(connections):
 
 def flow_states(flows, connections):
     """{flow ID: its State} from the flow rows and the connections they walk:
-    the least advanced of their states."""
+    the least advanced state of those verified, then the unverified ones in
+    the flow's order, so a step left unverified, such as one from a mention-only topic,
+    doesn't hide how far along the rest is; ⬜ Unverified when none is."""
     ranks = connection_ranks(connections)
+    unverified = len(STATUSES) - 1
     found = {}
     for row in flows:
-        walked = [ranks[e] for e in ids(row[2], "E") if e in ranks]
-        if walked:
-            found[row[0]] = STATUSES[max(walked)][0]
+        walked = [e for e in dict.fromkeys(ids(row[2], "E")) if e in ranks]
+        verified = [ranks[e] for e in walked if ranks[e] != unverified]
+        unknown = [e for e in walked if ranks[e] == unverified]
+        if not walked:
+            continue
+        if not verified:
+            found[row[0]] = STATUSES[unverified][0]
+            continue
+        found[row[0]] = STATUSES[max(verified)][0] + \
+            (f", unverified: {', '.join(unknown)}" if unknown else "")
     return found
 
 
@@ -853,21 +888,23 @@ def flow_order_problem(row, connections):
 
 
 def unread_components(components, sources, definitions):
-    """{component ID: the paths it links} of the components whose Status
+    """{component ID: the paths it links} of the components whose State
     claims code (🟩, 🟦) without a code source read at READ_COVERAGE of one of
     those paths, of a file or folder under it, or of a folder above it, which
-    covers the files in it; a README or other DOC_FILE isn't code. `components` are rows (ID, ..., repository cell
-    at 3, status at 4); `sources` the sources table's rows."""
+    covers the files in it; a README or other DOC_FILE isn't code.
+    `components` and `sources` are the tables' rows."""
     def urls(cell):
         return [url for _, _, _, url in links(cell, definitions) if url]
     read = [same_document(url) for row in sources
             if group_of(row) == "source_control" and read_enough(row)
             for url in urls(row[2]) if not DOC_FILE.search(same_document(url))]
     found = {}
+    state, code = COMPONENT_HEADER.index("State"), COMPONENT_HEADER.index(
+        "Repository, paths, revision")
     for row in components:
-        if not row[4].startswith(CODE_STATUSES):
+        if not row[state].startswith(CODE_STATUSES):
             continue
-        paths = [same_document(url) for url in urls(row[3])]
+        paths = [same_document(url) for url in urls(row[code])]
         if not any(r == p or r.startswith(p + "/") or p.startswith(r + "/") for p in paths for r in read):
             found[row[0]] = [_shown_path(p) for p in paths]
     return found
@@ -898,4 +935,4 @@ def unread_message(found):
             f"{' or '.join(READ_COVERAGE)}, in a code source of the path it links, of a file under it "
             "or of a folder above it: " + "; ".join(f"{ident} links {', '.join(paths) or 'no code'}"
                                                     for ident, paths in found.items())
-            + ". Read it and record it as a source, then set the status; until then it is ⬜ Unverified")
+            + ". Read it and record it as a source, then set the state; until then it is ⬜ Unverified")

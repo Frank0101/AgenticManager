@@ -1,1 +1,1 @@
-When sources disagree about a fact, such as which queue a service uses, code wins over the tracker, and the tracker wins over the documentation; a ticket marked Done with no merged code is still only planned.
+When sources disagree about a fact, such as which queue a service uses, code wins over the tracker, and the tracker wins over the documentation; a ticket marked Done with no merged code is still only planned, unless its work is knowledge, not code, as a spike's is: its decision record or write-up backs its Done.

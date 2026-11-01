@@ -182,19 +182,22 @@ class CheckReportTest(unittest.TestCase):
                 self.assertIn("cannot read research ledger", " ".join(errors))
 
     def test_handover_gaps_need_a_valid_blocker(self):
-        # The gap rule applies at handover; its own cases are in
-        # test_common.py.
+        # The gap rules apply at handover: a blocker, and evidence that traces
+        # it; the blocker's own cases are in test_common.py.
         ledger = self.folder / "ledger.md"
-        gap = "| G01 | Gap | Missing | Read it | {} | Code | Owner |\n"
-        cases = [("a decision", "Waiting on decision D01", None),
-                 ("nothing blocks it", "Not done yet", "Blocked by")]
-        for name, blocker, expected in cases:
+        gap = "| G01 | Gap | Missing | Read it | {} | Owner | {} |\n"
+        cases = [("a decision", "Waiting on decision D01", "F01", None),
+                 ("nothing blocks it", "Not done yet",
+                  "F01", "Blocked by"),
+                 ("evidence that traces nothing", "Waiting on decision D01", "Code",
+                  "G01: Evidence names the findings or sources")]
+        for name, blocker, evidence, expected in cases:
             with self.subTest(name):
                 text = LEDGER.replace(
                     "## Evidence gaps\n\n", "## Evidence gaps\n\n" +
-                    gap.format(blocker), 1
+                    gap.format(blocker, evidence), 1
                 ).replace("## Open decisions\n\nNone yet.",
-                          "## Open decisions\n\n| D01 | Choice | Open | A, B | Doc | Owner |")
+                          "## Open decisions\n\n| D01 | Choice | Open | A, B | Owner | F01 |")
                 ledger.write_text(text, encoding="utf-8")
                 result = check_report.check_report(self.report, handover=True)
                 self.assertEqual(result["ok"], expected is None, result)
@@ -360,9 +363,9 @@ class CheckReportTest(unittest.TestCase):
         # allowed one, one case each, as test_common.py has the rules' own; one
         # claiming code rests on a code source read under its path.
         tree = "https://github.com/acme/app/tree/abc/services/search"
-        component = ("### Components\n\n| ID | Name | Responsibility | Repository | Status |"
-                     " Evidence | Next | Boundary |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n"
-                     "| C01 | search (service) | Serves | [search][search] | {} | G01 | Unchanged | None |\n")
+        component = ("### Components\n\n| ID | Name | Kind | Boundary | Responsibility | Repository | State |"
+                     " In the target | Evidence |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+                     "| C01 | search | service | None | Serves | [search][search] | {} | Unchanged | G01 |\n")
 
         def read(path, coverage, kind="code"):
             return [["S01", kind, f"[routes](https://github.com/acme/app/blob/abc/services/search/{path})", "abc",
@@ -375,10 +378,10 @@ class CheckReportTest(unittest.TestCase):
             ("a question closed on its finding",
              "F01", "⬜ Unverified", listing, None),
             ("a status not allowed", "F01", "Done",
-             listing, "C01: Status starts with"),
-            ("code claimed from a listing", "F01", "🟩 Implemented",
+             listing, "C01: State starts with"),
+            ("code claimed from a listing", "F01", "🟩 Live",
              listing, "C01 links acme/app: services/search"),
-            ("code claimed from its routes", "F01", "🟩 Implemented",
+            ("code claimed from its routes", "F01", "🟩 Live",
              read("src/routes.py", "partial: lines 1-80"), None),
         ]
         for name, outcome, status, sources, expected in cases:
@@ -398,28 +401,29 @@ class CheckReportTest(unittest.TestCase):
         # derives for identities and flows.
         ledger = investigation_fixture.LEDGER
         connections = ("### Connections\n\n| ID | From | To | How | Data | Waits for reply | Identity | State | "
-                       "Evidence |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
-                       "| E01 | C01 | C03 | HTTP | q | yes | I01 | 🟨 Planned | F02 |\n"
-                       "| E02 | C03 | C01 | HTTP | q | yes | None | 🟨 Planned | F02 |\n")
-        identities = ("### Identities\n\n| ID | Name | Kind | What it can reach | Evidence | State |\n"
-                      "| --- | --- | --- | --- | --- | --- |\n| I01 | token | service account | C03 | F02 | {} |\n")
-        flows = ("### Flows\n\n| ID | Entry point | Connections in order | Evidence | State |\n"
-                 "| --- | --- | --- | --- | --- |\n| P01 | A search | {} | F02 | 🟨 Planned |\n")
+                       "In the target | Evidence |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+                       "| E01 | C01 | C03 | HTTP | q | yes | I01 | 🟨 Planned | Unchanged | F02 |\n"
+                       "| E02 | C03 | C01 | HTTP | q | yes | None | 🟨 Planned | Unchanged | F02 |\n")
+        identities = ("### Identities\n\n| ID | Name | Kind | What it can reach | State | In the target | Evidence |\n"
+                      "| --- | --- | --- | --- | --- | --- | --- |\n"
+                      "| I01 | token | service account | C03 | {} | Unchanged | F02 |\n")
+        flows = ("### Flows\n\n| ID | Entry point | Connections in order | State | In the target | Evidence |\n"
+                 "| --- | --- | --- | --- | --- | --- |\n| P01 | A search | {} | 🟨 Planned | Unchanged | F02 |\n")
 
         def design(state="🟨 Planned", walked="E01, E02", evidence="F02"):
             return (ledger.replace("### Connections\n\nNone yet.", connections)
                     .replace("### Identities\n\nNone yet.", identities.format(state))
                     .replace("### Flows\n\nNone yet.", flows.format(walked))
-                    .replace("| 🟨 Planned | F02 |", f"| 🟨 Planned | {evidence} |", 1))
+                    .replace("| 🟨 Planned | Unchanged | F02 |", f"| 🟨 Planned | Unchanged | {evidence} |", 1))
         # name: (the ledger, a problem it has, or None)
         cases = [("a design that holds", design(), None),
                  ("a planned component resting on code only",
-                  design(evidence="F01"), "C01: Status 🟨 Planned needs a finding read in the tracker"),
+                  design(evidence="F01"), "C01: State 🟨 Planned needs a finding read in the tracker"),
                  ("a flow that comes back", design(walked="E01, E02, E01"), None),
                  ("a flow that jumps", design(walked="E01, E02").replace("| C03 | C01 |", "| C04 | C01 |"),
                   "E02 starts from C04"),
-                 ("an identity's State edited by hand", design(state="🟩 Implemented"),
-                  "I01 has State 🟩 Implemented, its connections give 🟨 Planned")]
+                 ("an identity's State edited by hand", design(state="🟩 Live"),
+                  "I01 has State 🟩 Live, its connections give 🟨 Planned")]
         for name, text, expected in cases:
             with self.subTest(name):
                 problems = [p for p in check_report.closing_problems(text) if p] + \

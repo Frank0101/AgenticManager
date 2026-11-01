@@ -41,9 +41,6 @@ class InitTest(unittest.TestCase):
                           "replaced": False})
         self.assertEqual(os.listdir(path), ["ledger.md"])
         self.assertEqual(check_report.check_ledger(Path(ledger)), ([], []))
-        # The examples folder is there from the first run, empty.
-        self.assertEqual(os.listdir(
-            os.path.join(self.folder, "_examples")), [])
         # Everything of the earlier run goes, the ledger and the generated files alike, but not
         # the folders of other days.
         with open(ledger, "w", encoding="utf-8") as f:
@@ -140,26 +137,6 @@ class InitTest(unittest.TestCase):
         unused = mock.Mock()
         init_investigation.init("Acme-Search", today=TODAY, run=unused)
         unused.assert_not_called()
-
-    def test_examples(self):
-        # Every approved example, newest first by date then copy; other
-        # folders, in _examples or beside it, are not examples.
-        for name in ("Acme-Search_26-09-01", "2026-09-20--acme-search", "Other_26-09-02",
-                     "_examples/Acme-Search_26-09-01", "_examples/Acme-Search_26-09-01--2",
-                     "_examples/Other_26-08-02", "_examples/not-an-example"):
-            os.makedirs(os.path.join(self.folder, name))
-        example = os.path.join(self.folder, "_examples",
-                               "Acme-Search_26-09-01")
-        with open(os.path.join(example, "Acme-Search_Report.md"), "w", encoding="utf-8") as f:
-            f.write("x")
-        with open(os.path.join(example, "description.md"), "w", encoding="utf-8") as f:
-            f.write("# Acme-Search_26-09-01\n\n**Why it's good:** Clear status.\n")
-        result = init_investigation.init("Acme-Search", today=TODAY)
-        self.assertEqual([(os.path.basename(e["folder"]), e["documents"], e["note"]) for e in result["examples"]],
-                         [("Acme-Search_26-09-01--2", [], ""),
-                          ("Acme-Search_26-09-01",
-                           ["Acme-Search_Report.md"], "Clear status."),
-                          ("Other_26-08-02", [], "")])
 
     def test_topic_names(self):
         for topic, ok in (("Payments-Retry-Service", True), ("QA-Tools", True), ("iOS-App", True),

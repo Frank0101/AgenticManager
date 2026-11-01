@@ -7,6 +7,7 @@ it through next and submit, as the agent does.
 
 import copy
 import os
+import re
 import sys
 import unittest
 from datetime import date
@@ -25,8 +26,11 @@ import protocol  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from investigation_fixture import INVESTIGATION, content, temp_output  # noqa: E402
 
-GAP = {"gap": "Billing callers", "established_and_missing": "Callers aren't read", "would_close": "Read access",
-       "blocked_by": "No access (billing repository)", "authority": "Code", "owner_and_next_check": "Billing team"}
+# What a test puts between the tasks handed out together.
+TASKS_APART = "\n\n====\n\n"
+
+GAP = {"gap": "Billing callers", "missing": "Callers aren't read", "would_close": "Read access",
+       "blocked_by": "No access (billing repository)", "evidence": "[[F01]]", "owner_and_next_check": "Billing team"}
 
 
 def answer(claim="A fact.", **outcome):
@@ -43,6 +47,13 @@ class InvestigateTest(unittest.TestCase):
 
     def lines(self):
         return self.path.read_text(encoding="utf-8").split("\n")
+
+    def next_text(self, maximum=1, resume=False):
+        """The text of the tasks next hands out, read from the files it
+        names, or what it says instead."""
+        listing = investigate.next_tasks(INVESTIGATION, maximum, resume)
+        paths = re.findall(r"^Task \S+: (.+)$", listing, re.M)
+        return TASKS_APART.join(Path(path).read_text(encoding="utf-8").rstrip("\n") for path in paths) or listing
 
     def phase(self):
         return investigate.phase_of(INVESTIGATION, self.lines())
@@ -68,12 +79,25 @@ class InvestigateTest(unittest.TestCase):
 
     def test_a_design_question_goes_back_to_research(self):
         # A question the design raises is research's to answer before the
-        # design is built again.
+        # design is built again, and its task shows the row that raised it,
+        # since research never reads the ledger.
         self.research()
         self.submit("design", protocol.example("design"))
         self.assertEqual(self.phase(), "research")
-        self.assertIn("Which identity does the index build job use",
-                      investigate.next_tasks(INVESTIGATION))
+        task = self.next_text()
+        self.assertIn("Which identity does the index build job use", task)
+        self.assertIn("It was raised by this row of the system design:\n- C02: Name: Search index; Kind: store; "
+                      "Boundary: B01; Responsibility: Holds the searchable documents", task)
+
+    def test_next_writes_each_task_to_its_folder(self):
+        # An agent is handed a task by its file, in the folder it keeps its
+        # work in.
+        listing = investigate.next_tasks(INVESTIGATION)
+        path = os.path.join(investigate.work_dir(
+            INVESTIGATION), "Q01", "task.md")
+        self.assertEqual(listing, f"Task research:Q01: {path}")
+        self.assertTrue(Path(path).read_text(
+            encoding="utf-8").startswith("# Task research:Q01"))
 
     def test_the_phase_follows_the_ledger(self):
         # Each step's submission moves the investigation on, in order: the
@@ -96,7 +120,7 @@ class InvestigateTest(unittest.TestCase):
         self.assertEqual(self.phase(), "finished")
 
     def test_next_hands_out_questions_and_marks_them_in_progress(self):
-        text = investigate.next_tasks(INVESTIGATION)
+        text = self.next_text()
         self.assertTrue(text.startswith("# Task research:Q01"), text[:80])
         # The other open questions are shown, so a new one doesn't repeat them.
         self.assertIn("## Other open questions", text)
@@ -107,18 +131,18 @@ class InvestigateTest(unittest.TestCase):
             self.lines(), "queue-in-progress")], ["Q01"])
         # Asked again, it hands out nothing: the one in progress is someone's,
         # and the seeds wait for it. After a break, --resume hands it out again.
-        text = investigate.next_tasks(INVESTIGATION, 3)
+        text = self.next_text(3)
         self.assertTrue(text.startswith(
             "Nothing new to hand out: Q01 in progress."), text)
-        text = investigate.next_tasks(INVESTIGATION, 3, resume=True)
-        self.assertEqual([part.split("\n")[0] for part in text.split(investigate.SEPARATOR)],
+        text = self.next_text(3, resume=True)
+        self.assertEqual([part.split("\n")[0] for part in text.split(TASKS_APART)],
                          ["# Task research:Q01"])
         # A question waiting on an open one isn't handed out.
         self.submit("research:Q01", {**answer(), "sources": protocol.example("research")["sources"],
                                      "findings": [{"key": "[[f1]]", "claim": "x", "sources": "[[s2]]", "limits": "None", "partial": {"[[s2]]": "y"}}],
                                      "new_questions": [{"key": "[[q1]]", "question": "Then?", "raised_by": "[[f1]]",
                                                         "depends_on": "[[Q04]]"}]})
-        text = investigate.next_tasks(INVESTIGATION, 9)
+        text = self.next_text(9)
         self.assertNotIn("# Task research:Q06", text)
         self.assertIn("# Task research:Q04", text)
 
@@ -130,7 +154,7 @@ class InvestigateTest(unittest.TestCase):
         data["new_questions"].append({"key": "[[q3]]", "question": "Should the investigation cover billing?",
                                       "raised_by": "[[f2]]", "depends_on": "None", "for": "user"})
         self.submit("research:Q01", data)
-        text = investigate.next_tasks(INVESTIGATION, 4)
+        text = self.next_text(4)
         self.assertTrue(text.startswith("# Task scope"), text[:80])
         for expected in ("- Q07: Should the investigation cover the payments gateway", "- Q08: Should the "
                          "investigation cover billing? (raised by F02)", "## Decided so far\n\nNone yet.",
@@ -150,11 +174,10 @@ class InvestigateTest(unittest.TestCase):
         completed = {row[0]: row[-1]
                      for row in ledger.table_rows(self.lines(), "queue-completed")}
         self.assertEqual(completed["Q08"], "Decided by the user: [U02](#u02)")
-        self.assertTrue(investigate.next_tasks(
-            INVESTIGATION).startswith("# Task research:Q02"))
+        self.assertTrue(self.next_text().startswith("# Task research:Q02"))
         # The research task shows what the user decided.
         self.assertIn("## The scope the user decided so far\n\n- U01: The payments gateway: mention only",
-                      investigate.next_tasks(INVESTIGATION))
+                      self.next_text())
 
     def test_a_scope_question_waits_for_the_research_it_depends_on(self):
         # Asked with the others only once the question it depends on is
@@ -163,7 +186,7 @@ class InvestigateTest(unittest.TestCase):
         data["new_questions"].append({"key": "[[q3]]", "question": "Should the investigation cover billing?",
                                       "raised_by": "[[f2]]", "depends_on": "[[Q04]]", "for": "user"})
         self.submit("research:Q01", data)
-        text = investigate.next_tasks(INVESTIGATION)
+        text = self.next_text()
         self.assertTrue(text.startswith("# Task scope"), text[:80])
         self.assertIn(
             "- Q07: Should the investigation cover the payments gateway", text)
@@ -178,14 +201,11 @@ class InvestigateTest(unittest.TestCase):
         # on their answers is handed out meanwhile, and they are asked again
         # once nothing else is left.
         self.submit("research:Q01", protocol.example("research"))
-        self.assertTrue(investigate.next_tasks(
-            INVESTIGATION).startswith("# Task scope"))
-        self.assertTrue(investigate.next_tasks(
-            INVESTIGATION).startswith("# Task research:Q02"))
+        self.assertTrue(self.next_text().startswith("# Task scope"))
+        self.assertTrue(self.next_text().startswith("# Task research:Q02"))
         for question in ("Q02", "Q03", "Q04", "Q05", "Q06"):
             self.submit(f"research:{question}", answer())
-        self.assertTrue(investigate.next_tasks(
-            INVESTIGATION).startswith("# Task scope"))
+        self.assertTrue(self.next_text().startswith("# Task scope"))
         self.submit("scope", {"decisions": [{"question": "[[Q07]]", "topic": "The payments gateway",
                                              "answer": "exclude"}]})
         self.assertEqual(self.phase(), "design")
@@ -201,9 +221,9 @@ class InvestigateTest(unittest.TestCase):
             {"key": "[[q1]]", "question": "Which job builds the index?", "raised_by": "[[f1]]", "depends_on": "None"}]})
         self.submit("research:Q02", answer())
         for question in ("Q03", "Q04", "Q05"):
-            investigate.next_tasks(INVESTIGATION)
+            self.next_text()
             self.submit(f"research:{question}", answer())
-        text = investigate.next_tasks(INVESTIGATION)
+        text = self.next_text()
         for expected in ("# Task research:Q06", "Q06: Which job builds the index?", "Raised by: F01",
                          "It builds on these findings:\n- F01: The search API answers /search",
                          "- S01: code; [api server.py](https://github.com/acme/api/blob/1a2b3c4/server.py); "
@@ -227,8 +247,13 @@ class InvestigateTest(unittest.TestCase):
 
     def test_a_question_can_be_answered_out_of_turn_while_open(self):
         # A subagent's answer may come back after another's.
-        investigate.next_tasks(INVESTIGATION, 2)
-        self.submit("research:Q02", {"outcome": {"blocked": {"gap": GAP}}})
+        # It blocks on the repository it couldn't read, recorded as its gap's
+        # evidence.
+        self.next_text(2)
+        unread = {"key": "[[s1]]", "kind": "code", "reference": "[billing](https://example.com/billing)",
+                  "revision": "main", "coverage": {"read": "can't access", "note": "no access"}}
+        self.submit("research:Q02", {"sources": [unread], "outcome": {
+                    "blocked": {"gap": {**GAP, "evidence": "[[s1]]"}}}})
         self.assertEqual([row[0] for row in ledger.table_rows(
             self.lines(), "queue-blocked")], ["Q02"])
 
@@ -236,16 +261,16 @@ class InvestigateTest(unittest.TestCase):
         # A question needing evidence no one can get blocks on the gap the
         # ledger holds, rather than looking again.
         self.submit("research:Q01", protocol.example("research"))
-        investigate.next_tasks(INVESTIGATION, 2)
+        self.next_text(2)
         self.submit("research:Q02", {"outcome": {"blocked": {"gap": GAP}}})
-        text = investigate.next_tasks(INVESTIGATION)
+        text = self.next_text()
         self.assertIn("## Gaps the ledger holds", text)
         self.assertIn(
             "- G01: Billing callers (blocked by: No access (billing repository))", text)
 
     def test_the_design_task_shows_the_scope_decided(self):
         self.research()
-        text = investigate.next_tasks(INVESTIGATION)
+        text = self.next_text()
         self.assertTrue(text.startswith("# Task design"))
         self.assertIn(
             "## The scope the user decided\n\n- U01: The payments gateway: mention only", text)
@@ -255,13 +280,13 @@ class InvestigateTest(unittest.TestCase):
         self.submit("design", self.design())
         for number in (1, 2, 3):
             self.assertNotIn("ask whether to go on",
-                             investigate.next_tasks(INVESTIGATION))
+                             self.next_text())
             self.submit(f"review:{number}", {"raised": [{"key": "[[q1]]", "question": f"Round {number}?",
                                                          "depends_on": "None"}]})
             self.submit(f"research:Q{7 + number:02d}",
                         answer(f"Round {number}."))
             self.submit("design", investigate.design_rows(self.lines()))
-        text = investigate.next_tasks(INVESTIGATION)
+        text = self.next_text()
         self.assertIn("# Task review:4", text)
         self.assertIn("ask whether to go on", text)
         self.assertIn(
@@ -280,13 +305,13 @@ class InvestigateTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "purpose paragraph 1: needs a ledger link"):
             self.submit("write", bad)
         # The write task lists what is wrong with the text submitted.
-        text = investigate.next_tasks(INVESTIGATION)
+        text = self.next_text()
         self.assertIn(
             "## Problems with the last text submitted\n\n- purpose paragraph 1: needs a ledger link", text)
         self.assertIn("## The brief", text)
         result = self.submit("write", content())
         self.assertTrue(result["ok"])
-        text = investigate.next_tasks(INVESTIGATION)
+        text = self.next_text()
         self.assertTrue(text.startswith("# Task finished"))
         self.assertIn(result["path"], text)
         with self.assertRaisesRegex(SystemExit, "finished"):
@@ -316,12 +341,10 @@ class InvestigateTest(unittest.TestCase):
         stray.write_text("x", encoding="utf-8")
         with self.assertRaisesRegex(SystemExit, "notes.md"):
             self.submit("write", content())
-        self.assertIn("notes.md", investigate.next_tasks(
-            INVESTIGATION).split("## The brief")[0])
+        self.assertIn("notes.md", self.next_text().split("## The brief")[0])
         # Once its cause is gone, the report kept passes, with nothing to resubmit.
         stray.unlink()
-        self.assertTrue(investigate.next_tasks(
-            INVESTIGATION).startswith("# Task finished"))
+        self.assertTrue(self.next_text().startswith("# Task finished"))
 
     def test_a_ledger_warning_is_reported_once(self):
         # A design row's link dropped on a later round is left unused, which

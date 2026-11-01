@@ -368,7 +368,8 @@ class TicketTest(unittest.TestCase):
             "  2026-10-04 · sam · queue.py:4: Done.",
             "", "Comments (1):", "  2026-10-01 · bot: Checks passed"]))
         self.assertEqual(tickets.pr_discussion("https://bitbucket.org/acme/api/pull-requests/3", gh({})),
-                         "https://bitbucket.org/acme/api/pull-requests/3: not a GitHub pull request")
+                         "https://bitbucket.org/acme/api/pull-requests/3: not a GitHub pull request's URL, such as "
+                         "https://github.com/acme/api/pull/42")
         # A pull request GitHub has none of is its answer, printed with its
         # URL, whichever of its reads says so; a failure is raised, never
         # printed as the discussion.

@@ -5,22 +5,17 @@ a folder of the same topic and day is deleted first, and nothing an earlier run
 left is read. The script stops before creating anything when a source group has
 no usable source, or when the code comes through gh and gh can't be used. Every
 investigation starts the same way, so the script writes the ledger's skeleton
-with its first questions, the first orienting the rest, and creates _examples,
-so the user sees where approved reports go before saving one.
+with its first questions, the first orienting the rest.
 """
 from datetime import date
 import os
-import re
 import subprocess
 
-from common import (DESIGN, citation, DESIGN_SUBSECTIONS, EXAMPLE_DESCRIPTION, KEPT_EXAMPLES, GITHUB_CLI, GROUPS, JIRA_API, JIRA_GROUP, QUEUE,
-                    WHY_GOOD, read_description, FOLDER_NAME, INVESTIGATION, LEDGER, LEDGER_SECTIONS, QUEUE_HEADER,
+from common import (DESIGN, citation, DESIGN_SUBSECTIONS, GITHUB_CLI, GROUPS, JIRA_API, JIRA_GROUP, QUEUE,
+                    FOLDER_NAME, LEDGER, LEDGER_SECTIONS, QUEUE_HEADER,
                     QUEUE_SUBSECTIONS, TOPIC, GhError, anchored, clear_folder, day_folder,
                     enabled_sources, gh_signed_in, output_folder, table, write_output_file)
 
-# An example's folder: its investigation's, and --<n> for a later copy of the
-# same day's example, as save_example.py names it.
-EXAMPLE = re.compile(rf"{INVESTIGATION.pattern}(?:--(?P<copy>\d+))?")
 # The first questions, as (kind of source, question), X the topic in words. The
 # first orients: what the topic is and what sits next to it, so the user decides
 # the scope on recorded evidence before research goes deep, and every other seed
@@ -58,13 +53,11 @@ def init(topic, today=None, run=subprocess.run):
     relative = day_folder(topic, today or date.today())
     path = os.path.join(folder, relative)
     replaced = clear_folder(path)
-    os.makedirs(os.path.join(folder, KEPT_EXAMPLES), exist_ok=True)
     write_output_file(FOLDER_NAME, f"{relative}/{LEDGER}",
                       ledger_skeleton(topic, first_questions(topic)).encode("utf-8"))
     return {"folder": folder, "temporary": temporary, "investigation": relative,
             "investigation_dir": path, "replaced": replaced,
-            "sources": {GROUPS[group]: names for group, names in sources.items()},
-            "examples": examples(folder)}
+            "sources": {GROUPS[group]: names for group, names in sources.items()}}
 
 
 def usable_sources():
@@ -116,21 +109,3 @@ def ledger_skeleton(topic, ready=()):
         else:
             parts.append("None yet.")
     return "\n\n".join(parts) + "\n"
-
-
-def examples(folder):
-    """[{folder, documents, note}] of the approved examples, newest first: by
-    date, then by copy."""
-    root = os.path.join(folder, KEPT_EXAMPLES)
-    found = []
-    for name in os.listdir(root) if os.path.isdir(root) else []:
-        match = EXAMPLE.fullmatch(name)
-        path = os.path.join(root, name)
-        if match and os.path.isdir(path):
-            documents = sorted(f for f in os.listdir(path)
-                               if f.endswith(".md") and f != EXAMPLE_DESCRIPTION)
-            note = read_description(os.path.join(path, EXAMPLE_DESCRIPTION))[
-                1].get(WHY_GOOD, "")
-            found.append(((match["date"], int(match["copy"] or 1)),
-                          {"folder": path, "documents": documents, "note": note}))
-    return [example for _, example in sorted(found, key=lambda item: item[0], reverse=True)]
