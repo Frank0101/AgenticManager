@@ -18,9 +18,9 @@ import shutil
 import sys
 import tempfile
 
-from common import (CONTENT, DESIGN_ORDER, ids, FOLDER_NAME, LEDGER, REPORT_SUFFIX, TABLE_HEADINGS, SCOPE_QUESTION, investigation_dir,
-                    last_review,
-                    ledger_rows, plain, reviewed, stops_on_failure, strip_anchors, topic_of, write_output_file)
+from common import (CONTENT, DESIGN_ORDER, FOLDER_NAME, LEDGER, REPORT_SUFFIX, SCOPE_QUESTION, TABLE_HEADINGS, ids,
+                    investigation_dir, last_review, ledger_rows, plain, reviewed, stops_on_failure, strip_anchors,
+                    topic_of, write_output_file)
 from init_investigation import init, usable_sources
 from ledger import (TABLES, as_written, basis, brief, design_basis, depends_on, load, move_row, save, scope_decisions,
                     table_rows)
@@ -294,23 +294,29 @@ def scope_context(lines):
 
 def question_context(lines, ident):
     """What the ledger holds for the question `ident`: the question, what
-    raised it, the scope decided so far, the answers it builds on, the other
-    open questions, the gaps no one can close yet, so it blocks on one rather
-    than looking again, and every source already read."""
+    raised it, the scope decided so far, the findings it builds on (those the
+    question, what raised it or its design row names, and the answers to the
+    questions it depends on), the other open questions, the gaps no one can
+    close yet, so it blocks on one rather than looking again, and every source
+    already read."""
     _, row = next((name, row) for name in ("queue-in-progress", "queue-ready") for row in table_rows(lines, name)
                   if row[0] == ident)
     findings = {row[0]: row for row in table_rows(lines, "findings")}
     completed = {row[0]: row for row in table_rows(lines, "queue-completed")}
     out = ["## The question", "", f"{ident}: {plain(row[2])}", f"Raised by: {plain(row[1])}",
            "", "## The scope the user decided so far", "", *(scope_decisions(lines) or ["None yet."])]
-    builds_on = [f for f in ids(strip_anchors(row[1]), "F") if f in findings]
+    raised = design_row_lines(lines, ids(strip_anchors(row[1]), "CBEIP"))
+    # Research never reads the ledger, so every finding the question, what
+    # raised it or its design row names is shown.
+    named = " ".join([strip_anchors(row[1]), strip_anchors(row[2]), *raised])
+    builds_on = [f for f in ids(named, "F") if f in findings]
     for need in depends_on(row):
         builds_on += [f for f in ids(strip_anchors(
             completed.get(need, [""])[-1]), "F") if f in findings]
     if builds_on:
         out += ["", "It builds on these findings:"]
         out += [f"- {f}: {plain(findings[f][1])} ({plain(findings[f][2])})" for f in dict.fromkeys(builds_on)]
-    if raised := design_row_lines(lines, ids(strip_anchors(row[1]), "CBEIP")):
+    if raised:
         out += ["", "It was raised by this row of the system design:", *raised]
     out += ["", "## Other open questions", "",
             "Don't raise one of these again: each is answered in its own task.", ""]

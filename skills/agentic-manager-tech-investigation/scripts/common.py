@@ -149,7 +149,7 @@ WAITS = ("yes", "no", "unknown")
 IDENTITY_KINDS = ("service account", "cloud role", "person's access", "user session",
                   "app installation", "API key", "secret", "agent principal", "unknown")
 # What a boundary groups by, the kind its Kind starts with, for the same reasons.
-BOUNDARY_KINDS = ("network", "cluster", "cloud account", "environment", "trust zone", "team",
+BOUNDARY_KINDS = ("network", "cluster", "namespace", "cloud account", "environment", "trust zone", "team",
                   "workstation", "external service")
 # The kind of source a status other than code rests on: what is planned is in
 # the tracker, a vision in the documentation. 🟩 and 🟦 have their own check,

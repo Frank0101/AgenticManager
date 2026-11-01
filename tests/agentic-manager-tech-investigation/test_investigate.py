@@ -88,6 +88,9 @@ class InvestigateTest(unittest.TestCase):
         self.assertIn("Which identity does the index build job use", task)
         self.assertIn("It was raised by this row of the system design:\n- C02: Name: Search index; Kind: store; "
                       "Boundary: B01; Responsibility: Holds the searchable documents", task)
+        # A finding the row names is shown too: F02, which In the target cites.
+        self.assertIn(
+            "It builds on these findings:\n- F02: A proposed decision record moves search to a managed index.", task)
 
     def test_next_writes_each_task_to_its_folder(self):
         # An agent is handed a task by its file, in the folder it keeps its

@@ -3,9 +3,9 @@
 The agent never writes an ID, a table or a question's state: a submission cites
 every record in double brackets, a new one by a key ([[f1]]) and one the ledger
 holds by its ID ([[F07]]), and the script assigns the IDs, moves the queue and
-keeps the ledger in step. A
-submission is written whole or not at all: it is applied to a copy, every
-problem is collected by field, and the ledger changes only when there is none.
+keeps the ledger in step. A submission is written whole or not at all: it is
+applied to a copy, every problem is collected by field, and the ledger changes
+only when there is none.
 """
 import re
 
@@ -647,8 +647,12 @@ class Problems:
         if bare := [word for word in BARE_REFERENCE.findall(KEY_REFERENCE.sub("", value))
                     if (word in keys and not RECORD_ID.fullmatch(word))
                     or (citing and (word in keys or word in self.held))]:
-            self.add(
-                f"{where}: write each reference in double brackets, such as [[{bare[0]}]]")
+            word = bare[0]
+            # A key and a word can look alike, such as s3 and Amazon S3: say
+            # which word, and how to keep it a word.
+            self.add(f"{where}: {word} is written bare: write a reference in double brackets, [[{word}]]"
+                     + (f"; if it is a word, such as a product's name, write it in capitals, {word.upper()}"
+                        if word != word.upper() else ""))
         return KEY_REFERENCE.sub(lambda m: citation(keys.get(m[1], m[1])) if m[1] in keys or RECORD_ID.fullmatch(m[1])
                                  else m[0], value)
 

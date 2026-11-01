@@ -180,14 +180,14 @@ class SubmissionTest(unittest.TestCase):
         DECLARED = [{"key": "[[s1]]", "kind": "code", "reference": "[api](https://example.com/api)",
                      "revision": "abc", "coverage": {"read": "full"}}]
         cases = [("a bare key where a field cites", [finding(sources="[[S01]] and s1")],
-                  "write each reference in double brackets, such as [[s1]]"),
+                  "s1 is written bare: write a reference in double brackets, [[s1]]; if it is a word, such as a product's name, write it in capitals, S1"),
                  ("a bare ID where a field cites", [finding(sources="S01")],
-                  "write each reference in double brackets, such as [[S01]]"),
+                  "S01 is written bare: write a reference in double brackets, [[S01]]"),
                  ("a key declared bare", [
                   finding("f1")], "findings[0].key is [[f1]]"),
                  ("a key written bare in prose", [finding(), finding("[[f2]]", "P95 latency is 2s.",
                                                                      limits="Contradicts f1.")],
-                  "write each reference in double brackets, such as [[f1]]"),
+                  "f1 is written bare: write a reference in double brackets, [[f1]]"),
                  ("a key nothing declares", [
                   finding(limits="See [[f9]].")], "[[f9]] is no key of this submission"),
                  ("an ID the ledger doesn't hold", [finding(sources="[[S09]]")], "cites S09, which the ledger")]
@@ -200,9 +200,10 @@ class SubmissionTest(unittest.TestCase):
         self.submit("research", "Q02", {"findings": [finding(sources="[[S01]], version V2")],
                                         "outcome": {"answered": "[[f1]]"}})
         self.assertIn("| S01, version V2 |", self.plain())
-        # So is a key inside an address or a dotted name, such as an S3 bucket.
+        # So is a key inside an address, a dotted or hyphenated name, or one in
+        # capitals, as the refusal suggests for a word such as S3.
         self.submit("research", "Q03", {"sources": DECLARED, "findings": [
-            finding(claim="Exports land in s1://acme-exports, served by s1.example.com from bucket kb-s1.", sources="[[s1]]")],
+            finding(claim="Exports land in s1://acme-exports, served by s1.example.com from bucket kb-s1 on S1.", sources="[[s1]]")],
             "outcome": {"answered": "[[f1]]"}})
         self.assertIn("Exports land in s1://acme-exports", self.plain())
 
