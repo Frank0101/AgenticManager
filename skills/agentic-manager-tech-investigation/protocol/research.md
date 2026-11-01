@@ -44,7 +44,7 @@ Write every reference to a record in double brackets, in any field: [[F07]] for 
 {{reading}}
 
 - Write down in findings what the system design will need: what runs where, who calls whom, how, with what data and which identity. Don't draw the design itself: a later step builds it from the findings.
-- A new question has the question, raised_by (the finding or source that raised it) and depends_on (None, or the open questions it can't be answered without); a scope question also has "for": "user".
-- A gap blocks with: gap, missing, would_close, blocked_by (starting with {{blockers}}: anything else is work you can do, so do it), owner_and_next_check, evidence (the findings or sources it rests on, such as a source you can't access). A decision blocks with: decision, position (the established position or the unresolved choice), candidates_and_constraints, owner_and_next_check, evidence. To block on one the ledger already holds, cite it: {"blocked": "[[G02]]"}.
+- A new question has the question, raised_by (the finding or source that raised it) and depends_on (None, or the open questions it can't be answered without).
+- A gap blocks with: gap, missing, would_close, blocked_by ({{blockers}}, [[D01]]; anything else is work you can do, so do it), owner_and_next_check, evidence (the findings or sources it rests on, such as a source you can't access). A decision blocks with: decision, position (the established position or the unresolved choice), candidates_and_constraints, owner_and_next_check, evidence. To block on one the ledger already holds, cite it: {"blocked": "[[G02]]"}.
 
 {{links}}

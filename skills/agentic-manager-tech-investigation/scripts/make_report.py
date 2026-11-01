@@ -12,8 +12,8 @@ from datetime import date
 import os
 import re
 
-from common import (CONTENT, folder_day, DISPLAY_DATE, FENCE, backtick_error, TABLE_HEADINGS, inline_links, ledger_rows, FOLDER_NAME, HEADING, group_of, source_mark, HEADINGS, LEDGER, RECORD_DEFINITION,
-                    REPORT_SUFFIX, anchor_tag, autolink, headings, investigation_dir, link_definitions, markdown, read_json, table, topic_of, unlinked_backticks, unresolved_message, word_count, write_output_file)
+from common import (CONTENT, folder_day, DISPLAY_DATE, FENCE, backtick_error, TABLE_HEADINGS, inline_links, ledger_rows, FOLDER_NAME, HEADING, group_of, source_mark, HEADINGS, LEDGER,
+                    REPORT_SUFFIX, anchor_tag, autolink, investigation_dir, link_definitions, markdown, read_json, table, topic_of, unlinked_backticks, unresolved_message, word_count, write_output_file)
 
 # Approximate prose lengths, in words: room to articulate, not quotas. Warn above
 # one and a half times, or far below, under a third, which is a stub.
@@ -113,7 +113,7 @@ class Content:
             anchor = self.ledger.anchor(ident)
             if anchor is None:
                 self.errors.append(
-                    f"{where}: ledger:{ident} matches no heading, table row or bold label in {LEDGER}")
+                    f"{where}: ledger:{ident} matches no table row in {LEDGER}")
                 return match[0]
             return f"]({LEDGER}#{anchor})"
         return LEDGER_LINK.sub(resolve, text)
@@ -135,7 +135,6 @@ class Ledger:
                 self.text = f.read()
         except OSError:
             self.text = ""
-        self.headings = headings(self.text)
         self.prose = markdown(self.text)[0]
         self.definitions = link_definitions(self.prose)
         self.sources = ledger_rows(self.text, TABLE_HEADINGS["sources"])
@@ -145,18 +144,9 @@ class Ledger:
         return inline_links(text, self.definitions)
 
     def anchor(self, ident):
-        if anchor_tag(ident) in self.text:
-            return ident.lower()
-        for _, title, anchor in self.headings:
-            if re.match(rf"{re.escape(ident)}\b", title):
-                return anchor
-        # Defined in a table's first cell or as a bold label: its section.
-        definition = next((m for m in RECORD_DEFINITION.finditer(
-            self.prose) if m[1] == ident), None)
-        if not definition:
-            return None
-        before = headings(self.text[:definition.start()])
-        return before[-1][2] if before else None
+        """The anchor of the ledger row that records `ident`, outside a code
+        fence, or None: ledger.py writes every record as a row carrying it."""
+        return ident.lower() if anchor_tag(ident) in self.prose else None
 
 
 def build(content):

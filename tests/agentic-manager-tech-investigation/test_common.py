@@ -6,7 +6,6 @@ The config's path is patched to the test's own config, in a temporary folder.
 
 import os
 import sys
-import tempfile
 import unittest
 from unittest import mock
 
@@ -16,7 +15,15 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from investigation_fixture import CODE_HOST, INVESTIGATION, temp_output  # noqa: E402
+from investigation_fixture import CODE_HOST, INVESTIGATION, assert_problem, source_row, temp_output  # noqa: E402
+
+# A repository on the tests' code host, and a link to a path in it.
+API = "https://git.example/acme/api/"
+
+
+def api(path):
+    """A link to `path` in API, such as blob/abc/app.py, as a Reference holds it."""
+    return f"[f]({API}{path})"
 
 
 class StructureTest(unittest.TestCase):
@@ -105,17 +112,6 @@ class ReferencesTest(unittest.TestCase):
                 # gh is asked once a run, and not at all without github-cli.
                 self.assertEqual(asked.call_count, 1 if usable else 0)
 
-    def test_id_order_and_cited_sources(self):
-        # IDs sort by number; a source is cited by the findings whose Sources name it.
-        self.assertEqual(sorted(["S10", "S2", "F01", "Q3"], key=common.id_order), [
-                         "F01", "Q3", "S2", "S10"])
-        findings = common.table(common.FINDING_HEADER, [
-            ["F01", "One.", "S01 (lines 1-9); [S02](#s02)",
-             "Read."], ["F02", "Two.", "F01", "Inferred."],
-            ["F03", "Three.", "S02", "Read."]])
-        self.assertEqual(common.cited_sources(f"## Findings\n\n{findings}\n"),
-                         {1: {"F01"}, 2: {"F01", "F03"}})
-
     def test_an_unlinked_pull_request_says_why(self):
         # A bare #123 names no repository; owner/repo#123 needs the code host.
         self.assertEqual(common.unresolved_message(["#4", "acme/api#5", "#4"]),
@@ -128,9 +124,11 @@ class ReferencesTest(unittest.TestCase):
         self.assertEqual(common.unlinked_references(text),
                          ["PROJ-1", "acme/app#3", "#4"])
 
+
+class DesignTest(unittest.TestCase):
     def test_an_identity_has_the_state_of_its_connections(self):
         # The most advanced state of the connections that use it; one no
-        # connection uses has none.
+        # connection uses has none, and a ruled-out connection uses none.
         def connection(ident, identity, state):
             return [ident, "C01", "C02", "HTTP", "q", "yes", identity, state, "Unchanged", "F01"]
         states = common.identity_states([connection("E01", "I01", "🟨 Planned"),
@@ -138,7 +136,11 @@ class ReferencesTest(unittest.TestCase):
                                              "E02", "I01", "🟩 Live"),
                                          connection(
                                              "E03", "I02", "🟪 Vision"),
-                                         connection("E04", "Unknown", "🟩 Live")])
+                                         connection(
+                                             "E04", "Unknown", "🟩 Live"),
+                                         connection(
+                                             "E05", "I02", "✖ Ruled out"),
+                                         connection("E06", "I03", "✖ Ruled out")])
         self.assertEqual(
             states, {"I01": "🟩 Live", "I02": "🟪 Vision"})
 
@@ -167,22 +169,60 @@ class ReferencesTest(unittest.TestCase):
                  ("a jump", "E01, E04", "E04 starts from C05")]
         for name, walked, expected in cases:
             with self.subTest(name):
-                problem = common.flow_order_problem(
-                    ["P01", "x", walked, "", "Unchanged", "F01"], connections)
-                if expected is None:
-                    self.assertIsNone(problem)
-                else:
-                    self.assertIn(expected, problem or "")
+                assert_problem(self, common.flow_order_problem(
+                    ["P01", "x", walked, "", "Unchanged", "F01"], connections), expected)
+
+    def test_nothing_connects_to_or_flows_through_what_is_ruled_out(self):
+        # A part shown not to exist has no live connection, and a flow lists
+        # only the steps that happen.
+        def component(ident, state):
+            return [ident, "n", "service", "None", "r", "None", state, "Unchanged", "F01"]
+
+        def connection(ident, start, end, state):
+            return [ident, start, end, "HTTP", "q", "yes", "None", state, "Unchanged", "F01"]
+        components = {row[0]: row for row in (
+            component("C01", "🟩 Live"), component("C02", "✖ Ruled out"))}
+        # name: (From, To, State, the problem's text, or None)
+        cases = [("between parts that exist", "C01", "C03", "🟩 Live", None),
+                 ("to a ruled-out part", "C01", "C02",
+                  "🟩 Live", "To C02 is ✖ Ruled out"),
+                 ("from a ruled-out part, unverified", "C02", "C01",
+                  "⬜ Unverified", "From C02 is ✖ Ruled out"),
+                 ("to a ruled-out part, ruled out too", "C01", "C02", "✖ Ruled out", None)]
+        for name, start, end, state, expected in cases:
+            with self.subTest(name):
+                assert_problem(self, common.connection_ruled_out_problem(
+                    connection("E09", start, end, state), components), expected)
+        connections = {row[0]: row for row in (connection("E01", "C01", "C03", "🟩 Live"),
+                                               connection("E02", "C03", "C02", "✖ Ruled out"))}
+        # name: (the connections walked, the problem's text, or None)
+        cases = [("only connections that exist", "E01", None),
+                 ("through a ruled-out connection", "E01, E02", "P01: E02 is ✖ Ruled out")]
+        for name, walked, expected in cases:
+            with self.subTest(name):
+                assert_problem(self, common.flow_ruled_out_problem(
+                    ["P01", "x", walked, "", "Unchanged", "F01"], connections), expected)
 
     def test_a_status_rests_on_the_kind_of_source_it_claims(self):
         # A planned row needs a finding read in the tracker, a vision one in
         # the documentation, reached through a conclusion too.
-        sources = {"S01": ["S01", "code"], "S02": ["S02", "tracker: story"],
-                   "S03": ["S03", "documentation: page"]}
+        # A search hit or a listing says where to look, not what a page says,
+        # so only a source read in full or in part counts.
+        sources = {row[0]: row for row in (
+            source_row("S01", "code"), source_row("S02", "tracker: story"),
+            source_row("S03", "documentation: page",
+                       coverage="partial: sections: Decision"),
+            source_row("S04", "tracker: search", coverage="search hit"),
+            source_row("S05", "documentation: space", coverage="listing"))}
         findings = {"F01": ["F01", "c", "S01"], "F02": ["F02", "c", "S02"],
-                    "F03": ["F03", "c", "S03"], "F04": ["F04", "c", "F02"]}
+                    "F03": ["F03", "c", "S03"], "F04": ["F04", "c", "F02"],
+                    "F05": ["F05", "c", "S04"], "F06": ["F06", "c", "S05"]}
         # name: (status, evidence, the problem's text, or None)
         cases = [("planned, from the tracker", "🟨 Planned", "F02", None),
+                 ("planned, from a search hit in the tracker", "🟨 Planned",
+                  "F05", "needs a finding read in the tracker"),
+                 ("a vision, from a listing of the documentation", "🟪 Vision",
+                  "F06", "needs a finding read in the documentation"),
                  ("planned, from code only", "🟨 Planned",
                   "F01", "needs a finding read in the tracker"),
                  ("planned, through a conclusion", "🟨 Planned", "F04", None),
@@ -192,12 +232,113 @@ class ReferencesTest(unittest.TestCase):
                  ("code, checked elsewhere", "🟩 Live", "F02", None)]
         for name, status, evidence, expected in cases:
             with self.subTest(name):
-                problem = common.evidence_problem(
-                    "C01", status, evidence, findings, sources)
-                if expected is None:
-                    self.assertIsNone(problem)
-                else:
-                    self.assertIn(expected, problem or "")
+                assert_problem(self, common.evidence_problem(
+                    "C01", status, evidence, findings, sources), expected)
+
+    def test_a_connection_claiming_code_rests_on_code_read(self):
+        # A call is made by code: a connection marked 🟩 or 🟦 reaches, through
+        # its findings, a code source read in full or in part that isn't a
+        # README or another document; a listing or a search hit says where to
+        # look. Any other state rests on its own kind of source.
+        sources = {row[0]: row for row in (
+            source_row("S01", reference=api("blob/abc/app/server.py")),
+            source_row("S02", reference=api("blob/abc/README.md")),
+            source_row("S03", reference=api(
+                "tree/abc/app"), coverage="listing"),
+            source_row("S04", reference="`gh search code retry`",
+                       coverage="search hit"),
+            source_row("S05", "documentation", api("blob/abc/app/server.py")))}
+        findings = {"F01": ["F01", "c", "S01"], "F02": ["F02", "c", "S02"], "F03": ["F03", "c", "S03"],
+                    "F04": ["F04", "c", "S04"], "F05": ["F05", "c", "F06"], "F06": ["F06", "c", "S01"],
+                    "F07": ["F07", "c", "S05"]}
+        # name: (State, Evidence, the problem's text, or None)
+        cases = [("code read", "🟩 Live", "F01", None),
+                 ("only its README", "🟩 Live", "F02",
+                  "needs a finding read in the code"),
+                 ("only a listing", "🟦 In development",
+                  "F03", "needs a finding read in the code"),
+                 ("only a search hit", "🟩 Live", "F04",
+                  "needs a finding read in the code"),
+                 ("the code as a document", "🟩 Live", "F07",
+                  "needs a finding read in the code"),
+                 ("code through a conclusion", "🟩 Live", "F05", None),
+                 ("planned, with no code", "🟨 Planned", "F02", None),
+                 ("unverified", "⬜ Unverified", "G01", None)]
+        for name, state, evidence, expected in cases:
+            with self.subTest(name):
+                row = ["E01", "C01", "C02", "HTTP", "q", "yes",
+                       "None", state, "Unchanged", evidence]
+                assert_problem(self, common.connection_code_problem(
+                    row, findings, sources, {}), expected)
+
+    def test_a_connection_to_a_mention_only_part_cites_its_decision(self):
+        # C02 is a part of a topic the user decided as mention only, U01.
+        components = {"C01": ["C01", "API", "service", "None", "r", "None", "🟩 Live", "Unchanged", "F01"],
+                      "C02": ["C02", "Gateway", "store", "None", "r", "None", "🟩 Live", "Unchanged", "F01, U01"]}
+        # name: (From, To, Evidence, the problem's text, or None)
+        cases = [("between researched parts", "C01", "C01", "F01", None),
+                 ("from it", "C02", "C01", "F01",
+                  "From C02 is a part of a topic decided as mention only"),
+                 ("to it", "C01", "C02", "F01",
+                  "To C02 is a part of a topic decided as mention only"),
+                 ("to it, citing the decision", "C01", "C02", "F01, U01", None),
+                 ("to a component the design doesn't hold", "C01", "C09", "F01", None)]
+        for name, start, end, evidence, expected in cases:
+            with self.subTest(name):
+                row = ["E01", start, end, "HTTP", "q", "yes",
+                       "None", "🟩 Live", "Unchanged", evidence]
+                assert_problem(self, common.connection_scope_problem(
+                    row, components, {"U01"}), expected)
+
+    def test_code_is_linked_at_the_revision_read(self):
+        # Either revision may be the other's short form, in any case.
+        # (one, other, the same commit)
+        cases = [("abc1234", "abc1234def567", True), ("abc1234def567", "abc1234", True),
+                 ("ABC1234", "abc1234", True), ("abc1234", "abd1234", False), ("", "abc1234", False)]
+        for one, other, same in cases:
+            with self.subTest(one=one, other=other):
+                self.assertEqual(common.same_revision(one, other), same)
+        # A Revision names its commit within any text; one naming none, such
+        # as a page's date, is itself.
+        for revision, expected in (("abc1234", "abc1234"), ("merged as abc1234 on main", "abc1234"),
+                                   ("2026-10-01", "2026-10-01")):
+            with self.subTest(revision=revision):
+                self.assertEqual(common.source_revision(
+                    source_row(revision=revision)), expected)
+        # name: (the source's row, the problem's text, or None)
+        cases = [("the short form of its Revision", source_row(reference=api("blob/abc1234/app.py"),
+                                                               revision="abc1234def567"), None),
+                 ("the full form of its Revision", source_row(reference=api("blob/abc1234def567/app.py"),
+                                                              revision="abc1234"), None),
+                 ("a commit within its Revision's text", source_row(reference=api("blob/abc1234/app.py"),
+                                                                    revision="merged as abc1234"), None),
+                 ("another commit", source_row(reference=api("blob/abc1234/app.py"), revision="def5678"),
+                  "S01: Reference links code at abc1234, Revision is def5678"),
+                 ("a branch", source_row(reference=api("tree/main/app"), revision="abc1234"),
+                  "Reference links code at main"),
+                 ("a branch, as its Revision too", source_row(reference=api("blob/main/x.py"), revision="main"),
+                  "S01: Reference links code at main: link it at the commit it was read at"),
+                 ("a pull request", source_row(reference=api(
+                     "pull/7"), revision="abc1234"), None),
+                 ("a source other than code", source_row(kind="tracker", reference=api("blob/main/app.py"),
+                                                         revision="Done"), None)]
+        for name, row, expected in cases:
+            with self.subTest(name):
+                assert_problem(
+                    self, common.source_pin_problem(row, {}), expected)
+        # A component links its code at a commit, inline or by reference.
+        definitions = {"app": f"{API}tree/main/app",
+                       "pinned": f"{API}tree/abc1234/app"}
+        cases = [("at a commit", "[app][pinned]", None), ("inline at a commit", api("tree/abc1234/app"), None),
+                 ("at a branch", "[app][app]",
+                  "C01: Repository, paths, revision links code at main"),
+                 ("no code", "None", None)]
+        for name, code, expected in cases:
+            with self.subTest(name):
+                component = ["C01", "n", "service", "None",
+                             "r", code, "🟩 Live", "Unchanged", "F01"]
+                assert_problem(self, common.component_pin_problem(
+                    component, definitions), expected)
 
     def test_design_problem(self):
         # Rows are built by column name from one valid row per table, so each
@@ -246,10 +387,27 @@ class ReferencesTest(unittest.TestCase):
              row("components", Evidence=""), "Evidence names"),
             ("an unverified component with no gap", "components",
              row("components", State="⬜ Unverified"), "names the gap"),
+            ("a ruled-out component with the finding showing it", "components",
+             row("components", State="✖ Ruled out: a module inside the API", Evidence="F03"), None),
+            ("a ruled-out component with no finding", "components",
+             row("components", State="✖ Ruled out", Evidence="G01"), "the finding that shows it doesn't exist"),
+            ("a ruled-out connection with no finding", "connections",
+             row("connections", State="✖ Ruled out", Evidence="D01"), "the finding that shows it doesn't exist"),
             ("an unverified component with its gap", "components",
              row("components", State="⬜ Unverified", Evidence="G01"), None),
             ("an unverified component with its scope decision", "components",
              row("components", State="⬜ Unverified", Evidence="U02"), None),
+            # A scope decision explains a row only when it left its topic
+            # mention only: an included one is researched like the rest, and
+            # what the user excluded isn't drawn at all.
+            ("an unverified component citing an included topic", "components",
+             row("components", State="⬜ Unverified", Evidence="F01, U01"), "names the gap"),
+            ("a component resting only on an included topic", "components",
+             row("components", State="🟨 Planned", Evidence="U01"), "Evidence names"),
+            ("a component of an excluded topic", "components",
+             row("components", Evidence="F01, U03"), "U03, which the user excluded"),
+            ("an unverified connection to an excluded topic", "connections",
+             row("connections", State="⬜ Unverified", Evidence="G01, U03"), "U03, which the user excluded"),
             ("a connection", "connections", row("connections"), None),
             ("a connection that goes away", "connections",
              row("connections", In_the_target="Removed once sync runs (F03)"), None),
@@ -297,13 +455,119 @@ class ReferencesTest(unittest.TestCase):
             ("a flow with no connections", "flows",
              row("flows", Connections_in_order="the search"), "Connections in order names"),
         ]
+        scope = {"U01": "include", "U02": "mention only", "U03": "exclude"}
         for name, table, row, expected in cases:
             with self.subTest(name):
-                problem = common.design_problem(table, row)
-                if expected is None:
-                    self.assertIsNone(problem)
-                else:
-                    self.assertIn(expected, problem or "")
+                assert_problem(self, common.design_problem(
+                    table, row, scope), expected)
+
+    def test_a_component_status_is_an_allowed_one(self):
+        # (status, accepted)
+        for status, accepted in (("🟦 In development (on a branch)", True), ("Live", False)):
+            with self.subTest(status):
+                problem = common.status_problem("X01", status)
+                self.assertEqual(problem is None, accepted, problem)
+
+    def test_unread_components(self):
+        # A component claiming code needs a code source, read in full or in
+        # part, that its Evidence's findings cite, of its path, a file under
+        # it, or a folder above it read in full, which covers its files; a
+        # folder or a pull request read file by file covers the files it
+        # names, a pull request's at its Revision. A README or another
+        # document beside the code isn't code. A link that is no path in a
+        # repository, such as a page or a pull request, is covered by a read
+        # of that link.
+        definitions = {"search": f"{API}tree/abc/services/search", "client": f"{API}blob/abc/app/plugins/client.ts",
+                       "page": "https://code.example/acme/tool", "pull": f"{API}pull/7"}
+        unread = {"C01": ["acme/api: services/search"]}
+        client_unread = {"C01": ["acme/api: app/plugins/client.ts"]}
+
+        def source(path, coverage, kind="code", revision="abc"):
+            return source_row(kind=kind, reference=api(path), revision=revision, coverage=coverage)
+        # name: (the component's code, its sources, what is unread, and its
+        # evidence when not F01, which cites the source)
+        cases = [("nothing read", "[search][search]", [], unread),
+                 ("its README in full", "[search][search]",
+                  [source("blob/abc/services/search/README.md", "full")], unread),
+                 ("a design note under it", "[search][search]",
+                  [source("blob/abc/services/search/docs/design.md", "full")], unread),
+                 ("a listing of it", "[search][search]", [
+                  source("tree/abc/services/search", "listing")], unread),
+                 ("a sibling folder", "[search][search]",
+                  [source("blob/abc/services/searcher/main.py", "full")], unread),
+                 ("a document at its path", "[search][search]",
+                  [source("blob/abc/services/search/main.py", "full", "documentation")], unread),
+                 ("a file under it", "[search][search]",
+                  [source("blob/abc/services/search/main.py", "Full")], {}),
+                 ("lines of it", "[search][search]",
+                  [source("blob/abc/services/search/main.py", "partial: lines 1-80")], {}),
+                 ("a file under it, through a conclusion", "[search][search]",
+                  [source("blob/abc/services/search/main.py", "full")], {}, "F02"),
+                 ("a file under it no finding of its evidence cites", "[search][search]",
+                  [source("blob/abc/services/search/main.py", "full")], unread, "F08"),
+                 ("a folder above it", "[client][client]",
+                  [source("tree/abc/app/plugins", "full")], {}),
+                 ("a folder above it, read in part", "[client][client]",
+                  [source("tree/abc/app/plugins", "partial: files: server.ts")], client_unread),
+                 ("a folder above it, naming its file", "[client][client]",
+                  [source("tree/abc/app", "partial: files: plugins/client.ts")], {}),
+                 ("a folder naming a file under it", "[search][search]",
+                  [source("tree/abc/services", "partial: files: search/main.py, other/x.py")], {}),
+                 ("a folder naming only its README", "[search][search]",
+                  [source("tree/abc/services", "partial: files: search/README.md")], unread),
+                 ("a pull request naming its file", "[client][client]",
+                  [source("pull/7", "partial: files: app/plugins/client.ts")], {}),
+                 ("a pull request at another revision", "[client][client]",
+                  [source("pull/7", "partial: files: app/plugins/client.ts", revision="def")], client_unread),
+                 ("a pull request naming other files", "[client][client]",
+                  [source("pull/7", "partial: files: app/main.ts")], client_unread),
+                 ("a page read in full at its link", "[tool][page]",
+                  [source_row(reference="[t](https://code.example/acme/tool)")], {}),
+                 ("a pull request it links, read",
+                  "[pull][pull]", [source("pull/7", "full")], {}),
+                 ("a pull request it links, naming files of it", "[pull][pull]",
+                  [source("pull/7", "partial: files: app/main.ts")], {}),
+                 ("a pull request it links, naming no file of its code", "[pull][pull]",
+                  [source("pull/7", "partial: files: README.md")], {"C01": [f"{API}pull/7"]})]
+        findings = {"F01": ["F01", "c", "S01", "None"], "F02": ["F02", "c", "F01", "None"],
+                    "F08": ["F08", "c", "S99", "None"]}
+        for name, repository, sources, expected, *evidence in cases:
+            with self.subTest(name):
+                component = ["C01", "n", "service", "None", "r",
+                             repository, "🟩 Live", "Unchanged", (evidence or ["F01"])[0]]
+                self.assertEqual(common.unread_components(
+                    [component], findings, {row[0]: row for row in sources}, definitions), expected)
+        # No code is asked of an unverified row, of an external product, or of
+        # a part of a mention-only topic citing that decision (U02 here, not
+        # U01, which included its topic).
+        # name: (kind, state, evidence, unread)
+        cases = [("unverified", "service", "⬜ Unverified", "G01", {}),
+                 ("an external product", "external product",
+                  "🟩 Live", "F01", {}),
+                 ("a mention-only part", "store", "🟩 Live", "F01, U02", {}),
+                 ("a part of an included topic", "store", "🟩 Live", "F01, U01", unread)]
+        for name, kind, state, evidence, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(common.unread_components(
+                    [["C01", "n", kind, "None", "r", "[search][search]",
+                        state, "Unchanged", evidence]], findings, {},
+                    definitions, {"U02"}), expected)
+        # The message names the path to read.
+        self.assertIn("C01 links acme/api: services/search",
+                      common.unread_message(unread))
+
+
+class LedgerRulesTest(unittest.TestCase):
+    def test_id_order_and_cited_sources(self):
+        # IDs sort by number; a source is cited by the findings whose Sources name it.
+        self.assertEqual(sorted(["S10", "S2", "F01", "Q3"], key=common.id_order), [
+                         "F01", "Q3", "S2", "S10"])
+        findings = common.table(common.FINDING_HEADER, [
+            ["F01", "One.", "S01 (lines 1-9); [S02](#s02)",
+             "Read."], ["F02", "Two.", "F01", "Inferred."],
+            ["F03", "Three.", "S02", "Read."]])
+        self.assertEqual(common.cited_sources(f"## Findings\n\n{findings}\n"),
+                         {1: {"F01"}, 2: {"F01", "F03"}})
 
     def test_the_review_ends_on_a_round_raising_nothing_or_the_choice_to_stop(self):
         # (the reviews table's rounds, reviewed)
@@ -314,38 +578,38 @@ class ReferencesTest(unittest.TestCase):
             with self.subTest(rounds=rounds):
                 self.assertEqual(common.reviewed(rounds), done)
 
-    def test_a_component_status_is_an_allowed_one(self):
-        # (status, accepted)
-        for status, accepted in (("🟦 In development (on a branch)", True), ("Live", False)):
-            with self.subTest(status):
-                problem = common.status_problem("X01", status)
-                self.assertEqual(problem is None, accepted, problem)
-
     def test_how_a_question_closes_and_the_scope_boundaries(self):
         # A question closes on the findings that answer it, never on a gap, a
         # decision or a choice not to pursue it; a scope question is closed by
         # the boundary the user decided, and a question the scope leaves out by
-        # the boundary that does.
+        # a boundary that left its topic out, mention only or excluded.
         asked = "Scope boundary: Should the investigation cover billing?"
+        scope = {"U01": "mention only", "U02": "include", "U03": "exclude"}
+
+        def closed(outcome, question="Read the code"):
+            return common.outcome_problem("Q07", outcome, question, scope)
         # (name, problem, accepted)
-        cases = [("answered", common.outcome_problem("Q07", "F01, F02"), True),
-                 ("a gap", common.outcome_problem("Q07", "G03"), False),
-                 ("a decision", common.outcome_problem("Q07", "D01"), False),
-                 ("rejected", common.outcome_problem(
-                     "Q07", "Rejected by the user: not needed"), False),
-                 ("answered in words", common.outcome_problem(
-                     "Q07", "Answered within scope"), False),
-                 ("no answer", common.outcome_problem("Q07", ""), False),
-                 ("decided", common.outcome_problem(
-                     "Q07", "Decided by the user: [U01](#u01)", asked), True),
-                 ("decided with no boundary", common.outcome_problem(
-                     "Q07", "Decided by the user: include", asked), False),
-                 ("answered by findings", common.outcome_problem(
-                     "Q07", "[F01](#f01)", asked), False),
-                 ("left out by a boundary", common.outcome_problem(
-                     "Q09", "Outside the scope decided in [U01](#u01)"), True),
-                 ("left out by a question", common.outcome_problem(
-                     "Q09", "Outside the scope decided in [Q07](#q07)"), False),
+        cases = [("answered", closed("F01, F02"), True),
+                 ("a gap", closed("G03"), False),
+                 ("a decision", closed("D01"), False),
+                 ("rejected", closed("Rejected by the user: not needed"), False),
+                 ("answered in words", closed("Answered within scope"), False),
+                 ("no answer", closed(""), False),
+                 ("decided", closed(
+                     "Decided by the user: [U01](#u01)", asked), True),
+                 ("decided with no boundary", closed(
+                     "Decided by the user: include", asked), False),
+                 ("answered by findings", closed("[F01](#f01)", asked), False),
+                 ("left out by a boundary", closed(
+                     "Outside the scope decided in [U01](#u01)"), True),
+                 ("left out by an exclusion", closed(
+                     "Outside the scope decided in [U03](#u03)"), True),
+                 ("left out by an inclusion", closed(
+                     "Outside the scope decided in [U02](#u02)"), False),
+                 ("left out by a boundary the ledger doesn't hold",
+                  closed("Outside the scope decided in [U09](#u09)"), False),
+                 ("left out by a question", closed(
+                     "Outside the scope decided in [Q07](#q07)"), False),
                  ("a boundary", common.scope_problem(
                      ["U01", "Billing", "include", "[Q07](#q07)"]), True),
                  ("no topic", common.scope_problem(
@@ -377,12 +641,22 @@ class ReferencesTest(unittest.TestCase):
                  ("Not done yet", "is blocked by"), ("Not started", "is blocked by"), ("", "is blocked by")]
         for blocker, expected in cases:
             with self.subTest(blocker):
-                problem = common.gap_problem(
-                    ["G01", "Gap", "Missing", "Read it", blocker, "Code", "Owner"])
-                if expected is None:
-                    self.assertIsNone(problem)
-                else:
-                    self.assertIn(expected, problem or "")
+                assert_problem(self, common.gap_problem(
+                    ["G01", "Gap", "Missing", "Read it", blocker, "Owner", "F01"]), expected)
+
+    def test_a_sources_reference_links_it(self):
+        # A link, or for a search, its exact query; a backticked text that
+        # isn't a search's links nothing.
+        # name: (the source's row, the problem's text, or None)
+        cases = [("a link", source_row(), None),
+                 ("a search's query", source_row(
+                     reference="`retry`", coverage="search hit"), None),
+                 ("a path in backticks", source_row(
+                     reference="`src/app.py`"), "S01: link the Reference"),
+                 ("plain text", source_row(reference="src/app.py"), "S01: link the Reference")]
+        for name, row, expected in cases:
+            with self.subTest(name):
+                assert_problem(self, common.source_problem(row, {}), expected)
 
     def test_a_sources_group_is_one_of_the_groups(self):
         # (Kind, the group as the config names it, accepted): the ledger uses
@@ -391,8 +665,7 @@ class ReferencesTest(unittest.TestCase):
                  ("Tracker", "workflow", True), ("source_control", None, False), ("", None, False)]
         for value, group, accepted in cases:
             with self.subTest(value):
-                row = ["S01", value,
-                       "[x](https://example.com/x)", "d", "full", "None", "None"]
+                row = source_row(kind=value)
                 self.assertEqual(common.group_of(row), group)
                 self.assertEqual(common.group_problem(row) is None, accepted)
 
@@ -423,15 +696,11 @@ class ReferencesTest(unittest.TestCase):
             coverage, superseded, mark, expected, kind = (
                 *case, "documentation")[:5]
             with self.subTest(coverage=coverage, superseded=superseded):
-                row = ["S01", kind, "[x](https://example.com/x)", "2026-10-01", coverage, "None",
-                       superseded]
+                row = source_row(kind=kind, revision="2026-10-01",
+                                 coverage=coverage, superseded=superseded)
                 self.assertEqual(common.source_mark(row), mark)
-                problem = common.coverage_problem(
-                    row) or common.superseded_problem(row)
-                if expected is None:
-                    self.assertIsNone(problem)
-                else:
-                    self.assertIn(expected, problem or "")
+                assert_problem(self, common.coverage_problem(
+                    row) or common.superseded_problem(row), expected)
 
     def test_a_finding_states_a_claim_its_sources_and_limits(self):
         # (row, the problem's text, or None)
@@ -443,63 +712,36 @@ class ReferencesTest(unittest.TestCase):
                  (["F01", "A claim.", "S01", ""], "Limits says what")]
         for row, expected in cases:
             with self.subTest(row=row):
-                problem = common.finding_problem(row)
-                if expected is None:
-                    self.assertIsNone(problem)
-                else:
-                    self.assertIn(expected, problem or "")
+                assert_problem(self, common.finding_problem(row), expected)
 
-    def test_unread_components(self):
-        # A component claiming code needs a code source, read in full or in
-        # part, of its path, a file under it, or a folder above it, which
-        # covers its files; a README or another document beside the code
-        # isn't code.
-        definitions = {"search": "https://git.example/acme/api/tree/abc/services/search",
-                       "client": "https://git.example/acme/api/blob/abc/app/plugins/client.ts"}
-        unread = {"C01": ["acme/api: services/search"]}
+    def test_a_finding_explains_each_partial_read(self):
+        # Each source a finding cites that was read only in part, of
+        # `partial`, has its own reason in Limits, "S01 read in part: …".
+        partial = {"S01", "S02"}
+        # name: (Sources, Limits, the sources left unexplained)
+        cases = [("explained", "S01", "S01 read in part: the rest is tests.", []),
+                 ("explained, as a citation",
+                  "[S01](#s01)", "[S01](#s01) read in part: the rest is tests.", []),
+                 ("two read in part, one explained", "S01, S02",
+                  "S01 read in part: the rest is tests.", ["S02"]),
+                 ("an empty reason", "S01", "S01 read in part: .", ["S01"]),
+                 ("a reason for another source", "S01",
+                  "S02 read in part: the rest is tests.", ["S01"]),
+                 ("a source read in full", "S03", "None", [])]
+        for name, sources, limits, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(common.unexplained_partial_reads(["F01", "A claim.", sources, limits], partial),
+                                 expected)
 
-        def source(path, coverage, kind="code"):
-            return ["S01", kind, f"[f](https://git.example/acme/api/{path})", "abc", coverage, "None", "None"]
-        cases = [("nothing read", "[search][search]", [], unread),
-                 ("its README in full", "[search][search]",
-                  [source("blob/abc/services/search/README.md", "full")], unread),
-                 ("a design note under it", "[search][search]",
-                  [source("blob/abc/services/search/docs/design.md", "full")], unread),
-                 ("a listing of it", "[search][search]", [
-                  source("tree/abc/services/search", "listing")], unread),
-                 ("a sibling folder", "[search][search]",
-                  [source("blob/abc/services/searcher/main.py", "full")], unread),
-                 ("a document at its path", "[search][search]",
-                  [source("blob/abc/services/search/main.py", "full", "documentation")], unread),
-                 ("a file under it", "[search][search]",
-                  [source("blob/abc/services/search/main.py", "Full")], {}),
-                 ("lines of it", "[search][search]",
-                  [source("blob/abc/services/search/main.py", "partial: lines 1-80")], {}),
-                 ("a folder above it", "[client][client]", [source("tree/abc/app/plugins", "full")], {})]
-        for name, repository, sources, expected in cases:
-            with self.subTest(name):
-                component = ["C01", "n", "service", "None", "r",
-                             repository, "🟩 Live", "Unchanged", "F01"]
-                self.assertEqual(common.unread_components(
-                    [component], sources, definitions), expected)
-        # No code is asked of an unverified row, of an external product, or of
-        # a part of a mention-only topic citing that decision (U02 here, not
-        # U01, which included its topic).
-        # name: (kind, state, evidence, unread)
-        cases = [("unverified", "service", "⬜ Unverified", "G01", {}),
-                 ("an external product", "external product",
-                  "🟩 Live", "F01", {}),
-                 ("a mention-only part", "store", "🟩 Live", "F01, U02", {}),
-                 ("a part of an included topic", "store", "🟩 Live", "F01, U01", unread)]
-        for name, kind, state, evidence, expected in cases:
-            with self.subTest(name):
-                self.assertEqual(common.unread_components(
-                    [["C01", "n", kind, "None", "r", "[search][search]",
-                        state, "Unchanged", evidence]], [],
-                    definitions, {"U02"}), expected)
-        # The message names the path to read.
-        self.assertIn("C01 links acme/api: services/search",
-                      common.unread_message(unread))
+    def test_every_read_but_a_full_one_leaves_a_part_unread(self):
+        # A finding citing any of these explains why the unread part can't
+        # change it; can't access reads nothing, so there is no part.
+        cases = [("full", False), ("partial: lines 1-80", True), ("listing", True),
+                 ("search hit", True), ("can't access: no permission", False)]
+        for coverage, expected in cases:
+            with self.subTest(coverage):
+                self.assertEqual(common.read_in_part(
+                    source_row(coverage=coverage)), expected)
 
 
 if __name__ == "__main__":

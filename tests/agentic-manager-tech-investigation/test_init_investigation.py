@@ -1,5 +1,5 @@
 """Unit tests for skills/agentic-manager-tech-investigation/scripts/init_investigation.py.
-The whole pipeline has end-to-end tests in test_e2e_pipeline.py.
+The whole pipeline has end-to-end tests in test_e2e_investigation.py.
 Run with: python3 tests/run.py agentic-manager-tech-investigation
 
 The config's path is patched to the test's own config, in a temporary folder.

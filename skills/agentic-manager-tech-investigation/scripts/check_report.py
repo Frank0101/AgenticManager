@@ -9,16 +9,15 @@ import os
 from pathlib import Path
 import re
 
-from common import (CELL_PIPE, CITATION, mention_only_ids, DECISION_HEADER, DEFINITION, DESIGN_ORDER, FLOW_HEADER, GAP_FIX, GAP_HEADER,
-                    HEADING, IDENTITY_HEADER, LEDGER, LEDGER_SECTIONS, LINKS, QUERY, QUEUE, QUEUE_HEADER,
-                    QUEUE_SUBSECTIONS, REFERENCE_LINK, SOURCE_FINDINGS_COLUMN, SOURCE_LINK_FIX, TABLE_HEADINGS, UNUSED,
-                    anchor_ids, backtick_error, blocked_problem, cited_evidence_problem, cited_sources,
-                    claim_length_problem, coverage_problem, design_problem, expected_files, finding_problem,
-                    flow_order_problem, flow_states, gap_problem, group_problem, headings, id_order, identity_states,
-                    ids, ledger_rows, link_definitions, link_text, links, listed, local_link, markdown, outcome_problem,
-                    records, reference_key, report_headings, review_problem, row_evidence_problem, scope_problem,
-                    section_span, source_reference_missing, strip_anchors, superseded_problem, table_cells,
-                    unlinked_backticks, unlinked_references, unread_components, unread_message, unrecorded_ids)
+from common import (CELL_PIPE, CITATION, DECISION_HEADER, DEFINITION, DESIGN_ORDER, FLOW_HEADER, GAP_HEADER, HEADING,
+                    IDENTITY_HEADER, LEDGER, LEDGER_SECTIONS, LINKS, QUERY, QUEUE, QUEUE_HEADER, QUEUE_SUBSECTIONS,
+                    REFERENCE_LINK, SOURCE_FINDINGS_COLUMN, TABLE_HEADINGS, UNUSED, anchor_ids, backtick_error,
+                    blocked_problem, cited_evidence_problem, cited_sources, claim_length_problem, design_evidence,
+                    design_row_problem, expected_files, finding_problem, flow_states, gap_problem, headings, id_order,
+                    identity_states, ids, ledger_rows, link_definitions, links, listed, local_link, markdown,
+                    outcome_problem, partial_read_problem, read_in_part, records, reference_key, report_headings,
+                    review_problem, scope_problem, section_span, source_problem, strip_anchors, table_cells,
+                    unlinked_backticks, unlinked_references, unrecorded_ids)
 
 
 def check_report(report, handover=False):
@@ -81,7 +80,7 @@ def check_report(report, handover=False):
         errors += ledger_errors
         warnings += ledger_warnings
     # Every table row carries its evidence: a source link or a ledger link.
-    for line, row in table_rows(prose):
+    for line, row in report_table_rows(prose):
         citations = [target for _, _, image, target in links(
             row, definitions) if not image and target]
         if not citations and not re.search(r"https?://[^\s<>]+", row):
@@ -174,21 +173,10 @@ def check_ledger(path, handover=False):
         if unrecorded:
             errors.append(
                 f"{LEDGER}: IDs cited but never recorded: " + ", ".join(unrecorded))
-        blocked = gap_problems(body)
-        if blocked:
-            errors.append(f"{LEDGER}: " + "; ".join(blocked) +
-                          ". A gap's " + GAP_FIX)
         if any(row[0].startswith("Q") for table in ("queue-ready", "queue-in-progress")
                for row in ledger_rows(body, TABLE_HEADINGS[table])):
             errors.append(
                 f"{LEDGER}: questions are still ready or in progress; answer or block them before handover")
-        # The trail from a claim to its source ends in a link, or, for a search, which has
-        # no URL to pin, in its exact query between backticks.
-        register = failing_rows(body, TABLE_HEADINGS["sources"], 2,
-                                source_reference_missing)
-        if register:
-            errors.append(f"{LEDGER}: sources without a link to their reference: "
-                          + ", ".join(register) + "; " + SOURCE_LINK_FIX)
         mismatched = source_finding_problems(
             body) + derived_state_problems(body)
         if mismatched:
@@ -201,7 +189,7 @@ def check_ledger(path, handover=False):
     return errors, warnings
 
 
-def table_rows(prose):
+def report_table_rows(prose):
     """(line number, line) of each data row of the pipe tables with a Markdown
     separator line."""
     lines = prose.splitlines()
@@ -288,60 +276,35 @@ def reference_error(where, found):
 
 def closing_problems(body):
     """The independent review not yet finished, completed questions with no
-    answer, blocked questions that don't say what blocks them, scope
-    boundaries, sources, findings, gaps and decisions not traced to their
-    evidence, components and system design rows that break their rules, and
-    components claiming code nobody read."""
+    answer, blocked questions that don't say what blocks them, and scope
+    boundaries, sources, findings, gaps, decisions, components and system
+    design rows that break the rules ledger.py applies on write."""
     problems = []
-    completed = ledger_rows(body, TABLE_HEADINGS["queue-completed"])
+    evidence = design_evidence(body)
+    findings, sources = evidence["findings"], evidence["sources"]
     problems.append(review_problem(
         ledger_rows(body, TABLE_HEADINGS["reviews"])))
-    for row in completed:
-        if re.fullmatch(r"Q\d+", row[0]):
-            problems.append(outcome_problem(row[0], row[-1], row[2]))
-    blocked = ledger_rows(body, TABLE_HEADINGS["queue-blocked"])
-    blocked_ids = {ident for row in blocked for ident in ids(row[0], "Q")}
+    problems += [outcome_problem(row[0], row[-1], row[2], evidence["scope"])
+                 for row in records(body, "queue-completed")]
+    blocked = records(body, "queue-blocked")
+    blocked_ids = {row[0] for row in blocked}
     depends = QUEUE_HEADER.index("Depends on")
-    problems += [blocked_problem(row[0], row[depends] if len(row) > depends else "", blocked_ids)
+    problems += [blocked_problem(row[0], row[depends], blocked_ids)
                  for row in blocked]
-    components = records(body, "components")
     # The rules ledger.py applies on write.
-    problems += [design_problem(table, row)
+    problems += [design_row_problem(table, row, evidence)
                  for table in DESIGN_ORDER for row in records(body, table)]
-    findings = records(body, "findings")
-    sources = records(body, "sources")
-    connections = records(body, "connections")
-    evidence = ({row[0]: row for row in findings}, {
-                row[0]: row for row in sources})
-    problems += [flow_order_problem(row, connections)
-                 for row in records(body, "flows")]
-    problems += [row_evidence_problem("components", row, *evidence)
-                 for row in components]
-    problems += [row_evidence_problem("connections", row, *evidence)
-                 for row in connections]
-    problems += [group_problem(row) or coverage_problem(row)
-                 or superseded_problem(row) for row in sources]
-    problems += [finding_problem(row) for row in findings]
-    problems += [cited_evidence_problem(row[0], row[GAP_HEADER.index("Evidence")])
+    # The trail from a claim to its source ends in a link, or, for a search,
+    # which has no URL to pin, in its exact query between backticks.
+    problems += [source_problem(row, evidence["definitions"])
+                 for row in sources.values()]
+    partial = {ident for ident, row in sources.items() if read_in_part(row)}
+    problems += [finding_problem(row) or partial_read_problem(row, partial)
+                 for row in findings.values()]
+    problems += [gap_problem(row) or cited_evidence_problem(row[0], row[GAP_HEADER.index("Evidence")])
                  for row in records(body, "gaps")]
     problems += [cited_evidence_problem(row[0], row[DECISION_HEADER.index("Evidence")])
                  for row in records(body, "decisions")]
     problems += [scope_problem(row)
                  for row in records(body, "scope")]
-    unread = unread_components(components, sources, link_definitions(body),
-                               mention_only_ids(records(body, "scope")))
-    if unread:
-        problems.append(unread_message(unread))
     return [p for p in problems if p]
-
-
-def gap_problems(body):
-    """The gaps whose Blocked by isn't allowed (gap_problem)."""
-    return [p for cells in records(body, "gaps") if (p := gap_problem(cells))]
-
-
-def failing_rows(body, heading, width, failing):
-    """The first cell, as plain text, of the rows under `heading` that
-    `failing` rejects."""
-    return [link_text(cells[0]).strip() for cells in ledger_rows(body, heading)
-            if len(cells) > width and failing(cells)]

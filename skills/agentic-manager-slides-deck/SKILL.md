@@ -8,7 +8,7 @@ allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/age
 
 Turns a conversation into an HTML slide deck. You drive: work out the kind of presentation, choose where to start from, ask what's missing, write the slides, then iterate while the user reviews the deck in a browser.
 
-The files go to the `slides-decks` folder of the config's `output.root`, or to a temporary folder if none is set. The scripts choose and write that folder; never choose one yourself, and never read the config.
+The files go to the `slides-decks` folder of the config's `output.root`, or to a temporary folder if none is set. The scripts choose and write that folder; never choose one yourself.
 
 You write only `slides.json`: the title, the CSS, each slide's HTML and the data of charts and rings. `make_deck.py` owns the rest, from the page around the slides to the check. When a script refuses something, its message says what to fix: fix the input, never work around the check.
 
@@ -32,7 +32,7 @@ slides-decks/
 
 Run the config check, `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py`, pre-approved in the frontmatter. If it fails, stop here and follow its `next_steps`. If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ as `python3`; if the script is missing, tell them to reinstall every skill.
 
-This skill needs no source: its material is the conversation and any file the user gives you.
+This skill needs no source: its material is the conversation and any file the user gives you. The scripts read the config's settings themselves: never read the config file, or pass or show a setting.
 
 ## 1. Understand the request
 

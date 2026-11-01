@@ -10,7 +10,7 @@ After changing anything, read the pass's files again in full, not only what you 
 
 The reading can be split across reviewers working in parallel, such as one for the Markdown and one per skill. Check every issue they report against the code yourself before acting on it, and drop any that isn't real. Prove a fixed bug with a test that fails on the code before the fix.
 
-A change that alters what a skill does for the user, or what its output contains, is a behavior change: describe it and ask before making it. Fix everything else directly. When the developer's answer states a general principle, consider adding it to AGENTS.md, so the next run applies it to every file.
+A change that alters what was agreed with the developer and written in a skill's Markdown files is a behavior change: describe it and ask before making it. Fix everything else directly. When the developer's answer states a general principle, consider adding it to AGENTS.md, so the next run applies it to every file.
 
 ## 1. Markdown
 

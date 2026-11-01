@@ -10,7 +10,6 @@ import os
 import re
 import sys
 import unittest
-from datetime import date
 from pathlib import Path
 from unittest import mock
 
@@ -19,31 +18,26 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 SCRIPTS = os.path.join(REPO_ROOT, "skills",
                        os.path.basename(TEST_DIR), "scripts")
 sys.path.insert(0, SCRIPTS)
-import init_investigation  # noqa: E402
 import investigate  # noqa: E402
 import ledger  # noqa: E402
 import protocol  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from investigation_fixture import INVESTIGATION, content, temp_output  # noqa: E402
+from investigation_fixture import GAP, INVESTIGATION, UNREAD, content, finding, start  # noqa: E402
 
 # What a test puts between the tasks handed out together.
 TASKS_APART = "\n\n====\n\n"
 
-GAP = {"gap": "Billing callers", "missing": "Callers aren't read", "would_close": "Read access",
-       "blocked_by": "No access (billing repository)", "evidence": "[[F01]]", "owner_and_next_check": "Billing team"}
-
 
 def answer(claim="A fact.", **outcome):
-    """An answer resting on a source the ledger holds, read in full."""
-    return {"findings": [{"key": "[[f1]]", "claim": claim, "sources": "[[S02]]", "limits": "None", "partial": {"[[S02]]": "the unread sections can't change it"}}],
+    """An answer resting on S02, a source the ledger holds, read in part,
+    with the reason the unread part can't change it."""
+    return {"findings": [finding(claim=claim, sources="[[S02]]", partial=UNREAD)],
             "outcome": outcome or {"answered": "[[f1]]"}}
 
 
 class InvestigateTest(unittest.TestCase):
     def setUp(self):
-        self.folder = temp_output(self)
-        init_investigation.init("Acme-Search", today=date(2026, 10, 5))
-        self.path = Path(self.folder) / INVESTIGATION / "ledger.md"
+        self.path = start(self)
 
     def lines(self):
         return self.path.read_text(encoding="utf-8").split("\n")
@@ -132,6 +126,17 @@ class InvestigateTest(unittest.TestCase):
         self.assertEqual(self.phase(), "write")
         self.submit("write", content())
         self.assertEqual(self.phase(), "finished")
+
+    def test_a_scope_decision_makes_the_design_out_of_date(self):
+        # A topic decided after the design is built changes what it draws,
+        # such as a mention-only black box, so the design is built again.
+        self.research()
+        self.submit("design", self.design())
+        self.submit("review:1", {"raised": [{"key": "[[q1]]", "question": "Should the investigation cover billing?",
+                                             "raised_by": "[[C01]]", "depends_on": "None", "for": "user"}]})
+        self.submit("scope", {"decisions": [{"question": "[[Q08]]", "topic": "Billing",
+                                             "answer": "mention only"}]})
+        self.assertEqual(self.phase(), "design")
 
     def test_next_hands_out_questions_and_marks_them_in_progress(self):
         text = self.next_text()
@@ -351,7 +356,7 @@ class InvestigateTest(unittest.TestCase):
         self.research()
         self.submit("design", self.design())
         self.submit("review:1", {"raised": []})
-        stray = Path(self.folder) / INVESTIGATION / "notes.md"
+        stray = self.path.parent / "notes.md"
         stray.write_text("x", encoding="utf-8")
         with self.assertRaisesRegex(SystemExit, "notes.md"):
             self.submit("write", content())

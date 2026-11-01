@@ -23,7 +23,7 @@ SCRIPTS = os.path.join(REPO_ROOT, "skills",
 sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, TEST_DIR)
 import protocol  # noqa: E402
-from investigation_fixture import SOURCES  # noqa: E402
+from investigation_fixture import SOURCES, UNREAD, finding  # noqa: E402
 
 INVESTIGATE = os.path.join(SCRIPTS, "investigate.py")
 
@@ -114,14 +114,13 @@ class InvestigationTest(unittest.TestCase):
         for question in ("Q03", "Q04", "Q05", "Q06"):
             self.assertTrue(self.next().startswith(
                 f"# Task research:{question}"))
-            self.submit(f"research:{question}", {"findings": [{"key": "[[f1]]", "claim": f"Fact for {question}.",
-                                                               "sources": "[[S02]]", "limits": "None", "partial": {"[[S02]]": "the unread sections can't change it"}}],
+            self.submit(f"research:{question}", {"findings": [finding(claim=f"Fact for {question}.", sources="[[S02]]",
+                                                                      partial=UNREAD)],
                                                  "outcome": {"answered": "[[f1]]"}})
         # The last finds a fact and then waits on a choice someone has to
         # make: an open decision, which the report's example cites.
         self.assertTrue(self.next().startswith("# Task research:Q08"))
-        self.submit("research:Q08", {"findings": [{"key": "[[f1]]", "claim": "Fact for Q08.", "sources": "[[S02]]",
-                                                   "limits": "None", "partial": {"[[S02]]": "the unread sections can't change it"}}],
+        self.submit("research:Q08", {"findings": [finding(claim="Fact for Q08.", sources="[[S02]]", partial=UNREAD)],
                                      "outcome": {"blocked": {"decision": {
                                          "decision": "Which queue to use", "position": "Unresolved: Kafka or SQS",
                                          "candidates_and_constraints": "Kafka keeps replay; SQS costs less", "evidence": "[[f1]]",

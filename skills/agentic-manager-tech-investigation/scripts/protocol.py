@@ -23,7 +23,7 @@ VALUES = {
     "groups": ", ".join(GROUPS.values()),
     "coverage": ", ".join(COVERAGE),
     "read_coverage": " or ".join(READ_COVERAGE),
-    "blockers": " or ".join(BLOCKERS),
+    "blockers": f"{BLOCKERS[0]}, or {BLOCKERS[1]} followed by the decision it waits on",
     "boundary_kinds": ", ".join(BOUNDARY_KINDS),
     "component_types": ", ".join(COMPONENT_TYPES),
     "connection_kinds": ", ".join(CONNECTION_KINDS),

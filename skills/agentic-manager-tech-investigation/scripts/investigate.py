@@ -258,7 +258,7 @@ def work_dir(relative):
     the investigation, so the output folder holds only its own files, a run is
     cleaned up by deleting one folder, and a new run of the same topic and day
     empties it, never finding what an earlier run left."""
-    return os.path.join(tempfile.gettempdir(), "tech-investigations", relative)
+    return os.path.join(tempfile.gettempdir(), FOLDER_NAME, relative)
 
 
 def task_folder(relative, task):

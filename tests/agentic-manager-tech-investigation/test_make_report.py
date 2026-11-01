@@ -1,5 +1,5 @@
 """Unit tests for skills/agentic-manager-tech-investigation/scripts/make_report.py.
-The whole pipeline has end-to-end tests in test_e2e_pipeline.py.
+The whole pipeline has end-to-end tests in test_e2e_investigation.py.
 Run with: python3 tests/run.py agentic-manager-tech-investigation
 
 The config's path is patched to the test's own config, in a temporary folder.
@@ -70,10 +70,10 @@ class MakeReportTest(unittest.TestCase):
             "## Architect summary\n\n### How it works today\n\n",
             "### Target design\n\n",
             "[code](ledger.md#f01)",
-            "[gap](ledger.md#evidence-gaps)",
+            "[gap](ledger.md#g01)",
             "### Open technical choices and gaps\n\nThe table records source-backed decisions and evidence gaps. It does "
             "not select an option.\n\n| Decision or gap | Why it matters | Established position | Evidence |\n"
-            "| --- | --- | --- | --- |\n| Index | Sets the cost | Unresolved | [gap](ledger.md#evidence-gaps) |",
+            "| --- | --- | --- | --- |\n| Index | Sets the cost | Unresolved | [gap](ledger.md#g01) |",
             "\n\n## References\n\n**Implementation and configuration**\n\n- [Search API](https://example.com/code)\n\n",
             "**Delivery**\n\n- [PROJ-1](https://example.com/PROJ-1) (superseded)\n"
             "- [PROJ-2](https://example.com/PROJ-2) (limited)\n\n",
@@ -128,7 +128,7 @@ class MakeReportTest(unittest.TestCase):
             ("missing field", lambda d: d["key_decisions"][0].pop(
                 "why"), "key_decisions 1.why: needs text"),
             ("unknown ledger ID", lambda d: d["purpose"].append(
-                "[x](ledger:F09)"), "ledger:F09 matches no heading"),
+                "[x](ledger:F09)"), "ledger:F09 matches no table row"),
             ("summary without a ledger link", lambda d: stage(d).update(summary=["No trace."]),
              "architecture.today.summary paragraph 1: needs a ledger link"),
             ("stage missing", lambda d: d["architecture"].pop(
@@ -159,28 +159,19 @@ class MakeReportTest(unittest.TestCase):
         self.assertIn("current_status paragraph 1: couldn't link #4: a pull request names its repository, as owner/repo#123",
                       self.problems(data))
 
-    def test_ledger_links_reach_a_row_by_its_anchor(self):
-        # A row written by ledger.py carries an anchor, so the report links to the
-        # row itself, not only to its section.
-        self.write("ledger.md", LEDGER.replace("- **G01** Billing callers unverified.",
-                                               '| ID | Gap |\n| --- | --- |\n| <a id="g01"></a>G01 | Billing callers unverified |'))
-        self.assertTrue(self.checked(content())["ok"])
-        self.assertIn("[gap](ledger.md#g01)", self.report())
-
-    def test_ledger_definitions_exclude_fences(self):
-        for definition in ("| G99 | Evidence |", "- **G99** Evidence."):
-            for fence, closing in (("```markdown", "```"), ("~~~~", "~~~~")):
-                for genuine in (False, True):
-                    with self.subTest(definition=definition, fence=fence, genuine=genuine):
-                        text = (LEDGER + "\n\n### Illustration\n\n" + fence + "\n"
-                                + definition + "\n" + closing + "\n")
-                        if genuine:
-                            text += "\n### Actual gap\n\n" + definition + "\n"
-                        self.write("ledger.md", text)
-                        ledger = make_report.Ledger(
-                            os.path.join(self.folder, "ledger.md"))
-                        self.assertEqual(ledger.anchor("G99"),
-                                         "actual-gap" if genuine else None)
+    def test_ledger_links_skip_fences(self):
+        # Only a row outside a code fence records an ID: an illustration
+        # inside one isn't a record to link to.
+        for genuine in (False, True):
+            with self.subTest(genuine=genuine):
+                row = '| <a id="g99"></a>G99 | Evidence |'
+                text = LEDGER + "\n\n### Illustration\n\n```markdown\n" + row + "\n```\n"
+                self.write("ledger.md", text +
+                           ("\n" + row + "\n" if genuine else ""))
+                ledger = make_report.Ledger(
+                    os.path.join(self.folder, "ledger.md"))
+                self.assertEqual(ledger.anchor("G99"),
+                                 "g99" if genuine else None)
 
     def test_list_sections_say_when_they_are_empty(self):
         # Nothing is skipped: a section with nothing to say says so.

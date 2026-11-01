@@ -9,17 +9,16 @@ check_report.py applies to the whole ledger at handover.
 import os
 import re
 
-from common import (CITATION, mention_only_ids, DESIGN, DESIGN_ORDER, FOLDER_NAME, GAP_FIX, ID_LETTERS, INLINE_LINK, JIRA_API, JIRA_GROUP,
-                    LEDGER, LINKS, QUERY, QUEUE_HEADER, QUEUE_TABLES, REVIEW_HEADER, REVIEW_NONE, REVIEW_STOPPED,
-                    ROW_START, SOURCE_FINDINGS_COLUMN, SOURCE_HEADER, SOURCE_LINK_FIX, TABLE_HEADINGS, TABLES, UNUSED,
-                    anchored, autolink, backtick_error, blocked_problem, citation, cited_sources, coverage_problem,
-                    design_problem, finding_problem, flow_order_problem, flow_states, free_name, gap_problem,
-                    group_problem, id_order, identity_states, ids, inline_links, investigation_dir, is_enabled,
-                    JiraClient, ledger_rows, link_definitions, link_text, links, outcome_problem, plain, read_in_part,
-                    row_evidence_problem, same_document, scope_problem, section_span, slug, source_reference_missing,
-                    strip_anchors, superseded_problem, table, table_cells, table_row, ticket_sites, unlinked_backticks,
-                    unread_components, unread_message, unrecorded_citations, unresolved_message, upgraded_tickets,
-                    write_output_file)
+from common import (CITATION, DECISION_HEADER, DESIGN, DESIGN_ORDER, FOLDER_NAME, GAP_HEADER, ID_LETTERS, INLINE_LINK,
+                    JIRA_API, JIRA_GROUP, LEDGER, LINKS, QUERY, QUEUE_HEADER, QUEUE_TABLES, REVIEW_HEADER, REVIEW_NONE,
+                    REVIEW_STOPPED, ROW_START, SOURCE_FINDINGS_COLUMN, SOURCE_HEADER, TABLE_HEADINGS, TABLES, UNUSED,
+                    anchored, autolink, backtick_error, blocked_problem, citation, cited_evidence_problem, cited_sources,
+                    claim_length_problem, design_evidence, design_row_problem, finding_problem, flow_states, free_name,
+                    gap_problem, id_order, identity_states, ids, inline_links, investigation_dir, is_enabled,
+                    JiraClient, ledger_rows, link_definitions, link_text, links, outcome_problem, partial_read_problem,
+                    plain, read_in_part, same_document, scope_answers, scope_problem, section_span, slug,
+                    source_problem, strip_anchors, table, table_cells, table_row, ticket_sites, unlinked_backticks,
+                    unrecorded_citations, unresolved_message, upgraded_tickets, write_output_file)
 
 # The columns the script writes, which a row's input leaves out: a source's
 # Findings, from the findings that cite it, and the State of an identity or a
@@ -35,17 +34,18 @@ LINKS_NOTE = "Link definitions: {} (Markdown previews hide them; open the file a
 # its project, and each project is asked about once.
 SITES = {}
 # The line under the System design heading saying what the design was built
-# from: research only ever adds findings, gaps and decisions, so when their
-# counts no longer match, the design is out of date and is built again.
+# from: research and the user's scope decisions only ever add findings, gaps,
+# decisions and scope boundaries, so when their counts no longer match, the
+# design is out of date and is built again.
 BASIS = re.compile(
-    r"^Built from (\d+) findings, (\d+) gaps and (\d+) decisions\.$")
+    r"^Built from (\d+) findings, (\d+) gaps, (\d+) decisions and (\d+) scope boundaries\.$")
 
 
 def brief(lines):
     """What writing the report reads, from the ledger as it stands: the
     scope boundaries, each source's reference with its coverage, every finding, the
     components, the system design, decisions and gaps, and the findings resting
-    on a partial read. The queue and the review rounds are for research, and make up much
+    on a source read in part. The queue and the review rounds are for research, and make up much
     of a long ledger. Links show their text, IDs are plain, and a source's
     reference keeps its URL, so the report can link the source itself."""
     def rows_of(name):
@@ -66,9 +66,9 @@ def brief(lines):
 
 
 def partial_lines(lines):
-    """The lines naming the findings that rest on a partial read, or []."""
+    """The lines naming the findings that rest on a source read in part, or []."""
     found = partial_reads(lines)
-    return (["findings resting on a partial read (each says in its limits why the rest can't change it):"]
+    return (["findings resting on a source read in part (each says in its limits why the rest can't change it):"]
             + [f"  {ident}: {source} {reference} ({coverage})" for ident,
                source, reference, coverage in found]
             if found else [])
@@ -244,42 +244,39 @@ def set_row(lines, name, row_id, cells):
 
 
 def check_cells(lines, name, row):
-    """Exit if a cell holds a value its column doesn't allow."""
+    """Exit if a row breaks a rule of its table: the ones check_report applies
+    to the ledger, a finding's claim length on every check and the others at
+    handover (closing_problems)."""
     problem = None
     if name in DESIGN_ORDER:
-        problem = design_problem(name, row) or row_evidence_problem(name, row, *evidence_of(lines)) or (
-            name == "flows" and flow_order_problem(row, table_rows(lines, "connections")))
+        problem = design_row_problem(
+            name, row, design_evidence("\n".join(lines)))
     elif name == "findings":
-        problem = finding_problem(row)
+        partial = {r[0]
+                   for r in table_rows(lines, "sources") if read_in_part(r)}
+        problem = (finding_problem(row) or claim_length_problem(row[0], row[1])
+                   or partial_read_problem(row, partial))
     elif name == "scope":
         problem = scope_problem(row)
     elif name == "queue-completed":
-        problem = outcome_problem(row[0], row[-1], row[2])
+        problem = outcome_problem(
+            row[0], row[-1], row[2], scope_answers(table_rows(lines, "scope")))
     elif name == "queue-blocked":
         problem = blocked_problem(row[0], row[QUEUE_HEADER.index("Depends on")],
                                   {r[0] for r in table_rows(lines, "queue-blocked")})
     elif name == "gaps":
-        problem = (blocked := gap_problem(row)) and f"{blocked}. {GAP_FIX}"
+        problem = gap_problem(row) or cited_evidence_problem(
+            row[0], row[GAP_HEADER.index("Evidence")])
+    elif name == "decisions":
+        problem = cited_evidence_problem(
+            row[0], row[DECISION_HEADER.index("Evidence")])
     elif name == "sources":
-        problem = group_problem(row) or coverage_problem(row) or superseded_problem(row) or (
-            source_reference_missing(row) and f"{row[0]}: {SOURCE_LINK_FIX}")
+        problem = source_problem(row, links_section(lines))
     if problem:
         raise SystemExit(f"{name} {problem}")
-    if unread := name == "components" and unread_components([row], table_rows(lines, "sources"),
-                                                            links_section(
-                                                                lines),
-                                                            mention_only_ids(table_rows(lines, "scope"))):
-        raise SystemExit(unread_message(unread))
     # A search's query is the one backticked text allowed outside a link.
     check_backticks(lines, [c for i, c in enumerate(
         row) if not (name == "sources" and i == 2)], name)
-
-
-def evidence_of(lines):
-    """({finding ID: row}, {source ID: row}) of the ledger, what a design row's
-    evidence reaches."""
-    return ({row[0]: row for row in table_rows(lines, "findings")},
-            {row[0]: row for row in table_rows(lines, "sources")})
 
 
 def check_backticks(lines, values, where):
@@ -482,10 +479,9 @@ def refuse_cited(lines, ident):
 
 
 def mentions(lines, ident):
-    """The records, other than `ident`'s own, whose text names `ident`: when
-    a question closes, what they say while it was open, such as "not
-    established yet: see Q06", may need its answer; while any does, `ident`
-    can't be removed."""
+    """The records, other than `ident`'s own, whose text names `ident`: while
+    any does, `ident`, such as a design row left out of a design submitted
+    again, can't be removed."""
     found = [table_row_id for table in TABLES
              for table_row_id in (row[0] for row in table_rows(lines, table)
                                   if row[0] != ident and re.search(rf"\b{ident}\b", " | ".join(row[1:])))]
@@ -527,9 +523,10 @@ def scope_decisions(lines):
 
 
 def basis(lines):
-    """(findings, gaps, decisions): how many the ledger holds, what a design
-    built now would be built from."""
-    return tuple(len(table_rows(lines, name)) for name in ("findings", "gaps", "decisions"))
+    """(findings, gaps, decisions, scope boundaries): how many the ledger
+    holds, what a design built now would be built from, as a scope decision
+    changes what it draws."""
+    return tuple(len(table_rows(lines, name)) for name in ("findings", "gaps", "decisions", "scope"))
 
 
 def design_basis(lines):
@@ -544,9 +541,9 @@ def design_basis(lines):
 def set_design_basis(lines, counts):
     """Record under the System design heading what the design was built from."""
     start, end = section(lines, f"## {DESIGN}")
-    findings, gaps, decisions = counts
-    lines[start + 1:end] = ["",
-                            f"Built from {findings} findings, {gaps} gaps and {decisions} decisions.", ""]
+    findings, gaps, decisions, scope = counts
+    lines[start + 1:end] = ["", f"Built from {findings} findings, {gaps} gaps, {decisions} decisions and {scope} "
+                            "scope boundaries.", ""]
 
 
 def load(relative):

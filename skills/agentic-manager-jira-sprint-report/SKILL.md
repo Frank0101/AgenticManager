@@ -27,7 +27,7 @@ jira-sprint-reports/
 
 Run the config check, `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py`, pre-approved in the frontmatter. If it fails, stop here and follow its `next_steps`. If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ as `python3`; if the script is missing, tell them to reinstall every skill.
 
-This skill needs the `jira-api` and `github-cli` sources. If one isn't enabled, stop and tell the user to enable it, showing its `setup` and the config `path`. The scripts read the settings themselves; never read, pass or show them.
+This skill needs the `jira-api` and `github-cli` sources. If one isn't enabled, stop and tell the user to enable it, showing its `setup` and the config `path`. The scripts read the config's settings themselves: never read the config file, or pass or show a setting.
 
 ## 1. Prepare
 

@@ -7,41 +7,25 @@ answers to it, as investigate.py does, then reads the ledger back.
 
 import copy
 import os
-import re
 import sys
 import unittest
-from datetime import date
-from pathlib import Path
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_report  # noqa: E402
-import init_investigation  # noqa: E402
 import ledger  # noqa: E402
 import submissions  # noqa: E402
 import protocol  # noqa: E402
 import common  # noqa: E402
-from common import ID_LETTERS  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from investigation_fixture import INVESTIGATION, temp_output  # noqa: E402
-
-GAP = {"gap": "Billing callers", "missing": "The API is merged; its callers aren't read",
-       "would_close": "Read access", "blocked_by": "No access (billing repository)", "evidence": "[[F01]]",
-       "owner_and_next_check": "Billing team"}
-
-
-def finding(key="[[f1]]", claim="Search reads the index.", sources="[[S01]]", **more):
-    """A finding as a submission gives it."""
-    return {"key": key, "claim": claim, "sources": sources, "limits": "None", **more}
+from investigation_fixture import GAP, INVESTIGATION, finding, plain, start  # noqa: E402
 
 
 class SubmissionTest(unittest.TestCase):
     def setUp(self):
-        self.folder = temp_output(self)
-        init_investigation.init("Acme-Search", today=date(2026, 10, 5))
-        self.path = Path(self.folder) / INVESTIGATION / "ledger.md"
+        self.path = start(self)
 
     def submit(self, kind, *args):
         """Submit to the ledger as investigate.py does: saved only when the
@@ -65,7 +49,7 @@ class SubmissionTest(unittest.TestCase):
         return self.path.read_text(encoding="utf-8")
 
     def plain(self):
-        return re.sub(rf"\[([{ID_LETTERS}]\d+)\]\(#[a-z]+\d+\)", r"\1", re.sub(r'<a id="[^"]+"></a>', "", self.text()))
+        return plain(self.text())
 
     def rows(self, table):
         return [row[0] for row in ledger.table_rows(self.text().split("\n"), table)]
@@ -131,7 +115,7 @@ class SubmissionTest(unittest.TestCase):
     def test_a_source_read_again_only_grows(self):
         # What a read covers is added to what the ledger holds: a later,
         # smaller read never shrinks it.
-        file = "[f](https://git.example/acme/api/blob/abc/server.py)"
+        file = "[f](https://git.example/acme/api/blob/abc1234/server.py)"
         # name: (the Coverage held, this read, the Coverage written)
         cases = [("two line ranges", "partial: lines 1-80 of 352", {"read": "partial", "lines": [[200, 240]]}, "partial: lines 1-80, 200-240 of 352"),
                  ("touching ranges join", "partial: lines 1-80",
@@ -146,7 +130,14 @@ class SubmissionTest(unittest.TestCase):
                   "read": "partial", "lines": [[1, 9]]}, "full"),
                  ("more sections", "partial: sections: Proposal", {
                   "read": "partial", "sections": ["Risks"]}, "partial: sections: Proposal, Risks"),
-                 ("found after all", "can't access: not on main", {"read": "partial", "lines": [[1, 5]], "note": "x"}, "partial: lines 1-5; not on main; x")]
+                 ("found after all", "can't access: not on main", {"read": "partial", "lines": [
+                  [1, 5]], "note": "x"}, "partial: lines 1-5; not on main; x"),
+                 # Only what was read at the level the source ends at counts:
+                 # files a listing named weren't read in part.
+                 ("a listing, then part of it", "listing: files: a.py, b.py, c.py",
+                  {"read": "partial", "files": ["a.py"]}, "partial: files: a.py"),
+                 ("part, then a listing", "partial: files: a.py",
+                  {"read": "listing", "files": ["b.py", "c.py"]}, "partial: files: a.py")]
         for name, held, now, expected in cases:
             with self.subTest(name):
                 grown = submissions.grown_coverage(
@@ -156,9 +147,9 @@ class SubmissionTest(unittest.TestCase):
         # and the source stays superseded, as the second answer doesn't say
         # otherwise.
         source = {"key": "[[s1]]", "kind": "code",
-                  "reference": file, "revision": "abc"}
-        newer = {"key": "[[s2]]", "kind": "code", "reference": "[g](https://git.example/acme/api/blob/abc/v2.py)",
-                 "revision": "abc", "coverage": {"read": "full"}}
+                  "reference": file, "revision": "abc1234"}
+        newer = {"key": "[[s2]]", "kind": "code", "reference": "[g](https://git.example/acme/api/blob/abc1234/v2.py)",
+                 "revision": "abc1234", "coverage": {"read": "full"}}
         self.answered(sources=[{**source, "coverage": {"read": "partial", "lines": [[1, 80]], "of": 352},
                                 "superseded_by": "[[s2]]"}, newer],
                       findings=[finding(sources="[[s1]]", partial={"[[s1]]": "the rest is admin routes"})])
@@ -216,10 +207,11 @@ class SubmissionTest(unittest.TestCase):
         partial = [{"key": "[[s1]]", "kind": "code", "reference": "[api](https://example.com/api)", "revision": "abc",
                     "coverage": {"read": "partial", "lines": [[1, 80]]}}]
         # name: (the finding's extra fields, a problem they list)
-        cases = [("no reason", {}, "findings[0]: cites [[s1]], read only in part: read the rest, or say in partial, "
-                  "for [[s1]], why the unread part can't change this claim"),
+        cases = [("no reason", {}, "findings[0]: findings [[f1]]: cites [[s1]], read only in part, and its Limits "
+                  "doesn't say why the unread part can't change the claim ([[s1]] read in part: …): read the "
+                  "rest, or give the reason in partial, for [[s1]]"),
                  ("a reason in limits only", {"limits": "[[s1]]: the rest is admin routes."},
-                  "say in partial, for [[s1]]"),
+                  "give the reason in partial, for [[s1]]"),
                  ("a reason for a source it doesn't cite", {"partial": {"[[s1]]": "admin routes", "[[S07]]": "x"}},
                   "findings[0].partial: [[S07]] isn't a source this finding cites that was read only in part"),
                  ("an empty reason", {"partial": {
@@ -255,9 +247,9 @@ class SubmissionTest(unittest.TestCase):
                  ("a path not found", {"read": "can't access", "note": "not on the main branch at abc"}, "code",
                   "can't access: not on the main branch at abc"),
                  ("code in part naming nothing read", {"read": "partial", "note": "routes"}, "code",
-                  "S01: Coverage of code read in part names the lines read"),
+                  "S01: Coverage partial of code names the lines read"),
                  ("a document in part with no sections", {"read": "partial"}, "documentation",
-                  "S01: Coverage of a document read in part names the sections read"),
+                  "S01: Coverage partial of a document names the sections read"),
                  ("lines beyond the file", {"read": "partial", "lines": [[300, 400]], "of": 352}, "code",
                   "lines lists the ranges read"),
                  ("a word, not a read", {"read": "skimmed"},
@@ -279,8 +271,8 @@ class SubmissionTest(unittest.TestCase):
     def test_every_problem_is_listed_by_field_and_nothing_is_written(self):
         data = {"sources": [{"key": "[[s1]]", "kind": "source_control", "reference": "[api](https://example.com/api)",
                              "revision": "abc", "coverage": {"read": "skimmed"}}],
-                "findings": [finding(sources="[[s1]], [[s9]]"), finding("[[f1]]", "Again."),
-                             finding("x2", "word " * 151, sources="[[s1]]")],
+                "findings": [finding(sources="[[s1]], [[s9]]"), finding("[[f1]]", "Again."), finding("x2"),
+                             finding("[[f2]]", "word " * 151, sources="[[s1]]")],
                 "new_questions": [{"key": "[[q1]]", "question": "Why?", "raised_by": "[[f1]]", "depends_on": "[[Q99]]"}],
                 "outcome": {"answered": "[[f1]]"}, "notes": "x"}
         problems = self.refused("research", "Q01", data)
@@ -303,11 +295,11 @@ class SubmissionTest(unittest.TestCase):
                   "blocked": {"note": "x"}}, "outcome.blocked is"),
                  ("a closed question", {"answered": "[[f1]]", "also_answers": {"[[Q01]]": "[[f1]]"}},
                   "only an open question can be closed")]
+        self.answered()  # gives the ledger S01
         for name, outcome, expected in cases:
             with self.subTest(name):
                 data = {"findings": [
                     finding(sources="[[S01]]")]} if outcome else {}
-                self.answered()  # gives the ledger S01
                 self.assertIn(expected, self.refused(
                     "research", "Q02", {**data, "outcome": outcome}))
 
@@ -328,10 +320,10 @@ class SubmissionTest(unittest.TestCase):
             self.text().split("\n"), "scope")], ["U01"])
         self.assertEqual(check_report.check_ledger(self.path)[0], [])
         # name: (the outcome, a problem it lists)
-        refused = "is no scope boundary decided as mention only or exclude"
+        refused = "cites the scope boundary decided as mention only or exclude"
         cases = [("a boundary not in the ledger", "[[U02]]", refused),
                  ("the question, not its boundary", "[[Q07]]", refused),
-                 ("not a citation", {"decided_in": "[[U01]]"}, refused)]
+                 ("not a citation", {"decided_in": "[[U01]]"}, "is no scope boundary, written as [[U01]]")]
         for name, given, expected in cases:
             with self.subTest(name):
                 self.assertIn(expected, self.refused(
@@ -341,7 +333,7 @@ class SubmissionTest(unittest.TestCase):
         self.answered(findings=[finding(sources="[[s1]]")],
                       new_questions=[{"key": "[[q1]]", "question": "Next?", "raised_by": "[[f1]]", "depends_on": "[[Q02]]"}])
         # A gap traces to what it rests on, as every other record does.
-        self.assertIn("outcome.blocked.gap: Evidence names the findings or sources it rests on",
+        self.assertIn("outcome.blocked.gap: gaps G01: Evidence names the findings or sources it rests on",
                       self.refused("research", "Q02", {"outcome": {"blocked": {"gap": {**GAP, "evidence": "the code"}}}}))
         self.submit("research", "Q02", {"outcome": {"blocked": {"gap": GAP}}})
         self.assertEqual(self.rows("gaps"), ["G01"])
@@ -374,7 +366,7 @@ class SubmissionTest(unittest.TestCase):
         # design counts as built from it, so it isn't out of date at once.
         self.assertIn("| partial: lines 40-60 of 200 | F02 |", self.plain())
         self.assertEqual(ledger.design_basis(
-            self.text().split("\n")), (2, 1, 0))
+            self.text().split("\n")), (2, 1, 0, 0))
         # Submitted again with its own IDs, a row is kept; one left out is removed,
         # and a new one takes a number never used.
         current = submissions.design_rows(self.text().split("\n"))
@@ -401,17 +393,37 @@ class SubmissionTest(unittest.TestCase):
         self.assertIn("| Q06 | C01 | Is it live? |", self.plain())
         self.assertIn("C01 is still cited by Q06",
                       self.refused("design", {}))
+        # Shown not to exist, it is kept as ruled out, resting on the finding
+        # that shows it, so the question that checked it still cites it.
+        kept = {**component, "key": "[[C01]]",
+                "state": "✖ Ruled out: a module inside the API"}
+        self.submit("design", {"components": [kept]})
+        self.assertEqual(self.rows("components"), ["C01"])
+        self.assertIn(
+            "| C01 | API | service | None | r | None | ✖ Ruled out", self.plain())
 
     def test_a_design_claiming_code_needs_it_read(self):
         self.answered()
         component = {"key": "[[c1]]", "name": "API", "kind": "service", "responsibility": "r",
-                     "code": "[api](https://git.example/acme/api/tree/abc/api)", "state": "🟩 Live",
+                     "code": "[api](https://git.example/acme/api/tree/abc1234/api)", "state": "🟩 Live",
                      "evidence": "[[F01]]", "in_the_target": "Unchanged", "boundary": "None"}
         # The problem names the row by its key, not the ID it would have had.
         problems = self.refused(
             "design", {"components": [component]})
-        self.assertIn("- components[0]: a component marked", problems)
+        self.assertIn(
+            "- components[0]: components [[c1]]: a component marked", problems)
         self.assertIn("[[c1]] links acme/api: api", problems)
+        # The code the design reads counts once a finding of the row's
+        # evidence cites it.
+        reading = {"sources": [{"key": "[[s1]]", "kind": "code", "revision": "abc1234",
+                                "reference": "[main](https://git.example/acme/api/blob/abc1234/api/main.py)",
+                                "coverage": {"read": "full"}}],
+                   "findings": [finding(claim="The API serves search.", sources="[[s1]]")]}
+        self.assertIn("[[c1]] links acme/api: api", self.refused(
+            "design", {**reading, "components": [component]}))
+        self.submit("design", {**reading, "components": [
+            {**component, "evidence": "[[F01]], [[f1]]"}]})
+        self.assertIn("| 🟩 Live |", self.text())
 
     def test_a_review_round_adds_its_questions(self):
         result = self.submit("review", copy.deepcopy(

@@ -9,8 +9,8 @@ only when there is none.
 """
 import re
 
-from common import (DESIGN_ORDER, COVERAGE, LEFT_OUT, OUTSIDE_SCOPE, SCOPE_ANSWERS, SCOPE_QUESTION, USER_DECIDED, citation,
-                    cited_evidence_problem, claim_length_problem, ids, read_in_part, recorded_ids)
+from common import (DESIGN_ORDER, COVERAGE, OUTSIDE_SCOPE, SCOPE_ANSWERS, SCOPE_QUESTION, USER_DECIDED, citation, ids,
+                    read_in_part, recorded_ids)
 from ledger import (TABLES, as_written, input_columns, basis, duplicate_of, finish_write, find_row,
                     header_of, move_row, next_id, put_row, refuse_cited, search_reference, set_design_basis,
                     table_rows, write_rows, record_review)
@@ -168,8 +168,6 @@ def write_reading(lines, sources, findings, keys, problems):
         if cells is None:
             continue
         cells[2] = partial_limits(lines, item, cells, where, problems, keys)
-        if too_long := claim_length_problem(where, cells[0]):
-            problems.add(too_long)
         written += problems.put(lines, "findings",
                                 keys.get(key_of(item)), cells, where, keys)
     return written
@@ -293,9 +291,9 @@ def coverage_text(given):
 def grown_coverage(before, now):
     """The coverage of a source read again: `before`, as the ledger holds it,
     and `now`, what this read covers, together. The fuller read wins, as full
-    covers everything; the lines, sections and files read are merged, lines
-    covering a whole file making it full, and the notes kept. Exits on a `now`
-    coverage_text() refuses."""
+    covers everything; the lines, sections and files of the reads at that
+    level are merged, lines covering a whole file making it full, and the
+    notes kept. Exits on a `now` coverage_text() refuses."""
     coverage_text(now)
     read = min(before["read"], now["read"], key=COVERAGE.index)
     notes = list(dict.fromkeys(n for n in (
@@ -303,7 +301,10 @@ def grown_coverage(before, now):
     grown = {"read": read, **({"note": "; ".join(notes)} if notes else {})}
     if read == "full":
         return grown
-    spans = sorted(before.get("lines", []) + now.get("lines", []))
+    # A part a lesser read names wasn't read at this level: a file a listing
+    # names wasn't read in part.
+    reads = [c for c in (before, now) if c["read"] == read]
+    spans = sorted(span for c in reads for span in c.get("lines", []))
     merged = []
     for first, last in spans:
         if merged and first <= merged[-1][1] + 1:
@@ -319,7 +320,7 @@ def grown_coverage(before, now):
     if size:
         grown["of"] = size
     for name in ("sections", "files"):
-        if items := list(dict.fromkeys(before.get(name, []) + now.get(name, []))):
+        if items := list(dict.fromkeys(item for c in reads for item in c.get(name, []))):
             grown[name] = items
     return grown
 
@@ -404,16 +405,11 @@ def partial_limits(lines, item, cells, where, problems, keys):
         else:
             reasons[ident] = problems.cite(
                 reason, f"{where}.partial", keys, citing=False).strip().rstrip(".")
-    if missing := [ident for ident in cited if ident not in reasons]:
-        named = {ident: f"[[{key}]]" for key, ident in keys.items() if ident}
-        sources = ", ".join(
-            named.get(ident) or f"[[{ident}]]" for ident in missing)
-        problems.add(f"{where}: cites {sources}, read only in part: read the rest, or say in partial, for "
-                     f"{sources}, why the unread part can't change this claim")
     notes = [
         f"{citation(ident)} read in part: {reasons[ident]}." for ident in cited if ident in reasons]
-    limits = "" if notes and cells[2] == "None" else cells[2]
-    return " ".join([limits, *notes]).strip()
+    # Whether each such source has its reason is checked as the row is
+    # written, by the rule the handover check applies.
+    return " ".join(["" if notes and cells[2] == "None" else cells[2], *notes]).strip()
 
 
 def add_questions(lines, questions, keys, problems, where="new_questions"):
@@ -493,9 +489,6 @@ def close(lines, question, outcome, keys, allocator, problems):
         ident = allocator.next(table[0].upper())
         cells = problems.cells(
             blocked[kind], table, f"outcome.blocked.{kind}", keys)
-        evidence = TABLES[table][1].index("Evidence") - 1
-        if cells and (traced := cited_evidence_problem(f"outcome.blocked.{kind}", cells[evidence])):
-            problems.add(traced)
         values = problems.put(lines, table, ident, cells,
                               f"outcome.blocked.{kind}", keys) if cells else []
     else:
@@ -513,11 +506,9 @@ def close_outside_scope(lines, question, outcome, problems):
     problems.only(outcome, ["outside_scope"], "outcome")
     given = outcome["outside_scope"]
     boundary = referenced(given) if isinstance(given, str) else None
-    row = {row[0]: row for row in table_rows(
-        lines, "scope")}.get(boundary or "")
-    if row is None or row[2] not in LEFT_OUT:
-        problems.add(f"outcome.outside_scope: {given} is no scope boundary decided as mention only or exclude, "
-                     "written as [[U01]]")
+    if boundary is None:
+        problems.add(
+            f"outcome.outside_scope: {given} is no scope boundary, written as [[U01]]")
         return []
     cited = citation(boundary)
     problems.guard("outcome", lambda: move_row(lines, question, "queue-completed",
