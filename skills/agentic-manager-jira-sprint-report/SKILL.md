@@ -6,7 +6,7 @@ allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/age
 
 # Sprint Report
 
-Writes a short, exec-ready report of one Jira sprint, closed or still running. Scripts generate the whole report: figures, tables, charts, the timeline and its commentary, and the tickets whose status their pull requests contradict. You write only the parts the report marks [AI Gen.], in `content.json` (step 2).
+Writes a short, exec-ready report of one Jira sprint, closed or still running. Scripts generate everything but the parts marked [AI Gen.]: figures, tables, charts, the timeline and its commentary, and the tickets whose status their pull requests contradict. You write only those parts, in `content.json` (step 2).
 
 The report's files go to the `jira-sprint-reports` folder of the user's configured output root (`output.root`), or to a temporary folder if none is set. The scripts choose the folder; don't pass one.
 
@@ -67,19 +67,21 @@ The brief holds only the first part of each epic's and ticket's Jira description
 
 Work out the goal themes first: several fields use them, so match tickets to themes once and use the same matching in each. Word limits are a ceiling, not a target: write fewer words when the point is simple or the evidence thin.
 
-**Goal themes.** A theme is usually the text before a goal line's colon ("Search" in "Search: let staff find past orders"). Judge the goal from `goal_tickets`, and use only the tickets under `epics` for the epic commentary and the achievements. A theme's tickets are those of the epic whose name contains the theme's word, plus any ticket whose summary names it, in any epic. If a theme, or part of one, matches nothing or the match is doubtful, make the best reading and say so in step 4.
+**Goal themes.** A theme is usually the text before a goal line's colon ("Search" in "Search: let staff find past orders"). Judge the goal from `goal_tickets`, and use only the tickets under `epics` for the epic commentary and the achievements. A theme's tickets are those of the epic whose name contains the theme's word, plus any ticket whose summary names it, in any epic. If a theme, or part of one, matches nothing or the match is doubtful, make the best reading, judge the goal by the tickets that do match, and say so in step 4.
 
-**`epic_commentary`**: for every epic in the brief, one sentence per `group` it has tickets in. Say what changed for users or the system ("Staff can now sign in with their work account"), using the epic's description for context and each ticket's summary and description. Merge small items. At most 60 words in total per epic. Describe a ticket with no description from its summary alone; if a whole group has only bare summaries, add that "the tickets carry no detail".
+**`goal_verdict`**: one of the brief's `goal_verdicts`, word for word; if it offers only one, use it. A theme is met when none of its commitment tickets is open at the end (the `not_completed` outcome in `goal_tickets`, including work in review); extra work doesn't decide it, and descoped work doesn't count against it. Closed sprint: "Fully met" if every theme is met, "Not met" if none is, otherwise "Partially met". Running sprint, when the brief offers it: "At risk" if any theme has more than half its commitment pts open, otherwise "On track".
 
-**`key_achievements`**: one paragraph of at most 100 words on what the sprint achieved, a step above the epic commentary: the `completed` tickets, by goal theme in the goal's order, then the other epics in the brief's order.
+**`goal_reason`**: one sentence of at most 25 words on why the goal got its verdict, naming the themes that decided it ("Search is met, but most of Billing's commitment is still open"). Leave it out when the brief offers only one verdict.
+
+**`epic_commentary`**: for every epic in the brief, one sentence per `group` it has tickets in. Say what changed for users or the system ("Staff can now sign in with their work account"), using the epic's description for context and each ticket's summary and description. Merge small items. At most 40 words per sentence. Describe a ticket with no description from its summary alone; if a whole group has only bare summaries, add that "the tickets carry no detail".
+
+**`key_achievements`**: one paragraph of at most 150 words on what the sprint achieved, a step above the epic commentary: the `completed` tickets, by goal theme in the goal's order, then the other epics in the brief's order.
 
 **`blockers_risks`**: one paragraph of at most 100 words on the commitment still open: tickets with `scope` `original` in the `in_review` and `not_completed` groups. Group them by goal theme, then by epic, and say what the open work holds back. Give a reason only where a comment states one ("under discussion with Security"), and say when a ticket is flagged. If nothing from the commitment is open, say so.
 
 **`retro_notes`**: 1 to 5 notes for the team's retro, each a fact followed by a question ending with "?". Look across `report_facts` and the brief, including `carried_in` tickets that are still open, for what most departed from the plan and what the team can learn from it: patterns between epics, the timeline commentary and the goal, not only the largest figure. Quote figures word for word from `report_facts`, and name tickets as `KEY (N pts)` with the brief's `points`; don't derive new figures. Frame causes as questions, never as findings the data can't show.
 
-**`goal_verdict`**: one of the brief's `goal_verdicts`, word for word; if it offers only one, use it. A theme is met when none of its commitment tickets is open at the end (the `not_completed` outcome in `goal_tickets`, including work in review); extra work doesn't decide it, and descoped work doesn't count against it. Closed sprint: "Fully met" if every theme is met, "Not met" if none is, otherwise "Partially met". Running sprint, when the brief offers it: "At risk" if any theme has more than half its commitment pts open, otherwise "On track". If part of a theme maps to no ticket, judge by the tickets that do.
-
-Rules for all of it. `finish_report.py` rejects text that breaks the wording and format rules, naming the field; it can't check the content rules, so you are the only guard for them:
+Rules for all of it. `finish_report.py` rejects text that breaks the wording and format rules, naming the field; it can't tell whether a figure is quoted, whether the text stays within what the tickets say, or whether it carries customer data or names a colleague, so you are the only guard for those:
 
 - No ticket keys except in the retro notes, and no figures except quoted ones in the retro notes: the generated parts show them.
 - Only what the tickets, descriptions and comments say. Never carry customer data from descriptions (names, contact details, account IDs, financial details), and never name colleagues: name the team ("with Security").
@@ -93,6 +95,7 @@ Write `content.json` through the shared writer, with the `content_path` from ste
 python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py --name jira-sprint-reports --path '<content_path>' <<'END_OF_FILE'
 {
   "goal_verdict": "Partially met",
+  "goal_reason": "Sign-in is met, but the audit work is still open.",
   "epic_commentary": {
     "PROJ-10": {
       "completed": "Staff can now sign in with their work account.",

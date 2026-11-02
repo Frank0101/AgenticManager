@@ -20,7 +20,7 @@ from common import parse_ts  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from sprint_fixture import moved  # noqa: E402
 from ticket_fixture import (CATEGORIES, CLOSE, FIELDS, PLUS_ONE, START, at, carried, changed, context,  # noqa: E402
-                            done, events, flag, joined, left, points, raw)
+                            done, events, flag, joined, left, points, raw, sprint_change)
 
 
 class ChunksTest(unittest.TestCase):
@@ -108,13 +108,11 @@ class SprintEventsTest(unittest.TestCase):
                 self.assertEqual(common.split_ids(value), expected)
 
     def test_add_and_remove_events(self):
-        def sprint(created, old, new):
-            return {"created": created, "field": "sprint", "from": old, "to": new}
         events = [
-            sprint("2026-03-04T10:00:00.000+0100", "7", "8"),
-            sprint("2026-03-03T10:00:00.000+0100", "6", "6, 7"),
-            sprint("2026-03-01T10:00:00.000+0100", "", "6"),
-            sprint("2026-03-05T10:00:00.000+0100", "8", "8, 9"),
+            sprint_change("2026-03-04T10:00:00.000+0100", "7", "8"),
+            sprint_change("2026-03-03T10:00:00.000+0100", "6", "6, 7"),
+            sprint_change("2026-03-01T10:00:00.000+0100", "", "6"),
+            sprint_change("2026-03-05T10:00:00.000+0100", "8", "8, 9"),
             # Another field's ids are never sprint moves.
             {"created": "2026-03-06T10:00:00.000+0100",
                 "field": "status", "from": "", "to": "7"},
@@ -194,8 +192,6 @@ class TicketEventsTest(unittest.TestCase):
         # Jira logs no change for the sprints a ticket is created in: each
         # sprint whose first move isn't an add, and the reported sprint when
         # no change names it.
-        def change(created, old, new):
-            return {"created": created, "field": "sprint", "from": old, "to": new}
         cases = [
             ("no sprint change", [], ["7"]),
             ("added later", [joined(at("02-27"))], []),
@@ -204,9 +200,9 @@ class TicketEventsTest(unittest.TestCase):
             ("removed and added at one instant", [
              joined(at("02-27")), left(at("02-27"))], ["7"]),
             ("a later sprint added after this one", [joined(at("02-27")),
-                                                     change(at("03-14"), "7", "7, 8")], []),
+                                                     sprint_change(at("03-14"), "7", "7, 8")], []),
             ("sorted as numbers", [
-             change(at("02-27"), "10", "")], ["7", "10"]),
+             sprint_change(at("02-27"), "10", "")], ["7", "10"]),
         ]
         for name, changes, expected in cases:
             with self.subTest(name):

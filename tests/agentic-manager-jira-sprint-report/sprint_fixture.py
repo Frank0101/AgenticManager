@@ -217,6 +217,7 @@ PULL_REQUESTS = {
 # Judgment text the agent would write for this sprint.
 CONTENT = {
     "goal_verdict": "Partially met",
+    "goal_reason": "Importing from a folder is met, but importing from a shared link is still open.",
     "epic_commentary": {
         "PROJ-100": {"completed": "Files can now be imported from a folder.",
                      "not_completed": "Importing from a shared link is still in progress.",

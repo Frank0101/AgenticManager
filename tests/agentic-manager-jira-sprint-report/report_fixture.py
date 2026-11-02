@@ -33,7 +33,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import build_sprint_data as build  # noqa: E402
-from common import NO_EPIC, parse_ts  # noqa: E402
+from common import NO_EPIC, allowed_verdicts, parse_ts  # noqa: E402
+from sprint_fixture import PR  # noqa: E402
 
 BASE = "https://acme.test"
 START = "2026-03-02T09:00:00.000+0000"
@@ -211,7 +212,7 @@ def pull(number, title, state, via, branch="", day=3):
     2026 and, unless open, merged or declined the day after; its ownership
     and state are the model's own."""
     end = f"2026-03-{day + 1:02d}T10:00:00.000+0000"
-    pr = {"url": f"https://github.com/acme/api/pull/{number}", "title": title, "branch": branch, "via": via,
+    pr = {"url": PR.format(number), "title": title, "branch": branch, "via": via,
           "createdAt": f"2026-03-{day:02d}T10:00:00.000+0000", "mergedAt": end if state == "merged" else None,
           "closedAt": None if state == "open" else end}
     return {**pr, "own": build.is_own_pull(pr, via), "state": build.pull_state(pr)}
@@ -229,6 +230,7 @@ PULLS = {"PROJ-1": [pull(41, "PROJ-1 sign in with a password", "open", "PROJ-1",
 
 CONTENT = {
     "goal_verdict": "Partially met",
+    "goal_reason": "Password sign-in is met, but remembering the sign-in method is still open.",
     "epic_commentary": {
         "PROJ-100": {"completed": "Staff can sign in with a password.",
                      "not_completed": "Remembering the last sign-in method is still in progress.",
@@ -240,3 +242,13 @@ CONTENT = {
     "retro_notes": ["PROJ-1 (3 pts) grew during the sprint: was it refined enough?",
                     "PROJ-2 (2 pts) left the sprint and came back: should it have stayed out?"],
 }
+
+
+def content_for(data):
+    """CONTENT as the agent would write it for `data`: a sprint offered only
+    one verdict gets it, and no reason."""
+    content = copy.deepcopy(CONTENT)
+    if len(allowed_verdicts(data)) == 1:
+        content["goal_verdict"] = allowed_verdicts(data)[0]
+        del content["goal_reason"]
+    return content

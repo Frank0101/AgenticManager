@@ -584,6 +584,7 @@ class MakeReportTest(ReportTest):
         def no_goal():
             self.raw["sprint.json"]["goal"] = None
             self.content["goal_verdict"] = "No goal set in Jira for this sprint"
+            del self.content["goal_reason"]
 
         def no_estimates():
             self.raw["_meta.json"]["story_points_field"] = None

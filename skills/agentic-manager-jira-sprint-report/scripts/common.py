@@ -1,7 +1,7 @@
-"""Helpers shared by the sprint-report scripts: file names, a ticket's events and
-what they say at a past moment (its state, its sprint moves, whether it was a
-blocker candidate), the kinds of event a ticket's history holds, and the
-report's vocabulary, formats, goal verdicts and commentary groups.
+"""Helpers shared by the sprint-report scripts: the report's files and scripts, a
+ticket's events and what they say at a past moment (its state, sprint moves,
+whether it was a blocker candidate), the report's vocabulary and formats, goal
+verdicts, epics and commentary groups, and a description's pieces.
 
 It also puts the agentic-manager-utils-lib skill, installed next to this one, on
 sys.path and imports what the scripts need from it. The scripts import those
@@ -23,7 +23,7 @@ from agentic_manager.text import DISPLAY_DATE, HEADING, INLINE_LINK, link_text, 
 from agentic_manager.output_folder import clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order,  # noqa: E402,F401
-                                  parse_ts, plain_text, project_of, value_at)
+                                  parse_ts, plain_text, project_of)
 from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.failures import GITHUB_FAILED, stops_on_failure  # noqa: E402,F401
 from agentic_manager.github import GH_UNAVAILABLE, gh_available  # noqa: E402,F401
@@ -143,12 +143,15 @@ JIRA_CELL = "jira"
 DESCRIPTION_CHUNK_CHARS = 2000
 
 # Word limits, so the report stays short enough for an exec to read: the
-# timeline's commentary before its caveats, each epic's commentary, and the
-# Key Achievements and Blockers & Risks paragraphs; and the most retro notes.
-# Words are counted as the library's word_count counts them.
+# timeline's commentary before its caveats, the goal verdict's reason, each
+# sentence of an epic's commentary, and the Key Achievements and Blockers &
+# Risks paragraphs; and the most retro notes. Words are counted as the
+# library's word_count counts them.
 COMMENTARY_WORDS = 100
-EPIC_COMMENTARY_WORDS = 60
-SUMMARY_WORDS = 100
+GOAL_REASON_WORDS = 25
+EPIC_COMMENTARY_WORDS = 40
+ACHIEVEMENTS_WORDS = 150
+BLOCKERS_WORDS = 100
 RETRO_NOTES = 5
 
 # Marks the parts of the report the agent writes, on their heading or label;
@@ -160,15 +163,48 @@ AI_LABEL = "[AI Gen.]"
 FIELD_TABLE_HEAD = "| Field | Detail |\n|---|---|\n"
 
 
-def spell_epic(spell):
-    """(key, name) of a spell's epic, NO_EPIC and NO_EPIC_NAME without one."""
-    return (spell["parentKey"], spell["parentSummary"]) if spell["parentKey"] else (NO_EPIC, NO_EPIC_NAME)
+def report_label(project_key, sprint_name):
+    """File-safe label such as PROJ_Sprint_3. The project key is prefixed
+    because Jira sprint names ("Sprint 3") often don't carry it."""
+    name = sprint_name or "Sprint"
+    if project_key and not name.upper().startswith(project_key.upper()):
+        name = f"{project_key} {name}"
+    return re.sub(r"[^A-Za-z0-9.-]+", "_", name).strip("_")
 
 
-def epic_title(epic):
-    """An epic's label in the report and the brief: "KEY: Name", or the bare
-    name of the tickets without an epic."""
-    return epic["name"] if epic["key"] == NO_EPIC else f"{epic['key']}: {epic['name']}"
+def expected_files(label):
+    """Every file a report folder holds, and nothing else: the fetched _raw
+    folder, the three data files, the charts and the report."""
+    return {RAW_DIR, DATA_FILE, CONTENT_FILE, BRIEF_FILE,
+            *CHART_FILES.values(), report_file(label)}
+
+
+def report_file(label):
+    """The report's file name for a label."""
+    return f"{label}_Sprint_Report.md"
+
+
+def write_json(path, payload):
+    """Writes a value as indented JSON inside the skill's output folder."""
+    write_report_file(path, json.dumps(payload, indent=2))
+
+
+def write_report_file(path, text):
+    """Writes `text` to `path`, creating missing folders, through the shared
+    writer, which exits, writing nothing, if `path` isn't inside the skill's
+    output folder."""
+    folder, _ = output_folder(REPORTS_FOLDER)
+    relative = os.path.relpath(
+        os.path.realpath(path), os.path.realpath(folder))
+    write_output_file(REPORTS_FOLDER, relative, text.encode("utf-8"))
+
+
+def run_script(script, *args, **kwargs):
+    """Runs a script of this skill with the current Python and returns the
+    finished process, its stdout captured as text; `kwargs` go to
+    subprocess.run, such as stderr=subprocess.STDOUT to capture both."""
+    return subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.realpath(__file__)), script),
+                           *args], stdout=subprocess.PIPE, text=True, **kwargs)
 
 
 def report_timezone(name):
@@ -463,50 +499,6 @@ def as_of(sprint, fetched_at):
     return fetched_at
 
 
-def run_script(script, *args, **kwargs):
-    """Runs a script of this skill with the current Python and returns the
-    finished process, its stdout captured as text; `kwargs` go to
-    subprocess.run, such as stderr=subprocess.STDOUT to capture both."""
-    return subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.realpath(__file__)), script),
-                           *args], stdout=subprocess.PIPE, text=True, **kwargs)
-
-
-def expected_files(label):
-    """Every file a report folder holds, and nothing else: the fetched _raw
-    folder, the three data files, the charts and the report."""
-    return {RAW_DIR, DATA_FILE, CONTENT_FILE, BRIEF_FILE,
-            *CHART_FILES.values(), report_file(label)}
-
-
-def report_file(label):
-    """The report's file name for a label."""
-    return f"{label}_Sprint_Report.md"
-
-
-def write_json(path, payload):
-    """Writes a value as indented JSON inside the skill's output folder."""
-    write_report_file(path, json.dumps(payload, indent=2))
-
-
-def write_report_file(path, text):
-    """Writes `text` to `path`, creating missing folders, through the shared
-    writer, which exits, writing nothing, if `path` isn't inside the skill's
-    output folder."""
-    folder, _ = output_folder(REPORTS_FOLDER)
-    relative = os.path.relpath(
-        os.path.realpath(path), os.path.realpath(folder))
-    write_output_file(REPORTS_FOLDER, relative, text.encode("utf-8"))
-
-
-def report_label(project_key, sprint_name):
-    """File-safe label such as PROJ_Sprint_3. The project key is prefixed
-    because Jira sprint names ("Sprint 3") often don't carry it."""
-    name = sprint_name or "Sprint"
-    if project_key and not name.upper().startswith(project_key.upper()):
-        name = f"{project_key} {name}"
-    return re.sub(r"[^A-Za-z0-9.-]+", "_", name).strip("_")
-
-
 def outcome_total(breakdown, row, counts=None):
     """All the work of an outcome_breakdown row, however it ended. For the pts
     breakdown, `counts` is the tickets breakdown: the pts add up by known_sum's
@@ -615,10 +607,17 @@ def ticket_ref(key, points):
     return f"{key} ({pts(points)})"
 
 
+def latest_points(spells):
+    """{key: pts} of each ticket's latest estimate, its last spell's: the one
+    a ticket shows wherever no moment of its own applies, such as running
+    text and the Status to Verify table."""
+    return {s["key"]: s["points"] for s in spells}
+
+
 def whole_percentage(part, whole):
     """A share as a whole percentage, "<1%" or ">99%" where rounding would
-    show a share as none or all of the whole, and "–" when either is
-    unestimated pts (known_sum's None)."""
+    show a share as none or all of the whole, "–" when either is unestimated
+    pts (known_sum's None), and "n/a" when the whole is zero."""
     if part is None or whole is None:
         return "–"
     if not whole:
@@ -689,27 +688,15 @@ def allowed_verdicts(data):
     return GOAL_VERDICTS["early" if early else "active"]
 
 
-def chunks(text, size=DESCRIPTION_CHUNK_CHARS):
-    """`text` in pieces of at most `size` characters. A piece ends at the last
-    line break, else the last space, in its second half, so it stops at the end
-    of a line when the text has one to use."""
-    pieces = []
-    while len(text) > size:
-        cut = text.rfind("\n", size // 2, size + 1)
-        if cut < 0:
-            cut = text.rfind(" ", size // 2, size + 1)
-        if cut < 0:
-            cut = size
-        pieces.append(text[:cut].rstrip())
-        text = text[cut:].lstrip()
-    return [*pieces, text]
+def spell_epic(spell):
+    """(key, name) of a spell's epic, NO_EPIC and NO_EPIC_NAME without one."""
+    return (spell["parentKey"], spell["parentSummary"]) if spell["parentKey"] else (NO_EPIC, NO_EPIC_NAME)
 
 
-def ai(title):
-    """A heading or label of an AI-written part. The label is a small superscript
-    after the title it marks: a note for the reader, not part of the title. Its
-    size is in rem, so it reads the same after a heading and in a table cell."""
-    return f'{title} <sup style="font-size:0.6rem;font-weight:normal">{AI_LABEL}</sup>'
+def epic_title(epic):
+    """An epic's label in the report and the brief: "KEY: Name", or the bare
+    name of the tickets without an epic."""
+    return epic["name"] if epic["key"] == NO_EPIC else f"{epic['key']}: {epic['name']}"
 
 
 def scope_group_label(group, status):
@@ -724,3 +711,26 @@ def scope_group_label(group, status):
 def epic_groups(epic):
     """The commentary groups an epic has tickets to describe in, in order."""
     return [g for g in SCOPE_GROUPS if epic["scope_groups"][g]]
+
+
+def ai(title):
+    """A heading or label of an AI-written part. The label is a small superscript
+    after the title it marks: a note for the reader, not part of the title. Its
+    size is in rem, so it reads the same after a heading and in a table cell."""
+    return f'{title} <sup style="font-size:0.6rem;font-weight:normal">{AI_LABEL}</sup>'
+
+
+def chunks(text, size=DESCRIPTION_CHUNK_CHARS):
+    """`text` in pieces of at most `size` characters. A piece ends at the last
+    line break, else the last space, in its second half, so it stops at the end
+    of a line when the text has one to use."""
+    pieces = []
+    while len(text) > size:
+        cut = text.rfind("\n", size // 2, size + 1)
+        if cut < 0:
+            cut = text.rfind(" ", size // 2, size + 1)
+        if cut < 0:
+            cut = size
+        pieces.append(text[:cut].rstrip())
+        text = text[cut:].lstrip()
+    return [*pieces, text]

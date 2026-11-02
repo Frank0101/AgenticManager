@@ -26,7 +26,7 @@ import fetch_sprint  # noqa: E402
 from common import RAW_DIR, SPRINT_FILE  # noqa: E402
 from agentic_manager import retry  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from sprint_fixture import report_folder  # noqa: E402
+from sprint_fixture import PR, report_folder  # noqa: E402
 # The fake gh's GraphQL answers follow the library's query.
 sys.path.insert(0, os.path.join(os.path.dirname(
     TEST_DIR), "agentic-manager-utils-lib"))
@@ -202,7 +202,7 @@ class PreviousSprintTest(unittest.TestCase):
                 self.assertEqual(previous and previous["id"], expected)
 
 
-PR = "https://github.com/acme/api/pull/{}"
+ACME_LABS = "https://github.com/acme-labs/web/pull/43"
 
 
 class Panel:
@@ -260,20 +260,19 @@ class PullRequestsTest(unittest.TestCase):
     ISSUES = [{"id": "1", "key": "PROJ-1"}, {"id": "2", "key": "PROJ-2"},
               {"id": "3", "key": "PROJ-3"}]
     PANEL = {"1": [{"url": PR.format(41), "status": "MERGED"}],
-             "2": [{"url": "https://github.com/acme-labs/web/pull/43", "status": "OPEN"}]}
+             "2": [{"url": ACME_LABS, "status": "OPEN"}]}
     # When GitHub says each was opened, by URL.
     TIMES = {f"pr view {url}": {"createdAt": "2026-03-05T10:00:00Z"}
-             for url in (PR.format(41), PR.format(42), PR.format(44), "https://github.com/acme-labs/web/pull/43")}
+             for url in (PR.format(41), PR.format(42), PR.format(44), ACME_LABS)}
 
     def test_pull_requests(self):
         # Only the panel's, each kept as found there; a ticket whose panel
         # lists none has none, as GitHub isn't searched for more. GitHub is
         # read only for the times, in GraphQL calls.
-        acme_labs = "https://github.com/acme-labs/web/pull/43"
         # name: (the panel's pull requests by issue id, {key: [url]})
         cases = [
             ("the panel's", self.PANEL,
-             {"PROJ-1": [PR.format(41)], "PROJ-2": [acme_labs], "PROJ-3": []}),
+             {"PROJ-1": [PR.format(41)], "PROJ-2": [ACME_LABS], "PROJ-3": []}),
             ("several on one ticket", {"3": [{"url": PR.format(42)}, {"url": PR.format(44)}]},
              {"PROJ-1": [], "PROJ-2": [], "PROJ-3": [PR.format(42), PR.format(44)]}),
             ("none listed", {}, {"PROJ-1": [], "PROJ-2": [], "PROJ-3": []}),
@@ -306,19 +305,18 @@ class PullRequestsTest(unittest.TestCase):
         # links, is dropped from every ticket, so it gives no events, said
         # on stderr with the tickets it came through and kept as skipped
         # with GitHub's message; the others are kept, and the fetch goes on.
-        acme_labs = "https://github.com/acme-labs/web/pull/43"
         gone = "{}: Could not resolve to a PullRequest with the number of {}."
         # name: (the panel's pull requests by issue id, those GitHub can't
         # find, {key: [url]} kept, the skipped as (url, via))
         cases = [
-            ("one", self.PANEL, [acme_labs],
-             {"PROJ-1": [PR.format(41)], "PROJ-2": [], "PROJ-3": []}, [(acme_labs, ["PROJ-2"])]),
+            ("one", self.PANEL, [ACME_LABS],
+             {"PROJ-1": [PR.format(41)], "PROJ-2": [], "PROJ-3": []}, [(ACME_LABS, ["PROJ-2"])]),
             ("linked to two tickets", {**self.PANEL, "3": [{"url": PR.format(41)}, {"url": PR.format(44)}]},
              [PR.format(41)], {
-                "PROJ-1": [], "PROJ-2": [acme_labs], "PROJ-3": [PR.format(44)]},
+                "PROJ-1": [], "PROJ-2": [ACME_LABS], "PROJ-3": [PR.format(44)]},
              [(PR.format(41), ["PROJ-1", "PROJ-3"])]),
-            ("every one", self.PANEL, [PR.format(41), acme_labs], {"PROJ-1": [], "PROJ-2": [], "PROJ-3": []},
-             [(PR.format(41), ["PROJ-1"]), (acme_labs, ["PROJ-2"])]),
+            ("every one", self.PANEL, [PR.format(41), ACME_LABS], {"PROJ-1": [], "PROJ-2": [], "PROJ-3": []},
+             [(PR.format(41), ["PROJ-1"]), (ACME_LABS, ["PROJ-2"])]),
         ]
         for name, panel, missing, kept, skipped in cases:
             with self.subTest(name), contextlib.redirect_stderr(io.StringIO()) as said:
@@ -348,11 +346,10 @@ class PullRequestsTest(unittest.TestCase):
         limited = f": {LIMIT} Wait a minute and run it again."
         refused = ("Resource not accessible. Check that gh works (gh auth status) and run it again, or disable "
                    "the github-cli source to go on without GitHub.")
-        acme_labs = "https://github.com/acme-labs/web/pull/43"
 
         def answer(*errors):
             """GitHub's answer to the GraphQL call with PR 41 (r0, p0) and
-            acme_labs (r1, p1): each error a (pull, its type), the others read."""
+            ACME_LABS (r1, p1): each error a (pull, its type), the others read."""
             failing = dict(errors)
             return {"data": {"r0": {"p0": None if "p0" in failing else {}},
                              "r1": {"p1": None if "p1" in failing else {}}},
@@ -373,14 +370,15 @@ class PullRequestsTest(unittest.TestCase):
         for name, graphql, start, end in cases:
             run = gh({**self.TIMES, "api graphql": graphql})
             # Raised as GhError, which main stops on with NO_REPORT.
-            with self.subTest(name), contextlib.redirect_stderr(io.StringIO()), \
-                    self.assertRaises(SystemExit) as raised, fetch_sprint.stops_on_failure(fetch_sprint.NO_REPORT):
-                fetch_sprint.pull_requests(
-                    Panel(self.PANEL), self.ISSUES, run)
-            message = str(raised.exception.code)
-            self.assertTrue(message.startswith(start), message)
-            self.assertTrue(message.endswith(end), message)
-            self.assertEqual(len(run.calls), 1, run.calls)
+            with self.subTest(name):
+                with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised, \
+                        fetch_sprint.stops_on_failure(fetch_sprint.NO_REPORT):
+                    fetch_sprint.pull_requests(
+                        Panel(self.PANEL), self.ISSUES, run)
+                message = str(raised.exception.code)
+                self.assertTrue(message.startswith(start), message)
+                self.assertTrue(message.endswith(end), message)
+                self.assertEqual(len(run.calls), 1, run.calls)
 
 
 class ChangelogsTest(unittest.TestCase):

@@ -23,7 +23,8 @@ from common import CHART_FILES, ai, expected_files  # noqa: E402
 from make_report import Report, tag  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
-from report_fixture import BASE, CONTENT, TICKETS, caveat_data, ev, ticket, sprint_data  # noqa: E402
+from report_fixture import BASE, CONTENT, TICKETS, caveat_data, content_for, ev, ticket, sprint_data  # noqa: E402
+from sprint_fixture import PR  # noqa: E402
 
 # The [AI Gen.] label as make_report renders it.
 AI = ai("")
@@ -156,7 +157,7 @@ class ChecksTest(unittest.TestCase):
         for name, (changes, verdict) in cases.items():
             with self.subTest(name):
                 data = sprint_data(**changes)
-                md = Report(data, {**copy.deepcopy(CONTENT),
+                md = Report(data, {**content_for(data),
                             "goal_verdict": verdict}).build()
                 self.assertEqual(self.failures(md, data), [])
 
@@ -412,6 +413,10 @@ class ChecksTest(unittest.TestCase):
             ("a second original spell", lambda d: d["spells"][2].update(scope="original", events=[
                 dict(d["spells"][2]["events"][0], type="committed")]),
              "model: PROJ-2's events are well formed (committed)"),
+            ("a Status to Verify row under another epic", lambda d: d["status_checks"][0].update(epicKey="PROJ-90"),
+             "model: the Status to Verify rows are the tickets their pull requests and statuses flag"),
+            ("a Status to Verify row's status", lambda d: d["status_checks"][0].update(status="Blocked"),
+             "model: the Status to Verify rows are the tickets their pull requests and statuses flag"),
             ("missing final burndown days", lambda d: d["burndown"].pop(),
              "model: the burndown covers every day"),
             ("missing middle burndown day", lambda d: d["burndown"].pop(1),
@@ -495,7 +500,7 @@ class ChecksTest(unittest.TestCase):
             # The build leaves the pull request data out, so a GitHub event is unknown.
             ("a pull request event", lambda d: d["ticket_events"]["PROJ-1"].append(
                 event_at("2026-03-04T09:00:00Z", source="github", type="last_pr_merged",
-                         url="https://github.com/acme/api/pull/41", via="PROJ-1")),
+                         url=PR.format(41), via="PROJ-1")),
              "model: PROJ-1's ticket events are well formed"),
             ("events of a ticket without a spell", lambda d: d["ticket_events"].update(
                 {"PROJ-9": d["ticket_events"]["PROJ-3"]}),

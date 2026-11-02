@@ -1,9 +1,10 @@
 """Check a finished sprint report against the data it was built from and
 against the report's formatting rules.
 
-It shares only the format helpers with make_report.py and recomputes every
-figure from the spells' events, so a generator bug can't pass by agreeing with
-itself. Every rule here exists because a table drifted when corrected by hand:
+It shares only the format helpers and constants with make_report.py, recomputes
+every figure from the spells' events, and reads a stored fact only once a check
+here has verified it against the events, so a generator bug can't pass by
+agreeing with itself. Every rule here exists because a table drifted when corrected by hand:
 prose guidance didn't stop it, a failing check does.
 """
 import argparse
@@ -19,7 +20,8 @@ from common import (HEADING, INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORD
                     TICKET_EVENT_TYPES,
                     NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai, text_rule_problems,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty,
-                    ratio, report_file, report_timezone, scope_group_label, spell_epic, whole_percentage, word_count)
+                    ratio, report_file, report_timezone, scope_group_label, spell_epic, whole_percentage, word_count,
+                    latest_points)
 
 
 # The event kinds of a spell.
@@ -405,10 +407,12 @@ def check_pull_requests(c, data):
             flag = "open_after_done"
         if flag:
             every = [pr["state"] for pr in pulls_of.get(key, [])]
-            expected.append((key, flag, states.count("open"), every.count("merged"), every.count("open"),
-                             every.count("declined"), len(every) - len(states)))
-    stored = [(r["key"], r["flag"], r["ownOpen"], r["linked"]["merged"], r["linked"]["open"],
-               r["linked"]["declined"], r["otherTickets"]) for r in data["status_checks"]]
+            expected.append((key, spell_epic(spell)[0], spell["status"], flag, states.count("open"),
+                             every.count("merged"), every.count(
+                                 "open"), every.count("declined"),
+                             len(every) - len(states)))
+    stored = [(r["key"], r["epicKey"], r["status"], r["flag"], r["ownOpen"], r["linked"]["merged"],
+               r["linked"]["open"], r["linked"]["declined"], r["otherTickets"]) for r in data["status_checks"]]
     c.check(sorted(stored) == sorted(expected), "model",
             f"the Status to Verify rows are the tickets their pull requests and statuses flag ({len(expected)})")
     order = {e["key"]: i for i, e in enumerate(data["epics"])}
@@ -645,7 +649,7 @@ def timeline_days(table):
     timeline table's rows."""
     days = []
     for row in rows_of(table)[1:]:
-        cells = re.findall(r"<td([^>]*)>(.*?)</td>", row, re.S)
+        cells = cells_with_attributes(row)
         if cells and "rowspan" in cells[0][0]:
             span = re.search(r'rowspan="(\d+)"', cells[0][0])
             days.append({"date": text_of(cells[0][1]), "rowspan": int(span.group(1)) if span else 1,
@@ -728,13 +732,13 @@ def check_status_section(c, md, table, data):
         return
     shown, epic = [], None
     for row in rows_of(table)[1:]:
-        cells = re.findall(r"<td([^>]*)>(.*?)</td>", row, re.S)
+        cells = cells_with_attributes(row)
         if len(cells) == 4:
             epic = (ISSUE_KEY.findall(text_of(cells[0][1])) or [None])[0]
             cells = cells[1:]
         shown.append((epic, text_of(cells[0][1]), text_of(
             cells[1][1]), text_of(cells[2][1])))
-    latest = {s["key"]: s["points"] for s in data["spells"]}
+    latest = latest_points(data["spells"])
     expected = [(None if r["epicKey"] == NO_EPIC else r["epicKey"], f"{r['key']} ({pts(latest.get(r['key']))})",
                  r["status"] or "") for r in rows]
     c.check([s[:3] for s in shown] == expected, "status",
@@ -772,6 +776,11 @@ def check_epic_commentary(c, epic, cell, status):
 
 def cells_of(row):
     return re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S)
+
+
+def cells_with_attributes(row):
+    """[(attributes, content)] of a row's <td> cells."""
+    return re.findall(r"<td([^>]*)>(.*?)</td>", row, re.S)
 
 
 def check_style(c, md):
@@ -823,7 +832,7 @@ def check_vocabulary(c, md, data):
         if table_kind(table) in ("timeline", "status"):
             prose = prose.replace(table, "", 1)
     prose = strip_tags(prose)
-    latest = {s["key"]: s["points"] for s in data["spells"]}
+    latest = latest_points(data["spells"])
     lists = [group for group in KEY_LIST.findall(prose) if ", " in group]
     unsorted = [group for group in lists if group.split(
         ", ") != sorted(group.split(", "), key=key_order)]
@@ -849,7 +858,7 @@ def historical_references(data):
     """Allowed single-ticket references in the generator's fixed commentary phrases."""
     allowed = set()
     spells = data["spells"]
-    latest = {s["key"]: s["points"] for s in spells}
+    latest = latest_points(spells)
     for index, spell in enumerate(spells):
         key, points, events = spell["key"], spell["points"], spell["events"]
         reference = f"{key} ({pts(points)}) "

@@ -21,17 +21,19 @@ from common import CHART_FILES, INLINE_LINK, NO_EPIC, ai, link_text  # noqa: E40
 from make_report import Report  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
-from report_fixture import BASE, CONTENT, TICKETS, caveat_data, ev, sprint_data, ticket  # noqa: E402
+from report_fixture import BASE, CONTENT, TICKETS, caveat_data, content_for, ev, sprint_data, ticket  # noqa: E402
 
 # The [AI Gen.] label, as make_report renders it.
 AI = ai("")
 
 ACTIVE = {"sprint_status": "active",
           "today": "2026-03-10", "sprint_complete_date": None}
+EARLY = {**ACTIVE, "today": "2026-03-04"}
 
 
 def report(**changes):
-    return Report(sprint_data(**changes), copy.deepcopy(CONTENT))
+    data = sprint_data(**changes)
+    return Report(data, content_for(data))
 
 
 class HelpersTest(unittest.TestCase):
@@ -87,9 +89,10 @@ class HeaderTest(unittest.TestCase):
         # every report, and the target completion in its own table above the
         # charts. The fixture has a previous sprint, yet no carry-over row: the
         # outcome charts show the carry-over.
-        def table(dates, goal, target):
+        def table(dates, goal, target, outcome=f"Partially met: {CONTENT['goal_reason']}"):
             return ("| Field | Detail |\n|---|---|\n"
-                    f"| Dates | {dates} |\n| Goal | {goal} |\n| Goal outcome{AI} | Partially met |\n"
+                    f"| Dates | {dates} |\n| Goal | {goal} |\n"
+                    f"| Goal outcome{AI} | {outcome} |\n"
                     f"| Key Achievements{AI} | {CONTENT['key_achievements']} |\n"
                     f"| Blockers & Risks{AI} | {CONTENT['blockers_risks']} |",
                     f"| Field | Detail |\n|---|---|\n| Sprint target completion | {target} |")
@@ -100,16 +103,16 @@ class HeaderTest(unittest.TestCase):
              table("02/03/2026–13/03/2026", "Ship login", "60%, 3/5 tickets (6/10 pts) completed so far")),
             ("closed late, without a goal", {"sprint_complete_date": "2026-03-16", "sprint_goal": ""},
              table("02/03/2026–13/03/2026 (completed 16/03/2026)", "*No goal was set in Jira for this sprint*",
-                   "60%, 3/5 tickets (6/10 pts) completed")),
+                   "60%, 3/5 tickets (6/10 pts) completed", "No goal set in Jira for this sprint")),
             # All the work was added after the start: no ratio of nothing.
             ("no commitment", {"spells": [t for t in TICKETS if t["scope"] == "extra"]},
              table("02/03/2026–13/03/2026", "Ship login", "No commitment")),
             ("blank goal", {"sprint_goal": "   "},
              table("02/03/2026–13/03/2026", "*No goal was set in Jira for this sprint*",
-                   "60%, 3/5 tickets (6/10 pts) completed")),
+                   "60%, 3/5 tickets (6/10 pts) completed", "No goal set in Jira for this sprint")),
             ("blank goal lines", {"sprint_goal": "\n \n"},
              table("02/03/2026–13/03/2026", "*No goal was set in Jira for this sprint*",
-                   "60%, 3/5 tickets (6/10 pts) completed")),
+                   "60%, 3/5 tickets (6/10 pts) completed", "No goal set in Jira for this sprint")),
             # Jira's goal keeps its wording, one line per <br>, its keys linked
             # and its pipes escaped so the cell holds.
             ("a goal over several lines", {"sprint_goal": "Ship login\n\n  Fix PROJ-1 | export  \n"},
@@ -500,6 +503,18 @@ class ValidateContentTest(unittest.TestCase):
             (None, {"goal_verdict": "On track"}, ACTIVE),
             ('goal_verdict must be one of: "No goal set in Jira for this sprint"',
              {"goal_verdict": "Partially met"}, {"sprint_goal": ""}),
+            # A verdict chosen among several comes with its reason; the only
+            # one offered says it all.
+            ("goal_reason must be a non-empty string: one sentence on why the goal got its verdict",
+             {"goal_reason": " "}),
+            (None, {}, {"sprint_goal": ""}),
+            (None, {}, EARLY),
+            ("goal_reason must be left out: the brief offers only one verdict",
+             {"goal_reason": "No goal was set."}, {"sprint_goal": ""}),
+            ("goal_reason must be left out: the brief offers only one verdict",
+             {"goal_reason": None}, {"sprint_goal": ""}),
+            ("goal_reason must be left out: the brief offers only one verdict",
+             {"goal_reason": "Work has only just started."}, EARLY),
             ("epic_commentary must map each epic key to its groups' sentences",
              {"epic_commentary": []}),
             ("epic_commentary.PROJ-100 must map each group to a sentence",
@@ -516,8 +531,15 @@ class ValidateContentTest(unittest.TestCase):
                                   "PROJ-100": {**commentary["PROJ-100"], "descoped": " "}}}),
             # The text: word limits, no ticket keys (describe the work), one
             # paragraph, and the report's vocabulary.
-            ("key_achievements: 101 words, at most 100",
-             {"key_achievements": "word " * 101}),
+            ("key_achievements: 151 words, at most 150",
+             {"key_achievements": "word " * 151}),
+            (None, {"key_achievements": "word " * 150}),
+            ("blockers_risks: 101 words, at most 100",
+             {"blockers_risks": "word " * 101}),
+            ("goal_reason: 26 words, at most 25",
+             {"goal_reason": "word " * 26}),
+            ("goal_reason: must be one sentence",
+             {"goal_reason": "Sign-in is met. The audit work is open."}),
             ("blockers_risks: names tickets ['PROJ-2']",
              {"blockers_risks": "PROJ-2 is open."}),
             ("blockers_risks: must be a single paragraph",
@@ -525,11 +547,13 @@ class ValidateContentTest(unittest.TestCase):
             ("epic_commentary.PROJ-100.completed: must be one sentence",
              {"epic_commentary": {**commentary, "PROJ-100": {**commentary["PROJ-100"],
                                   "completed": "Staff can sign in. Password reset also works."}}}),
-            # An epic's limit counts all its groups' sentences together, and
-            # the error gives each group's share, to show where to cut.
-            ("epic_commentary.PROJ-100: 67 words, at most 60 (completed 50, not_completed 9, descoped 8)",
-             {"epic_commentary": {**commentary, "PROJ-100": {**commentary["PROJ-100"], "completed": "word " * 50}}}),
-            ("epic_commentary.__no_epic__: names tickets ['PROJ-3']",
+            # Each group's sentence has its own limit, however many groups
+            # the epic has.
+            ("epic_commentary.PROJ-100.completed: 41 words, at most 40",
+             {"epic_commentary": {**commentary, "PROJ-100": {**commentary["PROJ-100"], "completed": "word " * 41}}}),
+            (None, {"epic_commentary": {**commentary, "PROJ-100": {
+                group: "word " * 40 for group in commentary["PROJ-100"]}}}),
+            ("epic_commentary.__no_epic__.completed: names tickets ['PROJ-3']",
              {"epic_commentary": {**commentary, NO_EPIC: {"completed": "PROJ-3 shipped."}}}),
             ("key_achievements: no story or stories, found ['stories']", {
              "key_achievements": "Two stories shipped."}),
@@ -548,7 +572,7 @@ class ValidateContentTest(unittest.TestCase):
              {"blockers_risks": "Only 3/5 reviews are done."}),
             ("key_achievements: amounts only as N tickets (N pts), found ['3 tickets / ']",
              {"key_achievements": "3 tickets / 5 pts shipped."}),
-            ("epic_commentary.__no_epic__: bold only for labels, found ['empty']",
+            ("epic_commentary.__no_epic__.completed: bold only for labels, found ['empty']",
              {"epic_commentary": {**commentary, NO_EPIC: {"completed": "The export handles **empty** files."}}}),
             ("retro_notes[0]: no ISO dates, found ['2026-03-05']",
              {"retro_notes": ["Why did work stop on 2026-03-05?"]}),
@@ -559,8 +583,8 @@ class ValidateContentTest(unittest.TestCase):
         ]
         for expected, changes, *data_changes in cases:
             with self.subTest(expected, changes=changes if expected is None else None):
-                content = {**copy.deepcopy(CONTENT), **changes}
                 data = sprint_data(**(data_changes[0] if data_changes else {}))
+                content = {**content_for(data), **changes}
                 if expected is None:
                     make_report.validate_content(content, data)
                     continue

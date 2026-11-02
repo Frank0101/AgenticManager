@@ -50,14 +50,18 @@ def done(key, **kwargs):
     return raw(key, status="Done", resolution="Done", **kwargs)
 
 
-def joined(created, sprint="7"):
-    return {"created": created, "field": "sprint", "from": "", "to": sprint,
+def sprint_change(created, old, new):
+    """A change of the sprint field, from and to these sprint ids."""
+    return {"created": created, "field": "sprint", "from": old, "to": new,
             "fromString": None, "toString": None}
+
+
+def joined(created, sprint="7"):
+    return sprint_change(created, "", sprint)
 
 
 def left(created, sprint="7"):
-    return {"created": created, "field": "sprint", "from": sprint, "to": "",
-            "fromString": None, "toString": None}
+    return sprint_change(created, sprint, "")
 
 
 def changed(created, field, old, new, old_id=None, new_id=None):
@@ -68,8 +72,7 @@ def changed(created, field, old, new, old_id=None, new_id=None):
 def carried(created=PREVIOUS["completeDate"]):
     """Moved from Sprint 6 into Sprint 7 when Sprint 6 closed; Jira keeps
     Sprint 6 in the field."""
-    return {"created": created, "field": "sprint", "from": "6", "to": "6, 7",
-            "fromString": None, "toString": None}
+    return sprint_change(created, "6", "6, 7")
 
 
 def points(created, old, new):

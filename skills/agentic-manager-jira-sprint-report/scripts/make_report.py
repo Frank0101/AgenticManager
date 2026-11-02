@@ -17,7 +17,7 @@ from typing import cast
 
 from common import (browse_url, epic_title, SENTENCE_BREAK, CHART_FILES, COMMENTARY_WORDS, CONTENT_FILE, DATA_FILE, EPIC_COMMENTARY_WORDS, FIELD_TABLE_HEAD, ISSUE_KEY,
                     JIRA_CELL, NO_EPIC, OUTCOME_COLOURS, PULL_STATES, RETRO_NOTES, SCOPE_GROUPS, STATUS_HEADING,
-                    SUMMARY_WORDS, ai, allowed_verdicts,
+                    ACHIEVEMENTS_WORDS, BLOCKERS_WORDS, GOAL_REASON_WORDS, ai, allowed_verdicts, latest_points,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty, ratio,
                     report_file, scope_group_label, text_rule_problems, ticket_ref, unit, whole_percentage,
                     word_count, write_report_file)
@@ -73,6 +73,16 @@ def validate_content(content, data):
     if content.get("goal_verdict") not in allowed_verdicts(data):
         problems.append("goal_verdict must be one of: " +
                         ", ".join(f'"{v}"' for v in allowed_verdicts(data)))
+    # A verdict chosen among several needs its reason; the only one offered,
+    # such as for a sprint without a goal, says it all.
+    reason = content.get("goal_reason")
+    if len(allowed_verdicts(data)) > 1:
+        if not isinstance(reason, str) or not reason.strip():
+            problems.append(
+                "goal_reason must be a non-empty string: one sentence on why the goal got its verdict")
+    elif "goal_reason" in content:
+        problems.append(
+            "goal_reason must be left out: the brief offers only one verdict")
     commentary = content.get("epic_commentary")
     if not isinstance(commentary, dict):
         problems.append(
@@ -99,39 +109,35 @@ def validate_content(content, data):
 def text_problems(content, data):
     """The rules for the AI-written text, each problem naming the field to fix,
     so the fix stays next to the text that needs it."""
-    problems, texts = [], [("key_achievements", content["key_achievements"], SUMMARY_WORDS),
-                           ("blockers_risks", content["blockers_risks"], SUMMARY_WORDS)]
-    # An epic's groups share its limit: their counts say where to cut.
-    groups = {}
+    paragraphs = [("key_achievements", content["key_achievements"], ACHIEVEMENTS_WORDS),
+                  ("blockers_risks", content["blockers_risks"], BLOCKERS_WORDS)]
+    sentences = [("goal_reason", content["goal_reason"],
+                  GOAL_REASON_WORDS)] if "goal_reason" in content else []
     for epic in data["epics"]:
         given = content["epic_commentary"].get(epic["key"]) or {}
-        texts.append((f"epic_commentary.{epic['key']}", " ".join(
-            given.values()), EPIC_COMMENTARY_WORDS))
-        groups[f"epic_commentary.{epic['key']}"] = given
-        for group, text in given.items():
-            if len(SENTENCE_BREAK.split(text.strip())) != 1:
-                problems.append(
-                    f"epic_commentary.{epic['key']}.{group}: must be one sentence")
-    for field, text, limit in texts:
+        sentences += [(f"epic_commentary.{epic['key']}.{group}", text, EPIC_COMMENTARY_WORDS)
+                      for group, text in given.items()]
+    notes = [(f"retro_notes[{i}]", note)
+             for i, note in enumerate(content["retro_notes"])]
+    problems = [f"{field}: must be a single paragraph" for field,
+                text, _ in paragraphs if "\n" in text.strip()]
+    problems += [f"{field}: must be one sentence" for field, text, _ in sentences
+                 if len(SENTENCE_BREAK.split(text.strip())) != 1]
+    for field, text, limit in paragraphs + sentences:
         if word_count(text) > limit:
-            shares = ", ".join(
-                f"{group} {word_count(part)}" for group, part in groups.get(field, {}).items())
             problems.append(
-                f"{field}: {word_count(text)} words, at most {limit}" + (f" ({shares})" if shares else ""))
+                f"{field}: {word_count(text)} words, at most {limit}")
         if ISSUE_KEY.search(text):
             problems.append(
                 f"{field}: names tickets {ISSUE_KEY.findall(text)[:3]}; describe the work instead")
-    for field, text, _ in texts[:2]:
-        if "\n" in text.strip():
-            problems.append(f"{field}: must be a single paragraph")
-    texts += [(f"retro_notes[{i}]", note, None)
-              for i, note in enumerate(content["retro_notes"])]
-    latest = {s["key"]: s["points"] for s in data["spells"]}
-    for field, text, limit in texts:
-        # Only the retro notes (no word limit) may name tickets, so only they
-        # are held to the tickets' latest estimates.
-        for rule, found in text_rule_problems(text, latest if limit is None else None):
-            problems.append(f"{field}: {rule}, found {found[:3]}")
+        problems += [f"{field}: {rule}, found {found[:3]}" for rule,
+                     found in text_rule_problems(text)]
+    # Only the retro notes may name tickets, so only they are held to the
+    # tickets' latest estimates.
+    latest = latest_points(data["spells"])
+    for field, text in notes:
+        problems += [f"{field}: {rule}, found {found[:3]}" for rule,
+                     found in text_rule_problems(text, latest)]
     return problems
 
 
@@ -311,13 +317,17 @@ class Report:
         goal = (self.table_text(re.sub(r"\s*\n\s*", "<br>", html.escape(d["sprint_goal"].strip(), quote=False)))
                 if d["sprint_goal"].strip() else "*No goal was set in Jira for this sprint*")
         rows = [("Dates", dates), ("Goal", goal),
-                (ai("Goal outcome"), self.table_text(
-                    self.content["goal_verdict"])),
+                (ai("Goal outcome"), self.table_text(self.goal_outcome())),
                 (ai("Key Achievements"), self.table_text(
                     self.content["key_achievements"])),
                 (ai("Blockers & Risks"), self.table_text(
                     self.content["blockers_risks"]))]
         return field_table(rows)
+
+    def goal_outcome(self):
+        """The goal's verdict, then its reason when given."""
+        reason = self.content.get("goal_reason")
+        return f"{self.content['goal_verdict']}: {reason}" if reason else self.content["goal_verdict"]
 
     def metrics_table(self):
         """The table above the outcome charts, with the figure they break down."""
@@ -476,8 +486,8 @@ class Report:
                                           "were resolved as Duplicate or Won't Do and count as completed", len(non_delivery)) + ".")
         excluded = d["membership_cross_check_excluded_keys"]
         if excluded:
-            found = [next((s for s in reversed(d["spells"]) if s["key"] == k), {"key": k, "points": None})
-                     for k in excluded]
+            latest = latest_points(d["spells"])
+            found = [{"key": k, "points": latest.get(k)} for k in excluded]
             caveats.append("The membership of " + self.mentioned(found, "is reconstructed from changelogs",
                                                                  "is reconstructed from changelogs", len(found))
                            + ", as later sprint moves prevent checking it against Jira.")

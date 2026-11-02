@@ -23,7 +23,7 @@ import common  # noqa: E402
 from agentic_manager import output_file  # noqa: E402
 from common import NO_EPIC, parse_ts  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from sprint_fixture import moved  # noqa: E402
+from sprint_fixture import PR, moved  # noqa: E402
 from ticket_fixture import (CATEGORIES, CLOSE, PLUS_ONE, PREVIOUS, START, START_DATE, at, carried, changed,  # noqa: E402
                             context, done, events, joined, left, points, raw)
 from report_fixture import ev, pull, ticket  # noqa: E402
@@ -398,8 +398,6 @@ class BreakdownAndEpicsTest(unittest.TestCase):
 
 
 class StatusChecksTest(unittest.TestCase):
-    PR = "https://github.com/acme/api/pull/{}"
-
     def test_is_own_pull(self):
         # A pull request is the ticket's own when its title or branch names
         # the ticket or the sub-task it came through, or names no ticket.
@@ -434,23 +432,23 @@ class StatusChecksTest(unittest.TestCase):
         # As at the moment: one opened after it is left out, and a merge or
         # closing after it doesn't count yet. One without GitHub's times stops.
         raw = {"tickets": {"PROJ-1": [
-            {"url": self.PR.format(41), "name": "PROJ-1 import",
+            {"url": PR.format(41), "name": "PROJ-1 import",
              "source": {"branch": "PROJ-1"}, "via": "PROJ-1"},
-            {"url": self.PR.format(
+            {"url": PR.format(
                 42), "name": "PROJ-5 cache", "via": "PROJ-1"},
-            {"url": self.PR.format(43), "name": "Later work", "via": "PROJ-1"}]},
-            "events": {self.PR.format(41): {"createdAt": at("03-03"), "mergedAt": at("03-12"),
-                                            "closedAt": at("03-12")},
-                       self.PR.format(42): {"createdAt": at("03-03"), "mergedAt": None, "closedAt": at("03-04")},
-                       self.PR.format(43): {"createdAt": at("03-12"), "mergedAt": None, "closedAt": None}}}
+            {"url": PR.format(43), "name": "Later work", "via": "PROJ-1"}]},
+            "events": {PR.format(41): {"createdAt": at("03-03"), "mergedAt": at("03-12"),
+                                       "closedAt": at("03-12")},
+                       PR.format(42): {"createdAt": at("03-03"), "mergedAt": None, "closedAt": at("03-04")},
+                       PR.format(43): {"createdAt": at("03-12"), "mergedAt": None, "closedAt": None}}}
         found = build.ticket_pulls(raw, "PROJ-1", at("03-10"))
         self.assertEqual([(pr["url"][-2:], pr["title"], pr["branch"], pr["mergedAt"], pr["closedAt"], pr["own"],
                            pr["state"]) for pr in found],
                          [("41", "PROJ-1 import", "PROJ-1", None, None, True, "open"),
                           ("42", "PROJ-5 cache", "", None, at("03-04"), False, "declined")])
         self.assertEqual(build.ticket_pulls(raw, "PROJ-2", at("03-10")), [])
-        del raw["events"][self.PR.format(42)]
-        with self.assertRaisesRegex(SystemExit, f"PROJ-1: no GitHub times for {self.PR.format(42)}"):
+        del raw["events"][PR.format(42)]
+        with self.assertRaisesRegex(SystemExit, f"PROJ-1: no GitHub times for {PR.format(42)}"):
             build.ticket_pulls(raw, "PROJ-1", at("03-10"))
 
     def test_status_flag(self):
@@ -854,27 +852,26 @@ class MainTest(unittest.TestCase):
         # which stay Jira's alone: one opened after it is left out, and a
         # merge after it leaves one open then, so the ticket, To Do, is
         # flagged as started. One GitHub gave no times for stops the build.
-        pr = "https://github.com/acme/api/pull/{}"
         self.pulls["tickets"] = {"PROJ-1": [
-            {"url": pr.format(41), "name": "PROJ-1 add the importer", "source": {"branch": "PROJ-1-importer"},
+            {"url": PR.format(41), "name": "PROJ-1 add the importer", "source": {"branch": "PROJ-1-importer"},
              "via": "PROJ-1"},
-            {"url": pr.format(42), "name": "Tidy the README", "via": "PROJ-1"}]}
+            {"url": PR.format(42), "name": "Tidy the README", "via": "PROJ-1"}]}
         self.pulls["events"] = {
-            pr.format(41): {"url": pr.format(41), "state": "MERGED", "createdAt": at("03-10"),
+            PR.format(41): {"url": PR.format(41), "state": "MERGED", "createdAt": at("03-10"),
                             "mergedAt": at("03-20"), "closedAt": at("03-20")},
-            pr.format(42): {"url": pr.format(42), "state": "OPEN", "createdAt": at("03-14"),
+            PR.format(42): {"url": PR.format(42), "state": "OPEN", "createdAt": at("03-14"),
                             "mergedAt": None, "closedAt": None}}
         data = self.run_main()
         self.assertEqual(
             {e["source"] for events in data["ticket_events"].values() for e in events}, {"jira"})
         self.assertEqual(data["ticket_pull_requests"], {"PROJ-1": [
-            {"url": pr.format(41), "title": "PROJ-1 add the importer", "branch": "PROJ-1-importer", "via": "PROJ-1",
+            {"url": PR.format(41), "title": "PROJ-1 add the importer", "branch": "PROJ-1-importer", "via": "PROJ-1",
              "createdAt": at("03-10"), "mergedAt": None, "closedAt": None, "own": True, "state": "open"}]})
         self.assertEqual([(r["key"], r["flag"], r["linked"]) for r in data["status_checks"]],
                          [("PROJ-1", "work_started", {"merged": 0, "open": 1, "declined": 0})])
-        del self.pulls["events"][pr.format(41)]
+        del self.pulls["events"][PR.format(41)]
         os.remove(os.path.join(self.dir, "data.json"))
-        self.assert_fails(f"PROJ-1: no GitHub times for {pr.format(41)}")
+        self.assert_fails(f"PROJ-1: no GitHub times for {PR.format(41)}")
 
     def test_active_sprint_runs_to_the_fetch(self):
         # The fetch ends actuals both before and after the planned end.

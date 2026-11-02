@@ -584,33 +584,33 @@ class FetchTest(unittest.TestCase):
         # message and what to do. A ticket's pull requests are only those of
         # the panels of it and its sub-tasks: the panel's commits aren't read,
         # and GitHub is read only for the times, never searched.
-        pr = "https://github.com/acme/api/pull/{}"
         proj_1, proj_2 = fixture.CURRENT[0]["id"], fixture.CURRENT[1]["id"]
         # PROJ-9, a sub-task of PROJ-1, lists a pull request of its own.
         # PROJ-2's panel lists only a commit, so it has none.
         FakeJira.subtasks = [{"id": "20009", "key": "PROJ-9",
                               "fields": {"parent": {"key": "PROJ-1"}}}]
-        FakeJira.panel = {proj_1: {"pullrequest": [{"url": pr.format(41), "status": "MERGED"}],
+        FakeJira.panel = {proj_1: {"pullrequest": [{"url": fixture.PR.format(41), "status": "MERGED"}],
                                    "repository": [{"name": "acme/api", "commits": [{"id": "c1"}]}]},
-                          "20009": {"pullrequest": [{"url": pr.format(43), "status": "OPEN"}]},
+                          "20009": {"pullrequest": [{"url": fixture.PR.format(43), "status": "OPEN"}]},
                           proj_2: {"repository": [{"name": "acme/api", "commits": [{"id": "c2"}]}]}}
-        times = {number: {"url": pr.format(number), "state": "OPEN", "createdAt": "2026-03-05T10:00:00Z",
+        times = {number: {"url": fixture.PR.format(number), "state": "OPEN", "createdAt": "2026-03-05T10:00:00Z",
                           "mergedAt": None, "closedAt": None} for number in (41, 43)}
-        answered = {f"pr view {pr.format(n)}": t for n, t in times.items()}
+        answered = {
+            f"pr view {fixture.PR.format(n)}": t for n, t in times.items()}
         # A failure trying again won't fix, so the fetch stops at once.
         refused = "HTTP 401: Bad credentials (https://api.github.com/graphql)"
-        gone = f"{pr.format(43)}: Could not resolve to a PullRequest with the number of 43."
+        gone = f"{fixture.PR.format(43)}: Could not resolve to a PullRequest with the number of 43."
         # name: (github-cli enabled, gh's answers, PROJ-1's and PROJ-2's pull
         # requests, GitHub's times, the skipped), or for a failure, what
         # stderr says
         cases = [("without gh", False, answered,
                   ["gh isn't available or github-cli isn't enabled, and the report needs GitHub"], None, None),
-                 ("with gh", True, answered, [(pr.format(41), "PROJ-1"), (pr.format(43), "PROJ-9")],
-                  {pr.format(n): times[n] for n in (41, 43)}, []),
-                 ("a pull request GitHub can't find", True, {f"pr view {pr.format(41)}": times[41]},
-                  [(pr.format(41), "PROJ-1")
-                   ], {pr.format(41): times[41]},
-                  [{"url": pr.format(43), "via": ["PROJ-9"], "message": gone}]),
+                 ("with gh", True, answered, [(fixture.PR.format(41), "PROJ-1"), (fixture.PR.format(43), "PROJ-9")],
+                  {fixture.PR.format(n): times[n] for n in (41, 43)}, []),
+                 ("a pull request GitHub can't find", True, {f"pr view {fixture.PR.format(41)}": times[41]},
+                  [(fixture.PR.format(41), "PROJ-1")
+                   ], {fixture.PR.format(41): times[41]},
+                  [{"url": fixture.PR.format(43), "via": ["PROJ-9"], "message": gone}]),
                  ("gh fails", True, {**answered, "api graphql": {"fails": refused}},
                   ["GitHub couldn't be read, so no report was written: gh api graphql: " + refused,
                    "Check that gh works (gh auth status)"], None, None)]
