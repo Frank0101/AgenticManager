@@ -1,6 +1,6 @@
 Write the report's text from the brief below, which holds everything the report rests on. The report has two layers, which don't repeat each other. The executive layer, for a technical leader, says what the system is for, where it stands, where it is going and what needs deciding, with no configuration detail. The architect layer, for engineers, says how it works and how it will change, with no ticket status or plan.
 
-Link each claim to the ledger, such as [F03](ledger:F03); the script writes the title, the evidence date and the references. Report, don't recommend: describe what the evidence shows, never your own recommendations, preferred options, plans or owners; what the sources don't settle is reported as open. Name roles, never people: "the platform team", "the feature's owner". Approximate lengths are room to explain, not quotas: write less when the point is simple or the evidence thin.
+Link each claim to the ledger, such as [F03](ledger:F03); the script writes the title and the evidence date. Report, don't recommend: describe what the evidence shows, never your own recommendations, preferred options, plans or owners; what the sources don't settle is reported as open. Name roles, never people: "the platform team", "the feature's owner". Approximate lengths are room to explain, not quotas: write less when the point is simple or the evidence thin.
 
 {{links}}
 
@@ -16,5 +16,7 @@ The architect layer cites the system design's rows, such as a component, [C03](l
 - architecture.today.summary (about 300 words): the system design as the ledger records it, saying why each main component exists, not only its name. Cover the entry points, the boundaries of trust, data and identity, and the technical limits, and mark what is only in development.
 - architecture.target.summary (about 300 words): what the target keeps, adds, changes or removes compared with today, and why. Keep what the tracker plans apart from what only the documentation proposes, and name the technical choices still open.
 - open_choices_and_gaps: the choices and evidence gaps that matter to the target, each with why it matters and its evidence. Look where the sources disagree: vision with no ticket, a ticket with no code, code the design doesn't mention, and a ticket status the code contradicts.
+
+While writing, check the ledger for consistency at a high level: compare the findings, the system design, the decisions and the gaps with each other, without reading the sources again, which would be research. Look for findings that contradict each other, a design state the findings don't support, one of the aims, {{aims}}, that the ledger leaves uncovered, and a decision treated as settled elsewhere. Report each inconsistency, never resolving it by choosing a side: in current_status when it concerns the status, otherwise in open_choices_and_gaps.
 
 Submit the whole text every time, from a file passed with --input, so a revision changes the file and submits it again.

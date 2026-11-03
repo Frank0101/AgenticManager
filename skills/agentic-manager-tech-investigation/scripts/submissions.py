@@ -9,19 +9,19 @@ only when there is none.
 """
 import re
 
-from common import (DESIGN_ORDER, COVERAGE, OUTSIDE_SCOPE, SCOPE_ANSWERS, SCOPE_QUESTION, USER_DECIDED, citation, ids,
+from common import (DESIGN_ORDER, COVERAGE, coverage_fields, OUTSIDE_SCOPE, SCOPE_ANSWERS, SCOPE_QUESTION, USER_DECIDED, citation, ids,
                     read_in_part, recorded_ids)
 from ledger import (TABLES, as_written, input_columns, basis, duplicate_of, finish_write, find_row,
                     header_of, move_row, next_id, put_row, refuse_cited, search_reference, set_design_basis,
-                    table_rows, write_rows, record_review)
+                    table_rows, write_rows)
 
 # A submission's fields for each kind of record, in the order of the ledger's
 # columns after the ID: the script writes the cells from them.
 FIELDS = {
     "sources": ["kind", "reference", "revision", "coverage", "superseded_by"],
     "findings": ["claim", "sources", "limits"],
-    "gaps": ["gap", "missing", "would_close", "blocked_by", "owner_and_next_check", "evidence"],
-    "decisions": ["decision", "position", "candidates_and_constraints", "owner_and_next_check", "evidence"],
+    "gaps": ["gap", "blocked_by", "owner_and_next_check", "evidence"],
+    "decisions": ["decision", "position", "owner_and_next_check", "evidence"],
     "boundaries": ["name", "kind", "within", "evidence"],
     "identities": ["name", "kind", "reaches", "in_the_target", "evidence"],
     "components": ["name", "kind", "boundary", "responsibility", "code", "state", "in_the_target", "evidence"],
@@ -50,7 +50,6 @@ CITING = {"sources": ["superseded_by"], "findings": ["sources"], "gaps": ["evide
           "questions": ["raised_by", "depends_on"]}
 QUESTION_FIELDS = ["raised_by", "question", "depends_on"]
 # The lines part of a Coverage as coverage_text() writes it.
-COVERAGE_LINES = re.compile(r"lines (\d+-\d+(?:, \d+-\d+)*)(?: of (\d+))?")
 
 
 def submit_scope(lines, data, asked):
@@ -175,22 +174,18 @@ def write_reading(lines, sources, findings, keys, problems):
 
 def submit_design(lines, data):
     """Replace the system design with the one submitted, keeping the IDs given
-    as keys and assigning new ones, with the sources and findings of what was
-    read again to build it, then add its new questions and record what it was
-    built from; returns {key: ID}."""
+    as keys and assigning new ones, then add its new questions and record what
+    it was built from; returns {key: ID}."""
     problems = Problems(lines)
-    problems.only(data, ["sources", "findings",
-                  *DESIGN_ORDER, "new_questions"])
+    # The design reads nothing: what it lacks is a question for research.
+    problems.only(data, [*DESIGN_ORDER, "new_questions"])
     allocator = Allocator(lines)
     before = {table: {row[0] for row in table_rows(
         lines, table)} for table in DESIGN_ORDER}
     items = {table: problems.items(data, table, required=False)
              for table in DESIGN_ORDER}
     questions = problems.items(data, "new_questions", required=False)
-    sources = problems.items(data, "sources", required=False)
-    findings = problems.items(data, "findings", required=False)
     keys = {}
-    claim_reading(lines, sources, findings, keys, allocator, problems)
     for table in DESIGN_ORDER:
         for number, item in enumerate(items[table]):
             allocator.claim(keys, table, item,
@@ -200,7 +195,7 @@ def submit_design(lines, data):
                         f"new_questions[{number}]", problems)
     for table in DESIGN_ORDER:
         write_rows(lines, table, [], header_of(lines, table))
-    written = write_reading(lines, sources, findings, keys, problems)
+    written = []
     for table in DESIGN_ORDER:
         for number, item in enumerate(items[table]):
             where = f"{table}[{number}]"
@@ -223,43 +218,16 @@ def submit_design(lines, data):
     return {"ids": written_keys(keys)}
 
 
-def submit_review(lines, data, round_number):
-    """Record review round `round_number`: the questions it raised, added to
-    the queue, or the user's choice to stop; returns {key: ID}."""
-    problems = Problems(lines)
-    if isinstance(data, dict) and "stopped" in data:
-        problems.only(data, ["stopped"])
-        stopped = problems.text(data, "stopped")
-        problems.stop()
-        record_review(lines, stopped=stopped)
-        return {"ids": {}}
-    problems.only(data, ["raised"])
-    raised = problems.items(data, "raised", required=False)
-    allocator = Allocator(lines)
-    keys = {}
-    for number, item in enumerate(raised):
-        allocator.claim(keys, "questions", item, f"raised[{number}]", problems)
-    for item in raised:
-        if isinstance(item, dict):
-            item.setdefault("raised_by", f"Review round {round_number}")
-    written = add_questions(lines, raised, keys, problems, where="raised")
-    problems.stop()
-    record_review(lines, list(keys.values()))
-    problems.guard("the review", lambda: finish_write(lines, written))
-    problems.stop()
-    return {"ids": written_keys(keys)}
-
-
 def coverage_text(given):
     """A source's Coverage as the ledger writes it, from the submitted object:
     {"read": ..., "lines": [[1, 80]], "of": 352, "sections": [...], "files":
-    [...], "note": ...}, as COVERAGE describes; exits on a malformed object.
+    [...]}, as COVERAGE describes; exits on a malformed object.
     Whether a partial read names enough is coverage_problem()'s, checked when
     the row is written."""
     shape = ('coverage is an object such as {"read": "partial", "lines": [[1, 80], [200, 240]], "of": 352}; read is '
-             f'one of: {", ".join(COVERAGE)}, and lines, of, sections, files and note are optional')
+             f'one of: {", ".join(COVERAGE)}, and lines, of, sections and files are optional')
     if not isinstance(given, dict) or given.get("read") not in COVERAGE \
-            or set(given) - {"read", "lines", "of", "sections", "files", "note"}:
+            or set(given) - {"read", "lines", "of", "sections", "files"}:
         raise SystemExit(shape)
     size = given.get("of")
     if size is not None and (not isinstance(size, int) or size < 1):
@@ -275,16 +243,12 @@ def coverage_text(given):
     for name, items in named.items():
         if not isinstance(items, list) or not all(isinstance(i, str) and i.strip() for i in items):
             raise SystemExit(f"{name} lists the {name} read, as texts")
-    note = given.get("note", "")
-    if not isinstance(note, str):
-        raise SystemExit("note is a text")
     parts = []
     if spans:
         parts.append(
             "lines " + ", ".join(f"{a}-{b}" for a, b in spans) + (f" of {size}" if size else ""))
     parts += [f"{name}: {', '.join(items)}" for name,
               items in named.items() if items]
-    parts += [note.strip()] if note.strip() else []
     return given["read"] + (": " + "; ".join(parts) if parts else "")
 
 
@@ -292,13 +256,11 @@ def grown_coverage(before, now):
     """The coverage of a source read again: `before`, as the ledger holds it,
     and `now`, what this read covers, together. The fuller read wins, as full
     covers everything; the lines, sections and files of the reads at that
-    level are merged, lines covering a whole file making it full, and the
-    notes kept. Exits on a `now` coverage_text() refuses."""
+    level are merged, lines covering a whole file making it full. Exits on a
+    `now` coverage_text() refuses."""
     coverage_text(now)
     read = min(before["read"], now["read"], key=COVERAGE.index)
-    notes = list(dict.fromkeys(n for n in (
-        before.get("note"), now.get("note")) if n))
-    grown = {"read": read, **({"note": "; ".join(notes)} if notes else {})}
+    grown = {"read": read}
     if read == "full":
         return grown
     # A part a lesser read names wasn't read at this level: a file a listing
@@ -323,27 +285,6 @@ def grown_coverage(before, now):
         if items := list(dict.fromkeys(item for c in reads for item in c.get(name, []))):
             grown[name] = items
     return grown
-
-
-def coverage_fields(text):
-    """The fields of a Coverage coverage_text() wrote, so a source read again
-    can add to it: its read, then each part it named."""
-    read, _, rest = text.partition(": ")
-    fields, notes = {"read": read.strip()}, []
-    for part in rest.split("; ") if rest else []:
-        if match := COVERAGE_LINES.fullmatch(part):
-            fields["lines"] = [[int(n) for n in span.split("-")]
-                               for span in match[1].split(", ")]
-            if match[2]:
-                fields["of"] = int(match[2])
-        elif part.startswith(("sections: ", "files: ")):
-            name, _, items = part.partition(": ")
-            fields[name] = items.split(", ")
-        else:
-            notes.append(part)
-    if notes:
-        fields["note"] = "; ".join(notes)
-    return fields
 
 
 def read_before(lines, item):
@@ -383,11 +324,12 @@ def partial_limits(lines, item, cells, where, problems, keys):
     read only in part, why the unread part can't change this claim. The
     submission gives the reasons by source, so the script asks for exactly
     one for each such source, and a reason given for another claim can't
-    stand in for it; it sits in Limits, where a reader of the finding looks."""
+    stand in for it; one given for a source read whole is dropped. It sits in
+    Limits, where a reader of the finding looks."""
     partly = {row[0]
               for row in table_rows(lines, "sources") if read_in_part(row)}
-    cited = [ident for ident in dict.fromkeys(
-        ids(cells[1], "S")) if ident in partly]
+    sources = list(dict.fromkeys(ids(cells[1], "S")))
+    cited = [ident for ident in sources if ident in partly]
     given = item.get("partial", {})
     if not isinstance(given, dict):
         problems.add(
@@ -397,9 +339,13 @@ def partial_limits(lines, item, cells, where, problems, keys):
     for written, reason in given.items():
         match = KEY_REFERENCE.fullmatch(written.strip())
         ident = keys.get(match[1], match[1]) if match else None
-        if ident not in cited:
+        if ident not in sources:
             problems.add(
-                f"{where}.partial: {written} isn't a source this finding cites that was read only in part")
+                f"{where}.partial: {written} isn't a source this finding cites")
+        elif ident not in cited:
+            # Read whole, by this submission or merged with an earlier read:
+            # there is nothing unread to explain.
+            continue
         elif not isinstance(reason, str) or not reason.strip():
             problems.add(f"{where}.partial.{written} needs text")
         else:

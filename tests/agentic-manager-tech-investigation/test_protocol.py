@@ -15,7 +15,7 @@ import protocol  # noqa: E402
 
 # What investigate.py fills for every task.
 FILLS = {"topic": "Acme Search", "documentation": "the notion-mcp source", "code": "the gitlab-cli source", "scripts": "/s", "lib": "/l",
-         "investigation": "Acme_26-10-05", "ledger": "/x/ledger.md", "task_work": "/w"}
+         "investigation": "Acme_26-10-05", "ledger": "/x/ledger.md", "task_work": "/w", "repos": "/r"}
 
 
 class ProtocolTest(unittest.TestCase):
@@ -25,15 +25,18 @@ class ProtocolTest(unittest.TestCase):
             # _work is a task's text too: render adds it to every task.
             if name.endswith(".md") and (not name.startswith("_") or name == "_work.md"):
                 with self.subTest(name):
-                    text = protocol.text(name[:-3], round=4, rounds=3, **FILLS)
+                    text = protocol.text(name[:-3], **FILLS)
                     self.assertNotIn("{{", text)
                     self.assertTrue(text)
         self.assertIn("coverage is an object whose read is one of: full, partial, listing",
                       protocol.text("research", **FILLS))
         self.assertIn("`python3 /s/tickets.py`",
                       protocol.text("research", **FILLS))
-        with self.assertRaisesRegex(SystemExit, "names {{ledger}}, which nothing fills"):
-            protocol.text("review")
+        # Every task reads a repository from the run's one clone of it.
+        self.assertIn("use the run's shared clone of it, /r/<owner>-<repo>",
+                      protocol.text("research", **FILLS))
+        with self.assertRaisesRegex(SystemExit, "names {{topic}}, which nothing fills"):
+            protocol.text("scope")
 
     def test_examples_print_one_record_per_line(self):
         for name in sorted(os.listdir(os.path.join(protocol.FOLDER, "examples"))):

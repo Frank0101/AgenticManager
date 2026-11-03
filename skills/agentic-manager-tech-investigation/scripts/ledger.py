@@ -9,13 +9,12 @@ check_report.py applies to the whole ledger at handover.
 import os
 import re
 
-from common import (CITATION, DECISION_HEADER, DESIGN, DESIGN_ORDER, FOLDER_NAME, GAP_HEADER, ID_LETTERS, INLINE_LINK,
-                    JIRA_API, JIRA_GROUP, LEDGER, LINKS, QUERY, QUEUE_HEADER, QUEUE_TABLES, REVIEW_HEADER, REVIEW_NONE,
-                    REVIEW_STOPPED, ROW_START, SOURCE_FINDINGS_COLUMN, SOURCE_HEADER, TABLE_HEADINGS, TABLES, UNUSED,
+from common import (CITATION, DECISION_HEADER, DESIGN, DESIGN_ORDER, FOLDER_NAME, GAP_HEADER, INLINE_LINK,
+                    JIRA_API, JIRA_GROUP, LEDGER, LINKS, QUERY, QUEUE_HEADER, QUEUE_TABLES, ROW_START, RULED_OUT, SOURCE_FINDINGS_COLUMN, SOURCE_HEADER, TABLES, UNUSED,
                     anchored, autolink, backtick_error, blocked_problem, citation, cited_evidence_problem, cited_sources,
                     claim_length_problem, design_evidence, design_row_problem, finding_problem, flow_states, free_name,
                     gap_problem, id_order, identity_states, ids, inline_links, investigation_dir, is_enabled,
-                    JiraClient, ledger_rows, link_definitions, link_text, links, outcome_problem, partial_read_problem,
+                    JiraClient, ledger_rows, link_definitions, link_text, links, outcome_problem, partial_read_problem, unread_lines_problem,
                     plain, read_in_part, same_document, scope_answers, scope_problem, section_span, slug,
                     source_problem, strip_anchors, table, table_cells, table_row, ticket_sites, unlinked_backticks,
                     unrecorded_citations, unresolved_message, upgraded_tickets, write_output_file)
@@ -45,12 +44,16 @@ def brief(lines):
     """What writing the report reads, from the ledger as it stands: the
     scope boundaries, each source's reference with its coverage, every finding, the
     components, the system design, decisions and gaps, and the findings resting
-    on a source read in part. The queue and the review rounds are for research, and make up much
-    of a long ledger. Links show their text, IDs are plain, and a source's
+    on a source read in part. The queue is for research, and makes up much
+    of a long ledger, and a design row ruled out is kept to show it doesn't
+    exist, not to be reported. Links show their text, IDs are plain, and a source's
     reference keeps its URL, so the report can link the source itself."""
     def rows_of(name):
-        rows = table_rows(lines, name)
-        return [TABLES[name][0], "", *([" | ".join(header_of(lines, name))] + [plain(" | ".join(row)) for row in rows]
+        header = header_of(lines, name)
+        state = header.index("State") if "State" in header else None
+        rows = [row for row in table_rows(lines, name)
+                if state is None or not row[state].startswith(RULED_OUT)]
+        return [TABLES[name][0], "", *([" | ".join(header)] + [plain(" | ".join(row)) for row in rows]
                                        if rows else ["None."]), ""]
 
     out = rows_of("scope")
@@ -252,10 +255,10 @@ def check_cells(lines, name, row):
         problem = design_row_problem(
             name, row, design_evidence("\n".join(lines)))
     elif name == "findings":
-        partial = {r[0]
-                   for r in table_rows(lines, "sources") if read_in_part(r)}
+        sources = {r[0]: r for r in table_rows(lines, "sources")}
+        partial = {ident for ident, r in sources.items() if read_in_part(r)}
         problem = (finding_problem(row) or claim_length_problem(row[0], row[1])
-                   or partial_read_problem(row, partial))
+                   or partial_read_problem(row, partial) or unread_lines_problem(row, sources))
     elif name == "scope":
         problem = scope_problem(row)
     elif name == "queue-completed":
@@ -472,7 +475,7 @@ def refuse_cited(lines, ident):
     """Exit, writing nothing, while anything else in the ledger cites
     `ident`: removing it would leave a citation of a record that isn't there.
     It looks wherever the handover check does, so the two agree."""
-    cited = mentions(lines, ident) + cited_outside_records(lines, ident)
+    cited = mentions(lines, ident)
     if cited:
         raise SystemExit(f"{ident} is still cited by {', '.join(cited)}: change those first. "
                          "Nothing was written")
@@ -486,35 +489,6 @@ def mentions(lines, ident):
              for table_row_id in (row[0] for row in table_rows(lines, table)
                                   if row[0] != ident and re.search(rf"\b{ident}\b", " | ".join(row[1:])))]
     return sorted(set(found), key=id_order)
-
-
-def cited_outside_records(lines, ident):
-    """The headings of the parts of the ledger outside its records, such as
-    the review rounds, whose text names `ident`; records, which mentions() names by
-    their ID, are left out."""
-    found, heading = [], ""
-    for line in lines:
-        if line.startswith("#"):
-            heading = line.lstrip("#").strip()
-        elif not re.match(rf"{ROW_START}[{ID_LETTERS}]\d", line) \
-                and re.search(rf"\b{ident}\b", line) and heading not in found:
-            found.append(heading)
-    return [f"the {heading} section" for heading in found]
-
-
-def record_review(lines, raised=(), stopped=None):
-    """Add an independent review round to the reviews table, with the IDs of
-    the questions it raised, already in the queue, or what the user said when
-    they chose to stop reviewing."""
-    if stopped is not None:
-        outcome = f"{REVIEW_STOPPED} {stopped.strip()}"
-    else:
-        outcome = ", ".join(citation(ident) for ident in raised) or REVIEW_NONE
-    heading = TABLE_HEADINGS["reviews"]
-    rounds = ledger_rows("\n".join(lines), heading)
-    start, end = section(lines, heading)
-    rows = rounds + [[str(len(rounds) + 1), linked(lines, [outcome])[0]]]
-    lines[start + 1:end] = ["", *table(REVIEW_HEADER, rows).split("\n"), ""]
 
 
 def scope_decisions(lines):

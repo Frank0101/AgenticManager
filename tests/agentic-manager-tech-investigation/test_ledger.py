@@ -81,8 +81,8 @@ class LedgerCase(unittest.TestCase):
         itself, so it needs nothing else."""
         cells = {"S": lambda ident: ("sources", source(f"[page](https://example.com/{ident.lower()})")),
                  "F": lambda ident: ("findings", ["A claim.", ident, "read"]),
-                 "D": lambda ident: ("decisions", ["d", "b", "c", "d", "F01"]),
-                 "G": lambda ident: ("gaps", ["g", "b", "c", "No access (x)", "e", "F01"]),
+                 "D": lambda ident: ("decisions", ["d", "b", "d", "F01"]),
+                 "G": lambda ident: ("gaps", ["g", "No access (x)", "e", "F01"]),
                  "Q": lambda ident: ("queue-ready", QUEUE_ROW)}
         self.write(*((table, ident, row)
                    for ident in ids for table, row in [cells[ident[0]](ident)]))
@@ -90,7 +90,7 @@ class LedgerCase(unittest.TestCase):
     def prose(self, text):
         """Write `text` as a cell of its own, in the decision D09, as a
         submission does: linked, checked."""
-        self.write(("decisions", "D09", [text, "b", "c", "d", "F01"]))
+        self.write(("decisions", "D09", [text, "b", "d", "F01"]))
 
 
 class RowsTest(LedgerCase):
@@ -118,7 +118,7 @@ class RowsTest(LedgerCase):
             "## Links\n\nLink definitions: 2 (Markdown previews hide them;", self.text())
 
     def test_a_table_is_created_where_there_was_a_placeholder(self):
-        for section, table, ident, cells in (("Open decisions", "decisions", "D01", ["a", "b", "c", "d", "F01"]),
+        for section, table, ident, cells in (("Open decisions", "decisions", "D01", ["a", "b", "d", "F01"]),
                                              ("Sources", "sources", "S01", source())):
             with self.subTest(table):
                 self.assertIn(f"## {section}\n\nNone yet.", self.text())
@@ -173,10 +173,8 @@ class RowsTest(LedgerCase):
                    ("findings", "F01", ["Planned.", "S03", "None"]))
         self.write(("components", "C01", ["n", "service", "None", "r", "p", "🟨 Planned", "Unchanged", "F01"]),
                    ("queue-ready", "Q01", ["C01", "Is it live?", "None", ""]))
-        self.change(lambda lines: ledger.record_review(lines, raised=["S02"]))
         cases = [("a row", "F01", "F01 is still cited by C01"),
-                 ("a question's trigger", "C01", "C01 is still cited by Q01"),
-                 ("outside the records", "S02", "S02 is still cited by the Independent reviews section")]
+                 ("a question's trigger", "C01", "C01 is still cited by Q01")]
         for name, ident, expected in cases:
             with self.subTest(name), self.assertRaisesRegex(SystemExit, expected):
                 ledger.refuse_cited(self.lines(), ident)
@@ -185,13 +183,12 @@ class RowsTest(LedgerCase):
         # A record citing one the ledger doesn't hold is refused, writing
         # nothing; records citing each other go in one write, in any order.
         before = self.text()
-        gap = ["a", "b", "c",
-               f"Waiting on decision ({c('D01')})", "e", c("S02")]
+        gap = ["a", f"Waiting on decision ({c('D01')})", "e", c("S02")]
         with self.assertRaisesRegex(SystemExit, "cites D01, S02, which the ledger doesn't hold"):
             self.write(("gaps", "G01", gap))
         self.assertEqual(self.text(), before)
         self.write(("gaps", "G01", gap),
-                   ("decisions", "D01", ["a", c("G01"), "c", "d", c("F01")]),
+                   ("decisions", "D01", ["a", c("G01"), "d", c("F01")]),
                    ("findings", "F01", ["A claim.", c("S02"), "read"]),
                    ("sources", "S02", source(superseded=c("S03"))),
                    ("sources", "S03", source("[y](https://example.com/y)")))
@@ -227,7 +224,7 @@ class BriefTest(LedgerCase):
                    ("components", "C01", ["Search API", "service", "None", "Serves search",
                                           "[search](https://example.com/search)", "🟨 Planned", "Unchanged", "F01"]),
                    ("decisions", "D01", [
-                    "Which index", "Unresolved", "Two options", "Owner not named", "F01"]),
+                    "Which index", "Unresolved: two options", "Owner not named", "F01"]),
                    ("queue-ready", "Q01", QUEUE_ROW))
         self.write(("scope", "U01", ["Search", "include", c("Q01")]))
         brief = ledger.brief(self.lines())
@@ -235,7 +232,7 @@ class BriefTest(LedgerCase):
                 "## Findings\n\nID | Claim | Sources | Limits\nF01 | Search reads the index. | S01 | code read",
                 "C01 | Search API | service | None | Serves search | search | 🟨 Planned", "D01 | Which index",
                 "## Evidence gaps\n\nNone."]
-        # The queue and the link definitions are for research and review.
+        # The queue and the link definitions are for research.
         left_out = ["Read the code", "[api]:",
                     "## Research questions", "<a id"]
         for text in kept:
@@ -257,6 +254,21 @@ class BriefTest(LedgerCase):
         self.assertIn(
             "  F01: S01 app/trace.ts (partial: lines 1-80 of 328)", brief)
         self.assertNotIn("  F02:", brief)
+
+    def test_the_brief_leaves_out_ruled_out_design_rows(self):
+        # A row ruled out stays in the ledger, to show it doesn't exist, but
+        # the report has nothing to say about it.
+        self.write(("sources", "S01", source("[t](https://example.com/t)", kind="tracker")),
+                   ("findings", "F01", ["Planned.", "S01", "None"]),
+                   ("findings", "F02", [
+                    "The old cache was removed.", "S01", "None"]),
+                   ("components", "C01", ["Search API", "service", "None", "r", "None", "🟨 Planned",
+                                          "Unchanged", "F01"]),
+                   ("components", "C02", ["Old cache", "store", "None", "r", "None", "✖ Ruled out",
+                                          "Unchanged", "F02"]))
+        brief = ledger.brief(self.lines())
+        self.assertIn("C01 | Search API", brief)
+        self.assertNotIn("Old cache", brief)
 
 
 class RulesTest(LedgerCase):
@@ -283,13 +295,13 @@ class RulesTest(LedgerCase):
                   "read"], "F01's claim is 151 words"),
                  ("findings", "F01", ["A claim.", "S05", "read"],
                   "F01: cites S05, read only in part"),
-                 ("gaps", "G01", ["a", "b", "c", "Not started",
-                  "d", "F01"], "G01 is blocked by 'Not started'"),
-                 ("gaps", "G01", ["a", "b", "c", "No access", "d", "the code"],
+                 ("gaps", "G01", ["a", "Not started", "d", "F01"],
+                  "G01 is blocked by 'Not started'"),
+                 ("gaps", "G01", ["a", "No access", "d", "the code"],
                   "G01: Evidence names the findings or sources"),
-                 ("decisions", "D01", ["a", "b", "c", "d", "the code"],
+                 ("decisions", "D01", ["a", "b", "d", "the code"],
                   "D01: Evidence names the findings or sources"),
-                 ("decisions", "D01", ["See `app.py`", "b", "c", "d", "F01"],
+                 ("decisions", "D01", ["See `app.py`", "b", "d", "F01"],
                   "references in backticks without a link: `app.py`"),
                  ("sources", "S01", source("[f](https://git.example/acme/api/blob/main/app.py)",
                                            revision="abc1234"), "S01: Reference links code at main"),
@@ -445,7 +457,7 @@ class LinksTest(LedgerCase):
 
 
 class QueueTest(LedgerCase):
-    """The queue of questions and the review rounds."""
+    """The queue of questions."""
 
     def test_dependencies_block_and_never_circle(self):
         # Blocking a question blocks every question that needs it, which says
@@ -492,18 +504,6 @@ class QueueTest(LedgerCase):
             self.change(lambda lines: ledger.move_row(
                 lines, "Q09", "queue-completed"))
 
-    def test_review_rounds_are_recorded(self):
-        self.write(("queue-ready", "Q01", QUEUE_ROW))
-        self.change(lambda lines: ledger.record_review(lines, ["Q01"]))
-        self.change(lambda lines: ledger.record_review(lines, []))
-        self.change(lambda lines: ledger.record_review(
-            lines, stopped="wrap up now"))
-        # Each round is a row of the reviews table, numbered in order; the
-        # queue holds only questions.
-        self.assertIn("| 1 | Q01 |\n| 2 | No issue raised |\n| 3 | Stopped by the user: wrap up now |",
-                      self.plain())
-        self.assertEqual(self.rows("queue-completed"), [])
-
 
 class DesignTest(LedgerCase):
     """The system design's tables and what it was built from."""
@@ -546,7 +546,7 @@ class DesignTest(LedgerCase):
         # test_common.py.
         self.write(("scope", "U01", ["Payments", "mention only", "Q01"]),
                    ("scope", "U02", ["Billing", "exclude", "Q01"]),
-                   ("components", "C05", ["Gateway", "external product", "None", "r", "None", "🟩 Live",
+                   ("components", "C05", ["Gateway", "external", "None", "r", "None", "🟩 Live",
                                           "Unchanged", "F02, U01"]))
         cases = [("an unrecorded connection", ("flows", "P02", ["Admin", c("E09"), "Unchanged", "F01"]), "E09"),
                  ("a live connection resting on the tracker only", ("connections", "E03", [
@@ -558,15 +558,19 @@ class DesignTest(LedgerCase):
                  ("a part of an excluded topic", ("components", "C06", [
                      "Ledger", "service", "B01", "r", "None", "🟨 Planned", "Unchanged", "F01, U02"]),
                   "U02, which the user excluded"),
-                 ("a flow that jumps", ("flows", "P02", ["Admin", "E01, E02", "Unchanged", "F01"]),
-                  "E02 starts from C03, which the flow hasn't reached yet"),
+                 ("a flow that jumps", [("components", "C04", [
+                     "Cache", "store", "B01", "r", "None", "🟨 Planned", "Unchanged", "F01"]),
+                     ("connections", "E03", [
+                         "C04", "C03", "HTTP", "q", "yes", "None", "🟨 Planned", "Unchanged", "F01"]),
+                     ("flows", "P02", ["Admin", "E01, E03", "Unchanged", "F01"])],
+                  "E03 runs from C04 to C03, neither of which the flow has reached yet"),
                  ("a planned row resting on code only", ("components", "C04", [
                      "Cache", "store", "B01", "r", "p", "🟨 Planned", "Unchanged", "F02"]),
                   "needs a finding read in the tracker")]
         for name, row, expected in cases:
             before = self.text()
             with self.subTest(name), self.assertRaisesRegex(SystemExit, expected):
-                self.write(row)
+                self.write(*(row if isinstance(row, list) else [row]))
             self.assertEqual(self.text(), before)
 
     def test_the_design_records_what_it_was_built_from(self):

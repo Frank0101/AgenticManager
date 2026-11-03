@@ -21,8 +21,8 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import check_report  # noqa: E402
 from common import HEADINGS, table_row  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from investigation_fixture import (FINDING_ROWS, LEDGER, SOURCE_ROWS, UNREVIEWED, assert_problem,  # noqa: E402
-                                   source_row, with_prose, with_queue, with_reviews, with_rows)
+from investigation_fixture import (FINDING_ROWS, LEDGER, SOURCE_ROWS, assert_problem,  # noqa: E402
+                                   source_row, with_prose, with_queue, with_rows)
 
 # F01's row as the ledger writes it: a finding resting on the code source S01.
 FINDING_ROW = table_row(FINDING_ROWS[0])
@@ -181,34 +181,22 @@ class CheckReportTest(unittest.TestCase):
                   "G01: Evidence names the findings or sources")]
         for name, blocker, evidence, expected in cases:
             with self.subTest(name):
-                text = with_rows(with_rows(LEDGER, "gaps", [["G01", "Gap", "Missing", "Read it", blocker, "Owner",
-                                                             evidence]]),
-                                 "decisions", [["D01", "Choice", "Open", "A, B", "Owner", "F01"]])
+                text = with_rows(with_rows(LEDGER, "gaps", [["G01", "Gap", blocker, "Owner", evidence]]),
+                                 "decisions", [["D01", "Choice", "Unresolved: A or B", "Owner", "F01"]])
                 ledger.write_text(text, encoding="utf-8")
                 result = check_report.check_report(self.report, handover=True)
                 assert_problem(self, " ".join(
                     result["errors"]) or None, expected)
 
-    def test_handover_needs_the_queue_worked_and_reviewed(self):
-        # At handover nothing is left ready or in progress, and the last
-        # review round raised nothing, or the user chose to stop.
-        q01 = "| Q01 | Start | Read code | — | F01 |"
-        with_q03 = UNREVIEWED.replace(
-            q01, q01 + "\n| Q03 | Review round 1 | Read the job | None | F01 |", 1)
+    def test_handover_needs_the_queue_worked(self):
+        # At handover nothing is left ready or in progress.
         open_question = ["Q01", "Start", "Read code", "—", "—"]
         cases = [
-            ("a question, reviewed", LEDGER, None),
+            ("a question answered", LEDGER, None),
             ("a ready question", with_queue(LEDGER, "Ready", [open_question]),
              "still ready or in progress"),
             ("a question in progress", with_queue(LEDGER, "In progress", [open_question]),
-             "still ready or in progress"),
-            ("no review recorded", UNREVIEWED, "no independent review is recorded"),
-            ("the last round raised questions", with_reviews(with_q03, [["1", "Q03"]]),
-             "the last review round raised questions"),
-            ("a later round raised nothing", with_reviews(with_q03, [["1", "Q03"], ["2", "No issue raised"]]),
-             None),
-            ("the user chose to stop", with_reviews(with_q03, [["1", "Q03"], ["2", "Stopped by the user: wrap up"]]),
-             None)]
+             "still ready or in progress")]
         for name, text, expected in cases:
             with self.subTest(name):
                 (self.folder / "ledger.md").write_text(text, encoding="utf-8")
@@ -301,7 +289,7 @@ class CheckReportTest(unittest.TestCase):
     def test_handover_rechecks_blocked_questions_sources_and_findings(self):
         # A ledger edited without the script is checked again at handover:
         # one case of each rule, whose own cases are in test_common.py.
-        def source(kind="tracker", coverage="partial: one page", superseded="None"):
+        def source(kind="tracker", coverage="partial: sections: Description", superseded="None"):
             return with_sources([source_row("S04", kind, revision="d", coverage=coverage, superseded=superseded)])
         partly = with_sources([source_row(reference="[app](https://github.com/acme/app/blob/abc1234/app.py)", revision="abc1234",
                                           coverage="partial: lines 1-9", findings="F01")])
@@ -401,8 +389,8 @@ class CheckReportTest(unittest.TestCase):
                  ("a planned component resting on code only",
                   design(evidence="F01"), "C01: State 🟨 Planned needs a finding read in the tracker"),
                  ("a flow that comes back", design(walked="E01, E02, E01"), None),
-                 ("a flow that jumps", design(walked="E01, E02").replace("| C03 | C01 |", "| C04 | C01 |"),
-                  "E02 starts from C04"),
+                 ("a flow that jumps", design(walked="E01, E02").replace("| C03 | C01 |", "| C04 | C02 |"),
+                  "E02 runs from C04 to C02, neither of which the flow has reached yet"),
                  ("an identity's State edited by hand", design(state="🟩 Live"),
                   "I01 has State 🟩 Live, its connections give 🟨 Planned")]
         # A live connection rests on code read: F01's source, not F02's
@@ -431,6 +419,13 @@ class CheckReportTest(unittest.TestCase):
                 problems = [p for p in check_report.closing_problems(text) if p] + \
                     check_report.derived_state_problems(text)
                 assert_problem(self, " ".join(problems) or None, expected)
+
+    def test_brackets_in_code_are_no_reference_link(self):
+        # A pattern's brackets in a search's query, `PROJ-6[0-9][0-9]`, are code.
+        search = source_row("S04", "code: search", "`grep 'PROJ-6[0-9][0-9]'`",
+                            "2026-10-05", "search hit")
+        body = with_rows(LEDGER, "sources", SOURCE_ROWS + [search])
+        self.assertEqual(check_report.reference_problems(body)[0], [])
 
     def test_reference_links_need_definitions(self):
         # `[text][key]` takes its URL from a definition in ## Links: an undefined key is an error, an unused one a warning.

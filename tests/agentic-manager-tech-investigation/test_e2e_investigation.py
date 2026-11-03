@@ -122,22 +122,21 @@ class InvestigationTest(unittest.TestCase):
         self.assertTrue(self.next().startswith("# Task research:Q08"))
         self.submit("research:Q08", {"findings": [finding(claim="Fact for Q08.", sources="[[S02]]", partial=UNREAD)],
                                      "outcome": {"blocked": {"decision": {
-                                         "decision": "Which queue to use", "position": "Unresolved: Kafka or SQS",
-                                         "candidates_and_constraints": "Kafka keeps replay; SQS costs less", "evidence": "[[f1]]",
+                                         "decision": "Which queue to use",
+                                         "position": "Unresolved: Kafka, which keeps replay, or SQS, which costs less",
+                                         "evidence": "[[f1]]",
                                          "owner_and_next_check": "The platform team, at the next design review"}}}})
         task = self.next()
         self.assertTrue(task.startswith("# Task design"))
         self.assertIn(f"in your folder for it, {work}/design:", task)
         self.assertIn(protocol.compact(protocol.example("design")), task)
-        self.submit(
-            "design", {**protocol.example("design"), "new_questions": []})
         # A refused answer lists its problems and writes nothing.
-        self.assertTrue(self.next().startswith("# Task review:1"))
-        refused = self.refused("review:1", {"raised": [
+        refused = self.refused("design", {**protocol.example("design"), "new_questions": [
                                {"key": "q1", "question": "Why?", "depends_on": "None"}]})
         self.assertIn("nothing was written", refused)
-        self.assertTrue(self.next().startswith("# Task review:1"))
-        self.submit("review:1", {"raised": []})
+        self.assertTrue(self.next().startswith("# Task design"))
+        self.submit(
+            "design", {**protocol.example("design"), "new_questions": []})
         task = self.next()
         self.assertTrue(task.startswith("# Task write"))
         self.assertIn(protocol.compact(protocol.example("write")), task)

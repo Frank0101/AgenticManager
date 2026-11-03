@@ -1,9 +1,0 @@
-{
-  "raised": [
-    {
-      "key": "[[q1]]",
-      "question": "Which identity does the index build job use to write to the index?",
-      "depends_on": "None"
-    }
-  ]
-}

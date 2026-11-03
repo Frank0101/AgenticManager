@@ -68,7 +68,7 @@ class InvestigateTest(unittest.TestCase):
                         answer(f"Fact for {question}."))
 
     def design(self):
-        """The example design, raising no question, so the review comes next."""
+        """The example design, raising no question, so the report comes next."""
         return {**copy.deepcopy(protocol.example("design")), "new_questions": []}
 
     def test_a_mention_only_part_needs_no_code_read(self):
@@ -80,7 +80,7 @@ class InvestigateTest(unittest.TestCase):
                                      "boundary": "None", "responsibility": "Takes payments", "code": "None",
                                      "state": "🟩 Live", "in_the_target": "Unchanged", "evidence": "[[F01]], [[U01]]"})
         self.submit("design", design)
-        self.assertEqual(self.phase(), "review")
+        self.assertEqual(self.phase(), "write")
 
     def test_a_design_question_goes_back_to_research(self):
         # A question the design raises is research's to answer before the
@@ -109,20 +109,17 @@ class InvestigateTest(unittest.TestCase):
 
     def test_the_phase_follows_the_ledger(self):
         # Each step's submission moves the investigation on, in order: the
-        # questions, the design, the review rounds, the report.
+        # questions, the design, the report.
         self.assertEqual(self.phase(), "research")
         self.research()
         self.assertEqual(self.phase(), "design")
-        self.submit("design", self.design())
-        self.assertEqual(self.phase(), "review")
-        self.submit("review:1", protocol.example("review"))
+        # The example design raises a question, which research answers first.
+        self.submit("design", protocol.example("design"))
         self.assertEqual(self.phase(), "research")
         self.submit("research:Q08", answer("It runs in production."))
         # A new finding makes the design out of date, so it is built again.
         self.assertEqual(self.phase(), "design")
         self.submit("design", investigate.design_rows(self.lines()))
-        self.assertEqual(self.phase(), "review")
-        self.submit("review:2", {"raised": []})
         self.assertEqual(self.phase(), "write")
         self.submit("write", content())
         self.assertEqual(self.phase(), "finished")
@@ -131,9 +128,9 @@ class InvestigateTest(unittest.TestCase):
         # A topic decided after the design is built changes what it draws,
         # such as a mention-only black box, so the design is built again.
         self.research()
-        self.submit("design", self.design())
-        self.submit("review:1", {"raised": [{"key": "[[q1]]", "question": "Should the investigation cover billing?",
-                                             "raised_by": "[[C01]]", "depends_on": "None", "for": "user"}]})
+        self.submit("design", {**self.design(), "new_questions": [{
+            "key": "[[q1]]", "question": "Should the investigation cover billing?", "raised_by": "[[C01]]",
+            "depends_on": "None", "for": "user"}]})
         self.submit("scope", {"decisions": [{"question": "[[Q08]]", "topic": "Billing",
                                              "answer": "mention only"}]})
         self.assertEqual(self.phase(), "design")
@@ -144,7 +141,7 @@ class InvestigateTest(unittest.TestCase):
         # The other open questions are shown, so a new one doesn't repeat them.
         self.assertIn("## Other open questions", text)
         self.assertIn(
-            "- Q03: What target design and decisions do the design records, documents and tickets set for Acme Search", text)
+            "- Q03: What design does Acme Search target", text)
         self.assertNotIn("- Q01:", text)
         self.assertEqual([row[0] for row in ledger.table_rows(
             self.lines(), "queue-in-progress")], ["Q01"])
@@ -233,7 +230,7 @@ class InvestigateTest(unittest.TestCase):
         # The API file read only in part, so the task flags it.
         data = protocol.example("research")
         data["sources"][0]["coverage"] = {
-            "read": "partial", "lines": [[1, 200]], "of": 900, "note": "routes"}
+            "read": "partial", "lines": [[1, 200]], "of": 900}
         data["findings"][0]["partial"] = {
             "[[s1]]": "the unread lines hold admin routes"}
         self.submit("research:Q01", {**data, "new_questions": [
@@ -270,7 +267,7 @@ class InvestigateTest(unittest.TestCase):
         # evidence.
         self.next_text(2)
         unread = {"key": "[[s1]]", "kind": "code", "reference": "[billing](https://example.com/billing)",
-                  "revision": "main", "coverage": {"read": "can't access", "note": "no access"}}
+                  "revision": "main", "coverage": {"read": "can't access"}}
         self.submit("research:Q02", {"sources": [unread], "outcome": {
                     "blocked": {"gap": {**GAP, "evidence": "[[s1]]"}}}})
         self.assertEqual([row[0] for row in ledger.table_rows(
@@ -285,7 +282,7 @@ class InvestigateTest(unittest.TestCase):
         text = self.next_text()
         self.assertIn("## Gaps the ledger holds", text)
         self.assertIn(
-            "- G01: Billing callers (blocked by: No access (billing repository))", text)
+            "- G01: Billing callers: the API is merged; its callers aren't read (blocked by: No access (billing repository))", text)
 
     def test_the_design_task_shows_the_scope_decided(self):
         self.research()
@@ -294,31 +291,9 @@ class InvestigateTest(unittest.TestCase):
         self.assertIn(
             "## The scope the user decided\n\n- U01: The payments gateway: mention only", text)
 
-    def test_the_review_asks_the_user_after_three_rounds(self):
-        self.research()
-        self.submit("design", self.design())
-        for number in (1, 2, 3):
-            self.assertNotIn("ask whether to go on",
-                             self.next_text())
-            self.submit(f"review:{number}", {"raised": [{"key": "[[q1]]", "question": f"Round {number}?",
-                                                         "depends_on": "None"}]})
-            self.submit(f"research:Q{7 + number:02d}",
-                        answer(f"Round {number}."))
-            self.submit("design", investigate.design_rows(self.lines()))
-        text = self.next_text()
-        self.assertIn("# Task review:4", text)
-        self.assertIn("ask whether to go on", text)
-        self.assertIn(
-            'submit what they said: {"stopped": "<what they said>"}', text)
-        self.assertIn(
-            "show the user what each of the 3 rounds so far raised", text)
-        self.assertIn(
-            "- Round 1 raised: Q08\n- Round 2 raised: Q09\n- Round 3 raised: Q10", text)
-
     def test_the_report_is_written_until_it_passes(self):
         self.research()
         self.submit("design", self.design())
-        self.submit("review:1", {"raised": []})
         bad = content()
         bad["purpose"] = ["No ledger link."]
         with self.assertRaisesRegex(SystemExit, "purpose paragraph 1: needs a ledger link"):
@@ -335,6 +310,15 @@ class InvestigateTest(unittest.TestCase):
         self.assertIn(result["path"], text)
         with self.assertRaisesRegex(SystemExit, "finished"):
             self.submit("finished", {})
+
+    def test_clones_are_shared_in_the_runs_working_folder(self):
+        # One clone per repository for the whole run, which a new run empties
+        # with the rest of the working folder.
+        repos = investigate.fills(INVESTIGATION)["repos"]
+        self.assertEqual(repos, os.path.join(
+            investigate.work_dir(INVESTIGATION), "_repos"))
+        self.assertIn(f"use the run's shared clone of it, {repos}/<owner>-<repo>",
+                      self.next_text())
 
     def test_the_ledger_is_locked_while_a_command_uses_it(self):
         # Subagents submit at once: each waits for the lock, so none writes
@@ -355,7 +339,6 @@ class InvestigateTest(unittest.TestCase):
         # The next write task lists why.
         self.research()
         self.submit("design", self.design())
-        self.submit("review:1", {"raised": []})
         stray = self.path.parent / "notes.md"
         stray.write_text("x", encoding="utf-8")
         with self.assertRaisesRegex(SystemExit, "notes.md"):
@@ -371,12 +354,12 @@ class InvestigateTest(unittest.TestCase):
         self.research()
         design = self.design()
         design["boundaries"][0]["name"] = "[Production cluster](https://example.com/cluster)"
-        self.submit("design", design)
-        self.submit("review:1", protocol.example("review"))
+        self.submit("design", {
+                    **design, "new_questions": protocol.example("design")["new_questions"]})
         self.submit("research:Q08", answer("It runs in production."))
+        design = investigate.design_rows(self.lines())
         design["boundaries"][0]["name"] = "Production cluster"
         self.submit("design", design)
-        self.submit("review:2", {"raised": []})
         warnings = self.submit("write", content())["warnings"]
         self.assertTrue(any("never used" in w for w in warnings), warnings)
         self.assertEqual(len(warnings), len(set(warnings)), warnings)

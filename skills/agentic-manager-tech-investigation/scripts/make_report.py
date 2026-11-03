@@ -1,8 +1,8 @@
 """Writes the investigation's <Topic>_Report.md from <investigation>/content.json;
 check_report.py checks it at handover.
 
-The script owns the template: headings, tables, fixed sentences, the title, the
-evidence date and the references, which it reads from the ledger, so content.json
+The script owns the template: headings, tables, fixed sentences, the title and
+the evidence date, which it reads from the ledger, so content.json
 holds only the sections that need judgment. A claim links the ledger as
 [text](ledger:F03), resolved to the record's anchor; ticket keys and
 owner/repo#123 are linked from the ledger's links, and a key it can't link is
@@ -12,7 +12,7 @@ from datetime import date
 import os
 import re
 
-from common import (CONTENT, folder_day, DISPLAY_DATE, FENCE, backtick_error, TABLE_HEADINGS, inline_links, ledger_rows, FOLDER_NAME, HEADING, group_of, source_mark, HEADINGS, LEDGER,
+from common import (CONTENT, folder_day, DISPLAY_DATE, FENCE, backtick_error, TABLE_HEADINGS, ledger_rows, FOLDER_NAME, HEADING, HEADINGS, LEDGER,
                     REPORT_SUFFIX, anchor_tag, autolink, investigation_dir, link_definitions, markdown, read_json, table, topic_of, unlinked_backticks, unresolved_message, word_count, write_output_file)
 
 # Approximate prose lengths, in words: room to articulate, not quotas. Warn above
@@ -127,7 +127,7 @@ class Content:
 
 class Ledger:
     """The ledger's anchors, link definitions and sources, to resolve links and
-    write the evidence date and the references."""
+    write the evidence date."""
 
     def __init__(self, path):
         try:
@@ -138,10 +138,6 @@ class Ledger:
         self.prose = markdown(self.text)[0]
         self.definitions = link_definitions(self.prose)
         self.sources = ledger_rows(self.text, TABLE_HEADINGS["sources"])
-
-    def inlined(self, text):
-        """`text` with its reference links, as the ledger stores them, written inline."""
-        return inline_links(text, self.definitions)
 
     def anchor(self, ident):
         """The anchor of the ledger row that records `ident`, outside a code
@@ -199,7 +195,6 @@ def build(content):
               table(["Decision or gap"] + DECISION_COLUMNS,
                     decision_rows(content, "open_choices_and_gaps", decisions))] if decisions else [
         "No technical choice or evidence gap is open in the inspected evidence."]
-    parts += [HEADING_LINE["references"], *references(content)]
     return "\n\n".join(parts) + "\n"
 
 
@@ -257,28 +252,3 @@ def key_decisions(content):
         return ["No decision, blocker or risk in the inspected evidence warrants technical-leadership attention."]
     return ["These items describe implications of the linked evidence.",
             table(["Decision or risk"] + DECISION_COLUMNS, decision_rows(content, "key_decisions", items))]
-
-
-def references(content):
-    """Every source of the ledger with a link, by its group: code, tracker and
-    documentation, each marked limited unless read in full, and superseded when
-    another source replaces it."""
-    lines = []
-    for group, label in (("source_control", "Implementation and configuration"), ("workflow", "Delivery"),
-                         ("documentation", "Vision, rationale and reported operational gaps")):
-        entries = []
-        for row in content.ledger.sources:
-            if len(row) < 7 or group_of(row) != group:
-                continue
-            reference = content.ledger.inlined(row[2].strip())
-            if "](" not in reference:
-                continue
-            entry = f"- {reference}" + \
-                (f" ({mark})" if (mark := source_mark(row)) else "")
-            if entry not in entries:
-                entries.append(entry)
-        lines += [f"**{label}**",
-                  "\n".join(entries) if entries else "None in the inspected sources."]
-    lines.append(f"The [research ledger]({LEDGER}) holds the full validation trail: revisions, searches, "
-                 "the component inventory, reconciled findings, decisions and limitations.")
-    return lines

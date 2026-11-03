@@ -32,7 +32,7 @@ class StructureTest(unittest.TestCase):
         self.assertEqual([title for _, title in common.report_headings()], [
             "Executive / product summary", "Problem and purpose", "Current status", "Direction",
             "Key decisions and risks", "Architect summary", "How it works today", "Target design",
-            "Open technical choices and gaps", "References"])
+            "Open technical choices and gaps"])
 
     def test_expected_files(self):
         self.assertEqual(common.expected_files("Acme_Report.md"),
@@ -148,7 +148,9 @@ class DesignTest(unittest.TestCase):
         def connection(ident, start, end, state="🟩 Live"):
             return [ident, start, end, "HTTP", "q", "yes", "None", state, "Unchanged", "F01"]
         connections = [connection("E01", "C01", "C02"), connection("E02", "C02", "C03", "🟨 Planned"),
-                       connection("E03", "C02", "C04"), connection("E04", "C05", "C06")]
+                       connection("E03", "C02", "C04"), connection(
+                           "E04", "C05", "C06"),
+                       connection("E06", "C08", "C03")]
         connections += [connection("E05", "C02", "C07", "⬜ Unverified")]
         # name: (the connections walked, the flow's State)
         states = [("all live", "E01, E03", "🟩 Live"),
@@ -164,9 +166,10 @@ class DesignTest(unittest.TestCase):
         # name: (the connections in order, the problem's text, or None)
         cases = [("a chain", "E01, E02", None),
                  ("a branch from a component reached", "E01, E02, E03", None),
-                 ("out of order", "E02, E01",
-                  "E01 starts from C01, which the flow hasn't reached yet"),
-                 ("a jump", "E01, E04", "E04 starts from C05")]
+                 ("a part that fetches from a component reached", "E01, E02, E06", None),
+                 ("out of order", "E06, E01",
+                  "E01 runs from C01 to C02, neither of which the flow has reached yet"),
+                 ("a jump", "E01, E04", "E04 runs from C05 to C06")]
         for name, walked, expected in cases:
             with self.subTest(name):
                 assert_problem(self, common.flow_order_problem(
@@ -380,7 +383,7 @@ class DesignTest(unittest.TestCase):
             ("a planned component waiting on an open decision", "components",
              row("components", State="🟨 Planned", Evidence="D01"), None),
             ("a live component resting on no finding", "components",
-             row("components", Kind="external product", Evidence="U02"), "names in Evidence the finding"),
+             row("components", Kind="external", Evidence="U02"), "names in Evidence the finding"),
             ("a component with no boundary", "components",
              row("components", Boundary=""), "Boundary names"),
             ("a component resting on nothing", "components",
@@ -537,12 +540,12 @@ class DesignTest(unittest.TestCase):
                              repository, "🟩 Live", "Unchanged", (evidence or ["F01"])[0]]
                 self.assertEqual(common.unread_components(
                     [component], findings, {row[0]: row for row in sources}, definitions), expected)
-        # No code is asked of an unverified row, of an external product, or of
+        # No code is asked of an unverified row, of an external part, or of
         # a part of a mention-only topic citing that decision (U02 here, not
         # U01, which included its topic).
         # name: (kind, state, evidence, unread)
         cases = [("unverified", "service", "⬜ Unverified", "G01", {}),
-                 ("an external product", "external product",
+                 ("an external part", "external",
                   "🟩 Live", "F01", {}),
                  ("a mention-only part", "store", "🟩 Live", "F01, U02", {}),
                  ("a part of an included topic", "store", "🟩 Live", "F01, U01", unread)]
@@ -568,15 +571,6 @@ class LedgerRulesTest(unittest.TestCase):
             ["F03", "Three.", "S02", "Read."]])
         self.assertEqual(common.cited_sources(f"## Findings\n\n{findings}\n"),
                          {1: {"F01"}, 2: {"F01", "F03"}})
-
-    def test_the_review_ends_on_a_round_raising_nothing_or_the_choice_to_stop(self):
-        # (the reviews table's rounds, reviewed)
-        cases = [([], False), ([["1", "Q02"]], False),
-                 ([["1", "Q02"], ["2", "No issue raised"]], True),
-                 ([["1", "Q02"], ["2", "Stopped by the user: enough"]], True)]
-        for rounds, done in cases:
-            with self.subTest(rounds=rounds):
-                self.assertEqual(common.reviewed(rounds), done)
 
     def test_how_a_question_closes_and_the_scope_boundaries(self):
         # A question closes on the findings that answer it, never on a gap, a
@@ -642,7 +636,7 @@ class LedgerRulesTest(unittest.TestCase):
         for blocker, expected in cases:
             with self.subTest(blocker):
                 assert_problem(self, common.gap_problem(
-                    ["G01", "Gap", "Missing", "Read it", blocker, "Owner", "F01"]), expected)
+                    ["G01", "Gap", blocker, "Owner", "F01"]), expected)
 
     def test_a_sources_reference_links_it(self):
         # A link, or for a search, its exact query; a backticked text that
@@ -653,7 +647,13 @@ class LedgerRulesTest(unittest.TestCase):
                      reference="`retry`", coverage="search hit"), None),
                  ("a path in backticks", source_row(
                      reference="`src/app.py`"), "S01: link the Reference"),
-                 ("plain text", source_row(reference="src/app.py"), "S01: link the Reference")]
+                 ("plain text", source_row(reference="src/app.py"),
+                  "S01: link the Reference"),
+                 # Brackets between backticks are code, never a link.
+                 ("a pattern's brackets, not a search", source_row(
+                     reference="`grep 'PROJ-6[0-9][0-9]'`", coverage="listing"), "S01: link the Reference"),
+                 ("a search whose pattern has brackets", source_row(
+                     reference="`grep 'PROJ-6[0-9][0-9]'`", coverage="search hit"), None)]
         for name, row, expected in cases:
             with self.subTest(name):
                 assert_problem(self, common.source_problem(row, {}), expected)
@@ -669,36 +669,29 @@ class LedgerRulesTest(unittest.TestCase):
                 self.assertEqual(common.group_of(row), group)
                 self.assertEqual(common.group_problem(row) is None, accepted)
 
-    def test_a_sources_coverage_and_replacement_give_its_mark(self):
-        # (Coverage, Superseded by, the report's mark, the problem's text or
-        # None, and the kind when not documentation): code read in part names
-        # the lines read; a page, anything.
-        cases = [("full", "None", None, None), ("Full: every line", "None", None, None),
-                 ("partial: lines 1-80 of 352", "None", "limited", None, "code"),
-                 ("partial: lines 1-80, 200-240 of 352",
-                  "None", "limited", None, "code"),
-                 ("partial: the routes", "None", "limited",
-                  "names the lines read", "code"),
-                 ("entry points: routes", "None", "limited",
+    def test_a_sources_coverage_and_replacement_follow_their_rules(self):
+        # (Coverage, Superseded by, the problem's text or None, and the kind
+        # when not documentation): code read in part names the lines read; a
+        # page, anything.
+        cases = [("full", "None", None), ("Full: every line", "None", None),
+                 ("partial: lines 1-80 of 352", "None", None, "code"),
+                 ("partial: lines 1-80, 200-240 of 352", "None", None, "code"),
+                 ("partial: the routes", "None", "names the lines read", "code"),
+                 ("entry points: routes", "None",
                   "Coverage starts with one of", "code"),
-                 ("listing", "None", "limited",
-                  None), ("search hit", "None", "limited", None),
-                 ("can't access: not on the main branch at abc",
-                  "None", "limited", None),
-                 ("full", "S02", "superseded", None),
-                 ("partial: sections: Summary",
-                  "[S02](#s02)", "limited, superseded", None),
-                 ("skimmed", "None", "limited", "Coverage starts with one of"),
-                 ("full", "the 2026 design", "superseded", "Superseded by is None"),
-                 ("full", "S01", "superseded", "Superseded by is None"),
-                 ("full", "S02, S03", "superseded", "Superseded by is None")]
+                 ("listing", "None", None), ("search hit", "None", None),
+                 ("can't access: not on the main branch at abc", "None", None),
+                 ("full", "S02", None),
+                 ("partial: sections: Summary", "[S02](#s02)", None),
+                 ("skimmed", "None", "Coverage starts with one of"),
+                 ("full", "the 2026 design", "Superseded by is None"),
+                 ("full", "S01", "Superseded by is None"),
+                 ("full", "S02, S03", "Superseded by is None")]
         for case in cases:
-            coverage, superseded, mark, expected, kind = (
-                *case, "documentation")[:5]
+            coverage, superseded, expected, kind = (*case, "documentation")[:4]
             with self.subTest(coverage=coverage, superseded=superseded):
                 row = source_row(kind=kind, revision="2026-10-01",
                                  coverage=coverage, superseded=superseded)
-                self.assertEqual(common.source_mark(row), mark)
                 assert_problem(self, common.coverage_problem(
                     row) or common.superseded_problem(row), expected)
 
@@ -732,6 +725,30 @@ class LedgerRulesTest(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(common.unexplained_partial_reads(["F01", "A claim.", sources, limits], partial),
                                  expected)
+
+    def test_a_finding_cites_only_lines_its_source_covers(self):
+        # Lines a finding cites of a file read in part lie within what its
+        # Coverage names; a source read in full, or with no lines named,
+        # leaves nothing to compare.
+        sources = {"S01": source_row(coverage="partial: lines 1-80, 200-240 of 352"),
+                   "S02": source_row(coverage="full"),
+                   "S03": source_row(coverage="partial: sections: Decision")}
+        # name: (Sources, the problem's text, or None)
+        cases = [("lines read", "S01 (lines 10-40, 200-240)", None),
+                 ("a single line read", "[S01](#s01) (line 72)", None),
+                 ("lines past the read", "S01 (lines 70-90)",
+                  "F01: cites lines 70-90 of S01, which its Coverage doesn't include"),
+                 ("a line unread among several", "S01 (lines 1-3, 95, 238-245)",
+                  "cites lines 95, 238-245 of S01"),
+                 ("the unread lines of the source they follow",
+                  "S02 (lines 500-510); S01 (lines 1-10)", None),
+                 ("a source read in full", "S02 (lines 900-910)", None),
+                 ("a part named by sections", "S03 (lines 5-9)", None),
+                 ("no lines cited", "S01", None)]
+        for name, cited, expected in cases:
+            with self.subTest(name):
+                assert_problem(self, common.unread_lines_problem(
+                    ["F01", "A claim.", cited, "None"], sources), expected)
 
     def test_every_read_but_a_full_one_leaves_a_part_unread(self):
         # A finding citing any of these explains why the unread part can't

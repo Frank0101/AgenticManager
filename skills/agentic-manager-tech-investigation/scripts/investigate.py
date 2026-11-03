@@ -4,7 +4,7 @@ The tasks are worked out from the ledger every time, never stored, so they can't
 drift from it: the research questions, those for the user asked first, all
 together, while research that doesn't wait on their answers goes on; then the
 system design once none is open, built again whenever research has added to
-what it rests on; then the review rounds, the report and the handover.
+what it rests on; then the report and the handover.
 A task holds everything needed to do it, in a file of its own, so a subagent is
 handed it by its path.
 """
@@ -18,13 +18,13 @@ import shutil
 import sys
 import tempfile
 
-from common import (CONTENT, DESIGN_ORDER, FOLDER_NAME, LEDGER, REPORT_SUFFIX, SCOPE_QUESTION, TABLE_HEADINGS, ids,
-                    investigation_dir, last_review, ledger_rows, plain, reviewed, stops_on_failure, strip_anchors,
+from common import (BLOCKED_BY, CONTENT, DESIGN_ORDER, FOLDER_NAME, LEDGER, REPORT_SUFFIX, SCOPE_QUESTION, ids,
+                    investigation_dir, plain, stops_on_failure, strip_anchors,
                     topic_of, write_output_file)
 from init_investigation import init, usable_sources
 from ledger import (TABLES, as_written, basis, brief, design_basis, depends_on, load, move_row, save, scope_decisions,
                     table_rows)
-from submissions import design_rows, submit_research, submit_scope, submit_design, submit_review
+from submissions import design_rows, submit_research, submit_scope, submit_design
 import check_report
 import make_report
 import protocol
@@ -140,8 +140,6 @@ def submit(relative, task, data):
             f"{task} isn't a task now; the task now is {current}: run next")
     elif phase == "design":
         result = submit_design(lines, data)
-    elif phase == "review":
-        result = submit_review(lines, data, len(rounds(lines)) + 1)
     else:
         raise SystemExit("the investigation is finished: nothing to submit")
     save(relative, lines)
@@ -149,14 +147,12 @@ def submit(relative, task, data):
 
 
 def phase_of(relative, lines):
-    """Where the investigation stands: research, design, review, write or
-    finished, worked out from the ledger and the report."""
+    """Where the investigation stands: research, design, write or finished,
+    worked out from the ledger and the report."""
     if questions_to_work(lines):
         return "research"
     if design_basis(lines) != basis(lines):
         return "design"
-    if not reviewed(rounds(lines)):
-        return "review"
     if report_problems(relative) != []:
         return "write"
     return "finished"
@@ -189,7 +185,7 @@ def task_of(lines, phase):
         if scope_due(lines):
             return "scope"
         return f"research:{next(row for row in questions_to_work(lines) if not is_scope_question(row))[0]}"
-    return {"review": f"review:{len(rounds(lines)) + 1}"}.get(phase, phase)
+    return phase
 
 
 def scope_due(lines):
@@ -216,15 +212,6 @@ def render(relative, lines, task):
                 json.dumps(protocol.example("research-blocked"), ensure_ascii=False)]
     elif task == "design":
         body = [protocol.text("design", **values), "", *design_context(lines)]
-    elif task.startswith("review:"):
-        number = int(task.removeprefix("review:"))
-        body = [protocol.text("review", **values)]
-        if number > protocol.REVIEW_ROUNDS:
-            body += ["", protocol.text("review-ask", round=number, rounds=number - 1, **values), "",
-                     *(f"- Round {row[0]} raised: {plain(row[-1])}" for row in rounds(lines))]
-        if last := last_review(rounds(lines)):
-            body += ["",
-                     f"The last round raised {plain(last)}; they are answered or blocked now."]
     elif task == "write":
         body = [protocol.text("write", **values), ""]
         if problems := report_problems(relative):
@@ -264,15 +251,16 @@ def work_dir(relative):
 def task_folder(relative, task):
     """The folder of `task` in the investigation's working folder, for its
     file and every file its agent writes: named after its question, such as
-    Q05, or after the task, such as design or review-1."""
+    Q05, or after the task, such as design."""
     return os.path.join(work_dir(relative), task.replace(":", "-").removeprefix("research-"))
 
 
 def fills(relative):
     """The values the protocol names for this investigation: the scripts' and
     the library's folders, written as the commands the skill pre-approves need
-    them, the investigation, its topic and its ledger, and the sources the
-    config enables for the documentation and the code."""
+    them, the investigation, its topic and its ledger, the sources the
+    config enables for the documentation and the code, and the folder of the
+    shared clones."""
     scripts = os.path.dirname(script_path())
     folder, _, _ = investigation_dir(relative)
     sources = usable_sources()
@@ -280,7 +268,16 @@ def fills(relative):
             "topic": topic_of(folder).replace("-", " "),
             "documentation": " or ".join(f"the {name} source" for name in sources["documentation"]),
             "code": " or ".join(f"the {name} source" for name in sources["source_control"]),
+            "repos": repos_dir(relative),
             "lib": os.path.join(os.path.dirname(scripts), "..", "agentic-manager-utils-lib", "agentic_manager")}
+
+
+def repos_dir(relative):
+    """The folder the run's agents share their clones in, one per repository:
+    a clone at a commit is the code itself, the same for every task, unlike
+    the drafts a task folder keeps apart, so cloning it once saves each task
+    the download. In the working folder, so a new run empties it too."""
+    return os.path.join(work_dir(relative), "_repos")
 
 
 def scope_context(lines):
@@ -325,7 +322,7 @@ def question_context(lines, ident):
     out += ["", "## Gaps the ledger holds", "",
             'Evidence no one can get yet: if this question needs it, block on it, {"blocked": "[[G01]]"}, rather '
             "than look again.", ""]
-    out += [f"- {row[0]}: {plain(row[1])} (blocked by: {plain(row[4])})" for row in table_rows(lines, "gaps")] \
+    out += [f"- {row[0]}: {plain(row[1])} (blocked by: {plain(row[BLOCKED_BY])})" for row in table_rows(lines, "gaps")] \
         or ["None."]
     return out + ["", "## Sources already read", "", *sources_read(lines)]
 
@@ -351,8 +348,8 @@ def sources_read(lines):
 def design_context(lines):
     """What the design is built from: the scope the user decided, every
     finding, gap and decision, every source with what was read of it, so a
-    finding too thin for a row can be read again exactly there, and the
-    current design to change."""
+    row links the code its findings were read in and takes the state that
+    reading shows, and the current design to change."""
     out = ["## The scope the user decided", "", *
            (scope_decisions(lines) or ["None yet."]), "", "## Findings", ""]
     out += [f"- {row[0]}: {plain(row[1])} ({plain(row[2])}) Limits: {plain(row[3])}"
@@ -368,11 +365,6 @@ def design_context(lines):
         out += ["", "## The current design, to change and submit again whole", "",
                 protocol.compact(current)]
     return out
-
-
-def rounds(lines):
-    """The review table's rows."""
-    return ledger_rows("\n".join(lines), TABLE_HEADINGS["reviews"])
 
 
 def report_problems(relative):

@@ -15,9 +15,9 @@ from common import (CELL_PIPE, CITATION, DECISION_HEADER, DEFINITION, DESIGN_ORD
                     blocked_problem, cited_evidence_problem, cited_sources, claim_length_problem, design_evidence,
                     design_row_problem, expected_files, finding_problem, flow_states, gap_problem, headings, id_order,
                     identity_states, ids, ledger_rows, link_definitions, links, listed, local_link, markdown,
-                    outcome_problem, partial_read_problem, read_in_part, records, reference_key, report_headings,
-                    review_problem, scope_problem, section_span, source_problem, strip_anchors, table_cells,
-                    unlinked_backticks, unlinked_references, unrecorded_ids)
+                    outcome_problem, partial_read_problem, unread_lines_problem, read_in_part, records, reference_key, report_headings,
+                    scope_problem, section_span, source_problem, strip_anchors, table_cells,
+                    unlinked_backticks, unlinked_references, unrecorded_ids, without_code)
 
 
 def check_report(report, handover=False):
@@ -111,7 +111,7 @@ def check_ledger(path, handover=False):
     """(errors, warnings) of the ledger's structure: its sections and the
     queue's in order, findings written once and every one cited written, every
     ticket and pull request linked, and, at handover, a queue with nothing left
-    ready or in progress, the review finished, completed questions answered,
+    ready or in progress, completed questions answered,
     blocked ones naming what blocks them, the rows of scope boundaries,
     sources, findings, gaps, decisions, components and the system design within their rules, code read for every
     component claiming it, and linked sources."""
@@ -218,7 +218,7 @@ def reference_problems(body):
     """(keys used but not defined, keys defined but never used) of the reference links in `body`."""
     defined = set(link_definitions(body))
     used = {reference_key(match) for match in REFERENCE_LINK.finditer(
-        DEFINITION.sub(" ", body))}
+        DEFINITION.sub(" ", without_code(body)))}
     return sorted(used - defined), sorted(defined - used)
 
 
@@ -275,15 +275,12 @@ def reference_error(where, found):
 
 
 def closing_problems(body):
-    """The independent review not yet finished, completed questions with no
-    answer, blocked questions that don't say what blocks them, and scope
+    """Completed questions with no answer, blocked questions that don't say what blocks them, and scope
     boundaries, sources, findings, gaps, decisions, components and system
     design rows that break the rules ledger.py applies on write."""
     problems = []
     evidence = design_evidence(body)
     findings, sources = evidence["findings"], evidence["sources"]
-    problems.append(review_problem(
-        ledger_rows(body, TABLE_HEADINGS["reviews"])))
     problems += [outcome_problem(row[0], row[-1], row[2], evidence["scope"])
                  for row in records(body, "queue-completed")]
     blocked = records(body, "queue-blocked")
@@ -299,7 +296,7 @@ def closing_problems(body):
     problems += [source_problem(row, evidence["definitions"])
                  for row in sources.values()]
     partial = {ident for ident, row in sources.items() if read_in_part(row)}
-    problems += [finding_problem(row) or partial_read_problem(row, partial)
+    problems += [finding_problem(row) or partial_read_problem(row, partial) or unread_lines_problem(row, sources)
                  for row in findings.values()]
     problems += [gap_problem(row) or cited_evidence_problem(row[0], row[GAP_HEADER.index("Evidence")])
                  for row in records(body, "gaps")]

@@ -1,9 +1,7 @@
 {
   "blocked": {
     "gap": {
-      "gap": "Billing service callers",
-      "missing": "Its callers in billing are not read",
-      "would_close": "Read access to the billing repository",
+      "gap": "The billing service's callers, so whether billing calls the search API isn't checked",
       "blocked_by": "No access (billing repository)",
       "owner_and_next_check": "Billing team; once access exists",
       "evidence": "[[F01]]"

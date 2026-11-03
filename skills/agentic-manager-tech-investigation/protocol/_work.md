@@ -1,1 +1,1 @@
-Keep every file you write for this task, such as a clone, a file you fetched or a draft of your answer, in your folder for it, {{task_work}}: no other task uses it, and a new run empties it. Never use a file an earlier run left anywhere else.
+Keep every file you write for this task, such as a file you fetched or a draft of your answer, in your folder for it, {{task_work}}: no other task uses it, and a new run empties it. Never use a file an earlier run left anywhere else.

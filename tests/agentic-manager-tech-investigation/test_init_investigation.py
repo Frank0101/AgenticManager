@@ -87,9 +87,8 @@ class InitTest(unittest.TestCase):
              "What problem does Acme Search solve, for whom, and with what impact and success measures?",
              "[Q01](#q01)"],
             ["Q03", "Seed (documentation)",
-             "What target design and decisions do the design records, documents and tickets set for Acme Search, "
-             "which are accepted or only proposed, and what does each change from today: components, connections, "
-             "identities, boundaries and flows?", "[Q01](#q01)"],
+             "What design does Acme Search target: which components, connections, identities, boundaries and "
+             "flows will it add, change or remove compared with today?", "[Q01](#q01)"],
             ["Q04", "Seed (tracker)",
              "What is done, in progress and planned for Acme Search, and what evidence backs each Done ticket?",
              "[Q01](#q01)"],

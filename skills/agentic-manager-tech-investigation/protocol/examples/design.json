@@ -1,28 +1,4 @@
 {
-  "sources": [
-    {
-      "key": "[[s1]]",
-      "kind": "code",
-      "reference": "[api index.py](https://github.com/acme/api/blob/1a2b3c4/index.py)",
-      "revision": "1a2b3c4",
-      "coverage": {
-        "read": "partial",
-        "lines": [[40, 60]],
-        "of": 200
-      }
-    }
-  ],
-  "findings": [
-    {
-      "key": "[[f1]]",
-      "claim": "The search API queries the index over HTTP for every search.",
-      "sources": "[[s1]] (lines 40-60)",
-      "limits": "None",
-      "partial": {
-        "[[s1]]": "the unread lines are the index's admin commands, which don't serve searches"
-      }
-    }
-  ],
   "boundaries": [
     {
       "key": "[[b1]]",
@@ -42,7 +18,7 @@
       "code": "[server.py](https://github.com/acme/api/blob/1a2b3c4/server.py)",
       "state": "🟩 Live",
       "in_the_target": "Unchanged",
-      "evidence": "[[F01]], [[f1]]"
+      "evidence": "[[F01]]"
     },
     {
       "key": "[[c2]]",

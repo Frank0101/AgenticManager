@@ -16,8 +16,6 @@ from common import (BLOCKERS, BOUNDARY_KINDS, COMPONENT_TYPES, CONNECTION_KINDS,
 
 FOLDER = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "..", "protocol")
-# After this many review rounds the user decides whether the review goes on.
-REVIEW_ROUNDS = 3
 # The values the protocol's files name, as the scripts define them.
 VALUES = {
     "groups": ", ".join(GROUPS.values()),

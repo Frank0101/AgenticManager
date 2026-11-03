@@ -47,13 +47,11 @@ HEADINGS = [
     (3, "How it works today", "arch.today"),
     (3, "Target design", "arch.target"),
     (3, "Open technical choices and gaps", "arch.decisions"),
-    (2, "References", "references"),
 ]
 # The ledger's sections, in order, and the queue's subsections. Each title is
 # named once, here: one typed differently elsewhere would leave a check reading
 # an empty section.
 QUEUE = "Research questions"
-REVIEWS = "Independent reviews"
 SCOPE = "Scope boundaries"
 SOURCES = "Sources"
 FINDINGS = "Findings"
@@ -61,7 +59,7 @@ DESIGN = "System design"
 DECISIONS = "Open decisions"
 GAPS = "Evidence gaps"
 LINKS = "Links"
-LEDGER_SECTIONS = [QUEUE, SCOPE, REVIEWS, SOURCES, FINDINGS,
+LEDGER_SECTIONS = [QUEUE, SCOPE, SOURCES, FINDINGS,
                    DESIGN, DECISIONS, GAPS, LINKS]
 # A question is ready until someone starts it, so that after a break, or with
 # work shared out, what is under way shows apart from what is waiting.
@@ -80,7 +78,7 @@ DESIGN_SUBSECTIONS = [table.capitalize() for table in DESIGN_ORDER]
 # gives it: one place, since a heading typed differently elsewhere would
 # leave a check reading an empty table.
 TABLE_HEADINGS = {**{table: f"### {title}" for table, title in zip(QUEUE_TABLES, QUEUE_SUBSECTIONS)},
-                  "scope": f"## {SCOPE}", "reviews": f"## {REVIEWS}", "sources": f"## {SOURCES}", "findings": f"## {FINDINGS}",
+                  "scope": f"## {SCOPE}", "sources": f"## {SOURCES}", "findings": f"## {FINDINGS}",
                   "decisions": f"## {DECISIONS}", "gaps": f"## {GAPS}",
                   **{table: f"### {title}" for table, title in zip(DESIGN_ORDER, DESIGN_SUBSECTIONS)}}
 # A question, what raised it, the questions it waits for, and the findings that answer it.
@@ -122,6 +120,10 @@ READ_COVERAGE = ("full", "partial")
 # says why the rest can't change its claim; can't access reads nothing.
 PART_COVERAGE = ("partial", "listing", "search hit")
 LINE_RANGE = re.compile(r"\blines? \d+\s*[-–]\s*\d+")
+# The lines a Coverage names, as coverage_text() writes them, and a range or
+# single line a finding cites, such as "120-160" or "95".
+COVERAGE_LINES = re.compile(r"lines (\d+-\d+(?:, \d+-\d+)*)(?: of (\d+))?")
+CITED_LINES = re.compile(r"(\d+)(?:\s*[-–]\s*(\d+))?")
 # A file written for people beside the code, such as a README: it helps to
 # read the code but isn't code, so reading it never shows what the code does.
 DOC_FILE = re.compile(
@@ -140,23 +142,28 @@ COMMIT = re.compile(r"[0-9a-f]{7,40}", re.I)
 # The files a Coverage names, as coverage_text() writes them.
 FILES_READ = re.compile(r"files: ([^;]*)")
 FINDING_HEADER = ["ID", "Claim", "Sources", "Limits"]
-DECISION_HEADER = ["ID", "Decision", "Established position or unresolved choice",
-                   "Candidates, constraints", "Owner and next check", "Evidence"]
+# A decision's Position is the established one, or "Unresolved:" with the
+# candidates and their constraints, which is what an open position is; its
+# owner, as a gap's, is a role, since the report names roles, never people.
+DECISION_HEADER = ["ID", "Decision", "Position",
+                   "Owner and next check", "Evidence"]
 # What a gap can be blocked by. Anything else is work the agent can do, so it is
 # a ready question in the queue and not a gap; whether the investigation covers
 # something is a scope question in the queue, so no gap waits on the user.
 BLOCKERS = ("No access", "Waiting on decision")
-GAP_HEADER = ["ID", "Gap", "What is missing",
-              "What would close it", "Blocked by", "Owner and next check", "Evidence"]
+# A gap says what is missing and why it matters; what would close it is the
+# reverse of what blocks it, so it isn't written twice.
+GAP_HEADER = ["ID", "Gap", "Blocked by", "Owner and next check", "Evidence"]
+BLOCKED_BY = GAP_HEADER.index("Blocked by")
 COMPONENT_HEADER = ["ID", "Name", "Kind", "Boundary", "Responsibility", "Repository, paths, revision",
                     "State", "In the target", "Evidence"]
 # What a component is, the kind its Kind starts with: a fixed list, so every
 # investigation names the same kinds alike and a diagram can draw each its way.
 COMPONENT_TYPES = ("service", "application", "job", "script", "library", "store", "queue",
-                   "external product", "person", "role", "unknown")
-# The kinds that have no code of their own: one is live once a finding shows it
-# exists; whether the topic uses it yet is its connections' state.
-OUTSIDE_KINDS = ("external product", "person", "role")
+                   "external", "person", "role", "unknown")
+# The kinds whose code isn't read, because it can't be or isn't researched:
+# one is live once a finding shows it exists; whether the topic uses it yet is its connections' state.
+OUTSIDE_KINDS = ("external", "person", "role")
 # How a connection is made, the kind its How starts with, and whether its
 # caller waits: fixed values, so connections read alike and a diagram can draw
 # each kind its way; any detail follows.
@@ -207,7 +214,7 @@ TABLES = {
 # read (READ_COVERAGE above); the others say what the evidence can't establish.
 # A row found not to exist is kept as ruled out, not removed, since a question
 # that checked it may cite it; it counts for no identity's or flow's state.
-STATUSES = [("🟩 Live", "merged to the main branch, or, for an external product, a person, a role or a part of a mention-only topic, shown to exist"),
+STATUSES = [("🟩 Live", "merged to the main branch, or, for an external part, a person, a role or a part of a mention-only topic, shown to exist"),
             ("🟦 In development",
              "code written but not merged: an open pull request or a branch"),
             ("🟨 Planned", "in the tracker, with no code"),
@@ -216,14 +223,6 @@ STATUSES = [("🟩 Live", "merged to the main branch, or, for an external produc
             ("✖ Ruled out", "shown not to exist today, whether never built or since removed: the finding showing it is in its evidence")]
 CODE_STATUSES = ("🟩", "🟦")
 UNVERIFIED, RULED_OUT = STATUSES[-2][0], STATUSES[-1][0]
-# Each independent review round is a row of its own table, written when its
-# task is submitted: the questions it raised, or REVIEW_NONE. A strict reviewer
-# can keep finding something, so after a few rounds the user decides whether to
-# go on; their choice to stop ends the review like a round that raised nothing,
-# as a round whose Raised starts REVIEW_STOPPED.
-REVIEW_HEADER = ["Round", "Raised"]
-REVIEW_NONE = "No issue raised"
-REVIEW_STOPPED = "Stopped by the user:"
 # A finding holds one claim, of about 80 words; a claim far past that, here
 # about twice it, bundles several, which are then cited and corrected as one.
 # It is refused when the finding is written, so it is split before other rows
@@ -461,6 +460,48 @@ def unexplained_partial_reads(row, partial):
             if s in partial and not re.search(rf"\b{s} read in part: [^\s.]", limits)]
 
 
+def unread_lines_problem(row, sources):
+    """Why a finding row cites lines of a source that its Coverage doesn't
+    include, or None; `sources` is {ID: row}."""
+    cell = plain(row[2])
+    cited = list(re.finditer(IDS_OF.format("S"), cell))
+    for number, match in enumerate(cited):
+        source = sources.get(match[0])
+        if source is None:
+            continue
+        coverage = coverage_fields(plain(source[4]))
+        if coverage["read"] != "partial" or not coverage.get("lines"):
+            continue
+        after = cell[match.end():cited[number + 1].start()
+                     if number + 1 < len(cited) else len(cell)]
+        spans = [(int(first), int(last or first)) for first, last in CITED_LINES.findall(
+            " ".join(m[1] for m in re.finditer(r"\blines? ([\d\s,–-]+)", after)))]
+        unread = [f"{first}-{last}" if last != first else str(first) for first, last in spans
+                  if not any(a <= first and last <= b for a, b in coverage["lines"])]
+        if unread:
+            return (f"{row[0]}: cites lines {', '.join(unread)} of {match[0]}, which its Coverage doesn't include: "
+                    "read them and submit the source again with them, or cite only the lines read")
+    return None
+
+
+def coverage_fields(text):
+    """The fields of a Coverage as the ledger writes it: its read, then each
+    part it named, so a source read again can add to it and a finding's cited
+    lines can be checked against it."""
+    read, _, rest = text.partition(": ")
+    fields = {"read": read.strip()}
+    for part in rest.split("; ") if rest else []:
+        if match := COVERAGE_LINES.fullmatch(part):
+            fields["lines"] = [[int(n) for n in span.split("-")]
+                               for span in match[1].split(", ")]
+            if match[2]:
+                fields["of"] = int(match[2])
+        elif part.startswith(("sections: ", "files: ")):
+            name, _, items = part.partition(": ")
+            fields[name] = items.split(", ")
+    return fields
+
+
 def design_row_problem(name, row, evidence):
     """Why a system design row breaks a rule of the design, or None: every
     rule a row of the table `name` meets, given `evidence`, the ledger as
@@ -570,30 +611,6 @@ def claim_length_problem(ident, claim):
     return f"{ident}'s claim is {words} words; split it into findings of one claim each"
 
 
-def review_problem(rounds):
-    """What the review still needs, or None once a round raised no question;
-    `rounds` are the review table's rows."""
-    if last_review(rounds) is None:
-        return "no independent review is recorded: investigate.py next hands it out once research is finished"
-    if not reviewed(rounds):
-        return ("the last review round raised questions: once they are done, investigate.py next hands out "
-                "the next round, until one raises no question or the user chooses to stop")
-    return None
-
-
-def last_review(rounds):
-    """What the latest review round raised, or None when no round is recorded."""
-    return rounds[-1][-1].strip() if rounds else None
-
-
-def reviewed(rounds):
-    """Whether the review is finished: rounds repeat until one raises no
-    question, since the questions a round raises change the ledger the next round
-    reads. The user's choice to stop also ends it."""
-    outcome = last_review(rounds)
-    return outcome is not None and (outcome == REVIEW_NONE or outcome.startswith(REVIEW_STOPPED))
-
-
 def backtick_error(where, spans):
     """The error for references in backticks outside a link."""
     return (f"{where}: references in backticks without a link: {listed([f'`{s}`' for s in spans])}. "
@@ -609,11 +626,12 @@ def gap_problem(row):
     """Why a gap row's Blocked by isn't allowed, and how to fix it, or None. A
     gap nothing blocks is work to do now, so it belongs in the queue; a
     decision must be named."""
+    blocked_by = row[BLOCKED_BY]
     blocker = next(
-        (b for b in BLOCKERS if row[4].lower().startswith(b.lower())), None)
+        (b for b in BLOCKERS if blocked_by.lower().startswith(b.lower())), None)
     if blocker is None:
-        return f"{row[0]} is blocked by '{row[4]}'. {GAP_FIX}"
-    if blocker == "Waiting on decision" and not ids(row[4], "D"):
+        return f"{row[0]} is blocked by '{blocked_by}'. {GAP_FIX}"
+    if blocker == "Waiting on decision" and not ids(blocked_by, "D"):
         return f"{row[0]} waits on a decision but names none. {GAP_FIX}"
     return None
 
@@ -643,7 +661,14 @@ def source_reference_missing(row):
     query between backticks; any other text in backticks links nothing."""
     is_query = QUERY.fullmatch(
         row[2].strip()) and row[4].strip().startswith("search hit")
-    return not LINK.search(row[2]) and not is_query
+    return not LINK.search(without_code(row[2])) and not is_query
+
+
+def without_code(text):
+    """`text` with its code spans blanked, for a check that looks for links:
+    brackets between backticks, such as a query's `PROJ-6[0-9][0-9]`, are code,
+    as a Markdown renderer shows them, never a link."""
+    return QUERY.sub(" ", text)
 
 
 def unlinked_backticks(prose, linked_text=""):
@@ -784,7 +809,7 @@ def group_of(row):
 def coverage_problem(row):
     """Why a source row's Coverage breaks the rule COVERAGE states, or None:
     it starts with one of COVERAGE, and a partial read names what was read,
-    the lines or files of code, the sections of a document."""
+    the lines or files of code, the sections of a document or a ticket."""
     if not any(row[4].strip().casefold().startswith(c) for c in COVERAGE):
         return (f"{row[0]}: Coverage starts with one of: {', '.join(COVERAGE)}, then any detail, such as "
                 "'partial: lines 1-80, 200-240 of 352'")
@@ -793,8 +818,9 @@ def coverage_problem(row):
     if group_of(row) == "source_control" and not (LINE_RANGE.search(row[4]) or "files:" in row[4]):
         return (f'{row[0]}: Coverage partial of code names the lines read, "lines": [[1, 80]], or for a '
                 'pull request or a folder the files read, "files": [...]')
-    if group_of(row) == "documentation" and "sections:" not in row[4]:
-        return f'{row[0]}: Coverage partial of a document names the sections read, "sections": [...]'
+    if group_of(row) in ("documentation", JIRA_GROUP) and "sections:" not in row[4]:
+        return (f'{row[0]}: Coverage partial of a document or a ticket names the sections read, '
+                '"sections": ["Description", "Comments"]')
     return None
 
 
@@ -805,14 +831,6 @@ def superseded_problem(row):
     if row[6].strip() == "None" or (len(named) == 1 and named[0] != row[0]):
         return None
     return f"{row[0]}: Superseded by is None, or the one source that replaces it (S07)"
-
-
-def source_mark(row):
-    """The report's mark for a source row: "limited" unless its Coverage is
-    full, "superseded" when another source replaces it, both, or None."""
-    marks = [mark for mark, applies in (("limited", not row[4].strip().casefold().startswith("full")),
-                                        ("superseded", row[6].strip() != "None")) if applies]
-    return ", ".join(marks) or None
 
 
 def finding_problem(row):
@@ -1126,7 +1144,10 @@ def flow_ruled_out_problem(row, connections):
 
 def flow_order_problem(row, connections):
     """Why a flow's connections are out of order, or None: each after the
-    first starts from a component the flow has already reached."""
+    first starts from or ends at a component the flow has already reached.
+    Either end will do, since a part that fetches, such as a consumer reading
+    a queue or a controller watching resources, joins the flow by calling a
+    component it has reached."""
     rows = {row[0]: row for row in connections}
     reached = set()
     for ident in ids(row[2], "E"):
@@ -1134,9 +1155,10 @@ def flow_order_problem(row, connections):
             continue
         cell = dict(zip(CONNECTION_HEADER, rows[ident]))
         start, end = ids(cell["From"], "C"), ids(cell["To"], "C")
-        if reached and not set(start) & reached:
-            return (f"{row[0]}: {ident} starts from {', '.join(start)}, which the flow hasn't reached yet: "
-                    "list its connections in the order they happen")
+        if reached and not set(start + end) & reached:
+            return (f"{row[0]}: {ident} runs from {', '.join(start)} to {', '.join(end)}, neither of which the flow "
+                    "has reached yet: list its connections in the order they happen, adding any step that "
+                    "links them")
         reached |= set(start) | set(end)
     return None
 
@@ -1152,8 +1174,8 @@ def unread_components(components, findings, sources, definitions, mention_only=(
     claims code (🟩, 🟦) without a code source among those its Evidence's
     findings rest on that read, at READ_COVERAGE, one of those paths, a file
     or folder under it, or, read in full, a folder above it; a README or other
-    DOC_FILE isn't code. An external product, a person or a role has no code
-    of its own, and a part of a mention-only topic, citing its scope
+    DOC_FILE isn't code. An external part, a person or a role has no code
+    the design reads, and a part of a mention-only topic, citing its scope
     decision, one of `mention_only`, has its code left unread: a finding
     shows it exists. `components` are the table's rows, `findings` and
     `sources` {ID: row}."""
@@ -1252,4 +1274,4 @@ def unread_message(found):
             f"{' or '.join(READ_COVERAGE)}, in a code source its Evidence's findings cite, at the commit it links, of the path it "
             "links, of a file under it or, read in full, of a folder above it: " + "; ".join(f"{ident} links {', '.join(paths) or 'no code'}"
                                                                                              for ident, paths in found.items())
-            + ". Read it and record it as a source, then set the state; until then it is ⬜ Unverified")
+            + ". Leave the row out and raise a question for research to read it; draw it once research answers")

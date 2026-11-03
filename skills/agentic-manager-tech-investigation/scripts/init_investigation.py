@@ -26,9 +26,8 @@ SEED_QUESTIONS = [
     ("documentation", "What is X, which documents and systems make it up, and what other projects, platforms or "
                       "names sit next to it?"),
     ("documentation", "What problem does X solve, for whom, and with what impact and success measures?"),
-    ("documentation", "What target design and decisions do the design records, documents and tickets set for X, "
-                      "which are accepted or only proposed, and what does each change from today: components, "
-                      "connections, identities, boundaries and flows?"),
+    ("documentation", "What design does X target: which components, connections, identities, boundaries and "
+                      "flows will it add, change or remove compared with today?"),
     (JIRA_GROUP, "What is done, in progress and planned for X, and what evidence backs each Done ticket?"),
     ("source_control", "What code for X is merged or in an open pull request, and how does it work today: which "
                        "components run where, how they connect, with what data and which identities, what groups "

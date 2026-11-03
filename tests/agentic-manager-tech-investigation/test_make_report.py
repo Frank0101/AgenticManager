@@ -74,17 +74,15 @@ class MakeReportTest(unittest.TestCase):
             "### Open technical choices and gaps\n\nThe table records source-backed decisions and evidence gaps. It does "
             "not select an option.\n\n| Decision or gap | Why it matters | Established position | Evidence |\n"
             "| --- | --- | --- | --- |\n| Index | Sets the cost | Unresolved | [gap](ledger.md#g01) |",
-            "\n\n## References\n\n**Implementation and configuration**\n\n- [Search API](https://example.com/code)\n\n",
-            "**Delivery**\n\n- [PROJ-1](https://example.com/PROJ-1) (superseded)\n"
-            "- [PROJ-2](https://example.com/PROJ-2) (limited)\n\n",
-            "**Vision, rationale and reported operational gaps**\n\nNone in the inspected sources.",
-            "The [research ledger](ledger.md) holds the full validation trail",
+            "recorded in the [Research ledger](ledger.md).",
         ]:
             with self.subTest(expected=expected[:40]):
                 self.assertIn(expected, text)
         for heading in ("### Current status\n", "### Direction\n", "### How it works today\n",
                         "### Target design\n"):
             self.assertEqual(text.count(heading), 1, heading)
+        # The ledger lists the sources; the report links it, not them.
+        self.assertNotIn("## References", text)
 
     def test_evidence_date(self):
         # The latest date in the sources' Revision cells, such as a page's last

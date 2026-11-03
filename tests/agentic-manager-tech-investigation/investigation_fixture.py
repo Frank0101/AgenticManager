@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 import common
-from common import (COMPONENT_HEADER, FINDING_HEADER, GAP_HEADER, ID_LETTERS, QUEUE_HEADER, REVIEW_HEADER, SOURCE_HEADER, TABLES,
+from common import (COMPONENT_HEADER, FINDING_HEADER, GAP_HEADER, ID_LETTERS, QUEUE_HEADER, SOURCE_HEADER, TABLES,
                     anchored, section_span, table)
 from agentic_manager import config, output_folder
 from init_investigation import init, ledger_skeleton
@@ -34,13 +34,6 @@ def with_queue(ledger, subsection, rows):
     empty = f"### {subsection}\n\n{table(QUEUE_HEADER, [])}\n\nNone."
     assert empty in ledger, subsection
     return ledger.replace(empty, f"### {subsection}\n\n{table(QUEUE_HEADER, rows)}", 1)
-
-
-def with_reviews(ledger, rounds):
-    """`ledger` with its empty reviews section holding `rounds`, as [round, raised]."""
-    empty = "## Independent reviews\n\nNone yet."
-    assert empty in ledger
-    return ledger.replace(empty, "## Independent reviews\n\n" + table(REVIEW_HEADER, rounds), 1)
 
 
 def with_prose(ledger, text):
@@ -85,8 +78,8 @@ def assert_problem(test, problem, expected):
 
 
 # A gap blocking a question, as a submission gives it.
-GAP = {"gap": "Billing callers", "missing": "The API is merged; its callers aren't read",
-       "would_close": "Read access", "blocked_by": "No access (billing repository)", "evidence": "[[F01]]",
+GAP = {"gap": "Billing callers: the API is merged; its callers aren't read",
+       "blocked_by": "No access (billing repository)", "evidence": "[[F01]]",
        "owner_and_next_check": "Billing team"}
 
 
@@ -134,7 +127,7 @@ COMPONENTS = table(COMPONENT_HEADER, [
                                       "store", "⬜ Unverified"),
                                      ("C03", "Publish job",
                                       "job", "🟨 Planned"),
-                                     ("C04", "Embedding API", "external product", "⬜ Unverified"))])
+                                     ("C04", "Embedding API", "external", "⬜ Unverified"))])
 # The sources the report's references come from: code read in full, a ticket
 # replaced by a newer one, so superseded, and the newer one read in part, so
 # limited. None records a date, so the evidence date is the investigation's.
@@ -142,21 +135,19 @@ SOURCE_ROWS = [source_row("S01", "code", "[Search API](https://example.com/code)
                source_row("S02", "tracker", "[PROJ-1](https://example.com/PROJ-1)",
                           "Done", "full", "F02", "S03"),
                source_row("S03", "tracker", "[PROJ-2](https://example.com/PROJ-2)", "In progress",
-                          "partial: description only")]
+                          "partial: sections: Description")]
 SOURCES_READ = table(SOURCE_HEADER, SOURCE_ROWS)
 # The fixture's gap, as ledger.py writes it, which C02 and C04 rest on.
-GAPS = table(GAP_HEADER, [[anchored("G01"), "Billing callers", "The API is merged; its callers aren't read",
-                           "Read access", "No access (billing repository)", "Billing team", "F01"]])
-# The ledger with its one question answered, before any review, and as handed
-# over, its review finished.
-UNREVIEWED = (with_queue(ledger_skeleton("Acme-Search"), "Completed", [
+GAPS = table(GAP_HEADER, [[anchored("G01"), "Billing callers: the API is merged; its callers aren't read",
+                           "No access (billing repository)", "Billing team", "F01"]])
+# The ledger with its one question answered, as handed over.
+LEDGER = (with_queue(ledger_skeleton("Acme-Search"), "Completed", [
     ["Q01", "Start", "Read code", "—", "F01"]])
     .replace("## Sources\n\nNone yet.", "## Sources\n\n" + SOURCES_READ, 1)
     .replace("## Findings\n\nNone yet.", "## Findings\n\n" + FINDINGS)
     .replace("### Components\n\nNone yet.", "### Components\n\n" + COMPONENTS)
     .replace("## Evidence gaps\n\nNone yet.",
              "## Evidence gaps\n\n" + GAPS))
-LEDGER = with_reviews(UNREVIEWED, [["1", "No issue raised"]])
 
 
 def content():
