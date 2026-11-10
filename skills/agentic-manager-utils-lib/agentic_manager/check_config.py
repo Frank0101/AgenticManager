@@ -5,9 +5,9 @@ against config-template.json, which lists every supported key.
 The config may hold only what the template lists, but may leave things out, so
 configs keep working when the template gains new ones. It is only ever written
 by --init, never overwritten; "next_steps" tells the agent what to do about it,
-so no skill repeats it. Every source comes by group, enabled or not, so the
-calling skill decides what it needs, with its name split into tool and channel,
-and never a setting's value: those can be secrets, which a script reads itself.
+so no skill repeats it. Every source comes by group, enabled or not, and every
+company setting, set or not, so the calling skill decides what it needs, never
+with a setting's value: those can be secrets, which a script reads itself.
 """
 
 import json
@@ -19,7 +19,7 @@ if not __package__:
     # Run as a script: import the package from the folder that holds it.
     sys.path.insert(0, os.path.dirname(
         os.path.dirname(os.path.realpath(__file__))))
-from agentic_manager.config import CONFIG_PATH, is_filled, is_text_list, load_json, tool_channel  # noqa: E402
+from agentic_manager.config import CONFIG_PATH, has_filled_entry, is_filled, is_text_list, load_json, tool_channel  # noqa: E402
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "config-template.json")
@@ -33,7 +33,8 @@ Usage: check_config.py [--init]
 Prints one line of JSON:
   success: {"ok": true, "path": ..., "template": ..., "created": bool,
             "sources": {group: {source: {"tool", "channel", "enabled",
-                                         "setup" when disabled}}}},
+                                         "setup" when disabled}}},
+            "company": {setting: {"set", "setup" when not set}}},
            plus "next_steps" if the config was just created
   failure: {"ok": false, "path": ..., "template": ..., "created": bool,
             "errors": ["...", ...], "next_steps": "..."}
@@ -41,7 +42,7 @@ Prints one line of JSON:
 
 # What the user does to the config once it exists.
 EDIT = ("edit the config at `path`: enable the sources they use, fill in their "
-        "settings, and optionally set output.root")
+        "settings, and optionally set output.root and the company settings")
 CREATE = ("The config doesn't exist. Ask the user whether to create it from the "
           "template. Only if they explicitly agree, run this script again with "
           "--init, then tell them to " + EDIT + ".")
@@ -55,7 +56,8 @@ def check_config(config, template):
     """Every problem with the config; empty if it is valid."""
     return (_check_unknown("", config, template, "key")
             + _check_sources(config.get("sources", {}), template["sources"])
-            + _check_output(config.get("output", {}), template["output"]))
+            + [error for name in template if name != "sources"
+               for error in _check_settings(name, config.get(name, {}), template[name])])
 
 
 # Reports keys of a config object that the template doesn't have. Keys the template
@@ -113,15 +115,40 @@ def _type_name(value):
     return {bool: "true or false", str: "a string", list: "a list of strings"}[type(value)]
 
 
-# Returns the problems with the "output" object. Its settings are optional: one left
-# out, blank or still a placeholder counts as not set.
-def _check_output(output, template_output):
-    if not isinstance(output, dict):
-        return ["output must be an object of settings"]
-    errors = _check_unknown("output", output, template_output, "setting")
-    for key, default in template_output.items():
-        if key in output and type(output[key]) is not type(default):
-            errors.append(f"output.{key} must be {_type_name(default)}")
+# Returns the problems with a top-level object of settings that aren't sources,
+# such as "output" or "company". Each setting is optional: left out, blank or
+# still a placeholder, it counts as not set. A text setting must be text; a list
+# setting, such as the company's review ratings, a list of entries with the
+# fields of the template's one entry. Once one entry is filled in, every entry
+# fills in every field, and no two share their first one.
+def _check_settings(name, section, template_section):
+    if not isinstance(section, dict):
+        return [f"{name} must be an object of settings"]
+    errors = _check_unknown(name, section, template_section, "setting")
+    for key, default in template_section.items():
+        if key not in section:
+            continue
+        if isinstance(default, list):
+            errors += _check_entries(f"{name}.{key}",
+                                     section[key], list(default[0]))
+        elif type(section[key]) is not type(default):
+            errors.append(f"{name}.{key} must be {_type_name(default)}")
+    return errors
+
+
+def _check_entries(where, entries, fields):
+    if not (isinstance(entries, list) and all(
+            isinstance(entry, dict) and sorted(entry) == sorted(fields)
+            and all(isinstance(entry[field], str) for field in fields) for entry in entries)):
+        shape = ", ".join(f'"{field}": "..."' for field in fields)
+        return [f"{where} must be a list of {{{shape}}}"]
+    if not has_filled_entry(entries):
+        return []
+    errors = [f"{where}, entry {number}: {field} is not filled in: fill it in, or remove the entry"
+              for number, entry in enumerate(entries, 1) for field in fields if not is_filled(entry[field])]
+    firsts = [entry[fields[0]].strip() for entry in entries]
+    errors += [f'{where} lists "{first}" more than once: list each once'
+               for first in sorted(set(firsts)) if is_filled(first) and firsts.count(first) > 1]
     return errors
 
 
@@ -168,6 +195,27 @@ def _quoted(keys):
     return ", ".join(f'"{k}"' for k in keys)
 
 
+# Every company setting of the template, from a valid config: whether it is set
+# and, if not, how to set it. Names the setting, never its entries.
+def _list_company(config, template):
+    company = config.get("company", {})
+    listed = {}
+    for key, template_entries in template["company"].items():
+        if has_filled_entry(company.get(key, [])):
+            listed[key] = {"set": True}
+            continue
+        shape = json.dumps(template_entries)
+        if "company" not in config:
+            step = f'add "{key}": {shape} inside "company", an object you add at the top level'
+        elif key not in company:
+            step = f'add "{key}": {shape} inside "company"'
+        else:
+            step = f'fill in "company.{key}"'
+        listed[key] = {"set": False,
+                       "setup": f"{step}, with an entry for each {list(template_entries[0])[0]}"}
+    return listed
+
+
 def main():
     args = sys.argv[1:]
     if args in (["-h"], ["--help"]):
@@ -175,7 +223,7 @@ def main():
         return
     init = "--init" in args
     result = {"path": CONFIG_PATH, "template": TEMPLATE_PATH}
-    created, sources = False, {}
+    created, sources, company = False, {}, {}
     errors = [f'unknown argument "{a}" (usage: check_config.py [--init])'
               for a in args if a != "--init"]
     if not errors:
@@ -195,6 +243,7 @@ def main():
             errors = check_config(config, template)
             if not errors:
                 sources = _list_sources(config, template)
+                company = _list_company(config, template)
         except (ValueError, OSError) as e:
             errors = [str(e)]
     if errors:
@@ -202,7 +251,8 @@ def main():
         print(json.dumps({"ok": False, **result, "created": created,
                           "errors": errors, "next_steps": CREATE if missing else FIX_STEPS}))
         sys.exit(1)
-    result = {"ok": True, **result, "created": created, "sources": sources}
+    result = {"ok": True, **result, "created": created,
+              "sources": sources, "company": company}
     if created:
         result["next_steps"] = CREATED
     print(json.dumps(result))

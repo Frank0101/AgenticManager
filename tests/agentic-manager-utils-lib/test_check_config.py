@@ -25,7 +25,8 @@ TEMPLATE = {"sources": {
         "azure-devops-cli": {"enabled": False},
     },
     "messaging": {"slack-mcp": {"enabled": False}},
-}, "output": {"root": "<path>"}}
+}, "output": {"root": "<path>"},
+    "company": {"perf-review-ratings": [{"rating": "<rating>", "meaning": "<what it means>"}]}}
 GROUPS = TEMPLATE["sources"]
 
 
@@ -40,7 +41,7 @@ class HelpersTest(unittest.TestCase):
                 "sources", {"workflow": {}, "chat": {}}, GROUPS, "group"),
              ['unknown group "sources.chat" (supported: workflow, messaging)']),
             ("check_unknown, a key", check_config._check_unknown("", {"sources": {}, "x": 1}, TEMPLATE, "key"),
-             ['unknown key "x" (supported: sources, output)']),
+             ['unknown key "x" (supported: sources, output, company)']),
             ("check_unknown, none", check_config._check_unknown(
                 "", {}, TEMPLATE, "key"), []),
         ]
@@ -102,7 +103,7 @@ class CheckConfigTest(unittest.TestCase):
             ("sources not an object", {"sources": []}, [
              "sources must be an object of groups"]),
             ("every problem", broken, [
-                'unknown key "other" (supported: sources, output)',
+                'unknown key "other" (supported: sources, output, company)',
                 'unknown group "sources.chat" (supported: workflow, messaging)',
                 'unknown source "sources.workflow.jira-mcp" (supported: jira-api, azure-devops-cli)',
                 'sources.workflow.jira-api.api-token is not filled in: fill it in, or disable '
@@ -116,7 +117,7 @@ class CheckConfigTest(unittest.TestCase):
                     config, TEMPLATE), expected)
 
 
-class CheckOutputTest(unittest.TestCase):
+class CheckSettingsTest(unittest.TestCase):
     def test_check_output(self):
         # The output settings are optional: blank or a placeholder is fine.
         cases = [
@@ -128,8 +129,38 @@ class CheckOutputTest(unittest.TestCase):
         ]
         for output, expected in cases:
             with self.subTest(output=output):
-                self.assertEqual(check_config._check_output(
-                    output, TEMPLATE["output"]), expected)
+                self.assertEqual(check_config._check_settings(
+                    "output", output, TEMPLATE["output"]), expected)
+
+    def test_check_company(self):
+        # Each list is optional: left out, empty or still the template's
+        # unfilled entry, it isn't set. Once one entry is filled in, every
+        # entry must be, each listed once.
+        where = "company.perf-review-ratings"
+        shape = f'{where} must be a list of {{"rating": "...", "meaning": "..."}}'
+        low = {"rating": "Below", "meaning": "Misses most expectations"}
+        high = {"rating": "Above", "meaning": "Goes beyond them"}
+        cases = [("not set", {}, []), ("empty", {"perf-review-ratings": []}, []),
+                 ("the template's", TEMPLATE["company"], []),
+                 ("filled in", {"perf-review-ratings": [low, high]}, []),
+                 ("not an object", [], ["company must be an object of settings"]),
+                 ("an unknown setting", {"levels": []},
+                  ['unknown setting "company.levels" (supported: perf-review-ratings)']),
+                 ("not a list", {
+                  "perf-review-ratings": "Below, Above"}, [shape]),
+                 ("a field missing", {
+                  "perf-review-ratings": [{"rating": "Below"}]}, [shape]),
+                 ("a field not text", {
+                  "perf-review-ratings": [{**low, "meaning": 1}]}, [shape]),
+                 ("the template's entry left in", {"perf-review-ratings": [low, *TEMPLATE["company"]["perf-review-ratings"]]},
+                  [f"{where}, entry 2: rating is not filled in: fill it in, or remove the entry",
+                   f"{where}, entry 2: meaning is not filled in: fill it in, or remove the entry"]),
+                 ("a rating twice", {"perf-review-ratings": [low, {**high, "rating": " Below"}]},
+                  [f'{where} lists "Below" more than once: list each once'])]
+        for name, company, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(check_config._check_settings(
+                    "company", company, TEMPLATE["company"]), expected)
 
 
 class SetupStepsTest(unittest.TestCase):
@@ -153,6 +184,27 @@ class SetupStepsTest(unittest.TestCase):
             with self.subTest(config=config, name=name):
                 self.assertEqual(check_config._setup_steps(
                     "workflow", name, GROUPS["workflow"][name], config), expected)
+
+
+class ListCompanyTest(unittest.TestCase):
+    def test_every_company_setting_is_listed(self):
+        # Whether each is set and, if not, how to set it from the user's
+        # config, never its entries.
+        shape = '[{"rating": "<rating>", "meaning": "<what it means>"}]'
+        then = ", with an entry for each rating"
+        rated = [{"rating": "Below", "meaning": "Misses most expectations"}]
+        cases = [({}, {"set": False, "setup": f'add "perf-review-ratings": {shape} inside "company", an object you add at the top level{then}'}),
+                 ({"company": {}}, {"set": False,
+                  "setup": f'add "perf-review-ratings": {shape} inside "company"{then}'}),
+                 ({"company": {"perf-review-ratings": []}}, {"set": False,
+                  "setup": f'fill in "company.perf-review-ratings"{then}'}),
+                 (TEMPLATE, {
+                  "set": False, "setup": f'fill in "company.perf-review-ratings"{then}'}),
+                 ({"company": {"perf-review-ratings": rated}}, {"set": True})]
+        for config, expected in cases:
+            with self.subTest(config=config):
+                self.assertEqual(check_config._list_company(
+                    config, TEMPLATE), {"perf-review-ratings": expected})
 
 
 class ListSourcesTest(unittest.TestCase):

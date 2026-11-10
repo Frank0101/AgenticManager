@@ -79,6 +79,37 @@ class ConfigTest(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIs(config.is_text_list(value), ok)
 
+    def test_has_filled_entry(self):
+        # One field of one entry filled in is enough; placeholders and blanks
+        # aren't values.
+        for name, entries, filled in [("none", [], False),
+                                      ("placeholders", [
+                                       {"value": "<value>", "meaning": "<what it means>"}], False),
+                                      ("blanks", [
+                                       {"value": " ", "meaning": ""}], False),
+                                      ("one field", [
+                                       {"value": "Ownership", "meaning": ""}], True),
+                                      ("not an entry", ["Ownership"], False)]:
+            with self.subTest(name):
+                self.assertIs(config.has_filled_entry(entries), filled)
+
+    def test_company_setting(self):
+        # Every entry, in the config's order, each field trimmed.
+        self.write({"company": {"perf-review-ratings": [{"rating": " Below ", "meaning": "Misses most goals"},
+                                                        {"rating": "Meets", "meaning": " Meets them "}]}})
+        self.assertEqual(config.company_setting("perf-review-ratings"),
+                         [{"rating": "Below", "meaning": "Misses most goals"},
+                          {"rating": "Meets", "meaning": "Meets them"}])
+        # Not set: the section or the setting left out, or nothing filled in.
+        # The message names the setting and how to fix it.
+        for name, written in [("no company", {}), ("no setting", {"company": {}}),
+                              ("placeholders", {"company": {"perf-review-ratings": [
+                                  {"rating": "<rating>", "meaning": "<what it means>"}]}})]:
+            with self.subTest(name):
+                self.write(written)
+                with self.assertRaisesRegex(SystemExit, "company.perf-review-ratings is not set.*check_config.py"):
+                    config.company_setting("perf-review-ratings")
+
     def test_enabled_sources(self):
         # Only sources whose enabled is true; a group left out has none.
         self.write({"sources": {"workflow": {"jira-api": {"enabled": True}, "azure-devops-cli": {"enabled": False},

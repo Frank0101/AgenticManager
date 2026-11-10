@@ -7,9 +7,8 @@ correction from the manager is one more call with every source in it.
 """
 import argparse
 import json
-import sys
 
-from common import IDENTITIES, identities_problems, prep_dir, write_prep_file
+from common import IDENTITIES, identities_problems, prep_dir, stdin_json, write_prep_file
 
 INPUT = """Input, on stdin: every source, each as the manager confirmed it, such as:
 
@@ -25,7 +24,8 @@ INPUT = """Input, on stdin: every source, each as the manager confirmed it, such
 
   id      the account's id: Jira's accountId, the GitHub login, the Notion
           user's id or the Slack user's id
-  name    the name the account gives, as the source shows it
+  name    the name the account gives, as the source shows it, or its id
+          when it gives none, such as a GitHub login whose profile has no name
   links   the vault's links about the person, as written in the notes: their
           tag and the pages about them, such as Jane for [[Jane]]
   absent  true when the manager says the person isn't in that source
@@ -50,10 +50,7 @@ def main(argv=None):
     parser.add_argument("--prep", required=True,
                         help="the prep's folder, <Person>_<YY-MM-DD>, as init_prep.py printed it")
     args = parser.parse_args(argv)
-    try:
-        identities = json.loads(sys.stdin.read())
-    except json.JSONDecodeError as error:
-        raise SystemExit(f"the input isn't JSON: {error}\n\n{INPUT}")
+    identities = stdin_json(INPUT)
     path = set_identities(args.prep, identities)
     print(json.dumps(
         {"path": path, "identities": identities}, ensure_ascii=False))

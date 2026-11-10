@@ -4,8 +4,9 @@ where it lives, how it's loaded and when a setting counts as filled in.
 check_config.py validates the whole config with these rules, but never returns
 setting values, which can be secrets such as tokens. A script that needs a
 source's settings reads them with read_source(), so the values never reach the
-agent or the chat. The folder a skill writes its files to is in
-output_folder.py.
+agent or the chat. A company setting, such as the review ratings, holds no
+secrets, so a skill may show what company_setting() reads. The folder a skill
+writes its files to is in output_folder.py.
 """
 import json
 import os
@@ -40,6 +41,17 @@ def read_source(group, source, keys, lists=()):
             f"{where} setting(s) not a list of strings: {', '.join(wrong)}. {FIX}")
     return {**{k: settings[k].strip() for k in keys},
             **{k: [v.strip() for v in settings.get(k, [])] for k in lists}}
+
+
+def company_setting(key):
+    """The entries of the company setting `key`, such as perf-review-ratings,
+    each field trimmed, in the config's order, for a script that needs them.
+    Exits, naming the setting, when it isn't set."""
+    company = load_config().get("company")
+    entries = company.get(key) if isinstance(company, dict) else None
+    if not (isinstance(entries, list) and has_filled_entry(entries)):
+        raise SystemExit(f"company.{key} is not set in {CONFIG_PATH}. {FIX}")
+    return [{field: value.strip() for field, value in entry.items()} for entry in entries]
 
 
 def is_enabled(group, source):
@@ -108,6 +120,13 @@ def is_filled(value) -> TypeGuard[str]:
         return False
     value = value.strip()
     return bool(value) and not PLACEHOLDER.match(value)
+
+
+def has_filled_entry(entries):
+    """Whether a list setting of entries, such as company.values, holds a
+    value: one field of one entry is filled in. A list with none counts as
+    not set."""
+    return any(is_filled(value) for entry in entries if isinstance(entry, dict) for value in entry.values())
 
 
 def is_text_list(value) -> TypeGuard[list[str]]:

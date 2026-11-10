@@ -127,7 +127,7 @@ What a skill's instructions and scripts must do, on top of the rules that always
 
 #### Prerequisite, sources and permissions
 
-- Unless it's a utility, start the instructions with the prerequisite: run the library's `agentic_manager/check_config.py`. The check only validates the config: it fails if the config is missing or malformed, and otherwise returns every supported source by [group](skills/agentic-manager-utils-lib/SKILL.md#config-sources), saying whether each is enabled and, if not, how to enable it. On a failure, or after creating the config, it also prints `next_steps`, which the agent follows, so skills don't repeat them. The check doesn't know what the skill needs, so the skill names it: any enabled source of a group, such as `workflow`, when it can work with whatever tool a team uses, or a specific source, such as `jira-api`, when its steps only work with one tool. It also says what it does if they aren't enabled (usually stop and show their `setup`):
+- Unless it's a utility, start the instructions with the prerequisite: run the library's `agentic_manager/check_config.py`, whose `--help` shows what it returns. The check only validates the config and doesn't know what the skill needs, so the skill names it: any enabled source of a group, such as `workflow`, when it can work with whatever tool a team uses, or a specific source, such as `jira-api`, when its steps only work with one tool, and any company setting it reads, such as `company.values`. It also says what it does if they aren't enabled or set (usually stop and show their `setup`). On a failure, or after creating the config, the check prints `next_steps` for the agent to follow, so skills don't repeat them:
 
   ```markdown
   ## Prerequisite

@@ -20,7 +20,8 @@ from prep_fixture import IDENTITIES, PREP, temp_output, write_prep  # noqa: E402
 class SetIdentitiesTest(unittest.TestCase):
     def setUp(self):
         self.folder = temp_output(self)
-        write_prep(self.folder, identities=None)
+        write_prep(self.folder, identities=None,
+                   orientation=None, feedback=None)
         self.path = os.path.join(self.folder, PREP, "identities.json")
 
     def test_writes_them_and_a_correction_replaces_them(self):

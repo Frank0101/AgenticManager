@@ -1,6 +1,5 @@
 """Unit tests for skills/agentic-manager-perf-review-prep/scripts/init_prep.py.
-Run as a script, with set_identities.py and check_prep.py after it, it has end-to-end tests in
-test_e2e_init.py.
+Run as a script, it has end-to-end tests in test_e2e_init.py.
 Run with: python3 tests/run.py agentic-manager-perf-review-prep
 
 The config's path is patched to the test's own config, in a temporary folder.

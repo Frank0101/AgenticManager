@@ -267,6 +267,8 @@ class CheckConfigTest(ScriptTest):
                         else:
                             self.assertTrue(source["setup"], source_name)
                 self.assertEqual(found, enabled)
+                self.assertEqual(list(out["company"]), list(
+                    self.template["company"]))
 
     # --- invalid configs
 
@@ -307,7 +309,7 @@ class CheckConfigTest(ScriptTest):
     # --- the template itself
 
     def test_template_follows_the_rules(self):
-        self.assertEqual(list(self.template), ["sources", "output"])
+        self.assertEqual(list(self.template), ["sources", "output", "company"])
         self.assertTrue(self.template["sources"])
         for group, sources in self.template["sources"].items():
             self.assertRegex(group, r"^[a-z_]+$")
@@ -326,6 +328,13 @@ class CheckConfigTest(ScriptTest):
                         self.assertRegex(value, r"^<.+>$", f"{where}.{key}")
         for key, value in self.template["output"].items():
             self.assertRegex(value, r"^<.+>$", f"output.{key}")
+        # A company setting is a list holding one entry, whose fields are
+        # placeholders, so a config copied from the template leaves it unset.
+        for key, entries in self.template["company"].items():
+            self.assertRegex(key, r"^[a-z]+(-[a-z]+)*$", f"company.{key}")
+            self.assertEqual(len(entries), 1, f"company.{key}")
+            for field, value in entries[0].items():
+                self.assertRegex(value, r"^<.+>$", f"company.{key}.{field}")
 
     def test_skill_tables_match_the_template(self):
         # The library's SKILL.md groups table lists the template's groups in order,

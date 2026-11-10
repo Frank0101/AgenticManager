@@ -33,5 +33,19 @@
   },
   "output": {
     "root": "<path>"
+  },
+  "company": {
+    "perf-review-ratings": [
+      {
+        "rating": "<rating>",
+        "meaning": "<what it means>"
+      }
+    ],
+    "values": [
+      {
+        "value": "<value>",
+        "meaning": "<what it means>"
+      }
+    ]
   }
 }

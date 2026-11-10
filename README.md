@@ -23,6 +23,7 @@ Skills read one global config, `~/.config/agentic-manager/config.json`, wherever
 
 - Enable the sources you use by setting `enabled` to `true`, and fill in their settings; a list setting may stay empty.
 - Set `output.root` to the folder where skills write their files, such as reports. If you don't set it, they write to a temporary folder.
+- Under `company`, list your company's performance review ratings, lowest first, and its values, each with what it means, for the skills that use them. Leave them as they are if no skill you use needs them.
 
 > [!CAUTION]
 > You can't add anything that isn't in the template: keys, groups, sources or settings that it doesn't list will cause an error.

@@ -130,7 +130,7 @@ class FindPersonTest(unittest.TestCase):
     def test_find(self):
         # The person from the prep's request, looked up in each source.
         folder = temp_output(self)
-        write_prep(folder, identities=None)
+        write_prep(folder, identities=None, orientation=None, feedback=None)
         run = FakeGh(["acme"], {"author-email:jane@acme.test org:acme": {"janedoe": 1}},
                      {"janedoe": "Jane Doe"})
         with tempfile.TemporaryDirectory() as graph, \
