@@ -415,7 +415,6 @@ class QuantitiesTest(unittest.TestCase):
             # A share of unestimated pts, or in them, is unknown.
             (common.whole_percentage, (None, 5), "–"),
             (common.whole_percentage, (0, None), "–"),
-            (common.display_date, ("2026-03-02",), "02/03/2026"),
         ]
         for function, args, expected in cases:
             with self.subTest(function=function.__name__, args=args):

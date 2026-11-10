@@ -19,7 +19,7 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.output_file import read_json, write_output_file  # noqa: E402,F401
-from agentic_manager.text import DISPLAY_DATE, HEADING, INLINE_LINK, link_text, word_count  # noqa: E402,F401
+from agentic_manager.text import HEADING, INLINE_LINK, display_date, link_text, word_count  # noqa: E402,F401
 from agentic_manager.output_folder import clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order,  # noqa: E402,F401
@@ -629,11 +629,6 @@ def whole_percentage(part, whole):
     if share < 100 and rounded == "100":
         return ">99%"
     return f"{rounded}%"
-
-
-def display_date(iso_date):
-    """An ISO date as the report shows it, DD/MM/YYYY."""
-    return date.fromisoformat(iso_date).strftime(DISPLAY_DATE)
 
 
 def text_rule_problems(text, latest=None):

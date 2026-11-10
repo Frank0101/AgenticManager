@@ -328,8 +328,8 @@ def burndown_chart(data, series):
     body = [
         text(left, 30, f"{data['sprint_name']}: Burndown", size=17, bold=True),
         text(left, 52, f"Commitment of {pts(series['baseline'])} at the start on "
-             f"{display_date(series['sprint_start'].isoformat())} · ideal paced over {series['weekdays']} later "
-             f"weekdays · actuals to {display_date(series['last_actual'].isoformat())} ({status_word})",
+             f"{display_date(series['sprint_start'])} · ideal paced over {series['weekdays']} later "
+             f"weekdays · actuals to {display_date(series['last_actual'])} ({status_word})",
              size=11, color=MUTED),
     ]
     for day in days:

@@ -243,6 +243,21 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(FakeJira.authorizations, [
                          "Basic bWVAYWNtZS50ZXN0OnMzY3JldC10b2tlbg=="])
 
+    def test_users(self):
+        # People only, by the query, in one page; an app's account is left out.
+        FakeJira.routes["/rest/api/3/user/search"] = [
+            {"accountId": "a1", "accountType": "atlassian", "displayName": "Jane Doe",
+             "emailAddress": "jane@acme.test", "active": True},
+            {"accountId": "a2", "accountType": "atlassian",
+                "displayName": "Jane Doe", "active": False},
+            {"accountId": "b1", "accountType": "app", "displayName": "Jane Bot", "active": True}]
+        self.assertEqual(self.client.users("Jane Doe"), [
+            {"accountId": "a1", "displayName": "Jane Doe",
+                "emailAddress": "jane@acme.test", "active": True},
+            {"accountId": "a2", "displayName": "Jane Doe", "emailAddress": None, "active": False}])
+        self.assertEqual(FakeJira.requests, [("/rest/api/3/user/search",
+                                              {"query": "Jane Doe", "maxResults": "50"})])
+
     def test_errors(self):
         # Every final failure raises JiraError, with the message and advice
         # the user is shown, never Jira's body, which can echo the token.

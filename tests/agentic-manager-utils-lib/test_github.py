@@ -260,6 +260,28 @@ class GithubTest(unittest.TestCase):
             github.gh_hosts(
                 Runner(code=1, stderr="You are not logged into any GitHub hosts."))
 
+    def test_people_lookups(self):
+        # The organisations gh belongs to, sorted; a commit search's authors,
+        # each once, a commit no account claims left out; a profile's name,
+        # None when it sets none.
+        run = answering([{"login": "beta"}, {"login": "acme"}])
+        self.assertEqual(github.gh_orgs(run), ["acme", "beta"])
+        self.assertEqual(run.calls, [["gh", "api", "user/orgs?per_page=100"]])
+        commits = {"total_count": 4, "items": [{"author": {"login": "janedoe"}}, {"author": None},
+                                               {"author": {"login": "jdoe"}}, {"author": {"login": "janedoe"}}]}
+        run = answering(commits)
+        self.assertEqual(github.commit_authors(
+            "author-email:jane@acme.test org:acme", run), ["janedoe", "jdoe"])
+        self.assertEqual(run.calls, [["gh", "api", "-X", "GET", "search/commits", "-f",
+                                      "q=author-email:jane@acme.test org:acme", "-f", "per_page=100"]])
+        for answer, expected in (({"login": "janedoe", "name": "Jane Doe"}, "Jane Doe"),
+                                 ({"login": "jd", "name": None}, None), ({"login": "jd", "name": ""}, None)):
+            with self.subTest(answer=answer):
+                self.assertEqual(github.profile_name(
+                    answer["login"], answering(answer)), expected)
+        with self.assertRaises(github.GhError):
+            github.gh_orgs(Runner(code=1, stderr="HTTP 401: Bad credentials"))
+
     def test_pull_url(self):
         # The one rule for a pull request's address: its parts by name;
         # None for anything else, an owner GitHub wouldn't allow included.

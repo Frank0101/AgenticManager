@@ -12,7 +12,7 @@ from datetime import date
 import os
 import re
 
-from common import (CONTENT, folder_day, DISPLAY_DATE, FENCE, backtick_error, TABLE_HEADINGS, ledger_rows, FOLDER_NAME, HEADING, HEADINGS, LEDGER,
+from common import (CONTENT, folder_day, display_date, FENCE, backtick_error, TABLE_HEADINGS, ledger_rows, FOLDER_NAME, HEADING, HEADINGS, LEDGER,
                     REPORT_SUFFIX, anchor_tag, autolink, investigation_dir, link_definitions, markdown, read_json, table, topic_of, unlinked_backticks, unresolved_message, word_count, write_output_file)
 
 # Approximate prose lengths, in words: room to articulate, not quotas. Warn above
@@ -229,7 +229,7 @@ def snapshot(content):
     else:
         day = folder_day(os.path.basename(os.path.normpath(content.folder)))
         assert day, "make_report checked the folder's name with topic_of"
-    return day.strftime(DISPLAY_DATE)
+    return display_date(day)
 
 
 def valid_day(text):

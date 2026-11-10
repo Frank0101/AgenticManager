@@ -11,6 +11,13 @@
       ]
     },
     {
+      "root": "tests/agentic-manager-perf-review-prep",
+      "extraPaths": [
+        "skills/agentic-manager-utils-lib",
+        "skills/agentic-manager-perf-review-prep/scripts"
+      ]
+    },
+    {
       "root": "tests/agentic-manager-slides-deck",
       "extraPaths": [
         "skills/agentic-manager-utils-lib",

@@ -22,7 +22,7 @@ from agentic_manager.batch import batches
 from agentic_manager.config import read_source
 from agentic_manager.json_path import nested
 from agentic_manager.retry import RATE_LIMITED, RETRY_WAITS, retried
-from agentic_manager.text import DISPLAY_DATE
+from agentic_manager.text import display_date
 from agentic_manager.web import ssl_context
 
 GROUP, NAME = "workflow", "jira-api"
@@ -38,6 +38,9 @@ STORY_POINT_FIELD_NAMES = ("Story Points", "Story point estimate")
 # A page, how Jira splits its answer, is the largest it allows: a smaller one
 # only adds calls.
 PAGE_SIZE = 100
+# The most people a user search returns: enough for every account a name
+# matches on one site, in one page.
+USER_RESULTS = 50
 # Jira's "bulk fetch" of many issues' changelogs: a request for each batch of
 # issues (batch.py) rather than one per issue.
 BATCH_CHANGELOG = "/rest/api/3/changelog/bulkfetch"
@@ -149,6 +152,17 @@ class JiraClient:
     def whoami(self):
         """The authenticated user profile, including displayName and timeZone."""
         return self._get("/rest/api/3/myself")
+
+    def users(self, query):
+        """The people Jira's user search finds for `query`, a name or an email:
+        each one's accountId, displayName, emailAddress when the site shows it,
+        and whether the account is active. Accounts that aren't a person's,
+        such as apps, are left out."""
+        found = self._get("/rest/api/3/user/search",
+                          {"query": query, "maxResults": USER_RESULTS})
+        return [{"accountId": user.get("accountId"), "displayName": user.get("displayName"),
+                 "emailAddress": user.get("emailAddress"), "active": user.get("active")}
+                for user in found if user.get("accountType") == "atlassian"]
 
     def fields(self):
         return self._get("/rest/api/3/field")
@@ -657,7 +671,7 @@ def plain_text(value, links=False):
             elif kind == "date":
                 date = datetime.fromtimestamp(
                     int(attrs["timestamp"]) / 1000, timezone.utc)
-                parts.append(date.strftime(DISPLAY_DATE))
+                parts.append(display_date(date))
             elif kind in ("mention", "emoji", "status"):
                 parts.append(
                     str(attrs.get("text") or attrs.get("shortName") or ""))

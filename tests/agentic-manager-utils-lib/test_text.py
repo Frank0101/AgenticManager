@@ -5,6 +5,7 @@ Run with: python3 tests/run.py agentic-manager-utils-lib
 import os
 import sys
 import unittest
+from datetime import date, datetime
 
 # tests/<skill>/ mirrors skills/<skill>/.
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -38,6 +39,22 @@ class TextTest(unittest.TestCase):
         for written, expected in cases:
             with self.subTest(written):
                 self.assertEqual(text.slug(written), expected)
+
+    def test_as_name(self):
+        # Letters and digits, accents dropped, words joined by hyphens, case kept.
+        for written, expected in [("Jane Doe", "Jane-Doe"),
+                                  ("  José   Núñez ", "Jose-Nunez"),
+                                  ("Mary-Kate O'Brien", "Mary-Kate-O-Brien"),
+                                  ("Zoë Smith 2", "Zoe-Smith-2"),
+                                  ("../", ""), ("李", "")]:
+            with self.subTest(written):
+                self.assertEqual(text.as_name(written), expected)
+
+    def test_display_date(self):
+        # A date, a datetime or an ISO date as text, as reports show it.
+        for day in (date(2026, 3, 2), datetime(2026, 3, 2, 23, 59), "2026-03-02"):
+            with self.subTest(day=day):
+                self.assertEqual(text.display_date(day), "02/03/2026")
 
     def test_free_name(self):
         # The base when free, else the first free number from 2, after the

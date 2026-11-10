@@ -3,12 +3,14 @@ the document a link reaches, headings, fenced code and the date reports show.
 
 A word count counts words as a reader would, the same in every skill: a link
 as its text, and only tokens with a letter or a digit ("don't" and "3.14" are
-one each). A name from free text is a slug, safe as a file name or a link key,
+one each). A name from free text is a slug, or a NAME keeping a person's case,
 numbered when taken. An anchor is GitHub's, so a checked link works where it is
 read; fenced code is blanked first. Two links reach one document when they name
 the same page in another form; a link is only compared so, never rewritten.
 """
+from datetime import date
 import re
+import unicodedata
 from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlencode, urlsplit
 
@@ -61,6 +63,23 @@ def slug(text):
     """`text` as lowercase words joined by hyphens: anything but a letter or a
     digit becomes a hyphen. Empty if it holds neither."""
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def as_name(text):
+    """`text` as a NAME, such as Jose-Nunez for "José Núñez": its letters
+    and digits, accents dropped, words joined by hyphens, case kept. Empty
+    if it holds neither."""
+    plain = unicodedata.normalize("NFKD", text).encode(
+        "ascii", "ignore").decode("ascii")
+    return re.sub(r"[^A-Za-z0-9]+", "-", plain).strip("-")
+
+
+def display_date(day):
+    """A day as reports show it, DD/MM/YYYY, such as 02/03/2026: `day` is a
+    date or a datetime, or an ISO date as text, such as 2026-03-02."""
+    if isinstance(day, str):
+        day = date.fromisoformat(day)
+    return day.strftime(DISPLAY_DATE)
 
 
 def free_name(base, taken, separator="-"):

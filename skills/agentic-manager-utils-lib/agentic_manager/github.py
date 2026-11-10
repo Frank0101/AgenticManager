@@ -60,6 +60,10 @@ GH_BROKEN = ("Check that gh works (gh auth status) and run it again, or disable 
              "without GitHub.")
 # Why gh_available() is false, for a skill's message about what it skipped.
 GH_UNAVAILABLE = "gh isn't available or github-cli isn't enabled"
+# The most organisations and commits one call reads: a person is found among
+# the authors of the first page of a commit search, so how many commits each
+# wrote isn't known, and isn't given.
+PAGE_SIZE = 100
 
 
 def gh_available():
@@ -81,6 +85,32 @@ def gh_hosts(run=subprocess.run):
     answer = gh_json(["auth", "status", "--json", "hosts"], run)
     return sorted(host for host, accounts in (answer.get("hosts") or {}).items()
                   if any(account.get("state") == "success" for account in accounts))
+
+
+def gh_orgs(run=subprocess.run):
+    """The organisations the account gh is signed in with belongs to, by
+    login, such as ["acme"], for a skill that searches only its user's
+    organisations. Raises GhError when gh fails, as gh_json() does."""
+    return sorted(org["login"] for org in gh_json(["api", f"user/orgs?per_page={PAGE_SIZE}"], run))
+
+
+def commit_authors(query, run=subprocess.run):
+    """The logins of the accounts that authored the commits a commit search
+    for `query` finds, such as 'author-email:jane@acme.test org:acme', among
+    its first PAGE_SIZE, each once, in the order found: a commit no account
+    claims has no author here. Raises GhError when gh fails, as gh_json()
+    does."""
+    answer = gh_json(["api", "-X", "GET", "search/commits", "-f", f"q={query}",
+                      "-f", f"per_page={PAGE_SIZE}"], run)
+    logins = (nested(item, ["author", "login"])
+              for item in answer.get("items") or [])
+    return list(dict.fromkeys(login for login in logins if login))
+
+
+def profile_name(login, run=subprocess.run):
+    """The name the GitHub account `login` gives in its profile, or None when
+    it gives none. Raises GhError when gh fails, as gh_json() does."""
+    return gh_json(["api", f"users/{login}"], run).get("name") or None
 
 
 def pull_events(urls, run=subprocess.run):
