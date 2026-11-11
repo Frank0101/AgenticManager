@@ -1,18 +1,17 @@
 """Reads the investigation's protocol: the instructions each task carries, and its worked answer.
 
 The protocol is prose, kept as Markdown in the skill's protocol folder, one file
-per task, so it reads and changes apart from the code. A {{name}} in it is filled
-here: a value the scripts own, such as the coverage values a source accepts, or
-a shared part, _name.md, so each rule is written once. The worked answers are
+per task, so it reads and changes apart from the code; the library fills it,
+with the values the scripts own, such as the coverage values a source accepts,
+and its shared parts, so each rule is written once. The worked answers are
 JSON files the tests submit, so an example the script would refuse can't be
 printed; they are printed one record per line, which costs fewer tokens.
 """
 import json
 import os
-import re
 
 from common import (BLOCKERS, BOUNDARY_KINDS, COMPONENT_TYPES, CONNECTION_KINDS, COVERAGE, GROUPS, IDENTITY_KINDS,
-                    READ_COVERAGE, STATUSES, WAITS)
+                    READ_COVERAGE, STATUSES, WAITS, fill_protocol)
 
 FOLDER = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "..", "protocol")
@@ -29,23 +28,12 @@ VALUES = {
     "waits": ", ".join(WAITS),
     "statuses": "; ".join(f"{label} ({meaning})" for label, meaning in STATUSES),
 }
-PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 
 
 def text(name, **values):
     """The protocol file `name`, its placeholders filled from `values`, VALUES
     and the shared parts; exits on one it can't fill."""
-    def fill(match):
-        key = match[1]
-        if key in values:
-            return str(values[key])
-        if key in VALUES:
-            return VALUES[key]
-        if os.path.isfile(part := os.path.join(FOLDER, f"_{key}.md")):
-            return PLACEHOLDER.sub(fill, read(part).strip())
-        raise SystemExit(
-            f"protocol/{name}.md names {{{{{key}}}}}, which nothing fills")
-    return PLACEHOLDER.sub(fill, read(os.path.join(FOLDER, f"{name}.md"))).strip()
+    return fill_protocol(FOLDER, name, {**VALUES, **values})
 
 
 def example(name):
@@ -71,9 +59,3 @@ def compact(data):
             lines.append(f"  {one(key)}: {one(value)},")
     lines[-1] = lines[-1].rstrip(",")
     return "\n".join(["{", *lines, "}"])
-
-
-def read(path):
-    """The text of the file `path`."""
-    with open(path, encoding="utf-8") as f:
-        return f.read()

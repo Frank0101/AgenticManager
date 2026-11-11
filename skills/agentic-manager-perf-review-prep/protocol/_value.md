@@ -1,0 +1,1 @@
+A `going_well` or `to_improve` point names the company value below that it shows most clearly, judged from what it says and the value's meaning, or null when none fits; never stretch a point to fit one. A `context` point names none.

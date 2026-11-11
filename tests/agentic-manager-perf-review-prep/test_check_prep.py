@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_prep  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import FEEDBACK, IDENTITIES, ORIENTATION, PREP, REQUEST, REVIEW, temp_output, write_prep  # noqa: E402
+from prep_fixture import CHECK_INS, FEEDBACK, IDENTITIES, NOTE, NOTES, ORIENTATION, PIECE, PREP, REQUEST, temp_output, write_prep  # noqa: E402
 
 TODAY = date(2026, 11, 10)
 
@@ -41,19 +41,28 @@ class CheckTest(unittest.TestCase):
                   None, "missing orientation.json"),
                  ("no feedback", {"feedback": None},
                   None, "missing feedback.json"),
+                 ("no check-ins", {"check_ins": None},
+                  None, "missing check-ins.json"),
+                 ("no notes", {"notes": None}, None, "missing notes.json"),
                  ("a request that breaks a rule", {"request": {**REQUEST, "end": "2026-12-31"}}, None,
                   "request.json: the period ends on 31/12/2026"),
                  ("identities that break a rule", {"identities": {**IDENTITIES, "slack-mcp": {}}}, None,
                   "identities.json: slack-mcp must be"),
                  ("an orientation that breaks a rule", {"orientation": {"text": "Strong"}}, None,
                   "orientation.json: the orientation must have the parts"),
-                 ("feedback that breaks a rule", {"feedback": {"reviews": [{**REVIEW, "rating": "Good"}]}}, None,
-                  "feedback.json: feedback 1's rating, 'Good', must be one of the company's")]
+                 ("feedback that breaks a rule", {"feedback": {"pieces": [{**PIECE, "rating": "Good"}]}}, None,
+                  "feedback.json: feedback 1's rating, 'Good', must be one of the company's"),
+                 ("check-ins that break a rule", {"check_ins": {"pieces": [{**NOTE, "end": "2026-01-31",
+                                                                            "start": "2026-01-01"}]}},
+                  None, "check-ins.json: check-in 1 covers no day of the period"),
+                 ("notes dated outside the period", {"notes": {**NOTES, "going_well": [
+                     {**NOTES["going_well"][0], "dates": ["2026-06-30"]}]}},
+                  None, "notes.json: the notes summary's going_well")]
         for i, (name, changes, extra, expected) in enumerate(cases):
             with self.subTest(name):
                 prep = f"Case-{i}_26-11-10"
                 files = {"request": REQUEST, "identities": IDENTITIES, "orientation": ORIENTATION,
-                         "feedback": FEEDBACK, **changes}
+                         "feedback": FEEDBACK, "check_ins": CHECK_INS, "notes": NOTES, **changes}
                 write_prep(self.folder, prep=prep, **files)
                 if extra:
                     open(os.path.join(self.folder, prep, extra), "w").close()

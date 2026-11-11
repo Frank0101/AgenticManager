@@ -13,9 +13,10 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import IDENTITIES, ORIENTATION, PREP, REQUEST, REVIEW, temp_output, write_prep  # noqa: E402
+from prep_fixture import IDENTITIES, NOTE, NOTES, ORIENTATION, PIECE, PREP, REQUEST, temp_output, write_prep  # noqa: E402
 
 TODAY = date(2026, 11, 10)
+VALUE_NAMES = ["Ownership", "Teamwork"]
 
 
 class CommonTest(unittest.TestCase):
@@ -97,29 +98,73 @@ class CommonTest(unittest.TestCase):
                  ("not an object", "Strong half overall.", "must have the parts"),
                  ("text, not a list", {
                   "going_well": "Strong half"}, "going_well must be a list of points"),
-                 ("a blank point", {"to_improve": [
-                  " "]}, "to_improve must be a list of points"),
+                 ("a blank point", {"to_improve": [{"point": " ", "value": None}]},
+                  'to_improve must be a list of points, each {"point": "...", "value": "..." or null}'),
                  ("a point twice", {"context": [
                   "Back in May", "Back in May"]}, "more than once"),
-                 ("a point too long", {"going_well": [long_point]}, f"at most {common.MAX_POINT_WORDS}")]
+                 ("a valued point twice", {"going_well": [{"point": "Led it", "value": "Ownership"},
+                                                          {"point": "Led it", "value": None}]}, "more than once"),
+                 ("a point too long", {"going_well": [{"point": long_point, "value": None}]},
+                  f"at most {common.MAX_POINT_WORDS}"),
+                 ("a value left out", {"going_well": [
+                  {"point": "Led it", "value": None}]}, None),
+                 ("a value not the company's", {"going_well": [{"point": "Led it", "value": "Grit"}]},
+                  "'Grit', must be one of the company's: Ownership, Teamwork, or null when none fits"),
+                 ("a value's field missing", {"going_well": [{"point": "Led it"}]},
+                  "going_well must be a list of points"),
+                 ("text where a value is due", {
+                  "to_improve": ["Could share more"]}, "to_improve must be a list of points"),
+                 ("a value on context", {"context": [{"point": "Back in May", "value": None}]},
+                  "context must be a list of points, each a sentence")]
         for name, changes, expected in cases:
             with self.subTest(name):
                 summary = {key: value for key, value in {**ORIENTATION, **changes}.items() if value is not None} \
                     if isinstance(changes, dict) else changes
-                problems = common.summary_problems(summary, "the orientation")
+                problems = common.summary_problems(
+                    summary, "the orientation", VALUE_NAMES)
                 if expected is None:
                     self.assertEqual(problems, [])
                 else:
                     self.assertIn(expected, " ".join(problems))
         # The orientation is a summary, by the same rule.
-        self.assertEqual(common.orientation_problems(ORIENTATION), [])
+        self.assertEqual(common.orientation_problems(
+            ORIENTATION, VALUE_NAMES), [])
 
-    def test_earliest_review_end(self):
+    def test_notes_problems(self):
+        # The notes summary is a summary whose valued points have the days
+        # they were seen on, each one of the days given, and which may be
+        # empty. name: (changes to it, expected in its problems, or None).
+        days = ["2026-08-20", "2026-09-02", "2026-10-01"]
+        cases = [("valid", {}, None),
+                 ("empty", {"going_well": [], "to_improve": [],
+                  "context": []}, None),
+                 ("no dates", {"going_well": [{"point": "Presented it", "value": None}]},
+                  'going_well must be a list of points, each {"point": "...", "value": "..." or null, '
+                  '"dates": ["YYYY-MM-DD", ...]}'),
+                 ("dates empty", {"going_well": [{"point": "Presented it", "value": None, "dates": []}]},
+                  "going_well must be a list of points"),
+                 ("a day no note was taken on", {"going_well": [
+                     {"point": "Presented it", "value": None, "dates": ["2026-09-03"]}]},
+                  "must each be a day a note was taken on, listed once"),
+                 ("a day twice", {"to_improve": [{"point": "Late", "value": None,
+                                                  "dates": ["2026-08-20", "2026-08-20"]}]}, "listed once"),
+                 ("dates on context", {"context": [{"point": "Moved", "value": None, "dates": ["2026-08-20"]}]},
+                  "context must be a list of points, each a sentence")]
+        for name, changes, expected in cases:
+            with self.subTest(name):
+                problems = common.notes_problems(
+                    {**NOTES, **changes}, VALUE_NAMES, days)
+                if expected is None:
+                    self.assertEqual(problems, [])
+                else:
+                    self.assertIn(expected, " ".join(problems))
+
+    def test_earliest_feedback_end(self):
         # Two years before the period starts; a 29 February has none, so the
         # 28th.
         for start, expected in [("2026-08-10", date(2024, 8, 10)), ("2028-02-29", date(2026, 2, 28))]:
             with self.subTest(start):
-                self.assertEqual(common.earliest_review_end(
+                self.assertEqual(common.earliest_feedback_end(
                     {**REQUEST, "start": start}), expected)
 
     def test_feedback_problems(self):
@@ -127,8 +172,8 @@ class CommonTest(unittest.TestCase):
         # REQUEST starts on 10/08/2026, so dated feedback may end from
         # 10/08/2024 to its end, 10/11/2026.
         ratings = ["Below", "Meets", "Exceeds"]
-        undated = {**REVIEW, "start": None, "end": None, "rating": None}
-        cases = [("one review", [REVIEW], None), ("none", [], None),
+        undated = {**PIECE, "start": None, "end": None, "rating": None}
+        cases = [("one piece", [PIECE], None), ("none", [], None),
                  ("no days and no rating", [undated], None),
                  ("only an end day", [{**undated, "end": "2026-06-30"}], None),
                  ("only a start day", [
@@ -136,38 +181,71 @@ class CommonTest(unittest.TestCase):
                  ("only an end day, too old", [
                   {**undated, "end": "2024-08-09"}], "ends on 09/08/2024"),
                  ("two undated", [
-                  undated, {**undated, "going_well": ["Mentors new joiners"]}], None),
+                  undated, {**undated, "context": ["Mentors new joiners"]}], None),
                  ("ending on the first day allowed", [
-                  {**REVIEW, "start": "2024-01-01", "end": "2024-08-10"}], None),
+                  {**PIECE, "start": "2024-01-01", "end": "2024-08-10"}], None),
                  ("ending inside the period", [
-                  {**REVIEW, "end": "2026-09-30"}], None),
-                 ("too old", [{**REVIEW, "start": "2024-01-01", "end": "2024-08-09"}],
+                  {**PIECE, "end": "2026-09-30"}], None),
+                 ("too old", [{**PIECE, "start": "2024-01-01", "end": "2024-08-09"}],
                   "ends on 09/08/2024: only feedback that ends from 10/08/2024 to 10/11/2026 counts"),
                  ("ending after the period", [
-                  {**REVIEW, "end": "2026-12-31"}], "ends on 31/12/2026"),
+                  {**PIECE, "end": "2026-12-31"}], "ends on 31/12/2026"),
                  ("starting after it ends", [
-                  {**REVIEW, "start": "2026-07-01"}], "starts after it ends"),
-                 ("not a date", [{**REVIEW, "end": "30/06/2026"}],
+                  {**PIECE, "start": "2026-07-01"}], "starts after it ends"),
+                 ("not a date", [{**PIECE, "end": "30/06/2026"}],
                   "must be a date as YYYY-MM-DD"),
-                 ("a rating not the company's", [{**REVIEW, "rating": "Good"}],
+                 ("a rating not the company's", [{**PIECE, "rating": "Good"}],
                   "'Good', must be one of the company's: Below, Meets, Exceeds, or null"),
                  ("a field missing", [
-                  {k: v for k, v in REVIEW.items() if k != "rating"}], "must have the fields"),
-                 ("a summary that breaks a rule", [{**REVIEW, "going_well": [], "to_improve": []}],
+                  {k: v for k, v in PIECE.items() if k != "rating"}], "must have the fields"),
+                 ("a summary that breaks a rule", [{**PIECE, "going_well": [], "to_improve": []}],
                   "feedback 1 has no points"),
-                 ("the same period twice", [REVIEW, {**REVIEW, "rating": "Exceeds"}], "record each once")]
-        for name, reviews, expected in cases:
+                 ("the same period twice", [PIECE, {**PIECE, "rating": "Exceeds"}], "record each once")]
+        for name, pieces, expected in cases:
             with self.subTest(name):
                 problems = common.feedback_problems(
-                    {"reviews": reviews}, REQUEST, ratings)
+                    {"pieces": pieces}, REQUEST, ratings, VALUE_NAMES)
                 if expected is None:
                     self.assertEqual(problems, [])
                 else:
                     self.assertIn(expected, " ".join(problems))
-        for name, feedback in [("a list", [REVIEW]), ("a field more", {"reviews": [], "notes": "x"})]:
+        for name, feedback in [("a list", [PIECE]), ("a key more", {"pieces": [], "notes": "x"})]:
             with self.subTest(name):
-                self.assertIn('must be {"reviews": [...]}',
-                              " ".join(common.feedback_problems(feedback, REQUEST, ratings)))
+                self.assertIn('must be {"pieces": [...]}',
+                              " ".join(common.feedback_problems(feedback, REQUEST, ratings, VALUE_NAMES)))
+
+    def test_check_ins_problems(self):
+        # name: (the notes, expected in their problems, or None for none). The
+        # rules all pieces share are tested with the feedback's; a dated note
+        # must overlap REQUEST's period, 10/08/2026 to 10/11/2026.
+        undated = {**NOTE, "start": None, "end": None}
+        cases = [("one note", [NOTE], None), ("none", [], None), ("undated", [undated], None),
+                 ("overlapping its start", [
+                  {**NOTE, "start": "2026-07-01", "end": "2026-08-10"}], None),
+                 ("only a start day inside it", [
+                  {**undated, "start": "2026-11-10"}], None),
+                 ("only an end day inside it", [
+                  {**undated, "end": "2026-08-10"}], None),
+                 ("before it", [{**NOTE, "start": "2026-07-01", "end": "2026-08-09"}],
+                  "check-in 1 covers no day of the period, 10/08/2026 to 10/11/2026"),
+                 ("only an end day before it", [
+                  {**undated, "end": "2026-08-09"}], "covers no day"),
+                 ("only a start day after it", [
+                  {**undated, "start": "2026-11-11"}], "covers no day"),
+                 ("a rating", [{**NOTE, "rating": None}],
+                  "must have the fields start, end, going_well"),
+                 ("the same days twice", [NOTE, {**NOTE, "context": ["Moved team"]}],
+                  "two pieces of the check-ins cover 01/08/2026 to 30/09/2026")]
+        for name, notes, expected in cases:
+            with self.subTest(name):
+                problems = common.check_ins_problems(
+                    {"pieces": notes}, REQUEST, VALUE_NAMES)
+                if expected is None:
+                    self.assertEqual(problems, [])
+                else:
+                    self.assertIn(expected, " ".join(problems))
+        self.assertIn('the check-ins must be {"pieces": [...]}',
+                      " ".join(common.check_ins_problems([NOTE], REQUEST, VALUE_NAMES)))
 
     def test_prep_dir(self):
         folder = temp_output(self)
