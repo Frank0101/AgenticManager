@@ -1,7 +1,7 @@
 """Records the summary of the manager's overall view of a prep's person in orientation.json.
 
 The agent writes the summary as JSON on stdin, a quoted here-document, so
-nothing in it needs escaping. A point's value must be the company's, as
+nothing in it needs escaping. A point's values must be the company's, as
 rules.py prints them. It is checked before anything is written, by
 the rule the final check applies, and written whole each time, so a
 correction from the manager is one more call.
@@ -16,8 +16,8 @@ INPUT = """Input, on stdin: the manager's view, summarised in its parts, such as
 
   python3 set_orientation.py --prep Jane-Doe_26-11-10 <<'END_OF_INPUT'
   {
-    "going_well": [{"point": "Has led the billing migration well since May", "value": "Ownership"}],
-    "to_improve": [{"point": "Could share progress with the wider team more often", "value": "Teamwork"}],
+    "going_well": [{"point": "Has led the billing migration well since May", "values": ["Ownership"]}],
+    "to_improve": [{"point": "Could share progress with the wider team more often", "values": ["Teamwork"]}],
     "context": ["Came back from a long leave in May"]
   }
   END_OF_INPUT

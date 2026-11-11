@@ -1,23 +1,19 @@
 # Read a manager's pages about a person
 
-A manager is preparing a performance review of the person named below. These are the pages of the manager's notes about the person. They have no date, so they give only context: background the review should take into account, neither good nor bad, such as a change of team, a career goal or a promotion conversation. Behaviours and outcomes come from the dated journals, read apart.
+A manager is preparing a performance review of the person named below. These are the pages of the manager's notes about the person, each numbered. They have no date, so they give only background for the review, such as a change of team, a career goal or a promotion conversation; behaviours and outcomes come from the dated journals, read apart. Write a synopsis of every page, for another agent that won't see the pages and decides what in them the review takes into account. Leave none out.
 
-## What to keep
+## Each synopsis
 
-Keep each fact about the person that is background to their review, as a context item. Leave out:
-
-- a reminder or a to-do for the manager, such as "ask Jane about the career goals";
-- a judgement of the person's work, good or bad: without a date it can't be placed in the review's period;
-- the status of the work, such as "Migration: API done, UI next".
-
-When you're in doubt whether something is context, leave it out, and list it in `in_doubt` with why, so the manager can see it.
+Say what the page says about the person: the facts about them, and what kind of content it holds when that isn't plain, such as to-dos for the manager or the status of the work.
 
 ## Links in a page
 
 {{links}}
 
+## Writing
+
+{{synopsis}}
+
 ## Each item
 
-For each fact you keep, write an item: `part` `context`; `point`, the fact; `value` null and `date` null.
-
-{{point}}
+For each page, write an item: `note`, its number, and `synopsis`.

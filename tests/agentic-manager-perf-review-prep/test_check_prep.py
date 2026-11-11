@@ -13,7 +13,8 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_prep  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import CHECK_INS, FEEDBACK, IDENTITIES, NOTE, NOTES, ORIENTATION, PIECE, PREP, REQUEST, temp_output, write_prep  # noqa: E402
+from prep_fixture import (CHECK_INS, FEEDBACK, IDENTITIES, NOTE, NOTES, NOTION, ORIENTATION, PIECE, PREP, REQUEST,
+                          SLACK, WORK, temp_output, write_prep)  # noqa: E402
 
 TODAY = date(2026, 11, 10)
 
@@ -57,12 +58,22 @@ class CheckTest(unittest.TestCase):
                   None, "check-ins.json: check-in 1 covers no day of the period"),
                  ("notes dated outside the period", {"notes": {**NOTES, "going_well": [
                      {**NOTES["going_well"][0], "dates": ["2026-06-30"]}]}},
-                  None, "notes.json: the notes summary's going_well")]
+                  None, "notes.json: the notes summary's going_well"),
+                 ("no work", {"work": None}, None, "missing work.json"),
+                 ("work dated outside the period", {"work": {**WORK, "jira": {**WORK["jira"], "resolved": [
+                     {**WORK["jira"]["resolved"][0], "date": "2026-07-01"}]}}},
+                  None, "work.json: the work's jira resolved"),
+                 ("Notion pages twice", {"notion": {**NOTION, "edited": NOTION["edited"] * 2}},
+                  None, "notion.json: the Notion pages edited list"),
+                 ("a Slack point with no link", {"slack": {**SLACK, "going_well": [
+                     {**SLACK["going_well"][0], "links": []}]}},
+                  None, "slack.json: the Slack summary's going_well must be a list of points")]
         for i, (name, changes, extra, expected) in enumerate(cases):
             with self.subTest(name):
                 prep = f"Case-{i}_26-11-10"
                 files = {"request": REQUEST, "identities": IDENTITIES, "orientation": ORIENTATION,
-                         "feedback": FEEDBACK, "check_ins": CHECK_INS, "notes": NOTES, **changes}
+                         "feedback": FEEDBACK, "check_ins": CHECK_INS, "notes": NOTES, "work": WORK,
+                         "notion": NOTION, "slack": SLACK, **changes}
                 write_prep(self.folder, prep=prep, **files)
                 if extra:
                     open(os.path.join(self.folder, prep, extra), "w").close()

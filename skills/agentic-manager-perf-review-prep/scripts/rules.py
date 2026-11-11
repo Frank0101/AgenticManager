@@ -14,7 +14,7 @@ from common import (RATINGS, REQUEST, SUMMARY_PARTS, VALUED_PARTS, VALUES, compa
 
 OUTPUT = """Prints one line of JSON:
   parts          each part of a summary, with what it holds
-  valued_parts   the parts whose points each name a value, or null
+  valued_parts   the parts whose points each name the company values they show
   values         the company's values: value and meaning
   ratings        the company's ratings, lowest first: rating and meaning
   earliest_end   the first day dated previous feedback may end on,

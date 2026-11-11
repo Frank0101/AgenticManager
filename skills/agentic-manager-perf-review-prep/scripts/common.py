@@ -1,13 +1,13 @@
 """What the skill's scripts share: the prep folder's name and the closed set of
 files it holds, how to find a prep's folder, the request a prep is built for,
 who the person is in each source, the parts every summary has, the manager's
-view, the person's previous feedback, check-ins and the manager's notes. The
-rules of each file are one function, applied when it is written and by the
-final check, so the two can't differ.
-Scripts import the shared library's names from here, so they don't depend on
-the order of their imports.
+view, previous feedback, check-ins, the manager's notes, the person's work,
+Notion pages and Slack, and the period's months and days. The rules of each
+file are one function, applied when it is written and by the final check, so
+the two can't differ. Scripts import the shared library's names from here, so
+they don't depend on the order of their imports.
 """
-from datetime import date
+from datetime import date, timedelta
 import json
 import os
 import sys
@@ -16,16 +16,17 @@ import sys
 LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
+from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.config import company_setting  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
-from agentic_manager.github import commit_authors, gh_available, gh_orgs, gh_signed_in, profile_name  # noqa: E402,F401
-from agentic_manager.jira import JiraClient, plain_text  # noqa: E402,F401
+from agentic_manager.github import GhError, commit_authors, gh_available, gh_json, gh_orgs, gh_signed_in, profile_name  # noqa: E402,F401
+from agentic_manager.jira import JiraClient, browse_url, plain_text  # noqa: E402,F401
 from agentic_manager.logseq import graph_path, links, notes  # noqa: E402,F401
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
 from agentic_manager.output_folder import DAY_FOLDER, clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.period import add_period_arguments, period_problem, shown  # noqa: E402,F401
-from agentic_manager.text import as_name  # noqa: E402,F401
+from agentic_manager.text import as_name, word_count  # noqa: E402,F401
 
 # The skill's output folder, and a prep folder's files in it: the request the
 # manager confirmed, which every later step reads rather than being told again.
@@ -53,9 +54,11 @@ ABSENT = {"absent": True}
 # way: each a list of points in the agent's words, a part with nothing to say
 # left empty. A point is a sentence; only one far longer is refused, as a
 # length is room, not a quota. A point that is good or to improve also names
-# the company value it shows most clearly, or none when none fits, so the
-# writing step can speak to the values from what was gathered; a context point
-# is neither, so it names none.
+# every company value it clearly shows, up to MAX_VALUES, the one it shows
+# most first, or none when none fits: one value per point would let the most common one, such as delivery,
+# hide the others the same point shows. The writing step can then speak to
+# each value from what was gathered; a context point is neither, so it names
+# none.
 SUMMARY_PARTS = {"going_well": "what is going well or exceeding",
                  "to_improve": "what are improvement or stretch areas",
                  "context": "facts that are neither good nor bad, such as a long absence or a change of role"}
@@ -63,10 +66,11 @@ VALUED_PARTS = ("going_well", "to_improve")
 POINT_WORDS = 25
 MAX_POINT_WORDS = 40
 VALUES = "values"
+MAX_VALUES = 2
 SUMMARY_HELP = "\n".join(
     f"  {part:<11} {meaning}, each point "
-    + ('{"point": "...", "value": "..."}, value the company value it shows most clearly, as rules.py prints '
-       'them, or null when none fits' if part in VALUED_PARTS else "a sentence")
+    + ('{"point": "...", "values": ["..."]}, values every company value it clearly shows, as rules.py prints '
+       f'them, at most {MAX_VALUES}, or [] when none fits' if part in VALUED_PARTS else "a sentence")
     for part, meaning in SUMMARY_PARTS.items())
 # The manager's overall view of the person, summarised: guidance for the
 # writing step, the only one that reads it, so the evidence is gathered without
@@ -95,14 +99,31 @@ CHECK_INS = "check-ins.json"
 # pattern one point with all its days; from the person's pages, only context,
 # which has no date. Read by subagents, a month of journals each, then merged.
 NOTES = "notes.json"
+# The person's work in the period from Jira and GitHub, fetched by a script:
+# the items themselves, each with its title, date and link, for the writing
+# step to cite, never metrics computed from them. A source the person isn't in
+# is {"absent": true}.
+WORK = "work.json"
+WORK_LISTS = {"jira": ("resolved", "open"), "github": (
+    "opened", "merged", "reviewed")}
+# The person's Notion pages, created and last edited by them in the period,
+# found by the agent through the Notion MCP. Its search filters by creation
+# date but returns only the last edit's, so a created page is dated by the
+# range it was found in, `between`, and an edited one by its last edit.
+NOTION = "notion.json"
+NOTION_LISTS = ("created", "edited")
+# What the person's Slack messages show, read by subagents a month each and
+# merged, every point with the days and links it rests on.
+SLACK = "slack.json"
 RATINGS = "perf-review-ratings"
 
 
 def expected_files():
     """Every file a prep folder holds, and nothing else: the request, who the
     person is in each source, the manager's view of them, their previous
-    feedback, their check-ins and the manager's notes on them."""
-    return {REQUEST, IDENTITIES, ORIENTATION, FEEDBACK, CHECK_INS, NOTES}
+    feedback, their check-ins, the manager's notes on them, their work in
+    Jira and GitHub, their Notion pages and what their Slack messages show."""
+    return {REQUEST, IDENTITIES, ORIENTATION, FEEDBACK, CHECK_INS, NOTES, WORK, NOTION, SLACK}
 
 
 def prep_dir(prep):
@@ -254,6 +275,87 @@ def notes_problems(notes, values, days):
     return summary_problems(notes, "the notes summary", values, days)
 
 
+def slack_problems(slack, values, days):
+    """Why `slack` isn't the summary of the person's Slack messages, empty
+    when it is: summary_problems() with `days`, every day of the period, and
+    every point linked."""
+    return summary_problems(slack, "the Slack summary", values, days, linked=True)
+
+
+def work_problems(work, days):
+    """Why `work` isn't the person's work in Jira and GitHub, empty when it
+    is: for each source of WORK_LISTS, {"absent": true}, or its lists, each
+    item an object with a title, a link and, but for open issues, a date,
+    one of `days`."""
+    if not (isinstance(work, dict) and sorted(work) == sorted(WORK_LISTS)):
+        return [f"the work must have {', '.join(WORK_LISTS)}"]
+    problems = []
+    for source, lists in WORK_LISTS.items():
+        found = work[source]
+        if found == ABSENT:
+            continue
+        if not (isinstance(found, dict) and sorted(found) == sorted(lists)
+                and all(isinstance(found[name], list) for name in lists)):
+            problems.append(f"the work's {source} must have the lists {', '.join(lists)}, or be "
+                            '{"absent": true}')
+            continue
+        for name in lists:
+            problems += [f"the work's {source} {name}: {item!r:.80} needs a title, a link and a day in the period"
+                         for item in found[name] if not _is_item(item, days, dated=name != "open")]
+    return problems
+
+
+def notion_problems(notion, days):
+    """Why `notion` isn't the person's Notion pages, empty when it is:
+    {"absent": true}, or NOTION_LISTS, each a list of pages listed once,
+    each an object with a title and a link, and, created, `between`, the
+    first and last day of the range it was found in, or, edited, a date,
+    each one of `days`."""
+    if notion == ABSENT:
+        return []
+    if not (isinstance(notion, dict) and sorted(notion) == sorted(NOTION_LISTS)
+            and all(isinstance(notion[name], list) for name in NOTION_LISTS)):
+        return ['the Notion pages must be {"created": [...], "edited": [...]}, or {"absent": true}']
+    problems = []
+    for name in NOTION_LISTS:
+        problems += [f"the Notion pages {name}: {page!r:.80} needs a title, a link and "
+                     + ("the range it was found in, within the period" if name ==
+                        "created" else "a day in the period")
+                     for page in notion[name] if not (_is_item(page, days, dated=name != "created") and (
+                         name != "created" or (isinstance(page.get("between"), list) and len(page["between"]) == 2
+                                               and all(day in days for day in page["between"]))))]
+        urls = [page.get("url")
+                for page in notion[name] if isinstance(page, dict)]
+        problems += [f"the Notion pages {name} list {url} more than once" for url in sorted(set(urls), key=str)
+                     if urls.count(url) > 1]
+    return problems
+
+
+def _is_item(item, days, dated):
+    """Whether `item` is an object with a title, a link and, when `dated`, a
+    date, one of `days`."""
+    return (isinstance(item, dict) and _is_text(item.get("title")) and str(item.get("url", "")).startswith("https://")
+            and (not dated or item.get("date") in days))
+
+
+def months_of(first, last):
+    """{YYYY-MM: {start, end}}: each month from `first` to `last`, its days
+    within them, as YYYY-MM-DD."""
+    months, day = {}, first
+    while day <= last:
+        following = (day.replace(day=28) + timedelta(days=4)).replace(day=1)
+        months[f"{day:%Y-%m}"] = {"start": day.isoformat(),
+                                  "end": min(last, following - timedelta(days=1)).isoformat()}
+        day = following
+    return months
+
+
+def days_between(start, end):
+    """Every day from `start` to `end`, both as YYYY-MM-DD, as YYYY-MM-DD."""
+    first, last = date.fromisoformat(start), date.fromisoformat(end)
+    return [(first + timedelta(days=n)).isoformat() for n in range((last - first).days + 1)]
+
+
 def pieces_problems(value, names, fields, values, rules):
     """Why `value` isn't a list of pieces, empty when it is, `names` naming
     them all and one, such as ("check-ins", "check-in"): {"pieces": [...]}, none when there are none, each with
@@ -312,61 +414,80 @@ def earliest_feedback_end(request):
         return start.replace(year=start.year - FEEDBACK_YEARS, day=28)
 
 
-def summary_problems(summary, what, values, days=None):
+def summary_problems(summary, what, values, days=None, linked=False):
     """Why `summary`, the summary of `what`, such as "the orientation", doesn't
     have the parts of SUMMARY_PARTS, empty when it does: each a list of
-    points, a point of VALUED_PARTS {"point", "value"}, its value null or one
-    of `values`, any other a text; each point's text not blank, of at most
-    MAX_POINT_WORDS words, and listed once, with at least one point in all.
-    With `days`, the days notes were taken on as YYYY-MM-DD, a point of
-    VALUED_PARTS also has "dates", the days it was seen on, each one of
-    `days`, and the summary may be empty, as notes may hold nothing to say."""
+    points, a point of VALUED_PARTS {"point", "values"}, its values up to
+    MAX_VALUES of `values`, each once, any other a text; each point's text
+    not blank, of at most MAX_POINT_WORDS words, and listed once, with at
+    least one point in all. With `days`, the days the source was read on as
+    YYYY-MM-DD, a point of VALUED_PARTS also has "dates", the days it was
+    seen on, each one of `days`, and the summary may be empty, as a source
+    may hold nothing to say. `linked`, as for messages, gives every point,
+    context too, "dates" and "links", the addresses of what it rests on."""
     if not (isinstance(summary, dict) and sorted(summary) == sorted(SUMMARY_PARTS)):
         found = ", ".join(summary) if isinstance(
             summary, dict) else repr(summary)
         return [f"{what} must have the parts {', '.join(SUMMARY_PARTS)}, not {found or 'none'}"]
-    fields = ("point", "value") if days is None else (
-        "point", "value", "dates")
     problems = []
     for part, points in summary.items():
-        valued = part in VALUED_PARTS
-        if not (isinstance(points, list) and all(_is_point(point, fields if valued else None) for point in points)):
-            shape = ("{" + ", ".join(f'"{field}": ' + {"point": '"..."', "value": '"..." or null',
-                                                       "dates": '["YYYY-MM-DD", ...]'}[field] for field in fields) + "}"
-                     if valued else "a sentence")
+        fields = point_fields(part, days is not None, linked)
+        if not (isinstance(points, list) and all(_is_point(point, fields) for point in points)):
+            shape = ("{" + ", ".join(f'"{field}": ' + {"point": '"..."', "values": '["...", ...] or []',
+                                                       "dates": '["YYYY-MM-DD", ...]',
+                                                       "links": '["https://...", ...]'}[field] for field in fields)
+                     + "}" if fields else "a sentence")
             problems.append(
                 f"{what}'s {part} must be a list of points, each {shape}, or [] for none")
             continue
-        texts = [point["point"] if valued else point for point in points]
+        texts = [point["point"] if fields else point for point in points]
         problems += [f"{what}'s {part} lists {text!r} more than once: list each once"
                      for text in sorted(set(texts)) if texts.count(text) > 1]
-        problems += [f"{what}'s {part}: {text[:60]!r}... has {len(text.split())} words: keep a point to a "
+        problems += [f"{what}'s {part}: {text[:60]!r}... has {word_count(text)} words: keep a point to a "
                      f"sentence of about {POINT_WORDS}, at most {MAX_POINT_WORDS}, or split it"
-                     for text in texts if len(text.split()) > MAX_POINT_WORDS]
-        if not valued:
-            continue
-        problems += [f"{what}'s {part}: {point['point'][:60]!r}...'s value, {point['value']!r}, must be one of "
-                     f"the company's: {', '.join(values)}, or null when none fits"
-                     for point in points if point["value"] is not None and point["value"] not in values]
-        if days is not None:
+                     for text in texts if word_count(text) > MAX_POINT_WORDS]
+        if "values" in fields:
+            problems += [f"{what}'s {part}: {point['point'][:60]!r}...'s values, {point['values']!r}, must each "
+                         f"be one of the company's: {', '.join(values)}, listed once, at most {MAX_VALUES}, or [] "
+                         "when none fits"
+                         for point in points if len(point["values"]) > MAX_VALUES
+                         or len(set(point["values"])) != len(point["values"]) or not set(point["values"]) <= set(values)]
+        if "dates" in fields:
             problems += [f"{what}'s {part}: {point['point'][:60]!r}...'s dates, {point['dates']!r}, must each be a "
-                         "day a note was taken on, listed once"
+                         "day the source was read on, listed once"
                          for point in points if len(set(point["dates"])) != len(point["dates"])
-                         or not set(point["dates"]) <= set(days)]
+                         or not set(point["dates"]) <= set(days or [])]
     if not problems and days is None and not any(summary.values()):
         problems.append(
             f"{what} has no points: summarise what it says in its parts")
     return problems
 
 
+def point_fields(part, dated, linked):
+    """The fields of a point of `part`: point, then values in VALUED_PARTS,
+    dates when the summary is `dated` and the point valued or `linked`, and
+    links when `linked`; none, a sentence alone, for a context point of a
+    summary that isn't linked."""
+    valued = part in VALUED_PARTS
+    if not (valued or linked):
+        return ()
+    return ("point", *(("values",) if valued else ()), *(("dates",) if dated else ()),
+            *(("links",) if linked else ()))
+
+
 def _is_point(point, fields):
-    """Whether `point` is a point of a part: with `fields`, an object of
-    them, its point a text that isn't blank, its value a text or null and
-    its dates, if it has them, a list of texts, at least one; without, such a
-    text alone."""
-    if fields is None:
+    """Whether `point` is a point with `fields`: an object of them, its point
+    a text that isn't blank, its values a list of texts, its dates a list of
+    texts, at least one, and its links a list of web addresses, at least
+    one; with no fields, such a text alone."""
+    if not fields:
         return _is_text(point)
+
+    def texts(key, at_least_one):
+        return (isinstance(point[key], list) and (bool(point[key]) or not at_least_one)
+                and all(isinstance(item, str) for item in point[key]))
     return (isinstance(point, dict) and sorted(point) == sorted(fields) and _is_text(point["point"])
-            and (point["value"] is None or isinstance(point["value"], str))
-            and ("dates" not in point or (isinstance(point["dates"], list) and bool(point["dates"])
-                                          and all(isinstance(day, str) for day in point["dates"]))))
+            and ("values" not in point or texts("values", False))
+            and ("dates" not in point or texts("dates", True))
+            and ("links" not in point or (texts("links", True) and all(link.startswith("https://")
+                                                                       for link in point["links"]))))

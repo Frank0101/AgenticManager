@@ -2,7 +2,7 @@
 name: agentic-manager-perf-review-prep
 disable-model-invocation: true
 description: Helps a manager prepare a performance review of one person over a review period, from the evidence of their work in Jira, GitHub, the documentation, the team's messages and the manager's own notes. In development; not ready to use.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_orientation.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_feedback.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_check_ins.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_orientation.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_feedback.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_check_ins.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *)
 ---
 
 # Performance Review Prep
@@ -19,7 +19,10 @@ perf-review-preps/
     ├── orientation.json  set_orientation.py writes (the manager's overall view of the person, summarised)
     ├── feedback.json     set_feedback.py writes (the person's previous feedback, each piece summarised)
     ├── check-ins.json    set_check_ins.py writes (the person's OKRs and 1:1 notes, each piece summarised)
-    └── notes.json        read_notes.py writes (what the manager's own notes say about the person, merged)
+    ├── notes.json        read_notes.py writes (what the manager's own notes say about the person, merged)
+    ├── work.json         fetch_work.py writes (the person's Jira issues and GitHub pull requests in the period)
+    ├── notion.json       set_notion.py writes (the Notion pages the person created and last edited in the period)
+    └── slack.json        read_slack.py writes (what the person's Slack messages show, merged, with their links)
 ```
 
 ## Prerequisite
@@ -38,7 +41,7 @@ What the manager tells you, and what the person's previous feedback and check-in
 
 Each part is a list of points, in your words: one sentence each, about 25 words at most, such as "Delivers tickets reliably and with good quality". Make the person the subject of a point: what they did, or what happened because of them. Each point stands on its own: say what it is about, such as a promotion, so it reads without the source. Keep every point the source makes, add none it doesn't, and put each in the part it belongs to; leave a part empty when the source says nothing of it.
 
-A point in a part that `rules.py` lists in `valued_parts` names the company value it shows most clearly, judged from what the point says and the value's meaning, or none when no value fits; never stretch a point to fit one. Show it after the point when the manager confirms the summary, such as "Delivers tickets reliably (Ownership)", so they confirm it too; for a point with none, add briefly why when the point alone doesn't make it plain, such as "(no value: an overall verdict, not a behaviour)".
+A point in a part that `rules.py` lists in `valued_parts` names every company value it clearly shows, at most two, the one it shows most first, judged from what the point says and each value's meaning, or none when no value fits. Consider every value, not only the most common one, and never stretch a point to fit one. Show them after the point when the manager confirms the summary, such as "Delivers tickets reliably (Ownership)", so they confirm them too; for a point with none, add briefly why when the point alone doesn't make it plain, such as "(no value: an overall verdict, not a behaviour)".
 
 ## 1. Agree what the prep is for
 
@@ -117,12 +120,26 @@ The person's check-ins are their OKRs and the notes of their 1:1s with the manag
 
 ## 6. Read the manager's notes
 
-The manager's own notes on the person, in their vault, are many, and most aren't feedback, so subagents read them: one task for each month of the period's journals that mention the person, and one for the person's pages, which give only context; then one merges what they found into a summary, so a behaviour seen in several months becomes one point with all its days. Each task holds its own instructions. You coordinate, and judge none of the notes yourself: a fresh subagent hasn't heard the manager's view, so what the notes say is read without it. Say nothing to the manager while the subagents work, not even as each one finishes: the step's only message to them is the one asking about the summary.
+The manager's own notes on the person, in their vault, are many, and most aren't feedback, so subagents read them: one task for each month of the period's journals that mention the person, and one for the person's pages, which give only context, each writing a synopsis of every note; then one judges them all and merges what matters into a summary, so a behaviour seen in several months becomes one point with all its days. Each task holds its own instructions. You coordinate, and read none of the notes yourself: a fresh subagent hasn't heard the manager's view, so what the notes say is read without it. Your one judgment is on what the merge left out in doubt, in 3. Say nothing to the manager while the subagents work, not even as each one finishes: the step's only message to them is the one asking about the summary.
 
-1. **Start.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py start --prep <prep>`: it gathers the notes and prints `tasks`, a line `Task <name>: <path>` for each month and for the pages, and `merge`, the merge task's line.
-2. **Hand out the tasks.** Give each of `tasks` to a fresh subagent, all at once, only its path, with: "Do the task in <path> exactly as written there. Submit your answer with the task's command; if the script refuses it, fix every problem it names and submit again, until it is accepted, then reply in one line." Once all of them have replied, give `merge` to one more fresh subagent the same way. Once it has replied, run `python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py finished --prep <prep>`. After a break, run `start` again: step 6 starts over.
-3. **Ask the manager** about the summary, which is too long for a message: give them a Markdown link to `notes.json`, list what was left out in doubt, from `finished`'s `in_doubt`, and the ones the merge made points because another note settled them, from `promoted`, with what settled each, and ask whether they're OK with it. For a correction, read `notes.json` and submit it again, corrected, with `finished`'s `correct` command.
+1. **Start.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py start --prep <prep>`: it gathers the notes and prints `tasks`, a line `Task <name>: <path>` for each month and for the pages, and `merge`, the merge task's line. When there is nothing to read, it records an empty summary and prints what `finished` would: go to 3.
+2. **Hand out the tasks.** Give each of `tasks` to a fresh subagent, all at once, only its path, with: "Do the task in <path> exactly as written there, then reply in one line." Once all of them have replied, give `merge` to one more fresh subagent the same way. Once it has replied, run `python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py finished --prep <prep>`. After a break, run `start` again: step 6 starts over.
+3. **Ask the manager** about the summary, which is too long for a message: give them a Markdown link to `notes.json`, and ask whether they're OK with it. Read what the merge left out in doubt, `finished`'s `in_doubt`, and list only those you think may belong in the summary, each with why; say how many others there are, without listing them. For a correction, read `notes.json` and submit it again, corrected and with `finished`'s `in_doubt` added, with its `correct` command.
 
-## 7. Tell the user
+## 7. Gather the data points
 
-Say the prep is started, with a Markdown link to its `prep_dir`, and that the next steps, starting with the data points from Jira, GitHub, Notion and Slack, aren't built yet. If step 1's `temporary` is `true`, add that the folder is temporary and setting `output.root` in the config keeps preps.
+The person's work in Jira, GitHub, Notion and Slack, in the period. Like step 6, it is read without the manager's view, and neither needs the other, so start it as soon as step 6's subagents are handed their tasks, without waiting for them, and hand out this step's Slack tasks alongside theirs. Say nothing to the manager while it runs, unless 3 stops. Don't search a source the manager said the person isn't in, but still run its script: it records the source as absent.
+
+1. **Slack.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py start --prep <prep>`, and hand out its `tasks`, then its `merge`, as step 6 does; once the merge's subagent has replied, run `python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py finished --prep <prep>`.
+2. **Jira and GitHub.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py --prep <prep>`: it fetches the issues and pull requests, with no judgment, into `work.json`.
+3. **Notion.** Search with the Notion MCP's search, with an empty `query` and only filters, as any query text silently drops pages, and `page_size` 50, keeping only results of type page:
+   - pages the person created: one search per calendar month of the period, clipped to it, with `created_by_user_ids` set to their Notion id and `created_date_range` set to the month. A result's date is its last edit, not its creation, so each page is dated by the month it was found in;
+   - pages the person last edited: one search for the whole period, with `edited_by_user_ids` and `last_edited_date_range`, each page dated as the result gives it.
+
+   When a search returns 50 pages, search its range again in shorter ranges, and record those instead. If a result says the edited filters were dropped, as they need a Business plan, stop and tell the manager: their pages can't be gathered without them. Record what you found with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py --prep <prep>`.
+
+4. **Ask the manager** about the Slack summary as step 6 asks about the notes: a Markdown link to `slack.json`, the doubts you think may belong in it, and whether they're OK with it. `work.json` and `notion.json` are records, not judgments: link them without asking.
+
+## 8. Tell the user
+
+Say the prep is started, with a Markdown link to its `prep_dir`, and that the next step, writing the review from what was gathered, isn't built yet. If step 1's `temporary` is `true`, add that the folder is temporary and setting `output.root` in the config keeps preps.

@@ -1,7 +1,7 @@
 """Records a prep's person's check-ins, their OKRs and 1:1 notes, in check-ins.json.
 
 The agent writes the check-ins as JSON on stdin, a quoted here-document, so
-nothing in them needs escaping. A point's value must be the company's, as
+nothing in them needs escaping. A point's values must be the company's, as
 rules.py prints them. They are checked before anything is written,
 by the rules the final check applies, and written whole each time, so a
 correction from the manager is one more call with every piece in it.
@@ -19,9 +19,9 @@ INPUT = """Input, on stdin: every piece shared with the person, such as:
   {"pieces": [
     {"start": "2026-07-01", "end": "2026-09-30",
      "going_well": [{"point": "Agreed to own the billing migration and has kept to its plan",
-                     "value": "Ownership"}],
+                     "values": ["Ownership"]}],
      "to_improve": [{"point": "Agreed to share progress with the wider team every week",
-                     "value": "Teamwork"}],
+                     "values": ["Teamwork"]}],
      "context": []},
     {"start": null, "end": null,
      "going_well": [], "to_improve": [],

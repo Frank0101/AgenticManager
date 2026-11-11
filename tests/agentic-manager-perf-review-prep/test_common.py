@@ -98,23 +98,29 @@ class CommonTest(unittest.TestCase):
                  ("not an object", "Strong half overall.", "must have the parts"),
                  ("text, not a list", {
                   "going_well": "Strong half"}, "going_well must be a list of points"),
-                 ("a blank point", {"to_improve": [{"point": " ", "value": None}]},
-                  'to_improve must be a list of points, each {"point": "...", "value": "..." or null}'),
+                 ("a blank point", {"to_improve": [{"point": " ", "values": []}]},
+                  'to_improve must be a list of points, each {"point": "...", "values": ["...", ...] or []}'),
                  ("a point twice", {"context": [
                   "Back in May", "Back in May"]}, "more than once"),
-                 ("a valued point twice", {"going_well": [{"point": "Led it", "value": "Ownership"},
-                                                          {"point": "Led it", "value": None}]}, "more than once"),
-                 ("a point too long", {"going_well": [{"point": long_point, "value": None}]},
+                 ("a valued point twice", {"going_well": [{"point": "Led it", "values": ["Ownership"]},
+                                                          {"point": "Led it", "values": []}]}, "more than once"),
+                 ("a point too long", {"going_well": [{"point": long_point, "values": []}]},
                   f"at most {common.MAX_POINT_WORDS}"),
                  ("a value left out", {"going_well": [
-                  {"point": "Led it", "value": None}]}, None),
-                 ("a value not the company's", {"going_well": [{"point": "Led it", "value": "Grit"}]},
-                  "'Grit', must be one of the company's: Ownership, Teamwork, or null when none fits"),
+                  {"point": "Led it", "values": []}]}, None),
+                 ("two values", {"going_well": [
+                  {"point": "Led it", "values": ["Teamwork", "Ownership"]}]}, None),
+                 ("a value twice", {"going_well": [{"point": "Led it", "values": ["Ownership", "Ownership"]}]},
+                  "listed once, at most 2"),
+                 ("three values", {"going_well": [{"point": "Led it", "values": ["Ownership", "Teamwork", "Grit"]}]},
+                  "listed once, at most 2"),
+                 ("a value not the company's", {"going_well": [{"point": "Led it", "values": ["Grit"]}]},
+                  "['Grit'], must each be one of the company's: Ownership, Teamwork, listed once, at most 2, or [] when none fits"),
                  ("a value's field missing", {"going_well": [{"point": "Led it"}]},
                   "going_well must be a list of points"),
                  ("text where a value is due", {
                   "to_improve": ["Could share more"]}, "to_improve must be a list of points"),
-                 ("a value on context", {"context": [{"point": "Back in May", "value": None}]},
+                 ("a value on context", {"context": [{"point": "Back in May", "values": []}]},
                   "context must be a list of points, each a sentence")]
         for name, changes, expected in cases:
             with self.subTest(name):
@@ -138,17 +144,17 @@ class CommonTest(unittest.TestCase):
         cases = [("valid", {}, None),
                  ("empty", {"going_well": [], "to_improve": [],
                   "context": []}, None),
-                 ("no dates", {"going_well": [{"point": "Presented it", "value": None}]},
-                  'going_well must be a list of points, each {"point": "...", "value": "..." or null, '
+                 ("no dates", {"going_well": [{"point": "Presented it", "values": []}]},
+                  'going_well must be a list of points, each {"point": "...", "values": ["...", ...] or [], '
                   '"dates": ["YYYY-MM-DD", ...]}'),
-                 ("dates empty", {"going_well": [{"point": "Presented it", "value": None, "dates": []}]},
+                 ("dates empty", {"going_well": [{"point": "Presented it", "values": [], "dates": []}]},
                   "going_well must be a list of points"),
                  ("a day no note was taken on", {"going_well": [
-                     {"point": "Presented it", "value": None, "dates": ["2026-09-03"]}]},
-                  "must each be a day a note was taken on, listed once"),
-                 ("a day twice", {"to_improve": [{"point": "Late", "value": None,
+                     {"point": "Presented it", "values": [], "dates": ["2026-09-03"]}]},
+                  "must each be a day the source was read on, listed once"),
+                 ("a day twice", {"to_improve": [{"point": "Late", "values": [],
                                                   "dates": ["2026-08-20", "2026-08-20"]}]}, "listed once"),
-                 ("dates on context", {"context": [{"point": "Moved", "value": None, "dates": ["2026-08-20"]}]},
+                 ("dates on context", {"context": [{"point": "Moved", "values": [], "dates": ["2026-08-20"]}]},
                   "context must be a list of points, each a sentence")]
         for name, changes, expected in cases:
             with self.subTest(name):
@@ -246,6 +252,13 @@ class CommonTest(unittest.TestCase):
                     self.assertIn(expected, " ".join(problems))
         self.assertIn('the check-ins must be {"pieces": [...]}',
                       " ".join(common.check_ins_problems([NOTE], REQUEST, VALUE_NAMES)))
+
+    def test_months_of(self):
+        # Each month of the period, clipped to it.
+        self.assertEqual(common.months_of(date(2026, 8, 10), date(2026, 10, 3)), {
+            "2026-08": {"start": "2026-08-10", "end": "2026-08-31"},
+            "2026-09": {"start": "2026-09-01", "end": "2026-09-30"},
+            "2026-10": {"start": "2026-10-01", "end": "2026-10-03"}})
 
     def test_prep_dir(self):
         folder = temp_output(self)

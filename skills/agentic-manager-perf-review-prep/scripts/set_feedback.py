@@ -1,7 +1,7 @@
 """Records a prep's person's previous feedback in feedback.json.
 
 The agent writes the feedback as JSON on stdin, a quoted here-document, so
-nothing in it needs escaping. A rating and a point's value must be the
+nothing in it needs escaping. A rating and a point's values must be the
 company's, as rules.py prints them. Feedback is checked before anything is
 written, by the rules the final check applies, and written whole each time,
 so a correction from the manager is one more call with every piece in it.
@@ -18,12 +18,12 @@ INPUT = """Input, on stdin: every piece of previous feedback, such as:
   python3 set_feedback.py --prep Jane-Doe_26-11-10 <<'END_OF_INPUT'
   {"pieces": [
     {"start": "2026-01-01", "end": "2026-06-30", "rating": "Meets",
-     "going_well": [{"point": "Delivered the billing migration on time", "value": "Ownership"}],
-     "to_improve": [{"point": "Could lead a design review alone", "value": null}],
+     "going_well": [{"point": "Delivered the billing migration on time", "values": ["Ownership"]}],
+     "to_improve": [{"point": "Could lead a design review alone", "values": []}],
      "context": ["Moved to the payments team in March"]},
     {"start": null, "end": null, "rating": null,
      "going_well": [{"point": "Built a community of practice that reaches other teams",
-                     "value": "Teamwork"}],
+                     "values": ["Teamwork", "Ownership"]}],
      "to_improve": [], "context": []}
   ]}
   END_OF_INPUT
