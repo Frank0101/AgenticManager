@@ -627,23 +627,6 @@ def parse_ts(ts):
     return datetime.fromisoformat(ts)
 
 
-def value_at(changes, field, instant, current):
-    """A field's value at `instant`, as (id, string), from its changes (see
-    JiraClient.field_changes) and its `current` (id, string): the new value of
-    the last change at or before the instant, else the old value of the first
-    change after it, else the current value. Jira logs no change for a value
-    set when the issue was created, so a field never changed has had its
-    current value all along."""
-    mine = [c for c in changes if c["field"] == field]
-    before = [c for c in mine if parse_ts(c["created"]) <= instant]
-    if before:
-        return before[-1]["to"], before[-1]["toString"]
-    after = [c for c in mine if parse_ts(c["created"]) > instant]
-    if after:
-        return after[0]["from"], after[0]["fromString"]
-    return current
-
-
 def plain_text(value, links=False):
     """A rich-text field (a description or a comment) as plain text, whether
     Jira returns it in Atlassian Document Format, as API v3 does, or as a

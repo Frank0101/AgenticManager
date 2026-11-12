@@ -225,6 +225,9 @@ STATUSES = [("🟩 Live", "merged to the main branch, or, for an external part, 
             ("✖ Ruled out", "shown not to exist today, whether never built or since removed: the finding showing it is in its evidence")]
 CODE_STATUSES = ("🟩", "🟦")
 UNVERIFIED, RULED_OUT = STATUSES[-2][0], STATUSES[-1][0]
+# The statuses with what each means, as the protocol and the errors list them.
+STATUS_MEANINGS = "; ".join(
+    f"{label} ({meaning})" for label, meaning in STATUSES)
 # A finding holds one claim, of about 80 words; a claim far past that, here
 # about twice it, bundles several, which are then cited and corrected as one.
 # It is refused when the finding is written, so it is split before other rows
@@ -438,6 +441,36 @@ def unresolved_message(unresolved):
 # The rules below are each defined once: ledger.py applies them to a row as it
 # is written, and check_report.py to the whole ledger, which also catches a
 # ledger edited without the script.
+
+
+def row_problem(name, row, evidence, blocked):
+    """Why a row of the ledger table `name` breaks a rule of its table, or
+    None: the one list of which rules each table's rows meet, for the row
+    written and for the ledger handed over alike. `evidence` is the ledger as
+    design_evidence() reads it, `blocked` the IDs of the blocked questions."""
+    if name in DESIGN_ORDER:
+        return design_row_problem(name, row, evidence)
+    if name == "findings":
+        sources = evidence["sources"]
+        partial = {ident for ident, source in sources.items()
+                   if read_in_part(source)}
+        return (finding_problem(row) or partial_read_problem(row, partial)
+                or unread_lines_problem(row, sources))
+    if name == "gaps":
+        return gap_problem(row) or cited_evidence_problem(row[0], row[GAP_HEADER.index("Evidence")])
+    if name == "decisions":
+        return cited_evidence_problem(row[0], row[DECISION_HEADER.index("Evidence")])
+    if name == "scope":
+        return scope_problem(row)
+    # The trail from a claim to its source ends in a link, or, for a search,
+    # which has no URL to pin, in its exact query between backticks.
+    if name == "sources":
+        return source_problem(row, evidence["definitions"])
+    if name == "queue-completed":
+        return outcome_problem(row[0], row[-1], row[2], evidence["scope"])
+    if name == "queue-blocked":
+        return blocked_problem(row[0], row[QUEUE_HEADER.index("Depends on")], blocked)
+    return None
 
 
 def partial_read_problem(row, partial):
@@ -779,12 +812,11 @@ def recorded_ids(body):
 
 
 def cited_sources(body):
-    """{source number: the findings whose Sources cell names it} in the ledger `body`."""
+    """{source ID: the findings whose Sources cell cites it} in the ledger `body`."""
     cited = {}
-    for row in ledger_rows(body, TABLE_HEADINGS["findings"]):
-        if len(row) > 2:
-            for source in set(re.findall(r"\bS(\d+)\b", row[2])):
-                cited.setdefault(int(source), set()).add(row[0])
+    for row in records(body, "findings"):
+        for source in ids(row[2], "S"):
+            cited.setdefault(source, set()).add(row[0])
     return cited
 
 
@@ -933,8 +965,7 @@ def status_problem(row_id, status):
     STATUSES, or None."""
     if status_rank(status) is not None:
         return None
-    return (f"{row_id}: State starts with one of: "
-            + "; ".join(f"{label} ({meaning})" for label, meaning in STATUSES))
+    return f"{row_id}: State starts with one of: {STATUS_MEANINGS}"
 
 
 def status_rank(text):

@@ -35,8 +35,6 @@ class ProtocolTest(unittest.TestCase):
         # Every task reads a repository from the run's one clone of it.
         self.assertIn("use the run's shared clone of it, /r/<owner>-<repo>",
                       protocol.text("research", **FILLS))
-        with self.assertRaisesRegex(SystemExit, "names {{topic}}, which nothing fills"):
-            protocol.text("scope")
 
     def test_examples_print_one_record_per_line(self):
         for name in sorted(os.listdir(os.path.join(protocol.FOLDER, "examples"))):

@@ -1,6 +1,7 @@
 """What the skill's tests share: an invented request, identities,
-orientation, previous feedback, check-ins, notes, work, Notion pages, Slack and company values and ratings, and an output folder of the
-test's own."""
+orientation, previous feedback, check-ins, notes, work, Slack and company
+values and ratings, two synopses a reading of the notes answers with, and an
+output folder of the test's own."""
 import json
 import os
 import tempfile
@@ -33,21 +34,51 @@ NOTES = {"going_well": [{"point": "Presented the migration to the wider team", "
          "to_improve": [{"point": "Didn't flag delays until asked, many times", "values": ["Ownership"],
                          "dates": ["2026-08-20", "2026-10-01"]}],
          "context": ["Moved to the payments team in the summer"]}
-WORK = {"jira": {"resolved": [{"key": "PROJ-12", "title": "Migrate billing", "type": "Story",
-                               "parent": {"key": "PROJ-1", "title": "Billing", "type": "Epic"}, "status": "Done",
-                               "url": "https://acme.atlassian.net/browse/PROJ-12", "date": "2026-09-01"}],
-                 "open": [{"key": "PROJ-13", "title": "Retire old billing", "type": "Task", "parent": None,
-                           "status": "In Progress", "url": "https://acme.atlassian.net/browse/PROJ-13"}]},
-        "github": {"absent": True}}
-NOTION = {"created": [{"title": "Billing plan", "url": "https://www.notion.so/billing-plan",
-                       "between": ["2026-08-10", "2026-08-31"]}],
-          "edited": [{"title": "Billing plan", "url": "https://www.notion.so/billing-plan", "date": "2026-09-02"}]}
+# The work's items, and its facts and commentary worked out by hand, over
+# REQUEST's period, 10/08/2026 to 10/11/2026.
+WORK_ITEMS = {"jira": {"resolved": [{"key": "PROJ-12", "title": "Migrate billing", "type": "Story",
+                                     "parent": {"key": "PROJ-1", "title": "Billing", "type": "Epic"}, "status": "Done",
+                                     "url": "https://acme.atlassian.net/browse/PROJ-12", "date": "2026-09-01"}],
+                       "open": [{"key": "PROJ-13", "title": "Retire old billing", "type": "Task", "parent": None,
+                                 "status": "In Progress", "url": "https://acme.atlassian.net/browse/PROJ-13"}]},
+              "github": {"absent": True},
+              "notion": {"created": [{"title": "Billing plan", "url": "https://www.notion.so/billing-plan",
+                                      "path": "Engineering / Billing", "between": ["2026-08-10", "2026-08-31"]}],
+                         "edited": [{"title": "Billing plan", "url": "https://www.notion.so/billing-plan",
+                                     "path": "Engineering / Billing", "date": "2026-09-02"}]}}
+WORK_FACTS = {
+    "jira": {"by_month": [{"month": "2026-08", "resolved": 0, "areas": 0, "main_areas": []},
+                          {"month": "2026-09", "resolved": 1, "areas": 1,
+                           "main_areas": [{"area": "Billing", "items": 1}]},
+                          {"month": "2026-10", "resolved": 0,
+                              "areas": 0, "main_areas": []},
+                          {"month": "2026-11", "resolved": 0, "areas": 0, "main_areas": []}],
+             "by_area": [{"kind": "Epic", "key": "PROJ-1", "title": "Billing", "resolved": 1, "open": 0},
+                         {"kind": "no parent", "key": None, "title": None, "resolved": 0, "open": 1}]},
+    "github": None,
+    "notion": {"by_month": [{"month": "2026-08", "created": 1, "edited": 0, "areas": 1,
+                             "main_areas": [{"area": "Engineering / Billing", "items": 1}]},
+                            {"month": "2026-09", "created": 0, "edited": 1, "areas": 1,
+                             "main_areas": [{"area": "Engineering / Billing", "items": 1}]},
+                            {"month": "2026-10", "created": 0,
+                                "edited": 0, "areas": 0, "main_areas": []},
+                            {"month": "2026-11", "created": 0, "edited": 0, "areas": 0, "main_areas": []}],
+               "by_area": [{"kind": "location", "key": None, "title": "Engineering / Billing", "created": 1,
+                            "edited": 1}]}}
+COMMENTARY = {"jira": "Resolved one issue, in September, on the billing epic, with one more still open.",
+              "github": None, "notion": "Wrote the billing plan in August and edited it in September."}
+WORK = {**WORK_ITEMS, "facts": WORK_FACTS, "commentary": COMMENTARY}
 SLACK = {"going_well": [{"point": "Explained the outage's cause in the incident channel, and colleagues thanked them",
                          "values": ["Teamwork"], "dates": ["2026-09-03"],
                          "links": ["https://acme.slack.com/archives/C1/p1"]}],
          "to_improve": [],
          "context": [{"point": "Posted the billing rollout plan in a cross-team channel", "dates": ["2026-08-20"],
                       "links": ["https://acme.slack.com/archives/C2/p2"]}]}
+# A reading task's answer: the synopses of the notes it was shown, by number.
+PRESENTED = {
+    "note": 1, "synopsis": "Presented the migration to the team, who asked for the slides; Jane shared them"}
+DELAY = {"note": 2,
+         "synopsis": "Didn't flag a delay until asked, the second time this month"}
 VALUES = [{"value": "Ownership", "meaning": "Sees work through to its end"},
           {"value": "Teamwork", "meaning": "Succeeds with others"}]
 RATINGS = [{"rating": "Below", "meaning": "Misses most expectations"},
@@ -74,15 +105,16 @@ def temp_output(test):
 
 
 def write_prep(folder, request=REQUEST, identities=IDENTITIES, prep=PREP, orientation=ORIENTATION,
-               feedback=FEEDBACK, check_ins=CHECK_INS, notes=NOTES, work=WORK, notion=NOTION, slack=SLACK):
+               feedback=FEEDBACK, check_ins=CHECK_INS, notes=NOTES, work=WORK, slack=SLACK):
     """Writes the prep `prep` in the output folder `folder`, holding `request`,
     `identities`, `orientation`, `feedback`, `check_ins`, `notes`, `work`,
-    `notion` and `slack`, each left out when None."""
-    os.makedirs(os.path.join(folder, prep), exist_ok=True)
+    and `slack`, each left out when None, and the _raw folder the readings
+    write."""
+    os.makedirs(os.path.join(folder, prep, "_raw"), exist_ok=True)
     for name, value in (("request.json", request), ("identities.json", identities),
                         ("orientation.json", orientation), ("feedback.json", feedback),
                         ("check-ins.json", check_ins), ("notes.json", notes),
-                        ("work.json", work), ("notion.json", notion), ("slack.json", slack)):
+                        ("work.json", work), ("slack.json", slack)):
         if value is not None:
             with open(os.path.join(folder, prep, name), "w", encoding="utf-8") as f:
                 json.dump(value, f)

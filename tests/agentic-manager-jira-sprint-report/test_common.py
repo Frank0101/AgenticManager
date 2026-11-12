@@ -85,6 +85,18 @@ class IssuesTest(unittest.TestCase):
             with self.subTest(spell=spell):
                 self.assertEqual(common.spell_epic(spell), expected)
 
+    def test_sprint_key(self):
+        # The projects are the spells' and the epics'; a word shaped like a
+        # key in another project is not a key.
+        text = "PROJ-1, OPS-7, UTF-8 and GPT-4"
+        cases = [({"spells": [{"key": "PROJ-1"}], "epics": [{"key": "OPS-100"}, {"key": common.NO_EPIC}]},
+                  ["PROJ-1", "OPS-7"]),
+                 ({"spells": [], "epics": []}, [])]
+        for data, expected in cases:
+            with self.subTest(data=data):
+                self.assertEqual(common.sprint_key(
+                    data).findall(text), expected)
+
 
 class BlockerCandidateTest(unittest.TestCase):
     def test_is_blocker_candidate(self):

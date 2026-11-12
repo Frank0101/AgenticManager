@@ -49,7 +49,6 @@ CITING = {"sources": ["superseded_by"], "findings": ["sources"], "gaps": ["evide
           "connections": ["from", "to", "identity", "evidence"], "flows": ["connections", "evidence"],
           "questions": ["raised_by", "depends_on"]}
 QUESTION_FIELDS = ["raised_by", "question", "depends_on"]
-# The lines part of a Coverage as coverage_text() writes it.
 
 
 def submit_scope(lines, data, asked):

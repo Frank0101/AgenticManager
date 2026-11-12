@@ -1,13 +1,12 @@
 """End-to-end tests for skills/agentic-manager-perf-review-prep/scripts/init_prep.py,
 set_identities.py, rules.py, set_orientation.py, set_feedback.py,
-set_check_ins.py, read_notes.py, fetch_work.py, set_notion.py, read_slack.py and
-check_prep.py: they run each as a script,
-as the agent does once the manager confirms the person and the period, then
-who the person is in each source, their view, the person's previous feedback
-and check-ins, and the manager's notes. Their functions have unit tests in
-test_init_prep.py, test_set_identities.py, test_rules.py,
-test_set_orientation.py, test_set_feedback.py, test_set_check_ins.py,
-test_read_notes.py and test_check_prep.py.
+set_check_ins.py, read_notes.py, fetch_work.py, set_notion.py,
+work_commentary.py, read_slack.py and check_prep.py: they run each as a
+script, as the agent does once the manager confirms the person and the
+period, then who the person is in each source, their view, the person's
+previous feedback and check-ins, the manager's notes, the person's work and
+their Slack messages. Each script's functions have unit tests of their own,
+in test_<script>.py.
 Run with: python3 tests/run.py agentic-manager-perf-review-prep
 
 HOME points at a temporary folder holding the test's own config, and TMPDIR at
@@ -36,6 +35,7 @@ CHECK_INS_SCRIPT = os.path.join(SCRIPTS, "set_check_ins.py")
 NOTES_SCRIPT = os.path.join(SCRIPTS, "read_notes.py")
 WORK_SCRIPT = os.path.join(SCRIPTS, "fetch_work.py")
 NOTION_SCRIPT = os.path.join(SCRIPTS, "set_notion.py")
+COMMENTARY_SCRIPT = os.path.join(SCRIPTS, "work_commentary.py")
 SLACK_SCRIPT = os.path.join(SCRIPTS, "read_slack.py")
 # Absent from every service, so step 7 runs without reaching one.
 IDENTITIES = {"jira-api": {"absent": True}, "github-cli": {"absent": True}, "notion-mcp": {"absent": True},
@@ -82,8 +82,10 @@ class ScriptsTest(unittest.TestCase):
         # the summaries follow, set_orientation.py records the summary of the
         # manager's view, set_feedback.py the previous feedback and
         # set_check_ins.py the check-ins, read_notes.py hands out the notes'
-        # tasks and takes their answers; check_prep.py passes the prep, and
-        # fails it once the folder holds a file of the agent's.
+        # tasks and takes their answers, fetch_work.py and set_notion.py
+        # record the work, work_commentary.py its facts and commentary, and
+        # read_slack.py starts the Slack reading; check_prep.py passes the
+        # prep, and fails it once the folder holds a file of the agent's.
         today = date.today()
         code, out, err = self.run_script(INIT_SCRIPT, "--person", "Jane Doe", "--start", "2026-01-01",
                                          "--end", today.isoformat())
@@ -132,7 +134,12 @@ class ScriptsTest(unittest.TestCase):
         code, out, err = self.run_script(
             NOTES_SCRIPT, "finished", "--prep", result["prep"])
         self.assertEqual((code, json.loads(out)["finished"]), (0, True), err)
+        # The person is in none of the work's sources: each is recorded
+        # absent, and the commentary on each is null.
         for script, args, stdin in ((WORK_SCRIPT, [], ""), (NOTION_SCRIPT, [], '{"absent": true}'),
+                                    (COMMENTARY_SCRIPT, ["start"], ""),
+                                    (COMMENTARY_SCRIPT, [
+                                     "submit"], '{"jira": null, "github": null, "notion": null}'),
                                     (SLACK_SCRIPT, ["start"], "")):
             code, out, err = self.run_script(
                 script, *args, "--prep", result["prep"], stdin=stdin)
@@ -164,8 +171,8 @@ class ScriptsTest(unittest.TestCase):
                   "the input isn't JSON"),
                  ("check-ins that aren't JSON", CHECK_INS_SCRIPT, ["--prep", "Jane-Doe_26-01-01"], 1,
                   "the input isn't JSON"),
-                 ("finished before start", NOTES_SCRIPT, ["finished", "--prep", "Jane-Doe_26-01-01"], 1,
-                  "isn't gathered"),
+                 ("finished for no prep", NOTES_SCRIPT, ["finished", "--prep", "Jane-Doe_26-01-01"], 1,
+                  "run init_prep.py first"),
                  ("rules for no prep", RULES_SCRIPT, ["--prep", "Jane-Doe_26-01-01"], 1,
                   "run init_prep.py first"),]
         for name, script, args, expected_code, expected in cases:

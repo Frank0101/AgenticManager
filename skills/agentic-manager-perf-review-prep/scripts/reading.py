@@ -5,19 +5,17 @@ synopsis of everything in a part, and judges nothing, so the merge sees all
 there is and alone decides what is feedback, with one threshold for the
 period: only the merge sees a small thing repeat into a pattern. Notes are
 numbered, so a reader can't skip one. What differs by source is a Source;
-the flow lives here once. Each answer is a file of its own, so subagents
-submitting at once never write over each other.
+the flow lives here once, writing to the prep's _raw folder, which keeps
+what each subagent was shown and wrote, an answer a file of its own.
 """
 import json
 import os
-import shutil
-import sys
-import tempfile
 from dataclasses import dataclass, field
 from typing import Callable
 
-from common import (FOLDER_NAME, REQUEST, SUMMARY_PARTS, VALUES, company_names, company_setting, fill_protocol, prep_dir, read_json, stdin_json, word_count,
-                    summary_problems, write_prep_file)
+from common import (RAW_DIR, REQUEST, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
+                    fill_protocol, prep_dir, script_command, read_json, stdin_json, summary_problems, word_count, write_raw,
+                    write_prep_file)
 
 MATERIAL = "material.json"
 TASK_FILE = "task.md"
@@ -55,7 +53,7 @@ class Source:
 # The commands.
 
 def command_line(source, description, argv=None):
-    """The command line of a reading: start, submit and finished."""
+    """The command line of a reading: start, submit, finished and remerge."""
     import argparse
     parser = argparse.ArgumentParser(description=description)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -67,7 +65,10 @@ def command_line(source, description, argv=None):
                         f"the merge, the {source.name} file's path"),
                        ("finished", f"once the merge is submitted: prints one line of JSON: {source.name}, the "
                         "summary's path, in_doubt, what the merge left out in doubt, and correct, the command that "
-                        "submits a correction")):
+                        "submits a correction"),
+                       ("remerge", "once every reading task is answered: write the merge task again, from the "
+                        "synopses kept in _raw and the merge's protocol as it is now, dropping the merge's earlier "
+                        "answer; prints one line of JSON: merge, the merge task's line")):
         command = commands.add_parser(name, help=help, description=help)
         command.add_argument("--prep", required=True,
                              help="the prep's folder, <Person>_<YY-MM-DD>, as init_prep.py printed it")
@@ -82,6 +83,8 @@ def command_line(source, description, argv=None):
             raise SystemExit(
                 "The merge isn't submitted yet: run finished once its subagent has finished")
         print(json.dumps(finished(source, args.prep), ensure_ascii=False))
+    elif args.command == "remerge":
+        print(json.dumps(remerge(source, args.prep), ensure_ascii=False))
     else:
         answer = stdin_json("The answer's shape:\n" +
                             answer_shape(source, args.task))
@@ -98,10 +101,9 @@ def start(source, prep):
     what finished() says."""
     material = source.gather(prep)
     work = work_dir(source, prep)
-    shutil.rmtree(work, ignore_errors=True)
-    os.makedirs(work)
-    with open(os.path.join(work, MATERIAL), "w", encoding="utf-8") as f:
-        json.dump(material, f, ensure_ascii=False, indent=1)
+    clear_folder(work)
+    write_raw(prep, os.path.join(source.name, MATERIAL), json.dumps(
+        material, ensure_ascii=False, indent=1))
     result = {key: value for key, value in material.items()
               if key not in ("tasks", "content")}
     if not material["tasks"]:
@@ -135,9 +137,6 @@ def submit(source, prep, task, answer):
     if problems:
         raise SystemExit("; ".join(problems) +
                          "\n\nThe answer's shape:\n" + answer_shape(source, task))
-    work = work_dir(source, prep)
-    path = os.path.join(work, *task.split(":"), ANSWER)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
     if task == MERGE:
         stored = {**answer, "in_doubt": in_doubt}
     elif notes is not None:
@@ -145,12 +144,12 @@ def submit(source, prep, task, answer):
                             for item in sorted(answer["items"], key=lambda item: item["note"])]}
     else:
         stored = answer
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(stored, f, ensure_ascii=False, indent=1)
+    write_raw(prep, os.path.join(source.name, *task.split(":"), ANSWER),
+              json.dumps(stored, ensure_ascii=False, indent=1))
     if task == MERGE:
         write_prep_file(prep, source.output, answer)
         return {"task": task, source.name: os.path.join(prep_dir(prep), source.output)}
-    if all(answered(work, name) for name in material["tasks"]):
+    if all(answered(work_dir(source, prep), name) for name in material["tasks"]):
         write_task(source, prep, MERGE, merge_task(source, prep, material))
     return {"task": task, "items": len(answer["items"])}
 
@@ -165,6 +164,20 @@ def finished(source, prep):
             "in_doubt": in_doubt, "correct": f"{call(source)} submit --prep {prep} --task {MERGE}"}
 
 
+def remerge(source, prep):
+    """Write the merge task of the prep `prep` again, from the synopses its
+    reading tasks wrote and the merge's protocol as it is now, so a change to
+    the merge's rules is tried without reading the source again; drops the
+    merge's earlier answer, so finished waits for the new one. Exits when a
+    reading task isn't answered."""
+    material, work = load_material(source, prep), work_dir(source, prep)
+    if missing := [task for task in material["tasks"] if not answered(work, task)]:
+        raise SystemExit(
+            f"{', '.join(missing)} not answered yet: the merge is written once every reading task is")
+    clear_folder(os.path.join(work, MERGE))
+    return {"merge": write_task(source, prep, MERGE, merge_task(source, prep, material))}
+
+
 # The tasks.
 
 def reading_task(source, prep, task, material):
@@ -172,7 +185,8 @@ def reading_task(source, prep, task, material):
     read a linked ticket, the source's part and how to submit."""
     protocol, body = source.task_text(prep, task, material)
     return "\n\n".join([read_protocol(protocol), person_section(prep), links_section(source),
-                        body, submit_section(source, prep, task)])
+                        body, submit_section(f"{call(source)} submit --prep {prep} --task {task}",
+                                             answer_shape(source, task))])
 
 
 def merge_task(source, prep, material):
@@ -184,7 +198,8 @@ def merge_task(source, prep, material):
     return "\n\n".join([read_protocol(f"{source.name}-merge"), person_section(prep), values_section(),
                         "## What the reading found\n\n" +
                         ("\n".join(found) or "Nothing."),
-                        submit_section(source, prep, MERGE)])
+                        submit_section(f"{call(source)} submit --prep {prep} --task {MERGE}",
+                                       answer_shape(source, MERGE))])
 
 
 def person_section(prep):
@@ -206,12 +221,12 @@ def links_section(source):
     return f"## Reading links\n\nA Jira ticket: `python3 {script} --key <key>`, such as PROJ-123."
 
 
-def submit_section(source, prep, task):
-    """How a task submits its answer: the command, and the answer's shape."""
+def submit_section(command, answer):
+    """How a task submits its answer: the command `command` that takes it,
+    and `answer`, its shape."""
     return (f"## Submit\n\nSubmit your answer, as JSON in a quoted here-document:\n\n```bash\n"
-            f"{call(source)} submit --prep {prep} --task {task} <<'END_OF_INPUT'\n{answer_shape(source, task)}\n"
-            "END_OF_INPUT\n```\n\nIf the script refuses it, fix every problem it names and submit again, until it "
-            "is accepted.")
+            f"{command} <<'END_OF_INPUT'\n{answer}\nEND_OF_INPUT\n```\n\nIf the script refuses it, fix every "
+            "problem it names and submit again, until it is accepted.")
 
 
 def answer_shape(source, task):
@@ -222,10 +237,8 @@ def answer_shape(source, task):
 def write_task(source, prep, task, text):
     """Write the task `task`'s text to its file; returns the line that hands
     it out, 'Task <name>: <path>'."""
-    path = task_path(work_dir(source, prep), task)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(text + "\n")
+    path = write_raw(prep, os.path.join(
+        source.name, *task.split(":"), TASK_FILE), text)
     return f"Task {task}: {path}"
 
 
@@ -279,10 +292,9 @@ def in_doubt_problems(in_doubt):
 # Where things are.
 
 def work_dir(source, prep):
-    """The prep `prep`'s working folder for `source`: in the system's
-    temporary folder, so the output folder holds only the prep's files, and
+    """The prep `prep`'s working folder for `source`, in its _raw folder:
     start empties it, never finding what an earlier run left."""
-    return os.path.join(tempfile.gettempdir(), FOLDER_NAME, prep, source.name)
+    return os.path.join(prep_dir(prep), RAW_DIR, source.name)
 
 
 def task_path(work, task):
@@ -316,9 +328,5 @@ def read_protocol(name):
 
 
 def call(source):
-    """The command that runs the source's script, by the path the agent ran
-    it with, so every command a task names matches the one the skill
-    pre-approves."""
-    path = sys.argv[0] if sys.argv[0].endswith(source.script) else os.path.join(
-        os.path.dirname(os.path.realpath(__file__)), source.script)
-    return f"python3 {os.path.abspath(path)}"
+    """The command that runs the source's script, by script_command()."""
+    return script_command(source.script)

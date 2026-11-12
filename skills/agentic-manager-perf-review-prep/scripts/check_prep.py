@@ -9,9 +9,9 @@ from datetime import date
 import json
 import os
 
-from common import (CHECK_INS, FEEDBACK, IDENTITIES, NOTES, NOTION, ORIENTATION, RATINGS, REQUEST, SLACK, VALUES,
-                    WORK, check_ins_problems, company_names, days_between, expected_files, feedback_problems,
-                    identities_problems, notes_problems, notion_problems, orientation_problems, prep_dir,
+from common import (CHECK_INS, FEEDBACK, IDENTITIES, NOTES, ORIENTATION, RATINGS, RAW_DIR, REQUEST, SLACK, VALUES,
+                    WORK, check_ins_problems, company_names, expected_files, feedback_problems,
+                    identities_problems, notes_problems, orientation_problems, period_days, prep_dir,
                     read_json, request_problems, slack_problems, work_problems)
 
 
@@ -27,7 +27,7 @@ def check_prep(prep, today=None):
                       + (f"; move {', '.join(extra)} to your own scratch folder" if extra else "")
                       + (f"; missing {', '.join(missing)}" if missing else ""))
     read = {name: read_json(os.path.join(folder, name))
-            for name in wanted & files}
+            for name in (wanted & files) - {RAW_DIR}}
     request = read.get(REQUEST)
     request_errors = request_problems(
         request, today or date.today()) if REQUEST in read else []
@@ -35,8 +35,8 @@ def check_prep(prep, today=None):
     rules = {REQUEST: lambda _: request_errors, IDENTITIES: identities_problems,
              ORIENTATION: lambda value: orientation_problems(value, values)}
     # Everything gathered is checked against the request's period, so only
-    # once the request itself is valid: a note's or a message's day, which the
-    # prep doesn't keep, is checked at least to be in it.
+    # once the request itself is valid: a day a point of the notes or the
+    # Slack summary cites, or an item of work is dated, must be in it.
     if request is not None and not request_errors:
         if FEEDBACK in read:
             ratings = company_names(RATINGS)
@@ -44,11 +44,10 @@ def check_prep(prep, today=None):
                 value, request, ratings, values)
         rules[CHECK_INS] = lambda value: check_ins_problems(
             value, request, values)
-        days = days_between(request["start"], request["end"])
+        days = period_days(request)
         rules[NOTES] = lambda value: notes_problems(value, values, days)
         rules[SLACK] = lambda value: slack_problems(value, values, days)
         rules[WORK] = lambda value: work_problems(value, days)
-        rules[NOTION] = lambda value: notion_problems(value, days)
     for name, problems in rules.items():
         if name in read:
             errors += [
@@ -60,7 +59,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Check a prep folder: that it holds only the prep's files, that its request names the "
         "person and a period that can be reported on, that its identities say who the person is in each "
-        "source, that its orientation summarises the manager's view, that its feedback holds the person's previous feedback, that its check-ins hold the person's OKRs and 1:1 notes, that its notes summarise the manager's notes, and that its work, Notion pages and Slack summary hold the data points. Prints one line of JSON: ok and errors. Exits 1 if any check fails.")
+        "source, that its orientation summarises the manager's view, that its feedback holds the person's previous feedback, that its check-ins hold the person's OKRs and 1:1 notes, that its notes summarise the manager's notes, that its Slack summary holds what the person's messages show, and that its work holds the data points. Prints one line of JSON: ok and errors. Exits 1 if any check fails.")
     parser.add_argument("--prep", required=True,
                         help="the prep's folder, <Person>_<YY-MM-DD>, inside perf-review-preps")
     result = check_prep(parser.parse_args(argv).prep)

@@ -37,7 +37,7 @@ REPORTS_FOLDER = "jira-sprint-reports"
 RAW_DIR = "_raw"
 # The raw files inside RAW_DIR, as Jira and GitHub returned them, and the
 # fetch's own facts (META_FILE). Changelogs and comments hold one <KEY>.json
-# per issue; PULL_REQUESTS_FILE every ticket's pull requests, how each was
+# per ticket, sub-tasks left out; PULL_REQUESTS_FILE every ticket's pull requests, how each was
 # found and through which ticket, the ticket or a sub-task, when it was
 # opened, merged and closed, and those skipped as GitHub says they don't exist.
 META_FILE = "_meta.json"
@@ -269,7 +269,8 @@ def ticket_events(raw, changes, context, moment):
     out, never read as Jira shows the ticket today, so a report run later
     gives the same figures. They are kept per ticket, not per spell: a ticket
     has one history however often it left and came back. Changes at one
-    instant keep the changelog's order."""
+    instant keep their stored order, which the library's tracked_changes
+    sets by field."""
     cutoff, zone = parse_ts(moment), context.reporting_zone
     tracked = {name for name, ident in history_fields(
         context.flagged_field, context.points_field).items() if ident}
@@ -612,6 +613,18 @@ def latest_points(spells):
     a ticket shows wherever no moment of its own applies, such as running
     text and the Status to Verify table."""
     return {s["key"]: s["points"] for s in spells}
+
+
+def sprint_key(data):
+    """A pattern matching the Jira keys of the sprint's projects, those of its
+    spells and epics, so a word shaped like a key, such as UTF-8 or GPT-4, is
+    neither linked nor taken for a ticket."""
+    projects = {project_of(item["key"])
+                for item in data["spells"] + data["epics"]}
+    projects = sorted(p for p in projects if p)
+    if not projects:
+        return re.compile(r"(?!)")
+    return re.compile(rf"\b(?:{'|'.join(map(re.escape, projects))})-\d+\b")
 
 
 def whole_percentage(part, whole):

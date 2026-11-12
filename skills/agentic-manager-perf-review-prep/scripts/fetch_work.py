@@ -1,12 +1,12 @@
-"""Fetches a prep's person's work in the period from Jira and GitHub into work.json: the items, never metrics.
+"""Fetches a prep's person's work in the period from Jira and GitHub into work.json: the items themselves.
 
-The writing step cites work, such as a ticket or a pull request, more than it
-weighs averages, so each item keeps its title, date and link, and nothing is
-computed from them. Jira gives the issues resolved in the period and those
-still open, which show work carried across it; GitHub the pull requests
-opened, merged and reviewed, only in the organisations the user's gh belongs
-to, so personal repositories stay out of a work review, each with the Jira
-issue that lists it, so the work counts by epic and what has no ticket shows.
+The writing step cites work, such as a ticket or a pull request, so each item
+keeps its title, date and link; the counts are worked out later, once Notion
+is in too. Jira gives the issues resolved in the period and those still
+open, which show work carried across it; GitHub the pull requests opened and
+merged, only in the organisations the user's gh belongs to, so personal
+repositories stay out of a work review, each with the Jira issue that lists
+it, so the work counts by epic and what has no ticket shows.
 """
 import argparse
 import json
@@ -15,8 +15,9 @@ import subprocess
 import time
 from datetime import date
 
-from common import (ABSENT, IDENTITIES, REQUEST, WORK, GhError, JiraClient, browse_url, gather, gh_available, gh_json, gh_orgs,
-                    gh_signed_in, months_of, prep_dir, read_json, stops_on_failure, write_prep_file)
+from common import (ABSENT, IDENTITIES, REQUEST, WORK_LISTS, GhError, JiraClient, browse_url, gather, gh_available,
+                    gh_json, gh_orgs, gh_signed_in, months_of, period_days, prep_dir, read_json, stops_on_failure,
+                    write_work)
 
 JIRA_FIELDS = ["summary", "issuetype", "parent", "resolutiondate", "status"]
 PR_FIELDS = "number,title,repository,url,createdAt,closedAt"
@@ -29,19 +30,18 @@ SEARCH_LIMIT = 1000
 SEARCH_PAUSE = 5
 LIMIT_WAIT = 60
 LIMIT_TRIES = 3
-# Pull requests whose reviews one GraphQL call reads.
-REVIEW_BATCH = 50
 OUTPUT = """Prints one line of JSON: path, the file written, and how many items each list holds.
 
-work.json holds, for a source the person isn't in, {"absent": true}, else:
+It writes jira and github to work.json, keeping its Notion pages, and
+dropping its facts and commentary, which work_commentary.py works out again.
+For a source the person isn't in, {"absent": true}, else:
   jira     resolved, the issues resolved in the period, and open, those
            touched in it and not Done: key, id, title, type, parent ({key,
            title, type}, or null), status, url and, for resolved, date, the
            day it was resolved
-  github   opened, merged and reviewed, each PR's repo, number, title, url,
-           date, the day it was opened, merged, or first reviewed by the
-           person in the period, and issue, the key of the person's Jira
-           issue whose Development panel lists it, or null for none
+  github   opened and merged, each PR's repo, number, title, url, date,
+           the day it was opened or merged, and issue, the key of the
+           person's Jira issue whose Development panel lists it, or null
 """
 
 
@@ -59,7 +59,7 @@ def fetch(prep, client=None, run=subprocess.run):
     if work["github"] != ABSENT:
         link_issues(work["github"], {} if client is None else linked_prs(
             client, work["jira"]))
-    path = write_prep_file(prep, WORK, work)
+    path = write_work(prep, work, period_days(request))
     return {"path": path, "counts": {f"{source}.{name}": len(items) for source, lists in work.items()
                                      if lists != ABSENT for name, items in lists.items()}}
 
@@ -84,7 +84,7 @@ def jira_work(client, account, request):
 def linked_prs(client, jira):
     """{url: issue key}: the pull requests the Development panel of each
     issue of `jira`, resolved or still open, lists, read four at a time."""
-    issues = [item for name in ("resolved", "open") for item in jira[name]]
+    issues = [item for name in WORK_LISTS["jira"] for item in jira[name]]
     found = gather(issues, lambda item: client.pull_requests(item["id"]))
     return {pull_key(pr["url"]): item["key"] for item, prs in zip(issues, found) for pr in prs if pr.get("url")}
 
@@ -106,8 +106,8 @@ def pull_key(url):
 
 def issue_item(client, issue, dated):
     """An issue as work.json records it, with its resolution day when
-    `dated`. Its parent is kept with its type, so the writing step groups by
-    epic where the parent is one."""
+    `dated`. Its parent is kept with its type and title, as the work's facts
+    count issues by parent, their area."""
     fields = issue["fields"]
     parent = fields.get("parent")
     item = {"key": issue["key"], "id": issue["id"], "title": fields.get("summary") or "",
@@ -123,10 +123,11 @@ def issue_item(client, issue, dated):
 # GitHub.
 
 def github_work(login, request, run=subprocess.run, pause=time.sleep):
-    """{opened, merged, reviewed}: the pull requests of the GitHub account
-    `login` in the period of `request`, in the organisations gh belongs to,
-    searched a month at a time, `pause` between searches, and their reviews
-    read in GraphQL batches."""
+    """{opened, merged}: the pull requests of the GitHub account `login` in
+    the period of `request`, in the organisations gh belongs to, searched a
+    month at a time, `pause` between searches. Reviews are left out: a search
+    finds only the PRs updated in the period, not reviewed in it, and
+    checking each one's reviews cost most of the fetch for little value."""
     if not gh_available():
         raise SystemExit("gh isn't installed or the github-cli source isn't enabled: the person's pull requests "
                          "are fetched with it")
@@ -135,22 +136,13 @@ def github_work(login, request, run=subprocess.run, pause=time.sleep):
             "gh isn't signed in: run gh auth login, then run this again")
     windows = [f'{month["start"]}..{month["end"]}' for month in months_of(
         date.fromisoformat(request["start"]), date.fromisoformat(request["end"])).values()]
-    lists = {"opened": [], "merged": [], "reviewed": []}
+    lists = {"opened": [], "merged": []}
     for org in gh_orgs(run):
-        candidates = {}
         for window in windows:
             lists["opened"] += [pr_item(pr, pr["createdAt"]) for pr in search(
                 ["--author", login, "--created", window], org, run, pause)]
             lists["merged"] += [pr_item(pr, pr["closedAt"]) for pr in search(
                 ["--author", login, "--merged", "--merged-at", window], org, run, pause)]
-            # The search only finds PRs updated with them as a reviewer: each
-            # one's reviews tell whether they reviewed it in the period. A PR
-            # updated in two months is found twice, and read once.
-            candidates.update((pr["url"], pr) for pr in search(
-                ["--reviewed-by", login, "--updated", window], org, run, pause))
-        days = review_days(list(candidates.values()), login, request, run)
-        lists["reviewed"] += [pr_item(pr, days[url])
-                              for url, pr in candidates.items() if days.get(url)]
     return {name: sorted(items, key=lambda item: (item["date"], item["url"])) for name, items in lists.items()}
 
 
@@ -173,34 +165,6 @@ def search(flags, org, run=subprocess.run, pause=time.sleep):
         raise SystemExit(f"gh search prs {' '.join(flags)} --owner {org} found {SEARCH_LIMIT} pull requests, the "
                          "most it returns in a month, so some may be missing")
     return found
-
-
-def review_days(prs, login, request, run=subprocess.run):
-    """{url: day} of the pull requests `prs` the account `login` reviewed in
-    the period of `request`: the first day it submitted a review in it. Asks
-    GraphQL for the reviews of REVIEW_BATCH of them at once, rather than one
-    call each, which for a busy reviewer takes most of the fetch."""
-    days = {}
-    for start in range(0, len(prs), REVIEW_BATCH):
-        batch = prs[start:start + REVIEW_BATCH]
-        fields = " ".join(
-            f'p{n}: repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) '
-            f'{{ pullRequest(number: {pr["number"]}) {{ reviews(first: 100, author: {json.dumps(login)}) '
-            "{ pageInfo { hasNextPage } nodes { submittedAt } } } }"
-            for n, pr in enumerate(batch) for owner, name in [pr["repository"]["nameWithOwner"].split("/", 1)])
-        data = gh_json(
-            ["api", "graphql", "-f", f"query=query {{ {fields} }}"], run).get("data") or {}
-        for n, pr in enumerate(batch):
-            reviews = (((data.get(f"p{n}") or {}).get(
-                "pullRequest") or {}).get("reviews") or {})
-            if (reviews.get("pageInfo") or {}).get("hasNextPage"):
-                raise SystemExit(
-                    f"{pr['url']} has over 100 reviews by {login}: too many to read in one call")
-            in_period = sorted(node["submittedAt"][:10] for node in reviews.get("nodes", [])
-                               if node.get("submittedAt") and request["start"] <= node["submittedAt"][:10] <= request["end"])
-            if in_period:
-                days[pr["url"]] = in_period[0]
-    return days
 
 
 def pr_item(pr, stamp):

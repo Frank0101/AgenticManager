@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_prep  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import (CHECK_INS, FEEDBACK, IDENTITIES, NOTE, NOTES, NOTION, ORIENTATION, PIECE, PREP, REQUEST,
+from prep_fixture import (CHECK_INS, FEEDBACK, IDENTITIES, NOTE, NOTES, ORIENTATION, PIECE, PREP, REQUEST,
                           SLACK, WORK, temp_output, write_prep)  # noqa: E402
 
 TODAY = date(2026, 11, 10)
@@ -45,6 +45,8 @@ class CheckTest(unittest.TestCase):
                  ("no check-ins", {"check_ins": None},
                   None, "missing check-ins.json"),
                  ("no notes", {"notes": None}, None, "missing notes.json"),
+                 ("no Slack summary", {"slack": None},
+                  None, "missing slack.json"),
                  ("a request that breaks a rule", {"request": {**REQUEST, "end": "2026-12-31"}}, None,
                   "request.json: the period ends on 31/12/2026"),
                  ("identities that break a rule", {"identities": {**IDENTITIES, "slack-mcp": {}}}, None,
@@ -63,8 +65,13 @@ class CheckTest(unittest.TestCase):
                  ("work dated outside the period", {"work": {**WORK, "jira": {**WORK["jira"], "resolved": [
                      {**WORK["jira"]["resolved"][0], "date": "2026-07-01"}]}}},
                   None, "work.json: the work's jira resolved"),
-                 ("Notion pages twice", {"notion": {**NOTION, "edited": NOTION["edited"] * 2}},
-                  None, "notion.json: the Notion pages edited list"),
+                 ("Notion pages twice", {"work": {**WORK, "notion": {**WORK["notion"],
+                                                                     "edited": WORK["notion"]["edited"] * 2}}},
+                  None, "work.json: the work's notion edited lists"),
+                 ("facts that don't match the items", {"work": {**WORK, "facts": {**WORK["facts"], "github": {}}}},
+                  None, "work.json: the work's facts don't match its items"),
+                 ("no commentary", {"work": {k: v for k, v in WORK.items() if k != "commentary"}},
+                  None, "work.json: the work is missing commentary"),
                  ("a Slack point with no link", {"slack": {**SLACK, "going_well": [
                      {**SLACK["going_well"][0], "links": []}]}},
                   None, "slack.json: the Slack summary's going_well must be a list of points")]
@@ -72,8 +79,8 @@ class CheckTest(unittest.TestCase):
             with self.subTest(name):
                 prep = f"Case-{i}_26-11-10"
                 files = {"request": REQUEST, "identities": IDENTITIES, "orientation": ORIENTATION,
-                         "feedback": FEEDBACK, "check_ins": CHECK_INS, "notes": NOTES, "work": WORK,
-                         "notion": NOTION, "slack": SLACK, **changes}
+                         "feedback": FEEDBACK, "check_ins": CHECK_INS, "notes": NOTES, "work": WORK, "slack": SLACK,
+                         **changes}
                 write_prep(self.folder, prep=prep, **files)
                 if extra:
                     open(os.path.join(self.folder, prep, extra), "w").close()

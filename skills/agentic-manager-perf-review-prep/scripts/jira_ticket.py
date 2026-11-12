@@ -1,8 +1,8 @@
-"""Reads one Jira ticket a manager's note links to: its summary, status, description and comments, as plain text.
+"""Reads one Jira ticket a note or a message links to: its summary, status, description and comments, as plain text.
 
-A note that points at a ticket is judged by what the ticket says, so this
-prints what a reader needs to understand it, nothing more. Jira is reached
-through the jira-api source, whose token a subagent never sees. A ticket Jira
+A note or a message that points at a ticket is judged by what the ticket
+says, so this prints what a reader needs to understand it, nothing more. Jira
+is reached through the jira-api source, whose token a subagent never sees. A ticket Jira
 has none of, or of a project the user excludes, is answered with why.
 """
 import argparse
@@ -32,7 +32,7 @@ def ticket_text(client, key):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Print one Jira ticket a note links to, as plain text: its summary, status, assignee, "
+        description="Print one Jira ticket a note or a message links to, as plain text: its summary, status, assignee, "
         "description and comments.")
     parser.add_argument("--key", required=True,
                         help="the ticket's key, such as PROJ-123")

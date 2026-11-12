@@ -14,12 +14,11 @@ import fcntl
 import json
 import os
 import re
-import shutil
 import sys
 import tempfile
 
-from common import (BLOCKED_BY, CONTENT, DESIGN_ORDER, FOLDER_NAME, LEDGER, REPORT_SUFFIX, SCOPE_QUESTION, ids,
-                    investigation_dir, plain, stops_on_failure, strip_anchors,
+from common import (BLOCKED_BY, CONTENT, DESIGN_ORDER, FOLDER_NAME, LEDGER, REPORT_SUFFIX, SCOPE_QUESTION,
+                    clear_folder, ids, investigation_dir, plain, read_json, stops_on_failure, strip_anchors,
                     topic_of, write_output_file)
 from init_investigation import init, usable_sources
 from ledger import (TABLES, as_written, basis, brief, design_basis, depends_on, load, move_row, save, scope_decisions,
@@ -41,7 +40,7 @@ def start(topic):
     folder; the result tells the agent how to go on."""
     result = init(topic)
     work = work_dir(result["investigation"])
-    shutil.rmtree(work, ignore_errors=True)
+    clear_folder(work)
     os.makedirs(work)
     result["next"] = f"{call()} next --investigation {result['investigation']}"
     return result
@@ -416,15 +415,10 @@ def script_path():
 
 def read_input(path):
     """The submission, from the file `path` or standard input, as JSON."""
+    if path:
+        return read_json(path)
     try:
-        if path:
-            with open(path, encoding="utf-8") as f:
-                text = f.read()
-        else:
-            text = sys.stdin.read()
-        return json.loads(text)
-    except OSError as error:
-        raise SystemExit(f"--input: cannot read {path}: {error.strerror}")
+        return json.loads(sys.stdin.read())
     except ValueError as error:
         raise SystemExit(f"the submission is not valid JSON: {error}")
 

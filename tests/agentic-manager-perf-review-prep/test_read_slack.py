@@ -7,9 +7,7 @@ Run with: python3 tests/run.py agentic-manager-perf-review-prep
 import json
 import os
 import sys
-import tempfile
 import unittest
-from unittest import mock
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
@@ -31,12 +29,6 @@ class ReadSlackTest(unittest.TestCase):
         self.folder = temp_output(self)
         write_prep(self.folder, identities={**IDENTITIES, "slack-mcp": {"id": "U012AB3CD", "name": "Jane Doe"}},
                    slack=None)
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        patcher = mock.patch.object(
-            reading.tempfile, "gettempdir", lambda: tmp.name)
-        patcher.start()
-        self.addCleanup(patcher.stop)
 
     def test_runs_the_months_then_merges(self):
         # A task a month with its searches bounded; every item linked; the

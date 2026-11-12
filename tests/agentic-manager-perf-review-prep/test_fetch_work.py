@@ -6,7 +6,6 @@ Jira is a fake client and gh a fake runner, so nothing reaches a service.
 
 import json
 import os
-import re
 import subprocess
 import sys
 import unittest
@@ -18,7 +17,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import fetch_work  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import IDENTITIES, PREP, REQUEST, temp_output, write_prep  # noqa: E402
+from prep_fixture import IDENTITIES, PREP, REQUEST, WORK, temp_output, write_prep  # noqa: E402
 
 
 def issue(key, summary, resolved=None, parent=None):
@@ -49,11 +48,10 @@ class FakeJira:
 
 class FakeGh:
     """A gh runner, signed in to one organisation: each search's PRs by its
-    first flag, those dated within the search's window, and each PR's
-    reviews, answered as GraphQL does."""
+    first flag, those dated within the search's window."""
 
-    def __init__(self, searches, reviews):
-        self.searches, self.reviews, self.calls = searches, reviews, []
+    def __init__(self, searches):
+        self.searches, self.calls = searches, []
 
     def __call__(self, command, **kwargs):
         self.calls.append(command)
@@ -62,24 +60,14 @@ class FakeGh:
             answer = ""
         elif args[1].startswith("user/orgs"):
             answer = json.dumps([{"login": "acme"}])
-        elif args[:2] == ["search", "prs"]:
+        else:
             # The PRs of the search's first flag dated within its window: by
             # when they were merged for --merged-at, else opened.
-            flag = next(f for f in ("--created", "--merged-at",
-                        "--updated") if f in args)
+            flag = next(f for f in ("--created", "--merged-at") if f in args)
             start, end = args[args.index(flag) + 1].split("..")
             stamp = "closedAt" if flag == "--merged-at" else "createdAt"
             answer = json.dumps([pr for pr in self.searches.get(args[2], [])
                                  if start <= (pr[stamp] or "")[:10] <= end])
-        else:
-            # A GraphQL query of reviews: each PR's, by the author it asks for.
-            query = args[3].removeprefix("query=")
-            author = re.findall(r'author: "([^"]+)"', query)[0]
-            data = {f"p{n}": {"pullRequest": {"reviews": {"pageInfo": {"hasNextPage": False}, "nodes": [
-                {"submittedAt": review["submitted_at"]} for review in self.reviews.get(number, [])
-                if review["user"]["login"].casefold() == author.casefold()]}}}
-                for n, number in re.findall(r"p(\d+): repository\(.*?pullRequest\(number: (\d+)\)", query)}
-            answer = json.dumps({"data": data})
         return subprocess.CompletedProcess(command, 0, answer, "")
 
 
@@ -105,25 +93,17 @@ class FetchWorkTest(unittest.TestCase):
             all('<= "2026-11-10 23:59"' in jql for jql in client.queries))
 
     def test_github_work(self):
-        # Opened and merged as found; reviewed only where the person submitted
-        # a review in the period, dated by the first such review.
-        run = FakeGh({"--author": [pr(1, closed="2026-09-03T10:00:00Z")], "--reviewed-by": [pr(2), pr(3), pr(4)]},
-                     {"2": [{"user": {"login": "janedoe"}, "submitted_at": "2026-07-01T09:00:00Z"},
-                            {"user": {"login": "JaneDoe"}, "submitted_at": "2026-09-05T09:00:00Z"}],
-                      "3": [{"user": {"login": "sam"}, "submitted_at": "2026-09-05T09:00:00Z"}],
-                      "4": [{"user": {"login": "janedoe"}, "submitted_at": None}]})
+        # Opened and merged as found, dated by when they were opened or
+        # merged, only in the organisations gh belongs to.
+        run = FakeGh({"--author": [pr(1, closed="2026-09-03T10:00:00Z")]})
         with mock.patch.object(fetch_work, "gh_available", return_value=True):
             work = fetch_work.github_work(
                 "janedoe", REQUEST, run, pause=lambda seconds: None)
         self.assertEqual([(item["number"], item["date"]) for name in ("opened", "merged") for item in work[name]],
                          [(1, "2026-09-01"), (1, "2026-09-03")])
-        self.assertEqual(work["reviewed"], [{"repo": "acme/billing", "number": 2, "title": "PR 2",
-                                             "url": "https://github.com/acme/billing/pull/2", "date": "2026-09-05"}])
+        self.assertEqual(sorted(work), ["merged", "opened"])
         self.assertTrue(all(
             "--owner" in call and "acme" in call for call in run.calls if call[1] == "search"))
-        # The reviews of the candidates in one GraphQL call, not one each.
-        self.assertEqual(
-            sum(call[1:3] == ["api", "graphql"] for call in run.calls), 1)
 
     def test_links_pull_requests_to_their_issue(self):
         # A PR an issue's Development panel lists gets that issue, whatever
@@ -131,7 +111,7 @@ class FetchWorkTest(unittest.TestCase):
         client = FakeJira(
             {"12": [{"url": "https://GitHub.com/acme/billing/pull/1/"}]})
         github = {"opened": [{"url": "https://github.com/acme/billing/pull/1"},
-                             {"url": "https://github.com/acme/billing/pull/2"}], "merged": [], "reviewed": []}
+                             {"url": "https://github.com/acme/billing/pull/2"}], "merged": []}
         fetch_work.link_issues(github, fetch_work.linked_prs(
             client, fetch_work.jira_work(client, "a1", REQUEST)))
         self.assertEqual([item["issue"]
@@ -140,7 +120,7 @@ class FetchWorkTest(unittest.TestCase):
     def test_a_full_search_stops(self):
         # A search that fills its last page may be cut short.
         run = FakeGh({"--author": [pr(n)
-                     for n in range(fetch_work.SEARCH_LIMIT)]}, {})
+                     for n in range(fetch_work.SEARCH_LIMIT)]})
         with self.assertRaisesRegex(SystemExit, "most it returns in a month"):
             fetch_work.search(["--author", "janedoe", "--created", "2026-09-01..2026-09-30"],
                               "acme", run, pause=lambda seconds: None)
@@ -162,13 +142,17 @@ class FetchWorkTest(unittest.TestCase):
                               lambda command, **kwargs: refused, pause=lambda seconds: None)
 
     def test_fetch_records_absent_sources(self):
-        # A source the person isn't in is recorded as absent, and not fetched.
+        # A source the person isn't in is recorded as absent, and not fetched;
+        # the Notion pages already in work.json are kept, and its facts and
+        # commentary dropped, as they no longer match.
         folder = temp_output(self)
         write_prep(folder, identities={
-                   **IDENTITIES, "github-cli": {"absent": True}}, work=None)
+                   **IDENTITIES, "github-cli": {"absent": True}}, work=WORK)
         result = fetch_work.fetch(PREP, client=FakeJira())
         with open(result["path"], encoding="utf-8") as f:
-            self.assertEqual(json.load(f)["github"], {"absent": True})
+            work = json.load(f)
+        self.assertEqual((sorted(work), work["github"], work["notion"]),
+                         (["github", "jira", "notion"], {"absent": True}, WORK["notion"]))
         self.assertEqual(result["counts"], {
                          "jira.resolved": 1, "jira.open": 1})
 
@@ -177,13 +161,14 @@ class FetchWorkTest(unittest.TestCase):
         # issue, as work.json promises.
         write_prep(temp_output(self), identities={
                    **IDENTITIES, "jira-api": {"absent": True}}, work=None)
-        found = {"opened": [
-            {"url": "https://github.com/acme/billing/pull/1"}], "merged": [], "reviewed": []}
+        opened = {"repo": "acme/billing", "number": 1, "title": "PR 1",
+                  "url": "https://github.com/acme/billing/pull/1", "date": "2026-09-01"}
+        found = {"opened": [opened], "merged": []}
         with mock.patch.object(fetch_work, "github_work", lambda login, request, run: found):
             result = fetch_work.fetch(PREP)
         with open(result["path"], encoding="utf-8") as f:
             self.assertEqual(json.load(f)["github"]["opened"], [
-                             {"url": "https://github.com/acme/billing/pull/1", "issue": None}])
+                             {**opened, "issue": None}])
 
 
 if __name__ == "__main__":

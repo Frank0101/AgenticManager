@@ -101,7 +101,8 @@ CURRENT = [
     issue("PROJ-5", 2.0, "Done", ts(1), "Done"),
     issue("PROJ-6", 1.0, "Duplicate", ts(1), "Done", IMPORT),
     issue("PROJ-7", 1.0, "Blocked", ts(10, "11:00"), parent=EXPORT),
-    issue("PROJ-9", 1.0, "Done", ts(4), "Done", subtask=True),
+    issue("PROJ-9", 1.0, "Done", ts(4), "Done",
+          ("PROJ-1", "Work item PROJ-1", "20001"), subtask=True),
     issue("PROJ-10", 1.0, "Done", ts(1), "Done", IMPORT),
 ]
 REMOVED = [

@@ -239,14 +239,16 @@ def main():
         categories = status_categories(statuses)
         issues = sprint_issues + punted_issues
         standard = standard_issues(issues)
-        # Read in batches: a request for many issues, not one each.
-        changelogs = read_changelogs(client, issues,
+        # Read in batches: a request for many issues, not one each. Sub-tasks
+        # are left out, as the report leaves them out; a sub-task's parent is
+        # its story, not an epic.
+        changelogs = read_changelogs(client, standard,
                                      history_fields(flagged_field, points_field))
 
-        # Every epic: the issues' current parents, whose descriptions their own
+        # Every epic: the tickets' current parents, whose descriptions their own
         # fields don't carry, and those they belonged to before a change of
         # parent, which their fields no longer name.
-        parent_ids = sorted({str(parent_id) for i in issues
+        parent_ids = sorted({str(parent_id) for i in standard
                              if (parent_id := nested(i.get("fields"), ["parent", "id"]))}
                             | {str(c[side]) for changes in changelogs.values() for c in changes
                                if c["field"] == "parent" for side in ("from", "to") if c[side]})

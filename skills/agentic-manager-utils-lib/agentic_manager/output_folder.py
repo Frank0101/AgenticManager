@@ -1,12 +1,12 @@
 """The folder a skill writes its files to: <name> in the output root the user's
 config sets (output.root), or in <system temp>/agentic-manager if it sets none.
-output_folder() creates it if missing, and keeps what is already in it.
 
 As a script it prints the folder, so the agent knows it without reading the
-config, of which only output.root is read. A skill keeping a folder per
-subject names it with day_folder() and empties its place with clear_folder():
-a rerun for the same subject and day starts from scratch, and earlier days'
-folders, whose names can't clash, stay; the skill picks the day and the path.
+config. A skill keeping a folder per subject names it with day_folder() and
+empties its place with clear_folder(), so a rerun for the same day starts from
+scratch and earlier days' folders stay. A _ folder beside the runs, such as the
+kept examples, is the user's own: runs read it and none deletes it, and the
+description.md saying what it holds is named, written and read here.
 """
 import argparse
 import json
@@ -25,10 +25,7 @@ from agentic_manager.config import is_filled, load_config  # noqa: E402
 
 # Where skills write their files when the config sets no output root.
 TEMP_ROOT = os.path.join(tempfile.gettempdir(), "agentic-manager")
-# A folder beside the runs whose name starts with _, such as the kept examples,
-# is the user's own material: every run may read it and none deletes it. The
-# file that says what such a folder holds, such as an example or an image, is
-# named, written and read here, so every skill does it the same way.
+# The file that says what a _ folder holds.
 EXAMPLE_DESCRIPTION = "description.md"
 # The folder beside a skill's runs that holds the examples the user kept.
 KEPT_EXAMPLES = "_examples"

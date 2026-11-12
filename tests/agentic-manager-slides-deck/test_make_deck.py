@@ -39,6 +39,15 @@ class ProblemsTest(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(len(texts), 3)
 
+    def test_svg_fragment_urls_are_allowed(self):
+        # An SVG paint server, such as a gradient, is a url() to a fragment
+        # of the page itself, not a file.
+        data = content()
+        data["slides"][0] = slide("<svg><defs><linearGradient id='g'/></defs>"
+                                  "<rect style='fill: url(#g)' width='1' height='1'/></svg>")
+        data["style"] = [".a { fill: url(#g); }"]
+        self.assertEqual(make_deck.problems(data)[0], [])
+
     def test_problems_name_the_field(self):
         # Each case: a change to the fixture, and the problem it raises.
         def ring(**changes):
@@ -61,7 +70,7 @@ class ProblemsTest(unittest.TestCase):
             ("style as a string", lambda d: d.update(
                 {"style": ".a {}"}), "style: must be a list of lines"),
             ("style imports", lambda d: d.update(
-                {"style": ["@import url(x.css);"]}), "style: must not load remote files"),
+                {"style": ["@import url(x.css);"]}), "style: must not load files"),
             ("remote image in CSS", lambda d: d.update(
                 {"style": [".a { background: url('https://x/y.png'); }"]}), "style: must not load"),
             ("no slides", lambda d: d.update(
@@ -84,7 +93,17 @@ class ProblemsTest(unittest.TestCase):
             ("protocol-relative image", set_slide("<img src='//example.com/a.png'>"),
              "<img src> loads a remote file"),
             ("remote background", set_slide("<div style='background: url(http://x/y.png)'></div>"),
-             "<div style> loads a remote file"),
+             "<div style> loads a file"),
+            # A downloaded image used by its path, as a CSS background, would
+            # show with no credit and pass the check, which reads only links.
+            ("image by its path as a background",
+             set_slide(
+                 "<div style=\"background: url('../_assets/earth/image.jpg')\"></div>"),
+             "<div style> loads a file: an image goes in <img src='{{asset:<name>}}'>"),
+            ("image by its path in the style",
+             lambda d: d.update(
+                 style=[".hero { background: url(../_assets/earth/image.jpg); }"]),
+             "style: must not load files"),
             ("unknown token", set_slide("{{chart:sales}}"),
              "slides[0].html: {{chart:sales}} names no chart in `charts`"),
             ("stray braces", set_slide("<p>{{revenue}}</p>"),

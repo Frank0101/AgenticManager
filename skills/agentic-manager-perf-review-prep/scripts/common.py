@@ -1,11 +1,11 @@
 """What the skill's scripts share: the prep folder's name and the closed set of
-files it holds, how to find a prep's folder, the request a prep is built for,
-who the person is in each source, the parts every summary has, the manager's
-view, previous feedback, check-ins, the manager's notes, the person's work,
-Notion pages and Slack, and the period's months and days. The rules of each
-file are one function, applied when it is written and by the final check, so
-the two can't differ. Scripts import the shared library's names from here, so
-they don't depend on the order of their imports.
+files it holds, how to find a prep's folder, the request a prep is built for
+and its period's days and months, who the person is in each source, the parts
+every summary has, the manager's view, previous feedback, check-ins, the
+manager's notes, the person's work in Jira, GitHub and Notion, and their Slack
+messages. The rules of each file are one function, applied when it is written
+and by the final check, so the two can't differ. Scripts import the shared
+library's names from here, so they don't depend on the order of their imports.
 """
 from datetime import date, timedelta
 import json
@@ -26,7 +26,7 @@ from agentic_manager.output_file import read_json, target, write_output_file  # 
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
 from agentic_manager.output_folder import DAY_FOLDER, clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.period import add_period_arguments, period_problem, shown  # noqa: E402,F401
-from agentic_manager.text import as_name, word_count  # noqa: E402,F401
+from agentic_manager.text import as_name, display_date, word_count  # noqa: E402,F401
 
 # The skill's output folder, and a prep folder's files in it: the request the
 # manager confirmed, which every later step reads rather than being told again.
@@ -66,6 +66,7 @@ VALUED_PARTS = ("going_well", "to_improve")
 POINT_WORDS = 25
 MAX_POINT_WORDS = 40
 VALUES = "values"
+RATINGS = "perf-review-ratings"
 MAX_VALUES = 2
 SUMMARY_HELP = "\n".join(
     f"  {part:<11} {meaning}, each point "
@@ -99,31 +100,63 @@ CHECK_INS = "check-ins.json"
 # pattern one point with all its days; from the person's pages, only context,
 # which has no date. Read by subagents, a month of journals each, then merged.
 NOTES = "notes.json"
-# The person's work in the period from Jira and GitHub, fetched by a script:
-# the items themselves, each with its title, date and link, for the writing
-# step to cite, never metrics computed from them. A source the person isn't in
-# is {"absent": true}.
+# The person's work in the period, in Jira, GitHub and Notion: the items
+# themselves, each with its title, date and link, for the writing step to
+# cite. A source the person isn't in is {"absent": true}. Each source is
+# written by its own script, which keeps the others'. Once all are in, the
+# facts, counts by month and by area, are worked out from the items, once,
+# and a subagent's commentary on each source reads them: the figures are the
+# script's, the reading of them, volume, focus and how they shifted, the
+# commentary's. Notion's search filters by creation date but returns only the
+# last edit's, so a created page is dated by the range it was found in,
+# `between`, and an edited one by its last edit; `path` is where it sits.
 WORK = "work.json"
 WORK_LISTS = {"jira": ("resolved", "open"), "github": (
-    "opened", "merged", "reviewed")}
-# The person's Notion pages, created and last edited by them in the period,
-# found by the agent through the Notion MCP. Its search filters by creation
-# date but returns only the last edit's, so a created page is dated by the
-# range it was found in, `between`, and an edited one by its last edit.
-NOTION = "notion.json"
-NOTION_LISTS = ("created", "edited")
+    "opened", "merged"), "notion": ("created", "edited")}
+FACTS = "facts"
+COMMENTARY = "commentary"
+MAIN_AREAS = 3
+COMMENTARY_WORDS = 80
+MAX_COMMENTARY_WORDS = 120
 # What the person's Slack messages show, read by subagents a month each and
 # merged, every point with the days and links it rests on.
 SLACK = "slack.json"
-RATINGS = "perf-review-ratings"
+# What each reading by subagents gathered, the tasks they were given and what
+# they answered, a folder per source, kept so a summary can be traced back to
+# the notes and synopses it came from.
+RAW_DIR = "_raw"
 
 
 def expected_files():
     """Every file a prep folder holds, and nothing else: the request, who the
     person is in each source, the manager's view of them, their previous
-    feedback, their check-ins, the manager's notes on them, their work in
-    Jira and GitHub, their Notion pages and what their Slack messages show."""
-    return {REQUEST, IDENTITIES, ORIENTATION, FEEDBACK, CHECK_INS, NOTES, WORK, NOTION, SLACK}
+    feedback, their check-ins, the manager's notes on them, what their Slack
+    messages show, their work in Jira, GitHub and Notion, and the _raw folder
+    of what the subagents were shown and wrote."""
+    return {REQUEST, IDENTITIES, ORIENTATION, FEEDBACK, CHECK_INS, NOTES, SLACK, WORK, RAW_DIR}
+
+
+def write_raw(prep, relative, text):
+    """Writes `text` to the file `relative` of the prep `prep`'s _raw
+    folder, through the shared writer; returns its path."""
+    path, _ = write_output_file(
+        FOLDER_NAME, f"{prep}/{RAW_DIR}/{relative}", (text + "\n").encode("utf-8"))
+    return path
+
+
+def write_work(prep, sources, days):
+    """Writes the sources `sources`, such as {"notion": {...}}, to the prep
+    `prep`'s work.json, keeping the other sources there and dropping the
+    facts and commentary, which no longer match; returns the file's path.
+    Exits, writing nothing, when the work breaks a rule, `days` the
+    period's."""
+    path = os.path.join(prep_dir(prep), WORK)
+    work = read_json(path) if os.path.exists(path) else {}
+    work = {name: value for name, value in {
+        **work, **sources}.items() if name in WORK_LISTS}
+    if problems := work_problems(work, days, final=False):
+        raise SystemExit("; ".join(problems))
+    return write_prep_file(prep, WORK, work)
 
 
 def prep_dir(prep):
@@ -146,6 +179,15 @@ def write_prep_file(prep, name, value):
     path, _ = write_output_file(FOLDER_NAME, f"{prep}/{name}",
                                 (json.dumps(value, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
     return path
+
+
+def script_command(script):
+    """The command that runs the skill's script `script`, by the path the
+    agent ran it with, so every command a task names matches the one the
+    skill pre-approves."""
+    path = sys.argv[0] if sys.argv[0].endswith(script) else os.path.join(
+        os.path.dirname(os.path.realpath(__file__)), script)
+    return f"python3 {os.path.abspath(path)}"
 
 
 def stdin_json(usage):
@@ -183,6 +225,29 @@ def request_problems(request, today):
     if len(days) == 2 and (problem := period_problem(days["start"], days["end"], today)):
         problems.append(problem)
     return problems
+
+
+def period_days(request):
+    """Every day of the period of `request`, as YYYY-MM-DD."""
+    return days_between(request["start"], request["end"])
+
+
+def days_between(start, end):
+    """Every day from `start` to `end`, both as YYYY-MM-DD, as YYYY-MM-DD."""
+    first, last = date.fromisoformat(start), date.fromisoformat(end)
+    return [(first + timedelta(days=n)).isoformat() for n in range((last - first).days + 1)]
+
+
+def months_of(first, last):
+    """{YYYY-MM: {start, end}}: each month from `first` to `last`, its days
+    within them, as YYYY-MM-DD."""
+    months, day = {}, first
+    while day <= last:
+        following = (day.replace(day=28) + timedelta(days=4)).replace(day=1)
+        months[f"{day:%Y-%m}"] = {"start": day.isoformat(),
+                                  "end": min(last, following - timedelta(days=1)).isoformat()}
+        day = following
+    return months
 
 
 def identities_problems(identities):
@@ -249,8 +314,8 @@ def feedback_problems(feedback, request, ratings, values):
             problems.append(f"{what}'s rating, {piece['rating']!r}, must be one of the company's: "
                             f"{', '.join(ratings)}, or null when it gives none of them")
         if "end" in days and not earliest <= days["end"] <= latest:
-            problems.append(f"{what} ends on {days['end']:%d/%m/%Y}: only feedback that ends from "
-                            f"{earliest:%d/%m/%Y} to {latest:%d/%m/%Y} counts; leave it out")
+            problems.append(f"{what} ends on {display_date(days['end'])}: only feedback that ends from "
+                            f"{shown(earliest, latest)} counts; leave it out")
         return problems
     return pieces_problems(feedback, ("feedback", "feedback"), FEEDBACK_FIELDS, values, rules)
 
@@ -264,96 +329,9 @@ def check_ins_problems(check_ins, request, values):
 
     def rules(piece, days, what):
         if days.get("end", first) < first or days.get("start", last) > last:
-            return [f"{what} covers no day of the period, {first:%d/%m/%Y} to {last:%d/%m/%Y}: leave it out"]
+            return [f"{what} covers no day of the period, {shown(first, last)}: leave it out"]
         return []
     return pieces_problems(check_ins, ("check-ins", "check-in"), PIECE_DAYS, values, rules)
-
-
-def notes_problems(notes, values, days):
-    """Why `notes` aren't the summary of the manager's notes, empty when they
-    are: summary_problems() with `days`, the days of the notes read."""
-    return summary_problems(notes, "the notes summary", values, days)
-
-
-def slack_problems(slack, values, days):
-    """Why `slack` isn't the summary of the person's Slack messages, empty
-    when it is: summary_problems() with `days`, every day of the period, and
-    every point linked."""
-    return summary_problems(slack, "the Slack summary", values, days, linked=True)
-
-
-def work_problems(work, days):
-    """Why `work` isn't the person's work in Jira and GitHub, empty when it
-    is: for each source of WORK_LISTS, {"absent": true}, or its lists, each
-    item an object with a title, a link and, but for open issues, a date,
-    one of `days`."""
-    if not (isinstance(work, dict) and sorted(work) == sorted(WORK_LISTS)):
-        return [f"the work must have {', '.join(WORK_LISTS)}"]
-    problems = []
-    for source, lists in WORK_LISTS.items():
-        found = work[source]
-        if found == ABSENT:
-            continue
-        if not (isinstance(found, dict) and sorted(found) == sorted(lists)
-                and all(isinstance(found[name], list) for name in lists)):
-            problems.append(f"the work's {source} must have the lists {', '.join(lists)}, or be "
-                            '{"absent": true}')
-            continue
-        for name in lists:
-            problems += [f"the work's {source} {name}: {item!r:.80} needs a title, a link and a day in the period"
-                         for item in found[name] if not _is_item(item, days, dated=name != "open")]
-    return problems
-
-
-def notion_problems(notion, days):
-    """Why `notion` isn't the person's Notion pages, empty when it is:
-    {"absent": true}, or NOTION_LISTS, each a list of pages listed once,
-    each an object with a title and a link, and, created, `between`, the
-    first and last day of the range it was found in, or, edited, a date,
-    each one of `days`."""
-    if notion == ABSENT:
-        return []
-    if not (isinstance(notion, dict) and sorted(notion) == sorted(NOTION_LISTS)
-            and all(isinstance(notion[name], list) for name in NOTION_LISTS)):
-        return ['the Notion pages must be {"created": [...], "edited": [...]}, or {"absent": true}']
-    problems = []
-    for name in NOTION_LISTS:
-        problems += [f"the Notion pages {name}: {page!r:.80} needs a title, a link and "
-                     + ("the range it was found in, within the period" if name ==
-                        "created" else "a day in the period")
-                     for page in notion[name] if not (_is_item(page, days, dated=name != "created") and (
-                         name != "created" or (isinstance(page.get("between"), list) and len(page["between"]) == 2
-                                               and all(day in days for day in page["between"]))))]
-        urls = [page.get("url")
-                for page in notion[name] if isinstance(page, dict)]
-        problems += [f"the Notion pages {name} list {url} more than once" for url in sorted(set(urls), key=str)
-                     if urls.count(url) > 1]
-    return problems
-
-
-def _is_item(item, days, dated):
-    """Whether `item` is an object with a title, a link and, when `dated`, a
-    date, one of `days`."""
-    return (isinstance(item, dict) and _is_text(item.get("title")) and str(item.get("url", "")).startswith("https://")
-            and (not dated or item.get("date") in days))
-
-
-def months_of(first, last):
-    """{YYYY-MM: {start, end}}: each month from `first` to `last`, its days
-    within them, as YYYY-MM-DD."""
-    months, day = {}, first
-    while day <= last:
-        following = (day.replace(day=28) + timedelta(days=4)).replace(day=1)
-        months[f"{day:%Y-%m}"] = {"start": day.isoformat(),
-                                  "end": min(last, following - timedelta(days=1)).isoformat()}
-        day = following
-    return months
-
-
-def days_between(start, end):
-    """Every day from `start` to `end`, both as YYYY-MM-DD, as YYYY-MM-DD."""
-    first, last = date.fromisoformat(start), date.fromisoformat(end)
-    return [(first + timedelta(days=n)).isoformat() for n in range((last - first).days + 1)]
 
 
 def pieces_problems(value, names, fields, values, rules):
@@ -392,7 +370,7 @@ def pieces_problems(value, names, fields, values, rules):
         if days["start"] > days["end"]:
             problems.append(f"{what} starts after it ends")
         periods.append((days["start"], days["end"]))
-    problems += [f"two pieces of the {kind} cover {start:%d/%m/%Y} to {end:%d/%m/%Y}: record each once"
+    problems += [f"two pieces of the {kind} cover {shown(start, end)}: record each once"
                  for start, end in sorted(set(periods)) if periods.count((start, end)) > 1]
     return problems
 
@@ -412,6 +390,156 @@ def earliest_feedback_end(request):
         return start.replace(year=start.year - FEEDBACK_YEARS)
     except ValueError:
         return start.replace(year=start.year - FEEDBACK_YEARS, day=28)
+
+
+def notes_problems(notes, values, days):
+    """Why `notes` aren't the summary of the manager's notes, empty when they
+    are: summary_problems() with `days`, every day of the period."""
+    return summary_problems(notes, "the notes summary", values, days)
+
+
+def slack_problems(slack, values, days):
+    """Why `slack` isn't the summary of the person's Slack messages, empty
+    when it is: summary_problems() with `days`, every day of the period, and
+    every point linked."""
+    return summary_problems(slack, "the Slack summary", values, days, linked=True)
+
+
+def work_problems(work, days, final=True):
+    """Why `work` isn't the person's work, empty when it is: for each source
+    of WORK_LISTS, {"absent": true} or its lists, each item an object with a
+    title, a link and a date, one of `days`, but an open issue, undated, and
+    a created Notion page, `between`, two of them, a Notion page with its
+    path too, and listed once; then facts that match the items, and a
+    commentary. Unless `final`, a source not yet gathered, the facts and the
+    commentary may be missing."""
+    keys = [*WORK_LISTS, FACTS, COMMENTARY]
+    if not (isinstance(work, dict) and set(work) <= set(keys)):
+        return [f"the work may hold only {', '.join(keys)}"]
+    if final and (missing := [key for key in keys if key not in work]):
+        return [f"the work is missing {', '.join(missing)}"]
+    problems = []
+    for source, lists in WORK_LISTS.items():
+        found = work.get(source, ABSENT)
+        if found == ABSENT:
+            continue
+        if not (isinstance(found, dict) and sorted(found) == sorted(lists)
+                and all(isinstance(found[name], list) for name in lists)):
+            problems.append(f"the work's {source} must have the lists {', '.join(lists)}, or be "
+                            '{"absent": true}')
+            continue
+        for name in lists:
+            problems += [f"the work's {source} {name}: {item!r:.80} needs a title, a link"
+                         + (", its path" if source == "notion" else "")
+                         + (" and the range it was found in, within the period" if name == "created"
+                            else "" if name == "open" else " and a day in the period")
+                         for item in found[name] if not _is_work_item(source, name, item, days)]
+            urls = [item.get("url")
+                    for item in found[name] if isinstance(item, dict)]
+            problems += [f"the work's {source} {name} lists {url} more than once"
+                         for url in sorted(set(urls), key=str) if urls.count(url) > 1]
+    if problems:
+        return problems
+    if FACTS in work and work[FACTS] != work_facts(work, days):
+        problems.append(
+            "the work's facts don't match its items: run work_commentary.py start again")
+    if COMMENTARY in work:
+        problems += commentary_problems(work[COMMENTARY], work)
+    return problems
+
+
+def _is_work_item(source, name, item, days):
+    """Whether `item` of the list `name` of `source` follows its rules."""
+    if name == "created":
+        return (_is_item(item, days, dated=False) and isinstance(item.get("path"), str)
+                and isinstance(item.get("between"), list) and len(item["between"]) == 2
+                and all(day in days for day in item["between"]))
+    return _is_item(item, days, dated=name != "open") and (source != "notion" or isinstance(item.get("path"), str))
+
+
+def _is_item(item, days, dated):
+    """Whether `item` is an object with a title, a link and, when `dated`, a
+    date, one of `days`."""
+    return (isinstance(item, dict) and _is_text(item.get("title")) and str(item.get("url", "")).startswith("https://")
+            and (not dated or item.get("date") in days))
+
+
+def work_facts(work, days):
+    """The facts of the work `work` in the period of `days`, for each source
+    the person is in, else null: by_month, each month's count of each list,
+    open issues aside as they have no date, of areas, how many it touched,
+    and main_areas, the MAIN_AREAS it touched most, each with its count of
+    items, so a shift in focus shows by month; and by_area, each area's count of each list, most first. An
+    issue's area is its parent, "no parent" when it has none; a pull
+    request's, its issue's, or its repository when no issue lists it; a
+    Notion page's, where it sits."""
+    months = sorted({day[:7] for day in days})
+    issues = {item["key"]: item for name in WORK_LISTS["jira"]
+              for item in ({} if work["jira"] == ABSENT else work["jira"]).get(name, [])}
+
+    def parent_area(issue):
+        parent = issue.get("parent")
+        return ("no parent", None, None) if not parent else (parent["type"], parent["key"], parent["title"])
+
+    def area(source, item):
+        if source == "jira":
+            return parent_area(item)
+        if source == "notion":
+            return ("location", None, item["path"] or None)
+        issue = issues.get(item.get("issue") or "")
+        return ("repository", None, item["repo"]) if issue is None else parent_area(issue)
+
+    def month(name, item):
+        return (item["between"][0] if name == "created" else item["date"])[:7]
+
+    facts = {}
+    for source, lists in WORK_LISTS.items():
+        if work[source] == ABSENT:
+            facts[source] = None
+            continue
+        dated = [name for name in lists if name != "open"]
+        by_month = []
+        for this in months:
+            items = [(name, item) for name in dated for item in work[source]
+                     [name] if month(name, item) == this]
+            touched = {}
+            for _, item in items:
+                touched[area(source, item)] = touched.get(
+                    area(source, item), 0) + 1
+            by_month.append({"month": this, **{name: sum(1 for n, _ in items if n == name) for name in dated},
+                             "areas": len(touched),
+                             "main_areas": [{"area": title or key or kind, "items": count}
+                                            for (kind, key, title), count in sorted(
+                                                touched.items(), key=lambda pair: (-pair[1], str(pair[0])))[:MAIN_AREAS]]})
+        counts = {}
+        for name in lists:
+            for item in work[source][name]:
+                counts.setdefault(area(source, item), dict.fromkeys(lists, 0))[
+                    name] += 1
+        by_area = [{"kind": kind, "key": key, "title": title, **numbers}
+                   for (kind, key, title), numbers in sorted(counts.items(),
+                                                             key=lambda pair: (-sum(pair[1].values()), str(pair[0])))]
+        facts[source] = {"by_month": by_month, "by_area": by_area}
+    return facts
+
+
+def commentary_problems(commentary, work):
+    """Why `commentary` isn't the commentary on the work `work`, empty when
+    it is: for each source of WORK_LISTS, a text of at most
+    MAX_COMMENTARY_WORDS words, or null for a source the person isn't in."""
+    if not (isinstance(commentary, dict) and sorted(commentary) == sorted(WORK_LISTS)):
+        return [f"the commentary must have {', '.join(WORK_LISTS)}"]
+    problems = []
+    for source in WORK_LISTS:
+        text = commentary[source]
+        if work.get(source) == ABSENT:
+            if text is not None:
+                problems.append(
+                    f"the commentary's {source} must be null: the person isn't in it")
+        elif not _is_text(text) or word_count(text) > MAX_COMMENTARY_WORDS:
+            problems.append(f"the commentary's {source} must be a paragraph of about {COMMENTARY_WORDS} words, "
+                            f"at most {MAX_COMMENTARY_WORDS}")
+    return problems
 
 
 def summary_problems(summary, what, values, days=None, linked=False):

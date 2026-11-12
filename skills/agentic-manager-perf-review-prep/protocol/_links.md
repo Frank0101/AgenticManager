@@ -4,4 +4,4 @@ Follow a link to a Jira ticket, a GitHub pull request, a Notion page or a Slack 
 - GitHub: `gh pr view <url> --comments`.
 - Notion and Slack: their MCPs' tools to read a page, a message or a thread.
 
-Ignore links to anything else. Never record customer personal data, such as names, contact details or account details, that a linked item may hold.
+Ignore links to anything else.

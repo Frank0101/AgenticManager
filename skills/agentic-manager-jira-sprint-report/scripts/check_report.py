@@ -18,7 +18,7 @@ from common import (HEADING, INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORD
                     BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, JIRA_CELL, KEY_LIST, STATUS_HEADING,
                     TICKET_ESTIMATE,
                     TICKET_EVENT_TYPES,
-                    NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai, text_rule_problems,
+                    NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai, sprint_key, text_rule_problems,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty,
                     ratio, report_file, report_timezone, scope_group_label, spell_epic, whole_percentage, word_count,
                     latest_points)
@@ -61,7 +61,7 @@ def run_checks(md, data, report_dir):
     check_timeline(c, tables.get("timeline"), data)
     check_epics(c, tables.get("epics"), data)
     check_status_section(c, md, tables.get("status"), data)
-    check_style(c, md)
+    check_style(c, md, data)
     check_vocabulary(c, md, data)
     return c
 
@@ -714,6 +714,26 @@ def epic_figures(data):
             for key, scopes in estimates.items()}
 
 
+def check_epic_commentary(c, epic, cell, status):
+    """The labels of the groups the epic has tickets to describe in, in order
+    and a blank line apart; "–" if there are none. The sentences are the
+    agent's, checked when the report is written."""
+    labels = [scope_group_label(g, status) for g in epic_groups(epic)]
+    if not labels:
+        c.check(cell.strip() == "–", "epics",
+                f"{epic['key']} has no scope to describe, so its commentary is –")
+        return
+    lines = [re.match(r"<b>([^<]+):</b> (.+)", line.strip())
+             for line in cell.split("<br><br>")]
+    found = [m.group(1) if m else None for m in lines]
+    c.check(found == labels, "epics",
+            f"{epic['key']} commentary has {', '.join(labels)} (got {found})")
+
+
+def cells_of(row):
+    return re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S)
+
+
 def check_status_section(c, md, table, data):
     """The Status to Verify section sits above the retro notes and shows the
     model's rows in order, each under its epic, with its status and its
@@ -758,41 +778,22 @@ def check_status_section(c, md, table, data):
                 f"{row['key']} shows {', '.join(counts)}")
 
 
-def check_epic_commentary(c, epic, cell, status):
-    """The labels of the groups the epic has tickets to describe in, in order
-    and a blank line apart; "–" if there are none. The sentences are the
-    agent's, checked when the report is written."""
-    labels = [scope_group_label(g, status) for g in epic_groups(epic)]
-    if not labels:
-        c.check(cell.strip() == "–", "epics",
-                f"{epic['key']} has no scope to describe, so its commentary is –")
-        return
-    lines = [re.match(r"<b>([^<]+):</b> (.+)", line.strip())
-             for line in cell.split("<br><br>")]
-    found = [m.group(1) if m else None for m in lines]
-    c.check(found == labels, "epics",
-            f"{epic['key']} commentary has {', '.join(labels)} (got {found})")
-
-
-def cells_of(row):
-    return re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S)
-
-
 def cells_with_attributes(row):
     """[(attributes, content)] of a row's <td> cells."""
     return re.findall(r"<td([^>]*)>(.*?)</td>", row, re.S)
 
 
-def check_style(c, md):
+def check_style(c, md, data):
     generated = generated_text(md)
     c.check("—" not in generated, "em dashes", "none in generated text")
     iso = dict(text_rule_problems(generated)).get(DATE_RULE, [])
     c.check(not iso, "dates", f"{DATE_RULE} {iso[:3] or ''}".strip())
-    # The title is plain text; every other key, including copied fields, is linked.
+    # The title is plain text; every other key of the sprint's projects,
+    # including copied fields, is linked.
     md = TITLE.sub("", md)
     stripped = INLINE_LINK.sub("", md)
     stripped = re.sub(r"<a\s[^>]*>.*?</a>", "", stripped, flags=re.S)
-    unlinked = sorted(set(ISSUE_KEY.findall(stripped)))
+    unlinked = sorted(set(sprint_key(data).findall(stripped)))
     c.check(not unlinked, "links",
             f"every Jira key is linked (unlinked: {unlinked[:5] or 'none'})")
 

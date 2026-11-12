@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import IDENTITIES, NOTE, NOTES, ORIENTATION, PIECE, PREP, REQUEST, temp_output, write_prep  # noqa: E402
+from prep_fixture import IDENTITIES, NOTE, NOTES, ORIENTATION, PIECE, PREP, REQUEST, SLACK, WORK_FACTS, WORK_ITEMS, temp_output, write_prep  # noqa: E402
 
 TODAY = date(2026, 11, 10)
 VALUE_NAMES = ["Ownership", "Teamwork"]
@@ -259,6 +259,52 @@ class CommonTest(unittest.TestCase):
             "2026-08": {"start": "2026-08-10", "end": "2026-08-31"},
             "2026-09": {"start": "2026-09-01", "end": "2026-09-30"},
             "2026-10": {"start": "2026-10-01", "end": "2026-10-03"}})
+
+    def test_period_days(self):
+        # Every day of the period, its first and last too.
+        days = common.period_days(REQUEST)
+        self.assertEqual((days[0], days[1], days[-1], len(days)),
+                         ("2026-08-10", "2026-08-11", "2026-11-10", 93))
+
+    def test_slack_problems(self):
+        # Every point, context too, has its days and links.
+        days = common.period_days(REQUEST)
+        self.assertEqual(common.slack_problems(SLACK, VALUE_NAMES, days), [])
+        unlinked = {**SLACK, "context": [{**SLACK["context"][0], "links": []}]}
+        self.assertIn("must be a list of points", " ".join(
+            common.slack_problems(unlinked, VALUE_NAMES, days)))
+
+    def test_work_facts(self):
+        # name: (the work, the facts expected): a pull request's area is its
+        # issue's parent, "no parent" when the issue has none, or its
+        # repository when no issue lists it; most work first.
+        days = common.period_days(REQUEST)
+        pr = {"repo": "acme/billing", "title": "PR", "date": "2026-09-02"}
+        github = {"opened": [{**pr, "number": 1, "url": "https://github.com/acme/billing/pull/1", "issue": "PROJ-12"},
+                             {**pr, "number": 2, "url": "https://github.com/acme/billing/pull/2",
+                                 "issue": "PROJ-13"},
+                             {**pr, "number": 3, "url": "https://github.com/acme/billing/pull/3", "issue": None,
+                              "date": "2026-10-01"}],
+                  "merged": [{**pr, "number": 1, "url": "https://github.com/acme/billing/pull/1", "issue": "PROJ-12"}]}
+        months = [{"month": "2026-08", "opened": 0, "merged": 0, "areas": 0, "main_areas": []},
+                  {"month": "2026-09", "opened": 2, "merged": 1, "areas": 2,
+                   "main_areas": [{"area": "Billing", "items": 2}, {"area": "no parent", "items": 1}]},
+                  {"month": "2026-10", "opened": 1, "merged": 0, "areas": 1,
+                   "main_areas": [{"area": "acme/billing", "items": 1}]},
+                  {"month": "2026-11", "opened": 0, "merged": 0, "areas": 0, "main_areas": []}]
+        cases = [("the fixture", WORK_ITEMS, WORK_FACTS),
+                 ("pull requests", {**WORK_ITEMS, "github": github}, {**WORK_FACTS, "github": {
+                     "by_month": months,
+                     "by_area": [{"kind": "Epic", "key": "PROJ-1", "title": "Billing", "opened": 1, "merged": 1},
+                                 {"kind": "no parent", "key": None,
+                                     "title": None, "opened": 1, "merged": 0},
+                                 {"kind": "repository", "key": None, "title": "acme/billing", "opened": 1,
+                                  "merged": 0}]}}),
+                 ("nothing", {"jira": {"absent": True}, "github": {"absent": True}, "notion": {"absent": True}},
+                  {"jira": None, "github": None, "notion": None})]
+        for name, work, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(common.work_facts(work, days), expected)
 
     def test_prep_dir(self):
         folder = temp_output(self)

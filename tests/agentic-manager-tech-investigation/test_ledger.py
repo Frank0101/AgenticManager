@@ -165,6 +165,22 @@ class RowsTest(LedgerCase):
         self.assertIn("| full | F01, F02 | None |", text)
         self.assertEqual(check_report.source_finding_problems(self.text()), [])
 
+    def test_a_name_like_an_id_cites_no_source(self):
+        # "S3" in a Sources cell is a name, such as a product's, not S03: only
+        # an ID of two digits or more cites a source, in the Findings the
+        # script writes and in the check.
+        self.records("S01", "S03")
+        self.write(
+            ("findings", "F01", ["One.", "[[S01]] (the S3 bucket policy)", "read"]))
+        findings = {row[0]: row[ledger.SOURCE_FINDINGS_COLUMN]
+                    for row in ledger.table_rows(self.lines(), "sources")}
+        self.assertEqual(findings["S03"], "None")
+        # The check reports S03 listing F01 by hand.
+        listed = "\n".join(line.replace("| None | None |", f"| {c('F01')} | None |")
+                           if line.startswith('| <a id="s03"></a>') else line for line in self.lines())
+        self.assertEqual(check_report.source_finding_problems(listed),
+                         ["S03 lists F01, its findings are none"])
+
     def test_a_record_still_cited_is_reported(self):
         # Leaving out a design row still cited elsewhere would leave a citation
         # of a record that isn't there.

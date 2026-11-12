@@ -6,7 +6,7 @@ allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/age
 
 # Sprint Report
 
-Writes a short, exec-ready report of one Jira sprint, closed or still running. Scripts generate everything but the parts marked [AI Gen.]: figures, tables, charts, the timeline and its commentary, and the tickets whose status their pull requests contradict. You write only those parts, in `content.json` (step 2).
+Writes a short, exec-ready report of one Jira sprint, closed or still running. Scripts generate the figures, tables, charts, the timeline and its commentary, and the tickets whose status their pull requests contradict: everything but the parts marked [AI Gen.]. You write only those parts, in `content.json` (step 2).
 
 The report's files go to the `jira-sprint-reports` folder of the user's configured output root (`output.root`), or to a temporary folder if none is set. The scripts choose the folder; don't pass one.
 
@@ -79,7 +79,7 @@ Work out the goal themes first: several fields use them, so match tickets to the
 
 **`blockers_risks`**: one paragraph of at most 100 words on the commitment still open: tickets with `scope` `original` in the `in_review` and `not_completed` groups. Group them by goal theme, then by epic, and say what the open work holds back. Give a reason only where a comment states one ("under discussion with Security"), and say when a ticket is flagged. If nothing from the commitment is open, say so.
 
-**`retro_notes`**: 1 to 5 notes for the team's retro, each a fact followed by a question ending with "?". Look across `report_facts` and the brief, including `carried_in` tickets that are still open, for what most departed from the plan and what the team can learn from it: patterns between epics, the timeline commentary and the goal, not only the largest figure. Quote figures word for word from `report_facts`, and name tickets as `KEY (N pts)` with the brief's `points`; don't derive new figures. Frame causes as questions, never as findings the data can't show.
+**`retro_notes`**: 1 to 5 notes for the team's retro, each a fact followed by a question ending with "?". Look across `report_facts` and the brief, including `carried_in` tickets that are still open, for what most departed from the plan and what the team can learn from it: patterns between epics, the timeline commentary and the goal, not only the largest figure. Quote figures word for word from `report_facts`, and name tickets as `KEY (N pts)` with their `points` under `epics`, their latest estimate; don't derive new figures. Frame causes as questions, never as findings the data can't show.
 
 Rules for all of it. `finish_report.py` rejects text that breaks the wording and format rules, naming the field; it can't tell whether a figure is quoted, whether the text stays within what the tickets say, or whether it carries customer data or names a colleague, so you are the only guard for those:
 

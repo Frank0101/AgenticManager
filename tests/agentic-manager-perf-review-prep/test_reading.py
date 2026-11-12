@@ -13,11 +13,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import reading  # noqa: E402
+sys.path.insert(0, TEST_DIR)
+from prep_fixture import DELAY, PRESENTED  # noqa: E402
 
-PRESENTED = {
-    "note": 1, "synopsis": "Presented the migration to the team, who asked for the slides; Jane shared them"}
-DELAY = {"note": 2,
-         "synopsis": "Didn't flag a delay until asked, the second time this month"}
 MESSAGE = {"date": "2026-08-20", "link": "https://acme.slack.com/archives/C1/p1",
            "synopsis": "In a cross-team channel, posted the billing rollout plan; three people asked follow-ups"}
 

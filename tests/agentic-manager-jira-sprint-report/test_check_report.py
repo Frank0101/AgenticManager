@@ -153,13 +153,25 @@ class ChecksTest(unittest.TestCase):
                  "a goal over several lines": ({"sprint_goal": "Ship login\nFix PROJ-1 | export"}, "Partially met"),
                  "literal HTML and entities": ({"sprint_goal": "Ship <beta> & preserve &amp;\nFix PROJ-1 | export"},
                                                "Partially met"),
-                 "no previous sprint": ({"previous_sprint": None}, "Partially met")}
+                 "no previous sprint": ({"previous_sprint": None}, "Partially met"),
+                 # A word shaped like a key, outside the sprint's projects, stays a word.
+                 "a goal with a word like a key": ({"sprint_goal": "Export: handle UTF-8 file names"},
+                                                   "Partially met")}
         for name, (changes, verdict) in cases.items():
             with self.subTest(name):
                 data = sprint_data(**changes)
                 md = Report(data, {**content_for(data),
                             "goal_verdict": verdict}).build()
                 self.assertEqual(self.failures(md, data), [])
+                self.assertNotIn("[UTF-8](", md)
+
+    def test_only_the_sprints_keys_must_be_linked(self):
+        # UTF-8 and OTHER-2 only look like keys: the sprint's projects are PROJ's.
+        c = check_report.Checker()
+        check_report.check_style(
+            c, "PROJ-1 handles UTF-8, like OTHER-2.", self.data)
+        self.assertEqual([f for f in c.failures if f.startswith("links:")],
+                         ["links: every Jira key is linked (unlinked: ['PROJ-1'])"])
 
     def test_scenarios_pass_and_their_breakages_fail(self):
         # Sprints unlike the fixture: the generated report passes the checks

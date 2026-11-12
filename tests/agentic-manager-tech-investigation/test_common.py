@@ -568,9 +568,9 @@ class LedgerRulesTest(unittest.TestCase):
         findings = common.table(common.FINDING_HEADER, [
             ["F01", "One.", "S01 (lines 1-9); [S02](#s02)",
              "Read."], ["F02", "Two.", "F01", "Inferred."],
-            ["F03", "Three.", "S02", "Read."]])
+            ["F03", "Three.", "S02 (the S3 bucket)", "Read."]])
         self.assertEqual(common.cited_sources(f"## Findings\n\n{findings}\n"),
-                         {1: {"F01"}, 2: {"F01", "F03"}})
+                         {"S01": {"F01"}, "S02": {"F01", "F03"}})
 
     def test_how_a_question_closes_and_the_scope_boundaries(self):
         # A question closes on the findings that answer it, never on a gap, a
@@ -614,6 +614,42 @@ class LedgerRulesTest(unittest.TestCase):
         for name, problem, accepted in cases:
             with self.subTest(name):
                 self.assertEqual(problem is None, accepted, problem)
+
+    def test_each_table_meets_its_rules(self):
+        # A row is checked by the rules of its own table, given the ledger's
+        # evidence and the blocked questions: S01 is read in part, U01 leaves
+        # its topic out, Q03 is blocked.
+        evidence = {"findings": {}, "sources": {"S01": source_row(coverage="listing")}, "components": {},
+                    "connections": {}, "scope": {"U01": "exclude"}, "definitions": {}}
+        # (table, row, the problem's text, or None)
+        cases = [("findings", ["F01", "A claim.", "S01", "None"], "F01: cites S01, read only in part"),
+                 ("findings", ["F01", "A claim.", "the code",
+                  "None"], "Sources names the sources"),
+                 ("gaps", ["G01", "Gap", "Not done yet",
+                  "Owner", "F01"], "is blocked by"),
+                 ("gaps", ["G01", "Gap", "No access",
+                  "Owner", "None"], "G01: Evidence names"),
+                 ("decisions", ["D01", "Decision", "Position",
+                  "Owner", "None"], "D01: Evidence names"),
+                 ("scope", ["U02", "Billing", "maybe", "Q07"],
+                  "U02: Decision is one of"),
+                 ("sources", source_row(reference="src/app.py"),
+                  "S01: link the Reference"),
+                 ("queue-completed", ["Q07", "T", "Read the code", "None",
+                                      "Outside the scope decided in U01"], None),
+                 ("queue-completed", ["Q07", "T", "Read the code",
+                  "None", "G01"], "Q07: a completed question"),
+                 ("queue-blocked", ["Q09", "T",
+                  "Read the code", "Q03", "None"], None),
+                 ("queue-blocked", ["Q09", "T", "Read the code",
+                  "Q04", "None"], "Q09: a blocked question"),
+                 ("components", ["X01", "API", "service", "B01", "Serves", "None", "Live", "Yes", "F01"],
+                  "X01: State starts with one of"),
+                 ("a table with no row rules", ["Q01", "T", "Read the code", "None", "None"], None)]
+        for table, row, expected in cases:
+            with self.subTest(table=table, row=row):
+                assert_problem(self, common.row_problem(
+                    table, row, evidence, {"Q03"}), expected)
 
     def test_a_blocked_question_names_what_blocks_it(self):
         # Q03 is blocked; Q04 is still open, so it blocks nothing.

@@ -11,7 +11,7 @@ import argparse
 import os
 
 from common import (BRIEF_FILE, DATA_FILE, SCOPE_GROUPS, allowed_verdicts, chunks, display_date,
-                    epic_title, link_text, read_json, spell_epic, write_json)
+                    epic_title, latest_points, link_text, read_json, spell_epic, write_json)
 from make_report import Report
 
 
@@ -24,6 +24,7 @@ def build_brief(data):
     sprint's work, but goal_tickets holds every ticket of the commitment, that
     work included, so each goal theme has its full denominator."""
     comments = data["blocker_comments"]
+    latest = latest_points(data["spells"])
     epics = []
     for epic in data["epics"]:
         tickets = []
@@ -34,7 +35,10 @@ def build_brief(data):
                     # Still in the previous sprint when it closed, so the
                     # agent sees work that spans sprints, as the charts do.
                     "carried_in": ticket["carriedIn"],
-                    **{k: ticket[k] for k in ("scope", "points", "status", "flagged", "summary")},
+                    # Its latest estimate, the one the retro notes name it
+                    # with, whichever of its stays this is.
+                    **{k: ticket[k] for k in ("scope", "status", "flagged", "summary")},
+                    "points": latest[ticket["key"]],
                     **first_chunk(ticket["description"]),
                     **({"comments": brief_comments(comments[ticket["key"]])} if ticket["key"] in comments else {}),
                 })

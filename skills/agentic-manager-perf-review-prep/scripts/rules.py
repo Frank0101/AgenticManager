@@ -2,23 +2,23 @@
 
 The values and ratings are read from the config here, so the agent learns
 them from what this prints rather than from the config; they hold no
-secrets. One command serves every step that summarises, so each links points
-to the same values.
+secrets. One command serves every step that summarises, so every step's
+points name the same values.
 """
 import argparse
 import json
 import os
 
-from common import (RATINGS, REQUEST, SUMMARY_PARTS, VALUED_PARTS, VALUES, company_setting, earliest_feedback_end,
-                    prep_dir, read_json)
+from common import (FEEDBACK_YEARS, RATINGS, REQUEST, SUMMARY_PARTS, VALUED_PARTS, VALUES, company_setting,
+                    earliest_feedback_end, prep_dir, read_json)
 
-OUTPUT = """Prints one line of JSON:
+OUTPUT = f"""Prints one line of JSON:
   parts          each part of a summary, with what it holds
   valued_parts   the parts whose points each name the company values they show
   values         the company's values: value and meaning
   ratings        the company's ratings, lowest first: rating and meaning
   earliest_end   the first day dated previous feedback may end on,
-                 YYYY-MM-DD, 2 years before the period starts: older feedback
+                 YYYY-MM-DD, {FEEDBACK_YEARS} years before the period starts: older feedback
                  is left out, and undated feedback is never checked
 """
 

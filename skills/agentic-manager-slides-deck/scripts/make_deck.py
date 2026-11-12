@@ -19,7 +19,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import TypeIs
 
-from common import (CHART_JS, ELEMENT_ID, FOLDER_NAME, PAGE, REMOTE, SLIDE_HEIGHT, SLIDE_WIDTH,
+from common import (CHART_JS, ELEMENT_ID, FOLDER_NAME, PAGE, SLIDE_HEIGHT, SLIDE_WIDTH,
                     SLIDES, TOKEN, URL_ATTRIBUTES, VOID, asset_link, asset_names, credit_line, credits,
                     deck_dir, deck_file, link_kind, placed_images, read_json, write_output_file)
 import check_deck
@@ -37,9 +37,11 @@ CLASS_NAMES = re.compile(r"-?[A-Za-z_][\w-]*(?: -?[A-Za-z_][\w-]*)*")
 # Elements a slide can't hold: they load code or styles, or belong to the page.
 FORBIDDEN = {"script", "style", "link", "meta", "base", "iframe", "object", "embed", "frame", "frameset",
              "html", "head", "body", "title"}
-# CSS that loads a remote file.
-REMOTE_CSS = re.compile(
-    r"url\(\s*['\"]?\s*" + REMOTE.pattern + "|@import", re.I)
+# CSS that loads a file: a url() to anything but inline data or a fragment of
+# the page, such as an SVG gradient, or an @import. An image goes in an <img>,
+# whose link the check sees and the credits list, never in a CSS background.
+CSS_URL = re.compile(r"""url\(\s*['"]?\s*([^'")\s]*)""", re.I)
+IMAGE_IN_IMG = "an image goes in <img src='{{asset:<name>}}'>"
 # An image token as the whole value of an attribute that links an image: the
 # one place the page's links, and so the check, can see it.
 PLACED_ASSET = re.compile(
@@ -246,8 +248,8 @@ def problems(content, assets=frozenset()):
     if not isinstance(title, str) or not title.strip() or "\n" in title:
         errors.append("title: must be one nonempty line")
     style = lines(content.get("style", []), "style", errors, required=False)
-    if style and (REMOTE_CSS.search(style) or re.search(r"</style", style, re.I)):
-        errors.append("style: must not load remote files (url() of a remote file or @import) "
+    if style and (css_loads_file(style) or re.search(r"</style", style, re.I)):
+        errors.append(f"style: must not load files (a url() of a file, or @import), {IMAGE_IN_IMG}, "
                       "or close the style element")
     if style and TOKEN.search(style):
         errors.append(
@@ -311,6 +313,13 @@ def problems(content, assets=frozenset()):
             errors.append(f"{kind}s.{ident}: must be placed exactly once, as {{{{{kind}:{ident}}}}} "
                           f"in a slide's html, not {count} times")
     return errors, texts
+
+
+def css_loads_file(css):
+    """Whether the CSS `css` loads a file, by @import or a url() of
+    anything but inline data or a fragment of the page."""
+    return bool(re.search("@import", css, re.I)) or any(
+        not target.startswith("#") and link_kind(target) for target in CSS_URL.findall(css))
 
 
 def unknown(item, allowed, where, errors):
@@ -461,8 +470,8 @@ class SlideParser(HTMLParser):
             elif kind == "file":
                 self.fail(f"<{tag} {name}> loads {value!r}: add the image with add_asset.py "
                           "and write {{asset:<name>}}")
-            elif name == "style" and REMOTE_CSS.search(value):
-                self.fail(f"<{tag} style> loads a remote file")
+            elif name == "style" and css_loads_file(value):
+                self.fail(f"<{tag} style> loads a file: {IMAGE_IN_IMG}")
             elif name == "class" and "mermaid" in value.split():
                 self.fail(
                     f"<{tag} class='mermaid'>: draw a diagram as inline SVG, in the deck's look")

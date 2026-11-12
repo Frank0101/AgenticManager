@@ -36,6 +36,20 @@ class BriefTest(unittest.TestCase):
                                   "status": "Done", "flagged": False, "summary": "Work item PROJ-1",
                                   "description": "What PROJ-1 changes."})
 
+    def test_tickets_carry_their_latest_estimate(self):
+        # PROJ-2 was committed at 2 pts, descoped and came back as extra at 5:
+        # both its listings carry 5, the estimate the retro notes name it
+        # with; goal_tickets keeps the committed stay's 2, which the goal
+        # verdict sums.
+        spells = copy.deepcopy(fixture.TICKETS)
+        spells[2] = fixture.ticket("PROJ-2", [fixture.ev(5, "joined", 5)], "not_completed",
+                                   status="In Progress", scope="extra", priority="High")
+        brief = make_brief.build_brief(fixture.sprint_data(spells=spells))
+        self.assertEqual([t["points"] for e in brief["epics"] for t in e["tickets"] if t["key"] == "PROJ-2"],
+                         [5, 5])
+        self.assertEqual(
+            [t["points"] for t in brief["goal_tickets"] if t["key"] == "PROJ-2"], [2])
+
     def test_carried_in_marks_the_work_of_the_previous_sprint(self):
         # PROJ-2 was carried over from Sprint 6 in its original spell, not in its later extra one.
         self.assertEqual({(t["key"], t["scope"], t["carried_in"]) for t in self.tickets()}, {

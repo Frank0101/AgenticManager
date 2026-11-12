@@ -48,9 +48,10 @@ class HelpersTest(unittest.TestCase):
             ("md_key", r.md_key("PROJ-1"), f"[PROJ-1]({BASE}/browse/PROJ-1)"),
             ("html_key", r.html_key("PROJ-1"),
              f'<a href="{BASE}/browse/PROJ-1">PROJ-1</a>'),
-            # Only Jira-shaped keys are linked.
-            ("linkify", r.linkify("See PROJ-1 and a-2."),
-             f"See [PROJ-1]({BASE}/browse/PROJ-1) and a-2."),
+            # Only the keys of the sprint's projects are linked: UTF-8 and
+            # OTHER-2 only look like keys.
+            ("linkify", r.linkify("See PROJ-1, OTHER-2, UTF-8 and a-2."),
+             f"See [PROJ-1]({BASE}/browse/PROJ-1), OTHER-2, UTF-8 and a-2."),
             # A Markdown table cell must stay on one line and not split on |.
             ("table_text", r.table_text("a | b\nc"), "a \\| b c"),
             # A tag sets both colours, so it reads the same in light and dark.
@@ -542,6 +543,8 @@ class ValidateContentTest(unittest.TestCase):
              {"goal_reason": "Sign-in is met. The audit work is open."}),
             ("blockers_risks: names tickets ['PROJ-2']",
              {"blockers_risks": "PROJ-2 is open."}),
+            # A word shaped like a key, outside the sprint's projects, is a word.
+            (None, {"key_achievements": "CSV export now handles UTF-8 names."}),
             ("blockers_risks: must be a single paragraph",
              {"blockers_risks": "Open.\n\nStill open."}),
             ("epic_commentary.PROJ-100.completed: must be one sentence",

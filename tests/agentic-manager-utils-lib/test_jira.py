@@ -162,27 +162,6 @@ class HelpersTest(unittest.TestCase):
                 self.assertEqual(jira.plain_text(
                     linked, links=links), expected)
 
-    def test_value_at(self):
-        changes = [
-            {"created": "2026-03-02T10:00:00.000+0000", "field": "status",
-             "from": "1", "fromString": "To Do", "to": "2", "toString": "In Progress"},
-            {"created": "2026-03-05T10:00:00.000+0000", "field": "status",
-             "from": "2", "fromString": "In Progress", "to": "3", "toString": "Done"},
-            {"created": "2026-03-04T10:00:00.000+0000", "field": "priority",
-             "from": "2", "fromString": "Low", "to": "1", "toString": "High"},
-        ]
-        current = ("4", "Reopened")
-        cases = [("2026-03-01T00:00:00.000+0000", ("1", "To Do")),
-                 ("2026-03-02T10:00:00.000+0000", ("2", "In Progress")),
-                 ("2026-03-04T23:00:00.000+0000", ("2", "In Progress")),
-                 ("2026-03-09T00:00:00.000+0000", ("3", "Done"))]
-        for instant, expected in cases:
-            with self.subTest(instant=instant):
-                self.assertEqual(jira.value_at(
-                    changes, "status", jira.parse_ts(instant), current), expected)
-        self.assertEqual(jira.value_at(changes, "points", jira.parse_ts(
-            cases[0][0]), (None, "3")), (None, "3"))
-
 
 class ClientTest(unittest.TestCase):
     @classmethod

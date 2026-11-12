@@ -15,11 +15,11 @@ import re
 from datetime import date
 from typing import cast
 
-from common import (browse_url, epic_title, SENTENCE_BREAK, CHART_FILES, COMMENTARY_WORDS, CONTENT_FILE, DATA_FILE, EPIC_COMMENTARY_WORDS, FIELD_TABLE_HEAD, ISSUE_KEY,
+from common import (browse_url, epic_title, SENTENCE_BREAK, CHART_FILES, COMMENTARY_WORDS, CONTENT_FILE, DATA_FILE, EPIC_COMMENTARY_WORDS, FIELD_TABLE_HEAD,
                     JIRA_CELL, NO_EPIC, OUTCOME_COLOURS, PULL_STATES, RETRO_NOTES, SCOPE_GROUPS, STATUS_HEADING,
                     ACHIEVEMENTS_WORDS, BLOCKERS_WORDS, GOAL_REASON_WORDS, ai, allowed_verdicts, latest_points,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty, ratio,
-                    report_file, scope_group_label, text_rule_problems, ticket_ref, unit, whole_percentage,
+                    report_file, scope_group_label, sprint_key, text_rule_problems, ticket_ref, unit, whole_percentage,
                     word_count, write_report_file)
 
 
@@ -123,13 +123,14 @@ def text_problems(content, data):
                 text, _ in paragraphs if "\n" in text.strip()]
     problems += [f"{field}: must be one sentence" for field, text, _ in sentences
                  if len(SENTENCE_BREAK.split(text.strip())) != 1]
+    keys = sprint_key(data)
     for field, text, limit in paragraphs + sentences:
         if word_count(text) > limit:
             problems.append(
                 f"{field}: {word_count(text)} words, at most {limit}")
-        if ISSUE_KEY.search(text):
+        if keys.search(text):
             problems.append(
-                f"{field}: names tickets {ISSUE_KEY.findall(text)[:3]}; describe the work instead")
+                f"{field}: names tickets {keys.findall(text)[:3]}; describe the work instead")
         problems += [f"{field}: {rule}, found {found[:3]}" for rule,
                      found in text_rule_problems(text)]
     # Only the retro notes may name tickets, so only they are held to the
@@ -168,8 +169,9 @@ class Report:
         return title if epic["key"] == NO_EPIC else f'<a href="{self.url(epic["key"])}">{title}</a>'
 
     def linkify(self, text):
-        """`text` with each bare Jira key, the agent's included, a link."""
-        return ISSUE_KEY.sub(lambda m: self.md_key(m.group(0)), text)
+        """`text` with each bare Jira key of the sprint's projects, the agent's
+        included, a link."""
+        return sprint_key(self.data).sub(lambda m: self.md_key(m.group(0)), text)
 
     def table_text(self, text):
         return self.linkify(str(text).replace("\n", " ").replace("|", "\\|"))

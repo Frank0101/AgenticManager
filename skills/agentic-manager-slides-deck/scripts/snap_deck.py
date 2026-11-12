@@ -13,13 +13,13 @@ import html
 import json
 import math
 import os
-import re
 import shutil
 import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from check_deck import read_page
 from common import SLIDE_HEIGHT, SLIDE_WIDTH, deck_dir, deck_file
 
 # Where Chrome is installed by default on macOS and Windows; on Linux, and
@@ -30,8 +30,6 @@ CHROME_PATHS = [
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
 ]
 CHROME_NAMES = ["google-chrome", "google-chrome-stable", "chrome"]
-# A slide's frame on the deck's page, which the slides wrapper isn't.
-SLIDE = re.compile(r'<div class="slide[ "]')
 # The sheet: slides in columns, each a third of its size, numbered above it.
 SHEET_COLUMNS = 3
 THUMB_WIDTH = 360
@@ -51,9 +49,10 @@ def snap(deck):
         raise SystemExit(
             "Chrome isn't installed, so the slides can't be pictured: skip the slide check")
     folder = deck_dir(deck)
-    with open(os.path.join(folder, deck_file(deck)), encoding="utf-8") as f:
-        page = f.read()
-    count = len(SLIDE.findall(page))
+    # The slides are counted as the check reads them, so a slide's own
+    # markup can't add one.
+    reader, page = read_page(os.path.join(folder, deck_file(deck)))
+    count = reader.slides
     out = tempfile.mkdtemp(prefix="slide-pictures-")
 
     def shoot(name, text, size=(SLIDE_WIDTH, SLIDE_HEIGHT)):

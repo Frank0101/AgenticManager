@@ -2,8 +2,8 @@
 Run as a script, it has end-to-end tests in test_e2e_init.py.
 Run with: python3 tests/run.py agentic-manager-perf-review-prep
 
-The vault is a temporary folder, and the system's temporary folder, where the
-notes' working folder goes, the test's own.
+The vault is a temporary folder of the test's own; the notes' working
+folder is the prep's _raw folder, in the test's output folder.
 """
 
 import json
@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import read_notes  # noqa: E402
 import reading  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import PREP, temp_output, write_prep  # noqa: E402
+from prep_fixture import DELAY, PREP, PRESENTED, temp_output, write_prep  # noqa: E402
 
 # A journal of the prep's period, 10/08/2026 to 10/11/2026, which links Jane,
 # as [[Jane]] or as a tag, whatever its case, and other people.
@@ -34,10 +34,6 @@ JOURNAL = """- Planning sync
 \t- the second time this month
 - [[Sam]] on leave
 """
-PRESENTED = {
-    "note": 1, "synopsis": "Presented the migration to the team, who asked for the slides; Jane shared them"}
-DELAY = {"note": 2,
-         "synopsis": "Didn't flag a delay until asked, the second time this month"}
 
 
 class ReadNotesTest(unittest.TestCase):
@@ -61,11 +57,10 @@ class ReadNotesTest(unittest.TestCase):
             os.makedirs(os.path.join(self.graph, folder), exist_ok=True)
             with open(os.path.join(self.graph, folder, name), "w", encoding="utf-8") as f:
                 f.write(text)
-        for target, attribute, value in ((read_notes, "graph_path", lambda: self.graph),
-                                         (reading.tempfile, "gettempdir", lambda: self.root)):
-            patcher = mock.patch.object(target, attribute, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(
+            read_notes, "graph_path", lambda: self.graph)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def test_linking_blocks(self):
         # Each block that links the person, whatever its case, shown in the
@@ -108,6 +103,8 @@ class ReadNotesTest(unittest.TestCase):
         lines = started["tasks"]
         self.assertEqual([line.split(": ")[0] for line in lines],
                          ["Task month:2026-08", "Task month:2026-09", "Task pages"])
+        self.assertTrue(lines[0].endswith(os.path.join(
+            "Jane-Doe_26-11-10", "_raw", "notes", "month", "2026-08", "task.md")))
         with open(lines[0].split(": ", 1)[1], encoding="utf-8") as f:
             task = f.read()
         for expected in ("# Read a month of a manager's notes", "## The person\n\nJane Doe",
@@ -148,6 +145,17 @@ class ReadNotesTest(unittest.TestCase):
         self.assertEqual((done["finished"], done["in_doubt"]), (True, [doubt]))
         self.assertTrue(done["correct"].endswith(
             "submit --prep Jane-Doe_26-11-10 --task merge"))
+        # remerge writes the merge task again from the kept synopses, with
+        # the merge's protocol as it is now, and drops the earlier answer.
+        with mock.patch.object(reading, "read_protocol", lambda name: "# A changed merge"):
+            again = reading.remerge(read_notes.SOURCE, PREP)
+        self.assertEqual(again["merge"], started["merge"])
+        with open(merge, encoding="utf-8") as f:
+            text = f.read()
+        self.assertTrue(text.startswith("# A changed merge"))
+        self.assertIn('"synopsis": "Moved to payments"', text)
+        self.assertFalse(reading.answered(
+            reading.work_dir(read_notes.SOURCE, PREP), "merge"))
 
     def test_no_notes(self):
         # With nothing to read, start records the empty summary at once.
@@ -163,7 +171,11 @@ class ReadNotesTest(unittest.TestCase):
     def test_refuses_what_it_cant_take(self):
         with self.assertRaisesRegex(SystemExit, "run .* start --prep"):
             reading.submit(read_notes.SOURCE, PREP, "merge", {})
+        with self.assertRaisesRegex(SystemExit, "isn't gathered: run .* start"):
+            read_notes.main(["finished", "--prep", PREP])
         reading.start(read_notes.SOURCE, PREP)
+        with self.assertRaisesRegex(SystemExit, "month:2026-08, month:2026-09, pages not answered yet"):
+            reading.remerge(read_notes.SOURCE, PREP)
         with self.assertRaisesRegex(SystemExit, "isn't a task of this prep"):
             reading.submit(read_notes.SOURCE, PREP,
                            "month:2025-01", {"items": []})

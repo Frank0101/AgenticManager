@@ -13,9 +13,12 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import set_notion  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import IDENTITIES, PREP, REQUEST, temp_output, write_prep  # noqa: E402
+from prep_fixture import IDENTITIES, PREP, REQUEST, WORK, WORK_ITEMS, temp_output, write_prep  # noqa: E402
 
-PLAN = {"title": "Billing plan", "url": "https://www.notion.so/billing-plan"}
+TABLE = {"title": "Lag monitors",
+         "url": "https://www.notion.so/lag-monitors", "path": "Engineering"}
+PLAN = {"title": "Billing plan", "url": "https://www.notion.so/billing-plan",
+        "path": "Engineering / Billing"}
 # REQUEST's period, 10/08/2026 to 10/11/2026: created pages a month at a
 # time, edited ones in one search.
 CREATED = [{"start": "2026-08-10", "end": "2026-08-31", "pages": [PLAN]},
@@ -29,14 +32,29 @@ EDITED = [{"start": "2026-08-10", "end": "2026-11-10",
 class SetNotionTest(unittest.TestCase):
     def setUp(self):
         self.folder = temp_output(self)
-        write_prep(self.folder, notion=None)
+        write_prep(self.folder, work=WORK)
 
     def test_writes_created_pages_with_their_range(self):
+        # Into work.json, keeping Jira and GitHub, and dropping the facts
+        # and commentary, which no longer match.
         path = set_notion.set_notion(
             PREP, {"created": CREATED, "edited": EDITED})
         with open(path, encoding="utf-8") as f:
-            self.assertEqual(json.load(f), {"created": [{**PLAN, "between": ["2026-08-10", "2026-08-31"]}],
-                                            "edited": [{**PLAN, "date": "2026-09-02"}]})
+            self.assertEqual(json.load(f), {"jira": WORK_ITEMS["jira"], "github": WORK_ITEMS["github"], "notion": {
+                "created": [{**PLAN, "between": ["2026-08-10", "2026-08-31"]}],
+                "edited": [{**PLAN, "date": "2026-09-02"}]}})
+
+    def test_a_database_counts_as_one_page(self):
+        # A day full of one database's rows records the database once, as a
+        # page of that day, with the day's other pages.
+        path = set_notion.set_notion(PREP, {"created": [
+            {"start": "2026-08-10", "end": "2026-08-10",
+                "pages": [PLAN], "full_of": TABLE},
+            {**CREATED[0], "start": "2026-08-11", "pages": []}, *CREATED[1:]], "edited": EDITED})
+        with open(path, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["notion"]["created"], [
+                {**page, "between": ["2026-08-10", "2026-08-10"]} for page in sorted([PLAN, TABLE],
+                                                                                     key=lambda page: page["url"])])
 
     def test_searches_problems(self):
         # name: (the searches, expected in their problems, or None for none).
@@ -58,13 +76,20 @@ class SetNotionTest(unittest.TestCase):
                       **CREATED[1], "pages": [PLAN]}, *CREATED[2:]], "edited": EDITED},
                   "found by two created searches, so the creation filter can't be trusted"),
                  ("a page without its url", {"created": CREATED, "edited": [
-                     {**EDITED[0], "pages": [{"title": "Billing plan", "link": PLAN["url"], "date": "2026-09-02"}]}]},
-                  "each page must be {\"title\", \"url\""),
+                     {**EDITED[0], "pages": [{"title": "Billing plan", "link": PLAN["url"], "path": "", "date": "2026-09-02"}]}]},
+                  "each page must be {\"title\", \"url\", \"path\"}"),
+                 ("a day full of one database's rows", {"created": [
+                     {"start": "2026-08-10", "end": "2026-08-10",
+                         "pages": [], "full_of": TABLE},
+                     {**CREATED[0], "start": "2026-08-11"}, *CREATED[1:]], "edited": EDITED}, None),
+                 ("full_of over more than a day", {"created": [{**CREATED[0], "full_of": TABLE}, *CREATED[1:]],
+                                                   "edited": EDITED}, "only a search of a single day may"),
                  ("not a day", {"created": [{**CREATED[0], "start": "10/08/2026"}, *CREATED[1:]], "edited": EDITED},
                   "must be days")]
         for name, found, expected in cases:
             with self.subTest(name):
-                problems = set_notion.searches_problems(found, REQUEST)
+                problems = set_notion.searches_problems(
+                    found, set_notion.period_days(REQUEST))
                 if expected is None:
                     self.assertEqual(problems, [])
                 else:
@@ -75,9 +100,9 @@ class SetNotionTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "must be searched"):
             set_notion.set_notion(PREP, {"absent": True})
         write_prep(self.folder, identities={
-                   **IDENTITIES, "notion-mcp": {"absent": True}}, notion=None)
+                   **IDENTITIES, "notion-mcp": {"absent": True}}, work=None)
         with open(set_notion.set_notion(PREP, {"absent": True}), encoding="utf-8") as f:
-            self.assertEqual(json.load(f), {"absent": True})
+            self.assertEqual(json.load(f)["notion"], {"absent": True})
 
 
 if __name__ == "__main__":

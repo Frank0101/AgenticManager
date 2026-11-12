@@ -9,15 +9,14 @@ check_report.py applies to the whole ledger at handover.
 import os
 import re
 
-from common import (CITATION, DECISION_HEADER, DESIGN, DESIGN_ORDER, FOLDER_NAME, GAP_HEADER, INLINE_LINK,
-                    JIRA_API, JIRA_GROUP, LEDGER, LINKS, QUERY, QUEUE_HEADER, QUEUE_TABLES, ROW_START, RULED_OUT, SOURCE_FINDINGS_COLUMN, SOURCE_HEADER, TABLES, UNUSED,
-                    anchored, autolink, backtick_error, blocked_problem, citation, cited_evidence_problem, cited_sources,
-                    claim_length_problem, design_evidence, design_row_problem, finding_problem, flow_states, free_name,
-                    gap_problem, id_order, identity_states, ids, inline_links, investigation_dir, is_enabled,
-                    JiraClient, ledger_rows, link_definitions, link_text, links, outcome_problem, partial_read_problem, unread_lines_problem,
-                    plain, read_in_part, same_document, scope_answers, scope_problem, section_span, slug,
-                    source_problem, strip_anchors, table, table_cells, table_row, ticket_sites, unlinked_backticks,
-                    unrecorded_citations, unresolved_message, upgraded_tickets, write_output_file)
+from common import (CITATION, DESIGN, DESIGN_ORDER, FOLDER_NAME, INLINE_LINK, JIRA_API, JIRA_GROUP, LEDGER, LINKS,
+                    QUERY, QUEUE_HEADER, QUEUE_TABLES, ROW_START, RULED_OUT, SOURCE_FINDINGS_COLUMN, SOURCE_HEADER,
+                    TABLES, UNUSED, anchored, autolink, backtick_error, citation, cited_sources, claim_length_problem,
+                    design_evidence, finding_problem, flow_states, free_name, id_order, identity_states, ids,
+                    inline_links, investigation_dir, is_enabled, JiraClient, ledger_rows, link_definitions, link_text,
+                    links, plain, read_in_part, row_problem, same_document, section_span, slug, strip_anchors, table,
+                    table_cells, table_row, ticket_sites, unlinked_backticks, unrecorded_citations,
+                    unresolved_message, upgraded_tickets, write_output_file)
 
 # The columns the script writes, which a row's input leaves out: a source's
 # Findings, from the findings that cite it, and the State of an identity or a
@@ -249,32 +248,14 @@ def set_row(lines, name, row_id, cells):
 def check_cells(lines, name, row):
     """Exit if a row breaks a rule of its table: the ones check_report applies
     to the ledger, a finding's claim length on every check and the others at
-    handover (closing_problems)."""
-    problem = None
-    if name in DESIGN_ORDER:
-        problem = design_row_problem(
-            name, row, design_evidence("\n".join(lines)))
-    elif name == "findings":
-        sources = {r[0]: r for r in table_rows(lines, "sources")}
-        partial = {ident for ident, r in sources.items() if read_in_part(r)}
-        problem = (finding_problem(row) or claim_length_problem(row[0], row[1])
-                   or partial_read_problem(row, partial) or unread_lines_problem(row, sources))
-    elif name == "scope":
-        problem = scope_problem(row)
-    elif name == "queue-completed":
-        problem = outcome_problem(
-            row[0], row[-1], row[2], scope_answers(table_rows(lines, "scope")))
-    elif name == "queue-blocked":
-        problem = blocked_problem(row[0], row[QUEUE_HEADER.index("Depends on")],
-                                  {r[0] for r in table_rows(lines, "queue-blocked")})
-    elif name == "gaps":
-        problem = gap_problem(row) or cited_evidence_problem(
-            row[0], row[GAP_HEADER.index("Evidence")])
-    elif name == "decisions":
-        problem = cited_evidence_problem(
-            row[0], row[DECISION_HEADER.index("Evidence")])
-    elif name == "sources":
-        problem = source_problem(row, links_section(lines))
+    handover (row_problem)."""
+    # A finding's claim length comes right after its own rules, before the
+    # rules on what it cites.
+    problem = name == "findings" and (finding_problem(row)
+                                      or claim_length_problem(row[0], row[1]))
+    blocked = {r[0] for r in table_rows(lines, "queue-blocked")}
+    problem = problem or row_problem(name, row, design_evidence(
+        "\n".join(lines)), blocked)
     if problem:
         raise SystemExit(f"{name} {problem}")
     # A search's query is the one backticked text allowed outside a link.
@@ -383,7 +364,7 @@ def sync_sources(lines):
     cited = cited_sources("\n".join(lines))
     rows = table_rows(lines, "sources")
     for row in rows:
-        found = sorted(cited.get(id_order(row[0])[1], ()), key=id_order)
+        found = sorted(cited.get(row[0], ()), key=id_order)
         row[SOURCE_FINDINGS_COLUMN] = ", ".join(
             citation(f) for f in found) or "None"
     if rows:

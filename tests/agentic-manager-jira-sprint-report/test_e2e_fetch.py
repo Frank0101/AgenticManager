@@ -487,19 +487,23 @@ class FetchTest(unittest.TestCase):
         # the board's, not "Story Points"
         self.assertEqual(meta["story_points_field"], fixture.POINTS_FIELD)
         self.assertEqual(meta["flagged_field"], fixture.FLAGGED_FIELD)
-        # Every issue's changelog, read in batches and kept as it was read one
+        # Every ticket's changelog, read in batches and kept as it was read one
         # issue at a time: in one request, by id, paged by its token, with
         # [] for an issue without changes, which has no entry and a search by
-        # id finds.
-        issues = fixture.CURRENT + fixture.REMOVED
+        # id finds. Sub-tasks are left out, as the report leaves them out.
+        issues = [i for i in fixture.CURRENT + fixture.REMOVED
+                  if not i["fields"]["issuetype"]["subtask"]]
         for issue in issues:
             self.assertEqual(self.raw(out, f"changelogs/{issue['key']}.json"),
                              fixture.CHANGELOGS[issue["key"]], issue["key"])
         self.assertEqual(self.raw(out, "changelogs/PROJ-7.json"), [])
+        self.assertFalse(os.path.exists(os.path.join(
+            out["report_dir"], "_raw", "changelogs", "PROJ-9.json")))
         self.assertFalse([path for path in FakeJira.requests
                           if path.endswith("/changelog")])
         ids = [issue["id"] for issue in issues]
-        pages = -(-sum(map(len, fixture.CHANGELOGS.values())) // BATCH_PAGE)
+        pages = -(-sum(len(fixture.CHANGELOGS[i["key"]])
+                       for i in issues) // BATCH_PAGE)
         self.assertEqual(FakeJira.batches[0], {
                          "issueIdsOrKeys": ids, "maxResults": 10000})
         self.assertEqual([body.get("nextPageToken") for body in FakeJira.batches],
@@ -511,7 +515,8 @@ class FetchTest(unittest.TestCase):
         self.assertEqual(self.raw(out, "previous_sprint.json"),
                          fixture.PREVIOUS_SPRINT)
         # Every epic is fetched with its description, the issues' current
-        # epics too, as their own fields carry only the epic's summary.
+        # epics too, as their own fields carry only the epic's summary; a
+        # sub-task's parent, its story, is not an epic.
         jql, fields = FakeJira.parent_queries[0]
         self.assertEqual(sorted(re.findall(r"\d+", jql)),
                          sorted({fixture.IMPORT[2], fixture.EXPORT[2]}))

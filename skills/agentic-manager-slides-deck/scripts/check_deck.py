@@ -113,6 +113,8 @@ def check(folder, deck, content):
 
 
 def read_page(path):
+    """(reader, text) of the deck's page `path`: what a browser would find
+    in it, as PageReader reads it, and its HTML."""
     reader = PageReader()
     with open(path, encoding="utf-8") as f:
         page = f.read()

@@ -11,7 +11,7 @@ import json
 import os
 
 from common import (BLOCKERS, BOUNDARY_KINDS, COMPONENT_TYPES, CONNECTION_KINDS, COVERAGE, GROUPS, IDENTITY_KINDS,
-                    READ_COVERAGE, STATUSES, WAITS, fill_protocol)
+                    READ_COVERAGE, STATUS_MEANINGS, WAITS, fill_protocol)
 
 FOLDER = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "..", "protocol")
@@ -26,7 +26,7 @@ VALUES = {
     "connection_kinds": ", ".join(CONNECTION_KINDS),
     "identity_kinds": ", ".join(IDENTITY_KINDS),
     "waits": ", ".join(WAITS),
-    "statuses": "; ".join(f"{label} ({meaning})" for label, meaning in STATUSES),
+    "statuses": STATUS_MEANINGS,
 }
 
 
