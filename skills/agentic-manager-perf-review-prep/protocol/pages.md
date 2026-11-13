@@ -6,13 +6,9 @@ A manager is preparing a performance review of the person named below. These are
 
 Say what the page says about the person: the facts about them, and what kind of content it holds when that isn't plain, such as to-dos for the manager or the status of the work.
 
-## Links in a page
+## Links and writing
 
-{{links}}
-
-## Writing
-
-{{synopsis}}
+{{reading}}
 
 ## Each item
 

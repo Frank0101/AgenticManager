@@ -21,13 +21,9 @@ Say what the note says about the person:
 | "Jane, Sam and Alex in the planning sync"                                                                            | Jane is named only among the planning sync's attendees                                                            |
 | "Ask Jane about the rollout"                                                                                         | A to-do for the manager: ask Jane about the rollout                                                               |
 
-## Links in a note
+## Links and writing
 
-{{links}}
-
-## Writing
-
-{{synopsis}}
+{{reading}}
 
 ## Each item
 

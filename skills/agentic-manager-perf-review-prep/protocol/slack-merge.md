@@ -45,5 +45,3 @@ When you're in doubt whether a conversation should be a point, leave it out, and
 {{point}}
 
 Each line of `in_doubt` is written as a point is.
-
-{{value}}

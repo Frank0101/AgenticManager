@@ -26,7 +26,7 @@ def rules(prep):
     the prep `prep` follow."""
     prep_dir(prep)  # exits if the prep isn't there
     return {"parts": SUMMARY_PARTS, "valued_parts": list(VALUED_PARTS), "values": company_setting(VALUES),
-            "ratings": company_setting(RATINGS), "rules": fill_protocol(PROTOCOL, "summary")}
+            "ratings": company_setting(RATINGS), "rules": fill_protocol(PROTOCOL, "_point")}
 
 
 def main(argv=None):

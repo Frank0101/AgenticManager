@@ -28,13 +28,9 @@ One synopsis for each conversation: a thread, or the messages in a row on one to
 - who it was for or helped, and what changed because of it, such as a new way of working, another team unblocked or a process improved, as far as the conversation says;
 - how others responded, such as thanks, praise, follow-up questions or a problem raised with the person's work, and how the conversation ended.
 
-## Links in a message
+## Links and writing
 
-{{links}}
-
-## Writing
-
-{{synopsis}}
+{{reading}}
 
 ## Each item
 

@@ -29,8 +29,8 @@ from agentic_manager.period import add_period_arguments, period_problem, shown  
 from agentic_manager.text import as_name, word_count  # noqa: E402,F401
 
 # How to write a point and pick its values, with their examples, lives in the
-# protocol's shared parts, _point.md and _value.md, the one place for them:
-# the subagents' tasks fill them in, and rules.py prints them for the agent.
+# protocol's shared part _point.md, the one place for them: the merges' tasks
+# fill it in, and rules.py prints it for the agent.
 PROTOCOL = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "..", "protocol")
 
