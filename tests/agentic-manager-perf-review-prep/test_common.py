@@ -176,52 +176,32 @@ class CommonTest(unittest.TestCase):
                 else:
                     self.assertIn(expected, " ".join(problems))
 
-    def test_earliest_feedback_end(self):
-        # Two years before the period starts; a 29 February has none, so the
-        # 28th.
-        for start, expected in [("2026-08-10", date(2024, 8, 10)), ("2028-02-29", date(2026, 2, 28))]:
-            with self.subTest(start):
-                self.assertEqual(common.earliest_feedback_end(
-                    {**PERSON, "start": start}), expected)
-
-    def test_feedback_problems(self):
-        # name: (the feedback, expected in its problems, or None for none).
-        # PERSON starts on 10/08/2026, so dated feedback may end from
-        # 10/08/2024 to its end, 10/11/2026.
+    def test_reviews_problems(self):
+        # name: (the reviews, expected in their problems, or None for none).
+        # A period is a label, never checked against the prep's, nor is a
+        # review's age: what the manager gives counts.
         ratings = ["Below", "Meets", "Exceeds"]
-        undated = {**PIECE, "start": None, "end": None, "rating": None}
-        cases = [("one piece", [PIECE], None), ("none", [], None),
-                 ("no days and no rating", [undated], None),
-                 ("only an end day", [{**undated, "end": "2026-06-30"}], None),
-                 ("only a start day", [
-                  {**undated, "start": "2026-01-01"}], None),
-                 ("only an end day, too old", [
-                  {**undated, "end": "2024-08-09"}], "ends on 09/08/2024"),
-                 ("two undated", [
-                  undated, {**undated, "context": ["Mentors new joiners"]}], None),
-                 ("ending on the first day allowed", [
-                  {**PIECE, "start": "2024-01-01", "end": "2024-08-10"}], None),
-                 ("ending inside the period", [
-                  {**PIECE, "end": "2026-09-30"}], None),
-                 ("too old", [{**PIECE, "start": "2024-01-01", "end": "2024-08-09"}],
-                  "ends on 09/08/2024: only feedback that ends from 10/08/2024 to 10/11/2026 counts"),
-                 ("ending after the period", [
-                  {**PIECE, "end": "2026-12-31"}], "ends on 31/12/2026"),
-                 ("starting after it ends", [
-                  {**PIECE, "start": "2026-07-01"}], "starts after it ends"),
-                 ("not a date", [{**PIECE, "end": "30/06/2026"}],
-                  "must be a date as YYYY-MM-DD"),
+        unnamed = {**PIECE, "period": None, "rating": None}
+        cases = [("one review", [PIECE], None), ("none", [], None),
+                 ("no period and no rating", [unnamed], None),
+                 ("a date as period", [
+                  {**PIECE, "period": "30/06/2020"}], None),
+                 ("the same period twice", [
+                  PIECE, {**PIECE, "rating": "Exceeds"}], None),
+                 ("a blank period", [
+                  {**PIECE, "period": " "}], "must be a text"),
+                 ("a period not a text", [
+                  {**PIECE, "period": 2026}], "must be a text"),
                  ("a rating not the company's", [{**PIECE, "rating": "Good"}],
                   "'Good', must be one of the company's: Below, Meets, Exceeds, or null"),
                  ("a field missing", [
                   {k: v for k, v in PIECE.items() if k != "rating"}], "must have the fields"),
                  ("a summary that breaks a rule", [{**PIECE, "going_well": [], "to_improve": []}],
-                  "feedback 1 has no points"),
-                 ("the same period twice", [PIECE, {**PIECE, "rating": "Exceeds"}], "record each once")]
+                  "review 1 has no points")]
         for name, pieces, expected in cases:
             with self.subTest(name):
-                problems = common.feedback_problems(
-                    {"pieces": pieces}, PERSON, ratings, VALUE_NAMES)
+                problems = common.reviews_problems(
+                    {"pieces": pieces}, ratings, VALUE_NAMES)
                 if expected is None:
                     self.assertEqual(problems, [])
                 else:
@@ -229,40 +209,25 @@ class CommonTest(unittest.TestCase):
         for name, feedback in [("a list", [PIECE]), ("a key more", {"pieces": [], "notes": "x"})]:
             with self.subTest(name):
                 self.assertIn('must be {"pieces": [...]}',
-                              " ".join(common.feedback_problems(feedback, PERSON, ratings, VALUE_NAMES)))
+                              " ".join(common.reviews_problems(feedback, ratings, VALUE_NAMES)))
 
-    def test_check_ins_problems(self):
-        # name: (the notes, expected in their problems, or None for none). The
-        # rules all pieces share are tested with the feedback's; a dated note
-        # must overlap PERSON's period, 10/08/2026 to 10/11/2026.
-        undated = {**NOTE, "start": None, "end": None}
-        cases = [("one note", [NOTE], None), ("none", [], None), ("undated", [undated], None),
-                 ("overlapping its start", [
-                  {**NOTE, "start": "2026-07-01", "end": "2026-08-10"}], None),
-                 ("only a start day inside it", [
-                  {**undated, "start": "2026-11-10"}], None),
-                 ("only an end day inside it", [
-                  {**undated, "end": "2026-08-10"}], None),
-                 ("before it", [{**NOTE, "start": "2026-07-01", "end": "2026-08-09"}],
-                  "check-in 1 covers no day of the period, 10/08/2026 to 10/11/2026"),
-                 ("only an end day before it", [
-                  {**undated, "end": "2026-08-09"}], "covers no day"),
-                 ("only a start day after it", [
-                  {**undated, "start": "2026-11-11"}], "covers no day"),
+    def test_feedback_problems_of_the_period(self):
+        # name: (the feedback, expected in its problems, or None for none).
+        # The rules all pieces share are tested with the reviews'.
+        cases = [("one piece", [NOTE], None), ("none", [], None),
+                 ("no period", [{**NOTE, "period": None}], None),
                  ("a rating", [{**NOTE, "rating": None}],
-                  "must have the fields start, end, going_well"),
-                 ("the same days twice", [NOTE, {**NOTE, "context": ["Moved team"]}],
-                  "two pieces of the check-ins cover 01/08/2026 to 30/09/2026")]
+                  "must have the fields period, going_well")]
         for name, notes, expected in cases:
             with self.subTest(name):
-                problems = common.check_ins_problems(
-                    {"pieces": notes}, PERSON, VALUE_NAMES)
+                problems = common.feedback_problems(
+                    {"pieces": notes}, VALUE_NAMES)
                 if expected is None:
                     self.assertEqual(problems, [])
                 else:
                     self.assertIn(expected, " ".join(problems))
-        self.assertIn('the check-ins must be {"pieces": [...]}',
-                      " ".join(common.check_ins_problems([NOTE], PERSON, VALUE_NAMES)))
+        self.assertIn('the feedback must be {"pieces": [...]}',
+                      " ".join(common.feedback_problems([NOTE], VALUE_NAMES)))
 
     def test_months_of(self):
         # Each month of the period, clipped to it.

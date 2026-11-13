@@ -54,4 +54,6 @@ When you're in doubt whether a note should be a point, leave it out, and list it
 
 {{point}}
 
+Each line of `in_doubt` is written as a point is.
+
 {{value}}

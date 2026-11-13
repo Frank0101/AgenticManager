@@ -2,7 +2,7 @@
 name: agentic-manager-perf-review-prep
 disable-model-invocation: true
 description: Helps a manager prepare a performance review of one person over a review period, from the evidence of their work in Jira, GitHub, the documentation, the team's messages and the manager's own notes. In development; not ready to use.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_orientation.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_feedback.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_check_ins.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/work_commentary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/work_commentary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py *)
 ---
 
 # Performance Review Prep
@@ -18,9 +18,10 @@ perf-review-preps/
     │                     gathered, each subagent's task and the readings' answers, by source)
     ├── person.json       init_prep.py and set_identities.py write (the person, the period and who they are in each
     │                     source, as the manager confirmed)
-    ├── orientation.json  set_orientation.py writes (the manager's overall view of the person, summarised)
-    ├── feedback.json     set_feedback.py writes (the person's previous feedback, each piece summarised)
-    ├── check-ins.json    set_check_ins.py writes (the person's OKRs and 1:1 notes, each piece summarised)
+    ├── orientation.json  set_summary.py writes (the manager's overall view of the person, summarised)
+    ├── reviews.json      set_summary.py writes (the person's previous performance reviews, each summarised)
+    ├── feedback.json     set_summary.py writes (the person's OKRs, 1:1 notes and recognition in the period, each
+    │                     piece summarised)
     ├── notes.json        read_notes.py writes (what the manager's own notes say about the person, merged)
     ├── slack.json        read_slack.py writes (what the person's Slack messages show, merged, with their links)
     └── work.json         fetch_work.py, set_notion.py and work_commentary.py write (the person's Jira issues, pull
@@ -35,7 +36,7 @@ This skill needs the `jira-api`, `github-cli`, `notion-mcp`, `slack-mcp` and `lo
 
 ## Writing to the manager
 
-In every message to the manager, and in every summary, write the person's name as the manager gave it, `person` in `person.json`, never the name an account shows, or "they": never "he" or "she", nor any pronoun guessed from their name or anything else.
+In every message to the manager, write the person's name as the manager gave it, `person` in `person.json`, never the name an account shows, or "they": never "he" or "she", nor any pronoun guessed from their name or anything else.
 
 ## 1. Agree what the prep is for
 
@@ -80,41 +81,27 @@ Who the person is in GitHub, Notion, Slack and the vault is the manager's to con
 
 ## 3. Hear the manager's view
 
-Before any evidence is gathered, ask the manager, in a message of its own, for their overall view of the person over the period:
+Ask the manager, in a message of its own, giving the period as step 1 showed it:
 
-> Before I look at any evidence: what's your overall view of Jane Doe over this period? A few points or sentences are enough: what's going well or exceeding, what are improvement or stretch areas, and any context the review should take into account, such as a long absence or a change of role. I'll take it as guidance, and point out where the evidence says otherwise.
+> What's your overall view of Jane Doe over 10/05/2026 to 10/11/2026? A few points or sentences are enough: what's going well or exceeding, what are improvement or stretch areas, including what you want to see from them next, any support or unblocking they need, and any context the review should take into account, such as a long absence or a change of role.
 
-Wait for their answer, summarise it as [Summaries](#summaries) says, and ask them to confirm the summary, part by part. Once they do, record it with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_orientation.py --prep <prep>`; its `--help` shows the input. Only the writing step reads it, so the evidence is gathered without it and can contradict it.
+Record their answer as [Summaries](#summaries) says, with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py --prep <prep> --of orientation`.
 
-## 4. Read the previous feedback
+## 4. Read the previous reviews
 
-Previous feedback is whatever the manager gives as such: a review, a colleague's feedback or their own notes on either. Take it as it comes: its days and its rating are recorded when it gives them, and never asked for. It often comes from several places, so ask for more until the manager has none.
+Ask the manager, in a message of its own:
 
-1. **Ask the manager**, in a message of its own, giving `rules.py`'s `earliest_end` as DD/MM/YYYY:
+> Do you have Jane Doe's previous performance reviews, with the colleagues' feedback gathered for them? Paste them, give me paths or links to them, such as PDFs exported from your HR tool, or sum up their main points. Say "none" if there aren't any.
 
-   > Do you have any previous feedback on Jane Doe since 10/05/2024, such as reviews or a colleague's feedback? Paste it, or give me a path or a link to it, such as a PDF exported from your HR tool. Say "none" if there isn't any.
+Record their answer as [Summaries](#summaries) says, each review with its rating, as the company's ratings name it, or null when it gives none of them, with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py --prep <prep> --of reviews`.
 
-   If they say none, record `{"pieces": []}`, as **Record it** below says, and go on.
+## 5. Read the period's OKRs and feedback
 
-2. **Read and summarise it** yourself, as you did the manager's view. For each piece, note the period it covers as YYYY-MM-DD, its rating, as the company's ratings name it, and a summary of what it says, as [Summaries](#summaries) says. When the feedback names its period rather than its days, such as "MYR 2026" or "2025 annual review", work the days out and say they're worked out; leave out a day nothing in it points to. Leave out a piece that ends before `earliest_end`, and a rating that isn't on the company's scale. Keep a rating you're unsure is the feedback's own, such as one on a colleague's line, and say why you're unsure.
-3. **Ask the manager to confirm,** in one message: for each piece, its period and its rating where it has them, and its summary, part by part, then each period you worked out, each rating you're unsure of and what you left out, each with why. Ask them to paste a piece you couldn't open. Don't go on until they confirm.
-4. **Record it** with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_feedback.py --prep <prep>`, with every piece confirmed so far, so a stopped run keeps them; its `--help` shows the input. Run it again with every piece to record a correction.
-5. **Ask for more:** "Any more previous feedback on Jane Doe?" Go back to 2 with what the manager gives, and go on once they have no more.
+Ask the manager, in a message of its own, giving the period as step 1 showed it:
 
-## 5. Read the OKRs and 1:1 notes
+> Do you have anything on Jane Doe from 10/05/2026 to 10/11/2026: their OKRs, the notes of your 1:1s, or kudos and recognition they received? Paste them, give me paths or links to them, or sum up their main points. Say "none" if there isn't any.
 
-The person's check-ins are their OKRs and the notes of their 1:1s with the manager, shared with them: what the two agreed during the period. They are recorded as previous feedback is, as summaries the writing step reads with judgment, never tracked one by one.
-
-1. **Ask the manager**, in a message of its own, giving the period as step 1 showed it:
-
-   > Do you have Jane Doe's OKRs, or the notes of your 1:1s with Jane, for 10/05/2026 to 10/11/2026? Paste them, or give me a path or a link to them. Say "none" if there aren't any.
-
-   If they say none, record `{"pieces": []}`, as **Record them** below says, and go on.
-
-2. **Read and summarise them** yourself, as [Summaries](#summaries) says: for each piece, its period, worked out as for previous feedback, and its summary. Leave out a piece that covers no day of the period.
-3. **Ask the manager to confirm,** in one message: for each piece, its period where it has one and its summary, part by part, then each period you worked out and what you left out, each with why. Ask them to paste a piece you couldn't open. Don't go on until they confirm.
-4. **Record them** with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_check_ins.py --prep <prep>`, with every piece confirmed so far; its `--help` shows the input. Run it again with every piece to record a correction.
-5. **Ask for more:** "Any more OKRs or 1:1 notes for Jane Doe?" Go back to 2 with what the manager gives, and go on once they have no more.
+Record their answer as [Summaries](#summaries) says, with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py --prep <prep> --of feedback`.
 
 ## 6. Read the manager's notes
 
@@ -145,8 +132,8 @@ First check the prep with `python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py --p
 
 ## Summaries
 
-What the manager tells you, and what the person's previous feedback and check-ins say, are recorded as summaries. Before your first one, run `python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py --prep <prep>` once: it prints the parts of a summary, the company's values and ratings, and what step 4 needs.
+What the manager tells you in steps 3 to 5, their view, the previous reviews and the period's feedback, is recorded as summaries. Before your first one, run `python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py --prep <prep>` once: it prints the parts of a summary, the company's values and ratings, and `rules`, how to write a point and pick its values, with examples.
 
-Each part is a list of points, in your words: one sentence each, about 25 words at most, such as "Delivers tickets reliably and with good quality". Make the person the subject of a point: what they did, or what happened because of them. Each point stands on its own: say what it is about, such as a promotion, so it reads without the source. Keep every point the source makes, add none it doesn't, and put each in the part it belongs to; leave a part empty when the source says nothing of it.
+Once the manager answers, summarise what they gave, without showing them the summary: one summary for their view, and one for each review and each piece of the period's feedback, such as a document or a 1:1's notes. Give each review or piece its period as it names it, such as a date, "Mid Year Review 2026" or "Q3 2026", or null when it names none, and list them from the most recent, as far as you can tell, those with no period first, as the most recent of all. If something isn't clear, such as a word you can't read for sure or a document you couldn't open, ask them about it, all in one message, and wait for their answer. Then record it with the step's `set_summary.py` command, whose `--help` shows the input, tell them in one line that it's recorded, with a Markdown link to the `path` the script printed, and go on to the next step: that line can open the next step's message, as "a message of its own" means one with no other question in it.
 
-A point in a part that `rules.py` lists in `valued_parts` names every company value it clearly shows, at most two, the one it shows most first, judged from what the point says and each value's meaning, or none when no value fits. Consider every value, not only the most common one, and never stretch a point to fit one. Show them after the point when the manager confirms the summary, such as "Delivers tickets reliably (Ownership)", so they confirm them too; for a point with none, add briefly why when the point alone doesn't make it plain, such as "(no value: an overall verdict, not a behaviour)".
+Each part is a list of points, written as `rules` says. Keep what the source says about the person and their work, once even when it says it more than once, add nothing it doesn't, and put each in the part it belongs to; leave a part empty when the source says nothing of it. When the source judges the person's character or intentions and describes no behaviour behind it, ask the manager what was observed; if they don't know, the point stays as the source puts it.

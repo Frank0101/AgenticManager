@@ -1,11 +1,11 @@
 """End-to-end tests for skills/agentic-manager-perf-review-prep/scripts/find_jira_account.py,
-init_prep.py, find_person.py, set_identities.py, rules.py, set_orientation.py,
-set_feedback.py, set_check_ins.py, read_notes.py, fetch_work.py,
+init_prep.py, find_person.py, set_identities.py, rules.py, set_summary.py,
+read_notes.py, fetch_work.py,
 set_notion.py, read_slack.py, work_commentary.py and check_prep.py: they run
 each as a script, as the agent does, from looking the person up in Jira and
 starting the prep on the account the manager confirmed, through who the
-person is in each other source, their view, the person's previous feedback
-and check-ins, the manager's notes, the person's work and their Slack
+person is in each other source, their view, the person's previous reviews
+and the period's feedback, the manager's notes, the person's work and their Slack
 messages, to the final check. Each script's functions have unit tests of
 their own, in test_<script>.py.
 Run with: python3 tests/run.py agentic-manager-perf-review-prep
@@ -29,7 +29,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from datetime import date, timedelta
+from datetime import date
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
@@ -46,10 +46,8 @@ INIT_SCRIPT = os.path.join(SCRIPTS, "init_prep.py")
 FIND_SCRIPT = os.path.join(SCRIPTS, "find_person.py")
 CHECK_SCRIPT = os.path.join(SCRIPTS, "check_prep.py")
 IDENTITIES_SCRIPT = os.path.join(SCRIPTS, "set_identities.py")
-ORIENTATION_SCRIPT = os.path.join(SCRIPTS, "set_orientation.py")
-FEEDBACK_SCRIPT = os.path.join(SCRIPTS, "set_feedback.py")
+SUMMARY_SCRIPT = os.path.join(SCRIPTS, "set_summary.py")
 RULES_SCRIPT = os.path.join(SCRIPTS, "rules.py")
-CHECK_INS_SCRIPT = os.path.join(SCRIPTS, "set_check_ins.py")
 NOTES_SCRIPT = os.path.join(SCRIPTS, "read_notes.py")
 WORK_SCRIPT = os.path.join(SCRIPTS, "fetch_work.py")
 NOTION_SCRIPT = os.path.join(SCRIPTS, "set_notion.py")
@@ -94,8 +92,7 @@ ORIENTATION = {"going_well": [{"point": "Has \"led\" the billing migration well 
 VALUES = [{"value": "Ownership", "meaning": "Sees work through to its end"}]
 RATINGS = [{"rating": "Below", "meaning": "Misses most expectations"},
            {"rating": "Meets", "meaning": "Meets every expectation"}]
-PIECE = {"start": (TODAY - timedelta(days=300)).isoformat(), "end": (TODAY - timedelta(days=200)).isoformat(),
-         "rating": "Meets", "going_well": [{"point": "Delivered the billing migration on time", "values": []}],
+PIECE = {"period": "Mid Year Review", "rating": "Meets", "going_well": [{"point": "Delivered the billing migration on time", "values": []}],
          "to_improve": [], "context": []}
 PAGE = {"title": "Billing plan",
         "url": "https://www.notion.so/billing-plan", "path": "Engineering"}
@@ -192,9 +189,8 @@ class ScriptsTest(unittest.TestCase):
         # init_prep.py starts the prep on the account the manager
         # confirmed, find_person.py looks them up in GitHub and the vault,
         # set_identities.py records who they are, rules.py prints what the
-        # summaries follow, set_orientation.py records the summary of the
-        # manager's view, set_feedback.py the previous feedback and
-        # set_check_ins.py the check-ins, read_notes.py hands out the notes'
+        # summaries follow, set_summary.py records the summaries of the
+        # manager's view, the previous reviews and the period's feedback, read_notes.py hands out the notes'
         # tasks and takes their answers, fetch_work.py and set_notion.py
         # record the work, read_slack.py the Slack messages, and
         # work_commentary.py the work's facts and commentary; check_prep.py
@@ -221,14 +217,12 @@ class ScriptsTest(unittest.TestCase):
                          {**jira, **CONFIRMED})
         self.assertEqual({key: value for key, value in self.run_ok(RULES_SCRIPT, "--prep", prep).items()
                           if key in ("values", "ratings")}, {"values": VALUES, "ratings": RATINGS})
-        self.assertEqual(self.run_ok(ORIENTATION_SCRIPT, "--prep", prep, stdin=json.dumps(ORIENTATION))
-                         ["orientation"], ORIENTATION)
-        self.assertEqual(self.run_ok(FEEDBACK_SCRIPT, "--prep", prep, stdin=json.dumps({"pieces": [PIECE]}))
-                         ["feedback"], {"pieces": [PIECE]})
-        check_ins = {"pieces": [
-            {**{k: v for k, v in PIECE.items() if k != "rating"}, "start": None, "end": None}]}
-        self.assertEqual(self.run_ok(CHECK_INS_SCRIPT, "--prep", prep, stdin=json.dumps(check_ins))["check_ins"],
-                         check_ins)
+        feedback = {"pieces": [
+            {**{k: v for k, v in PIECE.items() if k != "rating"}, "period": None}]}
+        for kind, recorded in [("orientation", ORIENTATION), ("reviews", {"pieces": [PIECE]}), ("feedback", feedback)]:
+            with open(self.run_ok(SUMMARY_SCRIPT, "--prep", prep, "--of", kind, stdin=json.dumps(recorded))["path"],
+                      encoding="utf-8") as f:
+                self.assertEqual(json.load(f), recorded)
         started = self.run_ok(NOTES_SCRIPT, "start", "--prep", prep)
         month = f"month:{TODAY:%Y-%m}"
         self.assertEqual(([line.split(": ")[0] for line in started["tasks"]], started["merge"].split(": ")[0]),
@@ -302,11 +296,11 @@ class ScriptsTest(unittest.TestCase):
                   "--prep", "Jane-Doe_26-01-01"], 1, "run init_prep.py first"),
                  ("identities that aren't JSON", IDENTITIES_SCRIPT, ["--prep", "Jane-Doe_26-01-01"], 1,
                   "the input isn't JSON"),
-                 ("an orientation that isn't JSON", ORIENTATION_SCRIPT, ["--prep", "Jane-Doe_26-01-01"], 1,
+                 ("an orientation that isn't JSON", SUMMARY_SCRIPT, ["--prep", "Jane-Doe_26-01-01", "--of", "orientation"], 1,
                   "the input isn't JSON"),
-                 ("feedback that isn't JSON", FEEDBACK_SCRIPT, ["--prep", "Jane-Doe_26-01-01"], 1,
+                 ("reviews that aren't JSON", SUMMARY_SCRIPT, ["--prep", "Jane-Doe_26-01-01", "--of", "reviews"], 1,
                   "the input isn't JSON"),
-                 ("check-ins that aren't JSON", CHECK_INS_SCRIPT, ["--prep", "Jane-Doe_26-01-01"], 1,
+                 ("feedback that isn't JSON", SUMMARY_SCRIPT, ["--prep", "Jane-Doe_26-01-01", "--of", "feedback"], 1,
                   "the input isn't JSON"),
                  ("finished for no prep", NOTES_SCRIPT, ["finished", "--prep", "Jane-Doe_26-01-01"], 1,
                   "run init_prep.py first"),

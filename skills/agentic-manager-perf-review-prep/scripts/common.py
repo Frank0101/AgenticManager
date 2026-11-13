@@ -1,8 +1,8 @@
 """What the skill's scripts share: the prep folder's name and the closed set of
 files it holds, how to find a prep's folder, the person a prep is for, the
 review's period and its days and months, who the person is in each source, the parts
-every summary has, the manager's view, previous feedback, check-ins, the
-manager's notes, the person's work in Jira, GitHub and Notion, and their Slack
+every summary has, the manager's view, previous reviews, the period's
+feedback, the manager's notes, the person's work in Jira, GitHub and Notion, and their Slack
 messages. The rules of each file are one function, applied when it is written
 and by the final check, so the two can't differ. Scripts import the shared
 library's names from here, so they don't depend on the order of their imports.
@@ -26,7 +26,13 @@ from agentic_manager.output_file import read_json, target, write_output_file  # 
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
 from agentic_manager.output_folder import DAY_FOLDER, clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.period import add_period_arguments, period_problem, shown  # noqa: E402,F401
-from agentic_manager.text import as_name, display_date, word_count  # noqa: E402,F401
+from agentic_manager.text import as_name, word_count  # noqa: E402,F401
+
+# How to write a point and pick its values, with their examples, lives in the
+# protocol's shared parts, _point.md and _value.md, the one place for them:
+# the subagents' tasks fill them in, and rules.py prints them for the agent.
+PROTOCOL = os.path.join(os.path.dirname(
+    os.path.realpath(__file__)), "..", "protocol")
 
 # The skill's output folder, and a prep folder's files in it: the person the
 # manager confirmed, which every later step reads rather than being told again.
@@ -52,19 +58,20 @@ ACCOUNT = ("id", "name")
 SOURCES = {JIRA_SOURCE: ("id", "name", "email"), "github-cli": ACCOUNT, "notion-mcp": ACCOUNT,
            "slack-mcp": ACCOUNT, "logseq-fs": ("links",)}
 LIST_FIELDS = {"links"}
-# Every summary the skill records, of the manager's view, feedback, check-ins
-# or notes, has the same parts, so each reads, and is compared with the evidence, the same
-# way: each a list of points in the agent's words, a part with nothing to say
-# left empty. A point is a sentence; only one far longer is refused, as a
-# length is room, not a quota. A point that is good or to improve also names
-# every company value it clearly shows, up to MAX_VALUES, the one it shows
-# most first, or none when none fits: one value per point would let the most common one, such as delivery,
-# hide the others the same point shows. The writing step can then speak to
-# each value from what was gathered; a context point is neither, so it names
-# none.
+# Every summary the skill records, of the manager's view, reviews, feedback
+# or notes, has the same parts, so each reads, and is compared with the
+# evidence, the same way: each a list of points in the agent's words, a part
+# with nothing to say left empty. A point is a sentence; only one far longer
+# is refused, as a length is room, not a quota. A point that is good also names
+# every company value it clearly shows, and one to improve every value it
+# calls for, up to MAX_VALUES, the most first, or none when none fits: one
+# value per point would let the most common one, such as delivery, hide the
+# others. The writing step can then speak to each value from what was
+# gathered; a context point is neither, so it names none.
 SUMMARY_PARTS = {"going_well": "what is going well or exceeding",
-                 "to_improve": "what are improvement or stretch areas",
-                 "context": "facts that are neither good nor bad, such as a long absence or a change of role"}
+                 "to_improve": "what are improvement or stretch areas, including what they should achieve next",
+                 "context": "facts that are neither good nor bad, such as a long absence, a change of role "
+                 "or support they need"}
 VALUED_PARTS = ("going_well", "to_improve")
 POINT_WORDS = 25
 MAX_POINT_WORDS = 40
@@ -73,31 +80,30 @@ RATINGS = "perf-review-ratings"
 MAX_VALUES = 2
 SUMMARY_HELP = "\n".join(
     f"  {part:<11} {meaning}, each point "
-    + ('{"point": "...", "values": ["..."]}, values every company value it clearly shows, as rules.py prints '
+    + ('{"point": "...", "values": ["..."]}, values every company value it clearly shows or calls for, as rules.py prints '
        f'them, at most {MAX_VALUES}, or [] when none fits' if part in VALUED_PARTS else "a sentence")
     for part, meaning in SUMMARY_PARTS.items())
 # The manager's overall view of the person, summarised: guidance for the
 # writing step, the only one that reads it, so the evidence is gathered without
 # it and can contradict it.
 ORIENTATION = "orientation.json"
-# What the manager gives, previous feedback or check-ins, is a list of
-# pieces, each a summary with the days it covers when it gives them, null
-# otherwise, so a note with no date still counts; a piece of the same days
-# twice is one recorded twice.
-PIECE_DAYS = ("start", "end")
-# The person's previous feedback, such as reviews or a colleague's feedback,
-# with its rating when it gives one: a rating must be one of the company's,
-# one on an old scale is left out. Feedback with an end day must end at most
-# FEEDBACK_YEARS before the period starts: older feedback says little about
-# the person now.
+# What the manager gives, previous reviews or the period's feedback, is a
+# list of pieces, each a summary with its period as the source names it, such
+# as a date or "Mid Year Review 2026", null when it names none: a label, not
+# days worked out, so nothing is inferred and a piece with none still counts.
+# The agent lists them from the most recent, those with no period first, as
+# the most recent of all; what the manager gives counts, so how old it is isn't checked.
+PIECE_FIELDS = ("period",)
+# The person's previous performance reviews, with the colleagues' feedback
+# gathered for them, each with its rating when it gives one, which must be one
+# of the company's.
+REVIEWS = "reviews.json"
+REVIEW_FIELDS = (*PIECE_FIELDS, "rating")
+# What the person heard about their work during the period, unlike the
+# manager's own notes: their OKRs, the notes of their 1:1s and the kudos or
+# recognition they received. Read with judgment, never tracked as
+# commitments.
 FEEDBACK = "feedback.json"
-FEEDBACK_FIELDS = (*PIECE_DAYS, "rating")
-FEEDBACK_YEARS = 2
-# The person's check-ins, their OKRs and 1:1 notes, shared with them, unlike
-# the manager's own notes: what they and the manager agreed during the period,
-# so a dated piece must overlap it. Read with judgment by the writing step,
-# never tracked as commitments.
-CHECK_INS = "check-ins.json"
 # The manager's own notes on the person in their vault: from the journals of
 # the period, what they noticed, each point with the days it was seen on, a
 # pattern one point with all its days; from the person's pages, only context,
@@ -132,10 +138,10 @@ RAW_DIR = "_raw"
 def expected_files():
     """Every file a prep folder holds, and nothing else: the person, the
     period and who they are in each source, the manager's view of them, their previous
-    feedback, their check-ins, the manager's notes on them, what their Slack
+    reviews, the period's feedback, the manager's notes on them, what their Slack
     messages show, their work in Jira, GitHub and Notion, and the _raw folder
     of what the subagents were shown and wrote."""
-    return {PERSON, ORIENTATION, FEEDBACK, CHECK_INS, NOTES, SLACK, WORK, RAW_DIR}
+    return {PERSON, ORIENTATION, REVIEWS, FEEDBACK, NOTES, SLACK, WORK, RAW_DIR}
 
 
 def write_raw(prep, relative, text):
@@ -323,52 +329,34 @@ def orientation_problems(orientation, values):
     return summary_problems(orientation, "the orientation", values)
 
 
-def feedback_problems(feedback, person, ratings, values):
-    """Why `feedback` isn't the previous feedback for the review of `person`, empty
-    when it is: pieces, by pieces_problems(), each with a rating too, null or
-    one of `ratings`, and ending, when it has an end day, from
-    earliest_feedback_end() to the period's end."""
-    earliest, latest = earliest_feedback_end(
-        person), date.fromisoformat(person["end"])
-
-    def rules(piece, days, what):
-        problems = []
+def reviews_problems(reviews, ratings, values):
+    """Why `reviews` aren't the previous reviews, empty when they are:
+    pieces, by pieces_problems(), each with a rating too, null or one of
+    `ratings`."""
+    def rules(piece, what):
         if piece["rating"] is not None and piece["rating"] not in ratings:
-            problems.append(f"{what}'s rating, {piece['rating']!r}, must be one of the company's: "
-                            f"{', '.join(ratings)}, or null when it gives none of them")
-        if "end" in days and not earliest <= days["end"] <= latest:
-            problems.append(f"{what} ends on {display_date(days['end'])}: only feedback that ends from "
-                            f"{shown(earliest, latest)} counts; leave it out")
-        return problems
-    return pieces_problems(feedback, ("feedback", "feedback"), FEEDBACK_FIELDS, values, rules)
-
-
-def check_ins_problems(check_ins, person, values):
-    """Why `check_ins` aren't the check-ins for the review of `person`,
-    empty when they are: pieces, by pieces_problems(), each overlapping the
-    period when it has a day."""
-    first, last = date.fromisoformat(
-        person["start"]), date.fromisoformat(person["end"])
-
-    def rules(piece, days, what):
-        if days.get("end", first) < first or days.get("start", last) > last:
-            return [f"{what} covers no day of the period, {shown(first, last)}: leave it out"]
+            return [f"{what}'s rating, {piece['rating']!r}, must be one of the company's: "
+                    f"{', '.join(ratings)}, or null when it gives none of them"]
         return []
-    return pieces_problems(check_ins, ("check-ins", "check-in"), PIECE_DAYS, values, rules)
+    return pieces_problems(reviews, ("reviews", "review"), REVIEW_FIELDS, values, rules)
+
+
+def feedback_problems(feedback, values):
+    """Why `feedback` isn't the period's feedback, empty when it is: pieces,
+    by pieces_problems()."""
+    return pieces_problems(feedback, ("feedback", "feedback piece"), PIECE_FIELDS, values, lambda piece, what: [])
 
 
 def pieces_problems(value, names, fields, values, rules):
     """Why `value` isn't a list of pieces, empty when it is, `names` naming
-    them all and one, such as ("check-ins", "check-in"): {"pieces": [...]}, none when there are none, each with
-    `fields` and the parts of SUMMARY_PARTS, its days null or dates as
-    YYYY-MM-DD, starting no later than it ends, no two of the same days, its
-    summary meeting summary_problems() with `values`, and
-    each meeting `rules(piece, days, what)`, which gets its parsed days and
-    the name to give it in a problem."""
+    them all and one, such as ("feedback", "feedback piece"): {"pieces": [...]}, none when there are none, each with
+    `fields` and the parts of SUMMARY_PARTS, its period a text or null, its
+    summary meeting summary_problems() with `values`, and each meeting
+    `rules(piece, what)`, which gets the name to give it in a problem."""
     kind, item = names
     if not (isinstance(value, dict) and list(value) == ["pieces"] and isinstance(value["pieces"], list)):
         return [f'the {kind} must be {{"pieces": [...]}}, with [] when there are none']
-    problems, periods = [], []
+    problems = []
     for number, piece in enumerate(value["pieces"], 1):
         what = f"{item} {number}"
         if not (isinstance(piece, dict) and sorted(piece) == sorted((*fields, *SUMMARY_PARTS))):
@@ -377,42 +365,11 @@ def pieces_problems(value, names, fields, values, rules):
             continue
         problems += summary_problems({part: piece[part]
                                      for part in SUMMARY_PARTS}, what, values)
-        days = {}
-        for field in PIECE_DAYS:
-            if piece[field] is None:
-                continue
-            try:
-                days[field] = date.fromisoformat(
-                    piece[field] if isinstance(piece[field], str) else "")
-            except ValueError:
-                problems.append(
-                    f"{what}'s {field}, {piece[field]!r}, must be a date as YYYY-MM-DD, or null")
-        problems += rules(piece, days, what)
-        if len(days) < 2:
-            continue
-        if days["start"] > days["end"]:
-            problems.append(f"{what} starts after it ends")
-        periods.append((days["start"], days["end"]))
-    problems += [f"two pieces of the {kind} cover {shown(start, end)}: record each once"
-                 for start, end in sorted(set(periods)) if periods.count((start, end)) > 1]
+        if not (piece["period"] is None or _is_text(piece["period"])):
+            problems.append(f"{what}'s period, {piece['period']!r}, must be a text, such as "
+                            "\"Mid Year Review 2026\", or null when it names none")
+        problems += rules(piece, what)
     return problems
-
-
-def pieces_order(piece):
-    """The key that sorts pieces: those with days first, oldest first, then
-    those with none, kept in the order given."""
-    first, last = piece["start"] or piece["end"], piece["end"] or piece["start"]
-    return (first is None, first or "", last or "")
-
-
-def earliest_feedback_end(person):
-    """The first day dated previous feedback may end on: FEEDBACK_YEARS before the
-    review's period in `person` starts, the 28th for a 29 February."""
-    start = date.fromisoformat(person["start"])
-    try:
-        return start.replace(year=start.year - FEEDBACK_YEARS)
-    except ValueError:
-        return start.replace(year=start.year - FEEDBACK_YEARS, day=28)
 
 
 def notes_problems(notes, values, days):

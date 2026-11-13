@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_prep  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import (CHECK_INS, FEEDBACK, NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP,
+from prep_fixture import (FEEDBACK, REVIEWS, NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP,
                           SLACK, WORK, temp_output, write_prep)  # noqa: E402
 
 TODAY = date(2026, 11, 10)
@@ -38,10 +38,10 @@ class CheckTest(unittest.TestCase):
                   None, "missing person.json"),
                  ("no orientation", {"orientation": None},
                   None, "missing orientation.json"),
+                 ("no reviews", {"reviews": None},
+                  None, "missing reviews.json"),
                  ("no feedback", {"feedback": None},
                   None, "missing feedback.json"),
-                 ("no check-ins", {"check_ins": None},
-                  None, "missing check-ins.json"),
                  ("no notes", {"notes": None}, None, "missing notes.json"),
                  ("no Slack summary", {"slack": None},
                   None, "missing slack.json"),
@@ -54,11 +54,10 @@ class CheckTest(unittest.TestCase):
                      **PERSON["sources"], "slack-mcp": {}}}}, None, "person.json: slack-mcp must be"),
                  ("an orientation that breaks a rule", {"orientation": {"text": "Strong"}}, None,
                   "orientation.json: the orientation must have the parts"),
-                 ("feedback that breaks a rule", {"feedback": {"pieces": [{**PIECE, "rating": "Good"}]}}, None,
-                  "feedback.json: feedback 1's rating, 'Good', must be one of the company's"),
-                 ("check-ins that break a rule", {"check_ins": {"pieces": [{**NOTE, "end": "2026-01-31",
-                                                                            "start": "2026-01-01"}]}},
-                  None, "check-ins.json: check-in 1 covers no day of the period"),
+                 ("reviews that break a rule", {"reviews": {"pieces": [{**PIECE, "rating": "Good"}]}}, None,
+                  "reviews.json: review 1's rating, 'Good', must be one of the company's"),
+                 ("feedback that breaks a rule", {"feedback": {"pieces": [{**NOTE, "period": ""}]}},
+                  None, "feedback.json: feedback piece 1's period, '', must be a text"),
                  ("notes dated outside the period", {"notes": {**NOTES, "going_well": [
                      {**NOTES["going_well"][0], "dates": ["2026-06-30"]}]}},
                   None, "notes.json: the notes summary's going_well"),
@@ -83,7 +82,7 @@ class CheckTest(unittest.TestCase):
             with self.subTest(name):
                 prep = f"Case-{i}_26-11-10"
                 files = {"person": PERSON, "orientation": ORIENTATION,
-                         "feedback": FEEDBACK, "check_ins": CHECK_INS, "notes": NOTES, "work": WORK, "slack": SLACK,
+                         "reviews": REVIEWS, "feedback": FEEDBACK, "notes": NOTES, "work": WORK, "slack": SLACK,
                          **changes}
                 write_prep(self.folder, prep=prep, **files)
                 if extra:

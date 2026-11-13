@@ -106,7 +106,7 @@ class FindPersonTest(unittest.TestCase):
         # name.
         folder = temp_output(self)
         write_prep(folder, person={**PERSON, "sources": {"jira-api": PERSON["sources"]["jira-api"]}},
-                   orientation=None, feedback=None)
+                   orientation=None, reviews=None)
         run = FakeGh({"author-email:jane@acme.test": {"janedoe": 1}},
                      {"janedoe": "Jane Doe"})
         with tempfile.TemporaryDirectory() as graph, \

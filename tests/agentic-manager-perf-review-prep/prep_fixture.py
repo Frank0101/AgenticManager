@@ -1,5 +1,5 @@
 """What the skill's tests share: an invented person, with the review's period
-and who they are in each source, orientation, previous feedback, check-ins, notes, work, Slack and company
+and who they are in each source, orientation, previous reviews, feedback, notes, work, Slack and company
 values and ratings, two synopses a reading of the notes answers with, and an
 output folder of the test's own."""
 import json
@@ -21,15 +21,15 @@ PERSON = {"person": "Jane Doe", "start": "2026-08-10", "end": "2026-11-10",
 ORIENTATION = {"going_well": [{"point": "Has led the billing migration well since May", "values": ["Ownership"]}],
                "to_improve": [{"point": "Could share progress with the wider team more often", "values": []}],
                "context": ["Came back from a long leave in May"]}
-PIECE = {"start": "2026-01-01", "end": "2026-06-30", "rating": "Meets",
+PIECE = {"period": "Mid Year Review 2026", "rating": "Meets",
          "going_well": [{"point": "Delivered the billing migration on time", "values": ["Ownership"]}],
          "to_improve": [{"point": "Could lead a design review alone", "values": ["Teamwork"]}], "context": []}
-FEEDBACK = {"pieces": [PIECE]}
-NOTE = {"start": "2026-08-01", "end": "2026-09-30",
+REVIEWS = {"pieces": [PIECE]}
+NOTE = {"period": "Q3 2026",
         "going_well": [{"point": "Agreed to own the billing migration and has kept to its plan",
                         "values": ["Ownership"]}],
         "to_improve": [], "context": []}
-CHECK_INS = {"pieces": [NOTE]}
+FEEDBACK = {"pieces": [NOTE]}
 NOTES = {"going_well": [{"point": "Presented the migration to the wider team", "values": ["Teamwork"],
                          "dates": ["2026-09-02"]}],
          "to_improve": [{"point": "Didn't flag delays until asked, many times", "values": ["Ownership"],
@@ -119,15 +119,15 @@ def temp_output(test):
 
 
 def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
-               feedback=FEEDBACK, check_ins=CHECK_INS, notes=NOTES, work=WORK, slack=SLACK):
+               reviews=REVIEWS, feedback=FEEDBACK, notes=NOTES, work=WORK, slack=SLACK):
     """Writes the prep `prep` in the output folder `folder`, holding `person`,
-    `orientation`, `feedback`, `check_ins`, `notes`, `work`,
+    `orientation`, `reviews`, `feedback`, `notes`, `work`,
     and `slack`, each left out when None, and the _raw folder the readings
     write."""
     os.makedirs(os.path.join(folder, prep, "_raw"), exist_ok=True)
     for name, value in (("person.json", person),
-                        ("orientation.json", orientation), ("feedback.json", feedback),
-                        ("check-ins.json", check_ins), ("notes.json", notes),
+                        ("orientation.json", orientation), ("reviews.json", reviews),
+                        ("feedback.json", feedback), ("notes.json", notes),
                         ("work.json", work), ("slack.json", slack)):
         if value is not None:
             with open(os.path.join(folder, prep, name), "w", encoding="utf-8") as f:

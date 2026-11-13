@@ -28,7 +28,7 @@ class SetIdentitiesTest(unittest.TestCase):
     def setUp(self):
         self.folder = temp_output(self)
         write_prep(self.folder, person=AFTER_STEP_1,
-                   orientation=None, feedback=None)
+                   orientation=None, reviews=None)
         self.path = os.path.join(self.folder, PREP, "person.json")
 
     def read(self):

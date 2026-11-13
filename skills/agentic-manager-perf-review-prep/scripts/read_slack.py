@@ -18,7 +18,7 @@ READING_ANSWER = """{"items": [
   {"date": "YYYY-MM-DD", "link": "https://<workspace>.slack.com/archives/<channel>/p<message>",
    "synopsis": "In #<channel>, a cross-team channel, posted the rollout plan; three people asked..."}
  ]}"""
-MERGE_ANSWER = """{"going_well": [{"point": "...", "values": ["<each company value it clearly shows, at most two>"],
+MERGE_ANSWER = """{"going_well": [{"point": "...", "values": ["<each company value it clearly shows or calls for, at most two>"],
                  "dates": ["YYYY-MM-DD", ...], "links": ["https://...", ...]}],
  "to_improve": [{"point": "...", "values": [], "dates": ["YYYY-MM-DD"], "links": ["https://..."]}],
  "context": [{"point": "...", "dates": ["YYYY-MM-DD"], "links": ["https://..."]}],

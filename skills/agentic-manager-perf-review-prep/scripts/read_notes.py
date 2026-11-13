@@ -25,7 +25,7 @@ READING_ANSWER = """{"items": [
   {"note": 1, "synopsis": "Presented the billing migration to the wider team; Sam asked for the slides, and Jane..."},
   {"note": 2, "synopsis": "..."}
  ]}"""
-MERGE_ANSWER = """{"going_well": [{"point": "...", "values": ["<each company value it clearly shows, at most two>"],
+MERGE_ANSWER = """{"going_well": [{"point": "...", "values": ["<each company value it clearly shows or calls for, at most two>"],
                  "dates": ["YYYY-MM-DD", ...]}],
  "to_improve": [{"point": "...", "values": [], "dates": ["YYYY-MM-DD"]}],
  "context": ["..."],

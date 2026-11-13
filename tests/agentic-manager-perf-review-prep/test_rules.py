@@ -20,11 +20,15 @@ from prep_fixture import PREP, RATINGS, VALUES, temp_output, write_prep  # noqa:
 class RulesTest(unittest.TestCase):
     def test_rules(self):
         # The parts, the company's values and ratings as the config lists
-        # them, and the first day feedback may end on for the prep's period,
-        # which starts on 10/08/2026.
+        # them, and the protocol's rules for a point and its values, the ones
+        # the subagents' tasks hold, filled in whole.
         write_prep(temp_output(self))
-        self.assertEqual(rules.rules(PREP), {"parts": common.SUMMARY_PARTS, "valued_parts": ["going_well", "to_improve"],
-                                             "values": VALUES, "ratings": RATINGS, "earliest_end": "2024-08-10"})
+        found = rules.rules(PREP)
+        self.assertEqual({key: value for key, value in found.items() if key != "rules"},
+                         {"parts": common.SUMMARY_PARTS, "valued_parts": ["going_well", "to_improve"],
+                          "values": VALUES, "ratings": RATINGS})
+        self.assertEqual(found["rules"], "\n\n".join(
+            common.fill_protocol(common.PROTOCOL, name) for name in ("_point", "_value")))
 
 
 if __name__ == "__main__":

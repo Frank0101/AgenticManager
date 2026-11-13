@@ -11,10 +11,10 @@ import argparse
 import json
 import os
 
-from common import (COMMENTARY, COMMENTARY_WORDS, FACTS, MAX_COMMENTARY_WORDS, PERSON, WORK, WORK_LISTS,
+from common import (COMMENTARY, COMMENTARY_WORDS, FACTS, MAX_COMMENTARY_WORDS, PERSON, PROTOCOL, WORK, WORK_LISTS,
                     commentary_problems, fill_protocol, period_days, prep_dir, read_json, script_command, stdin_json,
                     work_facts, work_problems, write_prep_file, write_raw)
-from reading import PROTOCOL, person_section, submit_section
+from reading import person_section, submit_section
 
 TASK = os.path.join("work", "task.md")
 ANSWER = """{"jira": "<a paragraph on the Jira work>",

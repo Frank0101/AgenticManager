@@ -13,7 +13,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Callable
 
-from common import (PERSON, RAW_DIR, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
+from common import (PERSON, PROTOCOL, RAW_DIR, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
                     fill_protocol, prep_dir, script_command, read_json, stdin_json, summary_problems, word_count, write_raw,
                     write_prep_file)
 
@@ -23,8 +23,6 @@ ANSWER = "answer.json"
 MERGE = "merge"
 SYNOPSIS_WORDS = 60
 MAX_SYNOPSIS_WORDS = 120
-PROTOCOL = os.path.join(os.path.dirname(
-    os.path.realpath(__file__)), "..", "protocol")
 
 
 @dataclass
