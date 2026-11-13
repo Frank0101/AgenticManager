@@ -12,7 +12,7 @@ import argparse
 import json
 import os
 
-from common import (ABSENT, IDENTITIES, REQUEST, WORK_LISTS, days_between, period_days, prep_dir, read_json,
+from common import (PERSON, WORK_LISTS, days_between, period_days, prep_dir, read_json,
                     stdin_json, write_work)
 
 NOTION_LISTS = WORK_LISTS["notion"]
@@ -49,8 +49,7 @@ search of a single day still returns SEARCH_LIMIT and all but a few of them
 are the rows of one database, give that search full_of, the database, as
 {"title", "url", "path"}, and as its pages only the results that aren't its
 rows: the database is recorded as one page, and the search is taken as
-complete. Write
-{"absent": true} when the manager said the person isn't in Notion.
+complete.
 
 It writes notion to work.json, keeping its Jira and GitHub work, and
 dropping its facts and commentary, which work_commentary.py works out again.
@@ -64,13 +63,7 @@ def set_notion(prep, found):
     the pages they found to work.json; returns the file's path. Exits,
     writing nothing, with every problem."""
     folder = prep_dir(prep)
-    request = read_json(os.path.join(folder, REQUEST))
-    period = period_days(request)
-    if found == ABSENT:
-        if read_json(os.path.join(folder, IDENTITIES))["notion-mcp"] != ABSENT:
-            raise SystemExit(
-                "The person has a Notion account, so their pages must be searched\n\n" + INPUT)
-        return write_work(prep, {"notion": ABSENT}, period)
+    period = period_days(read_json(os.path.join(folder, PERSON)))
     if problems := searches_problems(found, period):
         raise SystemExit("; ".join(problems) + "\n\n" + INPUT)
     found = {name: [{**search, "pages": search["pages"] + ([{**search["full_of"], "date": search["start"]}]

@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import read_slack  # noqa: E402
 import reading  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import IDENTITIES, PREP, temp_output, write_prep  # noqa: E402
+from prep_fixture import PREP, temp_output, write_prep  # noqa: E402
 
 LINK = "https://acme.slack.com/archives/C1/p1"
 ITEM = {"date": "2026-08-20", "link": LINK,
@@ -27,8 +27,7 @@ POINT = "Posted the billing rollout plan in a cross-team channel"
 class ReadSlackTest(unittest.TestCase):
     def setUp(self):
         self.folder = temp_output(self)
-        write_prep(self.folder, identities={**IDENTITIES, "slack-mcp": {"id": "U012AB3CD", "name": "Jane Doe"}},
-                   slack=None)
+        write_prep(self.folder, slack=None)
 
     def test_runs_the_months_then_merges(self):
         # A task a month with its searches bounded; every item linked; the
@@ -59,15 +58,6 @@ class ReadSlackTest(unittest.TestCase):
         done = reading.finished(read_slack.SOURCE, PREP)
         with open(done["slack"], encoding="utf-8") as f:
             self.assertEqual(json.load(f), summary)
-
-    def test_absent(self):
-        # With no Slack account, nothing to read: the empty summary at once.
-        write_prep(self.folder, identities={
-                   **IDENTITIES, "slack-mcp": {"absent": True}}, slack=None)
-        done = reading.start(read_slack.SOURCE, PREP)
-        with open(done["slack"], encoding="utf-8") as f:
-            self.assertEqual(
-                json.load(f), {"going_well": [], "to_improve": [], "context": []})
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_prep  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import (CHECK_INS, FEEDBACK, IDENTITIES, NOTE, NOTES, ORIENTATION, PIECE, PREP, REQUEST,
+from prep_fixture import (CHECK_INS, FEEDBACK, NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP,
                           SLACK, WORK, temp_output, write_prep)  # noqa: E402
 
 TODAY = date(2026, 11, 10)
@@ -34,10 +34,8 @@ class CheckTest(unittest.TestCase):
         # name: (changes to the prep's files, by write_prep()'s arguments,
         # each None when missing, extra file, expected in the errors)
         cases = [("a file more", {}, "notes.md", "move notes.md to your own scratch folder"),
-                 ("no request", {"request": None},
-                  None, "missing request.json"),
-                 ("no identities", {"identities": None},
-                  None, "missing identities.json"),
+                 ("no person", {"person": None},
+                  None, "missing person.json"),
                  ("no orientation", {"orientation": None},
                   None, "missing orientation.json"),
                  ("no feedback", {"feedback": None},
@@ -47,10 +45,13 @@ class CheckTest(unittest.TestCase):
                  ("no notes", {"notes": None}, None, "missing notes.json"),
                  ("no Slack summary", {"slack": None},
                   None, "missing slack.json"),
-                 ("a request that breaks a rule", {"request": {**REQUEST, "end": "2026-12-31"}}, None,
-                  "request.json: the period ends on 31/12/2026"),
-                 ("identities that break a rule", {"identities": {**IDENTITIES, "slack-mcp": {}}}, None,
-                  "identities.json: slack-mcp must be"),
+                 ("a period that breaks a rule", {"person": {**PERSON, "end": "2026-12-31"}}, None,
+                  "person.json: the period ends on 31/12/2026"),
+                 ("only the source of step 1", {"person": {**PERSON, "sources": {
+                     "jira-api": PERSON["sources"]["jira-api"]}}},
+                  None, "person.json: the sources must be jira-api, github-cli, notion-mcp, slack-mcp, logseq-fs"),
+                 ("a source that breaks a rule", {"person": {**PERSON, "sources": {
+                     **PERSON["sources"], "slack-mcp": {}}}}, None, "person.json: slack-mcp must be"),
                  ("an orientation that breaks a rule", {"orientation": {"text": "Strong"}}, None,
                   "orientation.json: the orientation must have the parts"),
                  ("feedback that breaks a rule", {"feedback": {"pieces": [{**PIECE, "rating": "Good"}]}}, None,
@@ -72,13 +73,16 @@ class CheckTest(unittest.TestCase):
                   None, "work.json: the work's facts don't match its items"),
                  ("no commentary", {"work": {k: v for k, v in WORK.items() if k != "commentary"}},
                   None, "work.json: the work is missing commentary"),
+                 ("a source with no commentary", {"work": {**WORK, "commentary": {**WORK["commentary"],
+                                                                                  "github": None}}},
+                  None, "work.json: the commentary's github must be a paragraph"),
                  ("a Slack point with no link", {"slack": {**SLACK, "going_well": [
                      {**SLACK["going_well"][0], "links": []}]}},
                   None, "slack.json: the Slack summary's going_well must be a list of points")]
         for i, (name, changes, extra, expected) in enumerate(cases):
             with self.subTest(name):
                 prep = f"Case-{i}_26-11-10"
-                files = {"request": REQUEST, "identities": IDENTITIES, "orientation": ORIENTATION,
+                files = {"person": PERSON, "orientation": ORIENTATION,
                          "feedback": FEEDBACK, "check_ins": CHECK_INS, "notes": NOTES, "work": WORK, "slack": SLACK,
                          **changes}
                 write_prep(self.folder, prep=prep, **files)

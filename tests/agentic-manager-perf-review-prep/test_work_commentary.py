@@ -52,10 +52,10 @@ class WorkCommentaryTest(unittest.TestCase):
                  ("a source not gathered", lambda: (write_prep(self.folder, work={
                      k: v for k, v in WORK_ITEMS.items() if k != "notion"}), work_commentary.start(PREP)),
                   "notion not gathered yet: run set_notion.py first"),
-                 ("text for a source the person isn't in",
+                 ("no paragraph for a source",
                   lambda: (work_commentary.start(PREP),
-                           work_commentary.submit(PREP, {**COMMENTARY, "github": "Opened many PRs."})),
-                  "github must be null(.|\n)*The answer's shape"),
+                           work_commentary.submit(PREP, {**COMMENTARY, "github": None})),
+                  "github must be a paragraph(.|\n)*The answer's shape"),
                  ("a paragraph too long",
                   lambda: (work_commentary.start(PREP),
                            work_commentary.submit(PREP, {**COMMENTARY, "jira": "word " * 121})),

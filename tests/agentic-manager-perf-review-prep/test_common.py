@@ -4,8 +4,10 @@ Run with: python3 tests/run.py agentic-manager-perf-review-prep
 
 import os
 import sys
+import tempfile
 import unittest
 from datetime import date
+from unittest import mock
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
@@ -13,71 +15,80 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import IDENTITIES, NOTE, NOTES, ORIENTATION, PIECE, PREP, REQUEST, SLACK, WORK_FACTS, WORK_ITEMS, temp_output, write_prep  # noqa: E402
+from prep_fixture import NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP, SLACK, WORK_FACTS, WORK_ITEMS, temp_output, write_prep  # noqa: E402
 
 TODAY = date(2026, 11, 10)
 VALUE_NAMES = ["Ownership", "Teamwork"]
 
 
 class CommonTest(unittest.TestCase):
-    def test_request_problems(self):
-        # name: (changes to the request, or a value instead of it, expected
+    def test_person_problems(self):
+        # name: (changes to the person, or a value instead of it, expected
         # in its problems, or None for none)
+        fields = "fields must be person, start, end, sources"
         cases = [("valid", {}, None),
                  ("one day", {"start": "2026-11-10"}, None),
                  ("not an object", ["Jane Doe"], "must be a JSON object"),
-                 ("a field missing", {"end": None},
-                  "fields must be person, start, end"),
+                 ("a field missing", {"end": None}, fields),
+                 ("no sources", {"sources": None}, fields),
                  ("a field more", {
-                  "shown": "10/08/2026 to 10/11/2026"}, "fields must be person, start, end"),
+                  "shown": "10/08/2026 to 10/11/2026"}, fields),
                  ("no name", {"person": " "}, "must name the person"),
                  ("a name that isn't text", {
                   "person": 7}, "must name the person"),
                  ("not a date", {"start": "10/08/2026"},
                   "must be a date as YYYY-MM-DD"),
                  ("ends after today", {"end": "2026-12-31"}, "after today"),
-                 ("starts after it ends", {"start": "2026-11-10", "end": "2026-08-10"}, "after it ends")]
+                 ("starts after it ends", {
+                  "start": "2026-11-10", "end": "2026-08-10"}, "after it ends")]
         for name, change, expected in cases:
             with self.subTest(name):
-                request = change if isinstance(change, list) else {
-                    k: v for k, v in {**REQUEST, **change}.items() if v is not None}
-                problems = common.request_problems(request, TODAY)
+                person = change if isinstance(change, list) else {
+                    k: v for k, v in {**PERSON, **change}.items() if v is not None}
+                problems = common.person_problems(person, TODAY)
                 if expected is None:
                     self.assertEqual(problems, [])
                 else:
                     self.assertIn(expected, " ".join(problems))
 
-    def test_identities_problems(self):
-        # name: (changes to the identities, or a value instead of them,
-        # expected in their problems, or None for none)
-        cases = [("valid", {}, None),
-                 ("absent everywhere", {source: {"absent": True}
-                  for source in IDENTITIES}, None),
-                 ("not an object", ["janedoe"], "must be a JSON object"),
-                 ("a source missing", {"slack-mcp": None},
-                  "must be those of jira-api"),
-                 ("a source more", {
-                  "confluence-mcp": {"absent": True}}, "must be those of jira-api"),
-                 ("no name", {"github-cli": {"id": "janedoe"}},
+    def test_sources_problems(self):
+        # name: (the sources, the sources wanted, expected in their
+        # problems, or None for none): after step 1 only Jira's, once the
+        # prep is complete every one.
+        def changed(change):
+            return {k: v for k, v in {**PERSON["sources"], **change}.items() if v is not None}
+        jira = {"jira-api": PERSON["sources"]["jira-api"]}
+        every = tuple(common.SOURCES)
+        cases = [("valid", changed({}), every, None),
+                 ("Jira's alone after step 1", jira, ("jira-api",), None),
+                 ("not an object", ["janedoe"],
+                  every, "must be a JSON object"),
+                 ("a source missing", changed({"slack-mcp": None}), every,
+                  "must be jira-api, github-cli, notion-mcp, slack-mcp, logseq-fs"),
+                 ("Jira's alone once complete", jira, every, "not jira-api"),
+                 ("a source more after step 1", changed({}),
+                  ("jira-api",), "must be jira-api, not"),
+                 ("a hidden email", changed({"jira-api": {**jira["jira-api"], "email": None}}), every,
+                  'jira-api must be {"id": "...", "name": "...", "email": "..."}'),
+                 ("an account field more", changed({"jira-api": {**jira["jira-api"], "active": True}}), every,
+                  "jira-api must be"),
+                 ("no name", changed({"github-cli": {"id": "janedoe"}}), every,
                   'github-cli must be {"id": "...", "name": "..."}'),
-                 ("a blank id", {"jira-api": {"id": " ",
-                  "name": "Jane Doe"}}, "jira-api must be"),
-                 ("absent false", {
-                  "notion-mcp": {"absent": False}}, "notion-mcp must be"),
-                 ("no links", {"logseq-fs": {"links": []}},
+                 ("a blank id", changed({"slack-mcp": {"id": " ",
+                  "name": "Jane Doe"}}), every, "slack-mcp must be"),
+                 ("no links", changed({"logseq-fs": {"links": []}}), every,
                   'logseq-fs must be {"links": ["...", ...]}'),
-                 ("a blank link", {
-                  "logseq-fs": {"links": ["Jane", " "]}}, "logseq-fs must be"),
-                 ("a link twice", {
-                  "logseq-fs": {"links": ["Jane", "Jane"]}}, "logseq-fs must be"),
-                 ("links that aren't a list", {
-                  "logseq-fs": {"links": "Jane"}}, "logseq-fs must be"),
-                 ("an id for the vault", {"logseq-fs": {"id": "Jane", "name": "Jane"}}, "logseq-fs must be")]
-        for name, change, expected in cases:
+                 ("a blank link", changed({
+                  "logseq-fs": {"links": ["Jane", " "]}}), every, "logseq-fs must be"),
+                 ("a link twice", changed({
+                  "logseq-fs": {"links": ["Jane", "Jane"]}}), every, "logseq-fs must be"),
+                 ("links that aren't a list", changed({
+                  "logseq-fs": {"links": "Jane"}}), every, "logseq-fs must be"),
+                 ("an id for the vault", changed({"logseq-fs": {"id": "Jane", "name": "Jane"}}), every,
+                  "logseq-fs must be")]
+        for name, sources, names, expected in cases:
             with self.subTest(name):
-                identities = change if isinstance(change, list) else {
-                    k: v for k, v in {**IDENTITIES, **change}.items() if v is not None}
-                problems = common.identities_problems(identities)
+                problems = common.sources_problems(sources, names)
                 if expected is None:
                     self.assertEqual(problems, [])
                 else:
@@ -171,11 +182,11 @@ class CommonTest(unittest.TestCase):
         for start, expected in [("2026-08-10", date(2024, 8, 10)), ("2028-02-29", date(2026, 2, 28))]:
             with self.subTest(start):
                 self.assertEqual(common.earliest_feedback_end(
-                    {**REQUEST, "start": start}), expected)
+                    {**PERSON, "start": start}), expected)
 
     def test_feedback_problems(self):
         # name: (the feedback, expected in its problems, or None for none).
-        # REQUEST starts on 10/08/2026, so dated feedback may end from
+        # PERSON starts on 10/08/2026, so dated feedback may end from
         # 10/08/2024 to its end, 10/11/2026.
         ratings = ["Below", "Meets", "Exceeds"]
         undated = {**PIECE, "start": None, "end": None, "rating": None}
@@ -210,7 +221,7 @@ class CommonTest(unittest.TestCase):
         for name, pieces, expected in cases:
             with self.subTest(name):
                 problems = common.feedback_problems(
-                    {"pieces": pieces}, REQUEST, ratings, VALUE_NAMES)
+                    {"pieces": pieces}, PERSON, ratings, VALUE_NAMES)
                 if expected is None:
                     self.assertEqual(problems, [])
                 else:
@@ -218,12 +229,12 @@ class CommonTest(unittest.TestCase):
         for name, feedback in [("a list", [PIECE]), ("a key more", {"pieces": [], "notes": "x"})]:
             with self.subTest(name):
                 self.assertIn('must be {"pieces": [...]}',
-                              " ".join(common.feedback_problems(feedback, REQUEST, ratings, VALUE_NAMES)))
+                              " ".join(common.feedback_problems(feedback, PERSON, ratings, VALUE_NAMES)))
 
     def test_check_ins_problems(self):
         # name: (the notes, expected in their problems, or None for none). The
         # rules all pieces share are tested with the feedback's; a dated note
-        # must overlap REQUEST's period, 10/08/2026 to 10/11/2026.
+        # must overlap PERSON's period, 10/08/2026 to 10/11/2026.
         undated = {**NOTE, "start": None, "end": None}
         cases = [("one note", [NOTE], None), ("none", [], None), ("undated", [undated], None),
                  ("overlapping its start", [
@@ -245,13 +256,13 @@ class CommonTest(unittest.TestCase):
         for name, notes, expected in cases:
             with self.subTest(name):
                 problems = common.check_ins_problems(
-                    {"pieces": notes}, REQUEST, VALUE_NAMES)
+                    {"pieces": notes}, PERSON, VALUE_NAMES)
                 if expected is None:
                     self.assertEqual(problems, [])
                 else:
                     self.assertIn(expected, " ".join(problems))
         self.assertIn('the check-ins must be {"pieces": [...]}',
-                      " ".join(common.check_ins_problems([NOTE], REQUEST, VALUE_NAMES)))
+                      " ".join(common.check_ins_problems([NOTE], PERSON, VALUE_NAMES)))
 
     def test_months_of(self):
         # Each month of the period, clipped to it.
@@ -262,23 +273,39 @@ class CommonTest(unittest.TestCase):
 
     def test_period_days(self):
         # Every day of the period, its first and last too.
-        days = common.period_days(REQUEST)
+        days = common.period_days(PERSON)
         self.assertEqual((days[0], days[1], days[-1], len(days)),
                          ("2026-08-10", "2026-08-11", "2026-11-10", 93))
 
     def test_slack_problems(self):
         # Every point, context too, has its days and links.
-        days = common.period_days(REQUEST)
+        days = common.period_days(PERSON)
         self.assertEqual(common.slack_problems(SLACK, VALUE_NAMES, days), [])
         unlinked = {**SLACK, "context": [{**SLACK["context"][0], "links": []}]}
         self.assertIn("must be a list of points", " ".join(
             common.slack_problems(unlinked, VALUE_NAMES, days)))
 
+    def test_work_problems_links(self):
+        # name: (a resolved issue's url, whether the work is accepted): a
+        # link is a web address, http too, as a self-hosted Jira site may
+        # serve its pages over http.
+        cases = [("https", "https://acme.atlassian.net/browse/PROJ-12", True),
+                 ("http", "http://jira.acme.test/browse/PROJ-12", True),
+                 ("no scheme", "jira.acme.test/browse/PROJ-12", False),
+                 ("not a web address", "ftp://jira.acme.test/PROJ-12", False)]
+        days = common.period_days(PERSON)
+        for name, url, accepted in cases:
+            with self.subTest(name):
+                work = {**WORK_ITEMS, "jira": {**WORK_ITEMS["jira"], "resolved": [
+                    {**WORK_ITEMS["jira"]["resolved"][0], "url": url}]}}
+                problems = common.work_problems(work, days, final=False)
+                self.assertEqual(problems == [], accepted, problems)
+
     def test_work_facts(self):
         # name: (the work, the facts expected): a pull request's area is its
         # issue's parent, "no parent" when the issue has none, or its
         # repository when no issue lists it; most work first.
-        days = common.period_days(REQUEST)
+        days = common.period_days(PERSON)
         pr = {"repo": "acme/billing", "title": "PR", "date": "2026-09-02"}
         github = {"opened": [{**pr, "number": 1, "url": "https://github.com/acme/billing/pull/1", "issue": "PROJ-12"},
                              {**pr, "number": 2, "url": "https://github.com/acme/billing/pull/2",
@@ -300,11 +327,20 @@ class CommonTest(unittest.TestCase):
                                      "title": None, "opened": 1, "merged": 0},
                                  {"kind": "repository", "key": None, "title": "acme/billing", "opened": 1,
                                   "merged": 0}]}}),
-                 ("nothing", {"jira": {"absent": True}, "github": {"absent": True}, "notion": {"absent": True}},
-                  {"jira": None, "github": None, "notion": None})]
+                 ("nothing", {source: dict.fromkeys(lists, []) for source, lists in common.WORK_LISTS.items()},
+                  {source: {"by_month": [{"month": month, **dict.fromkeys((name for name in lists if name != "open"), 0),
+                                          "areas": 0, "main_areas": []}
+                                         for month in ("2026-08", "2026-09", "2026-10", "2026-11")],
+                            "by_area": []} for source, lists in common.WORK_LISTS.items()})]
         for name, work, expected in cases:
             with self.subTest(name):
                 self.assertEqual(common.work_facts(work, days), expected)
+
+    def test_name_words(self):
+        for name, words in [("Jane Doe", ["jane", "doe"]), ("José  Núñez-Ruiz", ["jose", "nunez", "ruiz"]),
+                            ("Meeting with Jane Doe", ["meeting", "with", "jane", "doe"]), ("..", [])]:
+            with self.subTest(name):
+                self.assertEqual(common.name_words(name), words)
 
     def test_prep_dir(self):
         folder = temp_output(self)
@@ -318,6 +354,24 @@ class CommonTest(unittest.TestCase):
         for name, prep, expected in cases:
             with self.subTest(name), self.assertRaisesRegex(SystemExit, expected):
                 common.prep_dir(prep)
+
+    def test_script_command(self):
+        # By the folder the agent ran one of the skill's scripts from, even
+        # through a symlink, as the skill pre-approves it; by the skill's own
+        # folder otherwise.
+        scripts = os.path.dirname(os.path.realpath(common.__file__))
+        with tempfile.TemporaryDirectory() as folder:
+            link = os.path.join(folder, "scripts")
+            os.symlink(scripts, link)
+            # name: (sys.argv[0], the folder expected in the command)
+            cases = [("the script itself", os.path.join(link, "jira_ticket.py"), link),
+                     ("another of the skill's scripts", os.path.join(
+                         link, "read_notes.py"), link),
+                     ("not one of the skill's scripts", os.path.join(folder, "run.py"), scripts)]
+            for name, ran, expected in cases:
+                with self.subTest(name), mock.patch.object(sys, "argv", [ran]):
+                    self.assertEqual(common.script_command("jira_ticket.py"),
+                                     f"python3 {os.path.join(expected, 'jira_ticket.py')}")
 
 
 if __name__ == "__main__":

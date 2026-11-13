@@ -13,7 +13,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Callable
 
-from common import (RAW_DIR, REQUEST, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
+from common import (PERSON, RAW_DIR, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
                     fill_protocol, prep_dir, script_command, read_json, stdin_json, summary_problems, word_count, write_raw,
                     write_prep_file)
 
@@ -204,7 +204,7 @@ def merge_task(source, prep, material):
 
 def person_section(prep):
     """The person the prep is for, for a task."""
-    return f"## The person\n\n{read_json(os.path.join(prep_dir(prep), REQUEST))['person']}"
+    return f"## The person\n\n{read_json(os.path.join(prep_dir(prep), PERSON))['person']}"
 
 
 def values_section():
@@ -216,9 +216,8 @@ def values_section():
 def links_section(source):
     """How a task reads a Jira ticket a link points to: the command, by the
     path the skill pre-approves."""
-    script = os.path.join(os.path.dirname(
-        os.path.abspath(call(source).split(" ", 1)[1])), "jira_ticket.py")
-    return f"## Reading links\n\nA Jira ticket: `python3 {script} --key <key>`, such as PROJ-123."
+    return (f"## Reading links\n\nA Jira ticket: `{script_command('jira_ticket.py')} --key <key>`, "
+            "such as PROJ-123.")
 
 
 def submit_section(command, answer):

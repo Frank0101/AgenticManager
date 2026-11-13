@@ -1,8 +1,8 @@
 """Unit tests for skills/agentic-manager-utils-lib/agentic_manager/jira.py.
 Run with: python3 tests/run.py agentic-manager-utils-lib
 
-The client talks to a local fake Jira, whose answers each test sets in
-FakeJira.routes. read_source is patched, so no config is read.
+The client talks to a local fake Jira, jira_fake.py, whose answers each test
+sets in FakeJira.routes. read_source is patched, so no config is read.
 """
 
 import io
@@ -10,12 +10,9 @@ import json
 import os
 import re
 import sys
-import threading
 import unittest
 from email.message import Message
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
-from urllib.parse import parse_qs, urlparse
 
 # tests/<skill>/ mirrors skills/<skill>/.
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -23,48 +20,11 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(
     REPO_ROOT, "skills", os.path.basename(TEST_DIR)))
 from agentic_manager import batch, jira, retry  # noqa: E402
+sys.path.insert(0, TEST_DIR)
+import jira_fake  # noqa: E402
+from jira_fake import FakeJira  # noqa: E402
 
 TOKEN = "s3cret-token"
-
-
-class FakeJira(BaseHTTPRequestHandler):
-    """Answers each path from `routes`: a payload, or a function of the query,
-    or of a POST's JSON body, that returns one. A payload of (code, body)
-    sends that status. Any other path is a 404. Every request is recorded in
-    `requests` as (path, query or body), and its Authorization header in
-    `authorizations`; a POST's Content-Type in `content_types`."""
-    routes = {}
-    requests = []
-    authorizations = []
-    content_types = []
-
-    def log_message(self, format, *args):
-        pass
-
-    def do_GET(self):
-        url = urlparse(self.path)
-        self.answer(url.path, {k: v[0]
-                    for k, v in parse_qs(url.query).items()})
-
-    def do_POST(self):
-        FakeJira.content_types.append(self.headers.get("Content-Type"))
-        self.answer(urlparse(self.path).path, json.loads(
-            self.rfile.read(int(self.headers["Content-Length"]))))
-
-    def answer(self, path, query):
-        FakeJira.requests.append((path, query))
-        FakeJira.authorizations.append(self.headers.get("Authorization"))
-        answer = FakeJira.routes.get(
-            path, (404, {"errorMessages": ["not found"]}))
-        if callable(answer):
-            answer = answer(query)
-        code, body = answer if isinstance(answer, tuple) else (200, answer)
-        data = json.dumps(body).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
 
 
 def pages(*pages_by_start):
@@ -166,14 +126,11 @@ class HelpersTest(unittest.TestCase):
 class ClientTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), FakeJira)
-        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
-        cls.base_url = f"http://127.0.0.1:{cls.server.server_address[1]}"
+        cls.server, cls.base_url = jira_fake.serve()
 
     @classmethod
     def tearDownClass(cls):
-        cls.server.shutdown()
-        cls.server.server_close()
+        jira_fake.stop(cls.server)
 
     def setUp(self):
         self.reset_jira()
@@ -184,10 +141,7 @@ class ClientTest(unittest.TestCase):
         self.addCleanup(sleep.stop)
 
     def reset_jira(self):
-        FakeJira.routes = {}
-        FakeJira.requests = []
-        FakeJira.authorizations = []
-        FakeJira.content_types = []
+        jira_fake.reset()
 
     def make_client(self, base_url, excluded=()):
         settings = {"base-url": base_url, "email": "me@acme.test", "api-token": TOKEN,
@@ -237,6 +191,25 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(FakeJira.requests, [("/rest/api/3/user/search",
                                               {"query": "Jane Doe", "maxResults": "50"})])
 
+    def test_user(self):
+        # A person by their account's id, as users() gives each one; none
+        # for an account Jira doesn't have, or one that isn't a person's.
+        jane = {"accountId": "a1", "accountType": "atlassian", "displayName": "Jane Doe",
+                "emailAddress": "jane@acme.test", "active": True}
+        bot = {"accountId": "b1", "accountType": "app",
+               "displayName": "Jane Bot", "active": True}
+        cases = [("a person", jane, {"accountId": "a1", "displayName": "Jane Doe",
+                                     "emailAddress": "jane@acme.test", "active": True}),
+                 ("an app", bot, None),
+                 ("no such account", (404, {"errorMessages": ["not found"]}), None)]
+        for name, answer, expected in cases:
+            with self.subTest(name):
+                self.reset_jira()
+                FakeJira.routes["/rest/api/3/user"] = answer
+                self.assertEqual(self.client.user("a1"), expected)
+                self.assertEqual(FakeJira.requests, [
+                                 ("/rest/api/3/user", {"accountId": "a1"})])
+
     def test_errors(self):
         # Every final failure raises JiraError, with the message and advice
         # the user is shown, never Jira's body, which can echo the token.
@@ -249,7 +222,7 @@ class ClientTest(unittest.TestCase):
             ("403", (403, {}), None,
              "Jira returned 403 Forbidden for /rest/api/3/myself: the account lacks permission.", False),
             ("429", (429, {}), None,
-             "Jira returned 429 Too Many Requests for /rest/api/3/myself. Wait a minute and run it again.", False),
+             "Jira returned 429 Too Many Requests for /rest/api/3/myself. Run it again later: the limit can take up to an hour to lift.", False),
             ("500", (500, {"errorMessages": ["boom"]}), None,
              "Jira returned 500 for /rest/api/3/myself.", False),
             ("reflected token", (500, {"errorMessages": [TOKEN]}), None,
@@ -278,17 +251,26 @@ class ClientTest(unittest.TestCase):
 
     def test_retries(self):
         # A dropped connection or a 5xx is tried again after each of
-        # RETRY_WAITS; any other answer, a 429 rate limit included, is final
-        # at once.
+        # RETRY_WAITS; a 429 after the seconds its Retry-After gives, when
+        # it gives a whole number no longer than retry.py's cap, a few times
+        # at most; any other answer, and any other 429, is final at once.
         # name: (Jira's answers in turn, expected answer or error, waits)
         busy, ok = (503, {}), (200, {"displayName": "Alex Example"})
+        limited = "Jira returned 429 Too Many Requests for /rest/api/3/myself. Run it again later: the limit can take up to an hour to lift."
         cases = [
             ("busy, then fine", [busy, busy, ok], {
              "displayName": "Alex Example"}, [1, 3]),
             ("busy every time", [
              busy] * 4, "Jira returned 503 for /rest/api/3/myself.", [1, 3, 9]),
-            ("a rate limit isn't tried again", [(429, {})],
-             "Jira returned 429 Too Many Requests for /rest/api/3/myself. Wait a minute and run it again.", []),
+            ("a rate limit, waited out", [(429, {}, {"Retry-After": "2"}), ok], {
+             "displayName": "Alex Example"}, [2]),
+            ("a rate limit every time", [(429, {}, {"Retry-After": "2"})] * (retry.RATE_WAITS_AT_MOST + 1),
+             limited, [2] * retry.RATE_WAITS_AT_MOST),
+            ("a rate limit without Retry-After", [(429, {})], limited, []),
+            ("a rate limit with a date", [(429, {}, {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"})],
+             limited, []),
+            ("a rate limit longer than the cap",
+             [(429, {}, {"Retry-After": str(retry.LONGEST_RATE_WAIT + 1)})], limited, []),
             ("not found isn't tried again", [(404, {})], "404 Not Found", []),
             ("unauthorized isn't tried again", [
              (401, {})], "401 Unauthorized", []),

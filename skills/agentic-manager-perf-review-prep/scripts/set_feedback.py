@@ -10,7 +10,7 @@ import argparse
 import json
 import os
 
-from common import (FEEDBACK, RATINGS, REQUEST, SUMMARY_HELP, VALUES, company_names, feedback_problems, pieces_order,
+from common import (FEEDBACK, PERSON, RATINGS, SUMMARY_HELP, VALUES, company_names, feedback_problems, pieces_order,
                     prep_dir, read_json, stdin_json, write_prep_file)
 
 INPUT = """Input, on stdin: every piece of previous feedback, such as:
@@ -46,8 +46,8 @@ def set_feedback(prep, feedback):
     """Write the previous feedback `feedback` to the prep `prep`'s
     feedback.json, in pieces_order(), after checking it; returns the file's
     path. Exits, writing nothing, with every problem."""
-    request = read_json(os.path.join(prep_dir(prep), REQUEST))
-    if problems := feedback_problems(feedback, request, company_names(RATINGS), company_names(VALUES)):
+    person = read_json(os.path.join(prep_dir(prep), PERSON))
+    if problems := feedback_problems(feedback, person, company_names(RATINGS), company_names(VALUES)):
         raise SystemExit("; ".join(problems) + "\n\n" + INPUT)
     pieces = sorted(feedback["pieces"], key=pieces_order)
     return write_prep_file(prep, FEEDBACK, {"pieces": pieces})

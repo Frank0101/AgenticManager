@@ -4,8 +4,9 @@ run the whole scripts. fetch_sprint.py's functions have unit tests in
 test_fetch_sprint.py.
 Run with: python3 tests/run.py agentic-manager-jira-sprint-report
 
-The scripts run against a fake Jira server, started on a local port, that serves the
-made-up sprint in sprint_fixture.py. HOME points at a temporary folder holding the
+The scripts run against the library's tests' fake Jira, started on a local port, serving
+the made-up sprint in sprint_fixture.py and refusing any other credentials than the
+config's. HOME points at a temporary folder holding the
 test's own config, whose base-url is that server and whose output root is in that
 folder too, and TMPDIR at the same folder, so reports that fall back to the system
 temp folder stay inside it. github-cli is enabled, as the report needs it, and a
@@ -20,12 +21,9 @@ import re
 import subprocess
 import sys
 import tempfile
-import threading
 import unittest
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from unittest import mock
-from urllib.parse import parse_qs, urlparse
 
 # tests/<skill>/ mirrors skills/<skill>/.
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -38,52 +36,28 @@ import sprint_fixture as fixture  # noqa: E402
 EMAIL = "me@acme.test"
 TOKEN = "s3cret-token"
 
-# A fake gh: prints the answer FAKE_GH_ANSWERS holds for the words of its
-# command up to the first option; for none, or for {"fails": message}, it
-# fails as gh does, its message on stderr. A GraphQL call, unless "api
-# graphql" is answered as a whole, is answered from each pull request's "pr
-# view <url>", as the library's tests' gh_fake builds it (FAKE_GH_LIB). Each
-# command's words go to FAKE_GH_LOG, one line each.
-FAKE_GH = """#!/usr/bin/env python3
-import json, os, sys
-with open(os.environ["FAKE_GH_LOG"], "a", encoding="utf-8") as f:
-    f.write(json.dumps(sys.argv[1:]) + "\\n")
-sys.path.insert(0, os.environ["FAKE_GH_LIB"])
-from gh_fake import graphql_answer, is_graphql
-with open(os.environ["FAKE_GH_ANSWERS"], encoding="utf-8") as f:
-    answers = json.load(f)
-if is_graphql(sys.argv[1:]) and "api graphql" not in answers:
-    code, out, err = graphql_answer(sys.argv[1:], lambda url: answers.get(f"pr view {url}"))
-    sys.stdout.write(out)
-    sys.stderr.write(err)
-    sys.exit(code)
-words = []
-for word in sys.argv[1:]:
-    if word.startswith("-"):
-        break
-    words.append(word)
-answer = answers.get(" ".join(words))
-if answer is None or (isinstance(answer, dict) and "fails" in answer):
-    sys.exit((answer or {}).get("fails") or "no answer")
-print(json.dumps(answer))
-"""
 FAKE_GH_LIB = os.path.join(os.path.dirname(
     TEST_DIR), "agentic-manager-utils-lib")
 sys.path.insert(0, FAKE_GH_LIB)
-from gh_fake import is_graphql  # noqa: E402
+from gh_fake import FAKE_GH, is_graphql  # noqa: E402
+import jira_fake  # noqa: E402
+from jira_fake import FakeJira  # noqa: E402
 
 
-class FakeJira(BaseHTTPRequestHandler):
-    """Answers the endpoints fetch_sprint.py calls; anything else is a 404.
-    `boards` holds the project's boards, `sprints` the board's sprints,
-    `estimation` the board's estimation field, `fields` the site's fields and
-    `removed` what a search for the removed issues returns, `parents` what
-    a search by id for past epics returns, `unknown` the ids of the issues a
-    search by id for issues without changes doesn't find, `subtasks` what a
-    search by parent returns and `panel` each issue's Development panel, so a
-    test can change them. `requests` records each path, `queries` each JQL,
-    `data_types` each Development panel's data type read and `batches` each
-    batched changelog request's body.
+# The batched changelog request, the one fetch_sprint.py POSTs.
+BULKFETCH = "/rest/api/3/changelog/bulkfetch"
+
+
+class Site:
+    """The made-up Jira site the library's fake Jira serves, as route()
+    answers it: `boards` holds the project's boards, `sprints` the board's
+    sprints, `estimation` the board's estimation field, `fields` the site's
+    fields and `removed` what a search for the removed issues returns,
+    `parents` what a search by id for past epics returns, `unknown` the ids
+    of the issues a search by id for issues without changes doesn't find,
+    `subtasks` what a search by parent returns and `panel` each issue's
+    Development panel, so a test can change them. `parent_queries` records
+    each search for past epics.
 
     Changelogs are served only in batches, as fetch_sprint.py reads them, at
     most BATCH_PAGE change histories a page, so an issue's history can span
@@ -99,109 +73,77 @@ class FakeJira(BaseHTTPRequestHandler):
     parent_queries = []
     reporting_timezone: Optional[str] = "Europe/London"
     estimation: Optional[dict] = None
-    requests = []
-    queries = []
-    data_types = []
-    batches = []
 
-    def log_message(self, format, *args):
-        pass
 
-    def reply(self, code, payload):
-        body = json.dumps(payload).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+def route(path, query):
+    """The fake Jira's answer to a GET of `path` with `query`, from Site, or
+    None for a 404."""
+    sprints = {str(s["id"]): s for s in Site.sprints}
+    if path == "/rest/api/3/myself":
+        return {"accountId": "1", "displayName": "Alex Example", "timeZone": Site.reporting_timezone}
+    if path == "/rest/api/3/field":
+        return Site.fields
+    if path == "/rest/api/3/status":
+        return fixture.STATUSES
+    if path == "/rest/agile/1.0/board":
+        return {"values": Site.boards, "isLast": True}
+    if path == "/rest/agile/1.0/board/43/sprint":
+        return (400, {"errorMessages": ["The board does not support sprints"]})
+    if path == f"/rest/agile/1.0/board/{fixture.BOARD_ID}/sprint":
+        state = query.get("state")
+        return {"values": [s for s in Site.sprints if not state or s["state"] == state], "isLast": True}
+    if path.startswith("/rest/agile/1.0/sprint/"):
+        parts = path.split("/")
+        sprint = sprints.get(parts[5])
+        if sprint is None:
+            return None
+        if len(parts) == 6:
+            return sprint
+        return {"issues": fixture.CURRENT, "total": len(fixture.CURRENT)}
+    if path == "/rest/greenhopper/1.0/rapidviewconfig/editmodel.json":
+        return {"estimationStatisticConfig": {"currentEstimationStatistic": Site.estimation}}
+    if path == "/rest/greenhopper/1.0/rapid/charts/sprintreport":
+        return fixture.SPRINT_REPORT
+    if path == "/rest/api/3/search/jql":
+        if query["jql"].startswith("id in") and query.get("fields") == "key":
+            ids = set(re.findall(r"\d+", query["jql"])) - Site.unknown
+            return {"issues": [{"id": i["id"], "key": i["key"]} for i in fixture.CURRENT + Site.removed
+                               if i["id"] in ids]}
+        if query["jql"].startswith("id in"):
+            Site.parent_queries.append((query["jql"], query.get("fields")))
+            return {"issues": Site.parents}
+        if query["jql"].startswith("parent in"):
+            return {"issues": Site.subtasks}
+        return {"issues": Site.removed}
+    if path.startswith("/rest/dev-status/latest/issue/"):
+        # The Development panel: {issue id: {data type: items}}, a single
+        # GitHub host listing them.
+        panel = Site.panel.get(query["issueId"], {})
+        if path.endswith("/summary"):
+            return {"summary": {kind: {"byInstanceType": {"GitHub": {}}} for kind in panel}}
+        items = {"pullrequest": "pullRequests",
+                 "repository": "repositories"}[query["dataType"]]
+        return {"detail": [{items: panel.get(query["dataType"], [])}]}
+    if path.startswith("/rest/api/3/issue/") and path.endswith("/comment"):
+        key = path.split("/")[5]
+        comments = fixture.COMMENTS.get(key, [])
+        return {"comments": comments, "total": len(comments)}
+    return None
 
-    def authorized(self):
-        expected = "Basic " + \
-            base64.b64encode(f"{EMAIL}:{TOKEN}".encode()).decode()
-        return self.headers.get("Authorization") == expected
 
-    def do_POST(self):
-        path = urlparse(self.path).path
-        FakeJira.requests.append(path)
-        body = json.loads(self.rfile.read(
-            int(self.headers["Content-Length"])))
-        FakeJira.batches.append(body)
-        if not self.authorized():
-            return self.reply(401, {"errorMessages": ["unauthorized"]})
-        if path != "/rest/api/3/changelog/bulkfetch":
-            return self.reply(404, {"errorMessages": ["not found"]})
-        self.reply(200, batch_changelogs(body))
+def requested():
+    """The path of every request the fake Jira received, in order."""
+    return [path for path, _ in FakeJira.requests]
 
-    def do_GET(self):
-        url = urlparse(self.path)
-        query = {k: v[0] for k, v in parse_qs(url.query).items()}
-        FakeJira.requests.append(url.path)
-        if "jql" in query:
-            FakeJira.queries.append(query["jql"])
-        if "dataType" in query:
-            FakeJira.data_types.append(query["dataType"])
-        if not self.authorized():
-            return self.reply(401, {"errorMessages": ["unauthorized"]})
-        payload = self.route(url.path, query)
-        if payload is None:
-            return self.reply(404, {"errorMessages": ["not found"]})
-        if payload == "kanban":
-            return self.reply(400, {"errorMessages": ["The board does not support sprints"]})
-        self.reply(200, payload)
 
-    def route(self, path, query):
-        sprints = {str(s["id"]): s for s in FakeJira.sprints}
-        if path == "/rest/api/3/myself":
-            return {"accountId": "1", "displayName": "Alex Example", "timeZone": FakeJira.reporting_timezone}
-        if path == "/rest/api/3/field":
-            return FakeJira.fields
-        if path == "/rest/api/3/status":
-            return fixture.STATUSES
-        if path == "/rest/agile/1.0/board":
-            return {"values": FakeJira.boards, "isLast": True}
-        if path == "/rest/agile/1.0/board/43/sprint":
-            return "kanban"
-        if path == f"/rest/agile/1.0/board/{fixture.BOARD_ID}/sprint":
-            state = query.get("state")
-            return {"values": [s for s in FakeJira.sprints if not state or s["state"] == state], "isLast": True}
-        if path.startswith("/rest/agile/1.0/sprint/"):
-            parts = path.split("/")
-            sprint = sprints.get(parts[5])
-            if sprint is None:
-                return None
-            if len(parts) == 6:
-                return sprint
-            return {"issues": fixture.CURRENT, "total": len(fixture.CURRENT)}
-        if path == "/rest/greenhopper/1.0/rapidviewconfig/editmodel.json":
-            return {"estimationStatisticConfig": {"currentEstimationStatistic": FakeJira.estimation}}
-        if path == "/rest/greenhopper/1.0/rapid/charts/sprintreport":
-            return fixture.SPRINT_REPORT
-        if path == "/rest/api/3/search/jql":
-            if query["jql"].startswith("id in") and query.get("fields") == "key":
-                ids = set(re.findall(r"\d+", query["jql"])) - FakeJira.unknown
-                return {"issues": [{"id": i["id"], "key": i["key"]} for i in fixture.CURRENT + FakeJira.removed
-                                   if i["id"] in ids]}
-            if query["jql"].startswith("id in"):
-                FakeJira.parent_queries.append(
-                    (query["jql"], query.get("fields")))
-                return {"issues": FakeJira.parents}
-            if query["jql"].startswith("parent in"):
-                return {"issues": FakeJira.subtasks}
-            return {"issues": FakeJira.removed}
-        if path.startswith("/rest/dev-status/latest/issue/"):
-            # The Development panel: {issue id: {data type: items}}, a single
-            # GitHub host listing them.
-            panel = FakeJira.panel.get(query["issueId"], {})
-            if path.endswith("/summary"):
-                return {"summary": {kind: {"byInstanceType": {"GitHub": {}}} for kind in panel}}
-            items = {"pullrequest": "pullRequests",
-                     "repository": "repositories"}[query["dataType"]]
-            return {"detail": [{items: panel.get(query["dataType"], [])}]}
-        if path.startswith("/rest/api/3/issue/") and path.endswith("/comment"):
-            key = path.split("/")[5]
-            comments = fixture.COMMENTS.get(key, [])
-            return {"comments": comments, "total": len(comments)}
-        return None
+def data_types():
+    """Each Development panel's data type the fake Jira was asked for."""
+    return [query["dataType"] for _, query in FakeJira.requests if "dataType" in query]
+
+
+def batches():
+    """The body of each batched changelog request the fake Jira received."""
+    return [body for path, body in FakeJira.requests if path == BULKFETCH]
 
 
 # Change histories a page of the fake's batched changelog answer holds.
@@ -213,7 +155,7 @@ def batch_changelogs(body):
     of the issues asked for by id, in their order, one change each, from
     BATCH_PAGE histories after the page token's offset on."""
     keys = {issue["id"]: issue["key"]
-            for issue in fixture.CURRENT + FakeJira.removed}
+            for issue in fixture.CURRENT + Site.removed}
     every = [(issue_id, history) for issue_id in body["issueIdsOrKeys"]
              for history in fixture_histories(keys[issue_id])]
     start = int(body.get("nextPageToken", 0))
@@ -242,14 +184,11 @@ def fixture_histories(key):
 class FetchTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), FakeJira)
-        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
-        cls.base_url = f"http://127.0.0.1:{cls.server.server_address[1]}"
+        cls.server, cls.base_url = jira_fake.serve()
 
     @classmethod
     def tearDownClass(cls):
-        cls.server.shutdown()
-        cls.server.server_close()
+        jira_fake.stop(cls.server)
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -280,26 +219,28 @@ class FetchTest(unittest.TestCase):
 
     # Puts the fake Jira back to serving the fixture's sprint.
     def reset_jira(self):
-        FakeJira.sprints = [copy.deepcopy(fixture.SPRINT),
-                            copy.deepcopy(fixture.PREVIOUS_SPRINT),
-                            {**fixture.SPRINT, "id": 8, "name": "Sprint 8", "state": "future",
-                             "completeDate": None}]
-        FakeJira.boards = [{"id": 43, "type": "kanban"},
-                           {"id": fixture.BOARD_ID, "type": "scrum"}]
-        FakeJira.fields = [{"id": fixture.FLAGGED_FIELD, "name": "Flagged"},
-                           {"id": "customfield_99999", "name": "Story Points"}]
-        FakeJira.removed = fixture.REMOVED
-        FakeJira.parents = []
-        FakeJira.subtasks = []
-        FakeJira.unknown = set()
-        FakeJira.panel = {}
-        FakeJira.parent_queries = []
-        FakeJira.requests = []
-        FakeJira.data_types = []
-        FakeJira.batches = []
-        FakeJira.reporting_timezone = "Europe/London"
-        FakeJira.estimation = {"typeId": "field",
-                               "fieldId": fixture.POINTS_FIELD}
+        jira_fake.reset()
+        FakeJira.routes = {BULKFETCH: batch_changelogs}
+        FakeJira.fallback = route
+        FakeJira.authorization = "Basic " + \
+            base64.b64encode(f"{EMAIL}:{TOKEN}".encode()).decode()
+        Site.sprints = [copy.deepcopy(fixture.SPRINT),
+                        copy.deepcopy(fixture.PREVIOUS_SPRINT),
+                        {**fixture.SPRINT, "id": 8, "name": "Sprint 8", "state": "future",
+                         "completeDate": None}]
+        Site.boards = [{"id": 43, "type": "kanban"},
+                       {"id": fixture.BOARD_ID, "type": "scrum"}]
+        Site.fields = [{"id": fixture.FLAGGED_FIELD, "name": "Flagged"},
+                       {"id": "customfield_99999", "name": "Story Points"}]
+        Site.removed = fixture.REMOVED
+        Site.parents = []
+        Site.subtasks = []
+        Site.unknown = set()
+        Site.panel = {}
+        Site.parent_queries = []
+        Site.reporting_timezone = "Europe/London"
+        Site.estimation = {"typeId": "field",
+                           "fieldId": fixture.POINTS_FIELD}
 
     # Writes the test's config. `output` is its output settings; by default the
     # output root is the test's own.
@@ -364,15 +305,15 @@ class FetchTest(unittest.TestCase):
             # The latest closed sprint, on the project's scrum board: the
             # kanban board, which has no sprints, isn't asked.
             (None, ["--project", "PROJ"], 7, "closed"),
-            (lambda: FakeJira.sprints[0].update(state="active", completeDate=None),
+            (lambda: Site.sprints[0].update(state="active", completeDate=None),
              ["--project", "PROJ", "--active"], 7, "active"),
             (None, ["--sprint-name", "Sprint 6", "--board", board], 6, "closed"),
             (None, ["--sprint-id", "7"], 7, "closed"),
             # The board given, as the sprint names none.
-            (lambda: FakeJira.sprints[0].update(originBoardId=None),
+            (lambda: Site.sprints[0].update(originBoardId=None),
              ["--sprint-id", "7", "--board", board], 7, "closed"),
             # A name alone: its first word is the project key.
-            (lambda: [s.update(name="PROJ Sprint 6") for s in FakeJira.sprints if s["id"] == 6],
+            (lambda: [s.update(name="PROJ Sprint 6") for s in Site.sprints if s["id"] == 6],
              ["--sprint-name", "PROJ Sprint 6"], 6, "closed"),
         ]
         for change, args, sprint_id, state in cases:
@@ -384,18 +325,18 @@ class FetchTest(unittest.TestCase):
                 self.assertEqual((out["sprint_id"], out["label"], out["sprint_state"]),
                                  (sprint_id, f"PROJ_Sprint_{sprint_id}", state))
                 self.assertNotIn(
-                    "/rest/agile/1.0/board/43/sprint", FakeJira.requests)
+                    "/rest/agile/1.0/board/43/sprint", requested())
 
     def test_failures(self):
         # Each failure exits non-zero with a message saying what to fix, never
         # shows the token, and writes no report folder. Wrong selectors are
         # usage errors (exit 2); the rest exit 1.
         def two_active():
-            for sprint in FakeJira.sprints[:2]:
+            for sprint in Site.sprints[:2]:
                 sprint.update(state="active")
 
         def kanban_only():
-            FakeJira.boards = [{"id": 43, "type": "kanban"}]
+            Site.boards = [{"id": 43, "type": "kanban"}]
 
         def config(**settings):
             return lambda: self.write_config(**settings)
@@ -415,11 +356,11 @@ class FetchTest(unittest.TestCase):
              1, "no sprint active found"),
             (None, ["--sprint-name", "Sprint 9", "--board", board], 1,
              "no sprint named 'Sprint 9' found"),
-            (lambda: FakeJira.sprints[0].update(originBoardId=None), ["--sprint-id", "7"], 1,
+            (lambda: Site.sprints[0].update(originBoardId=None), ["--sprint-id", "7"], 1,
              "can't tell the sprint's board"),
             # A removed issue missing from the search would silently drop out
             # of the report.
-            (lambda: setattr(FakeJira, "removed", fixture.REMOVED[1:]), ["--sprint-id", "7"], 1,
+            (lambda: setattr(Site, "removed", fixture.REMOVED[1:]), ["--sprint-id", "7"], 1,
              "removed issue(s) could not be fetched: ['" + fixture.REMOVED[0]["key"] + "']"),
             # Config problems name the setting, never its value; the other
             # cases (not enabled, not filled in) are tested with the library.
@@ -451,18 +392,18 @@ class FetchTest(unittest.TestCase):
             f.write("Existing report")
         for zone in (None, "Missing/Zone"):
             with self.subTest(zone=zone):
-                FakeJira.reporting_timezone = zone
+                Site.reporting_timezone = zone
                 self.assert_fails("reporting timezone", "--sprint-id", "7")
                 with open(sentinel, encoding="utf-8") as f:
                     self.assertEqual(f.read(), "Existing report")
 
     def test_warnings(self):
         def no_points_field():
-            FakeJira.estimation = None
-            FakeJira.fields = [
+            Site.estimation = None
+            Site.fields = [
                 {"id": fixture.FLAGGED_FIELD, "name": "Flagged"}]
         cases = [
-            (lambda: FakeJira.sprints[1].update(originBoardId=99), ["--project", "PROJ"],
+            (lambda: Site.sprints[1].update(originBoardId=99), ["--project", "PROJ"],
              "closed sprints span several boards"),
             (no_points_field, ["--sprint-id", "7"],
              "warning: no story points field found"),
@@ -499,14 +440,14 @@ class FetchTest(unittest.TestCase):
         self.assertEqual(self.raw(out, "changelogs/PROJ-7.json"), [])
         self.assertFalse(os.path.exists(os.path.join(
             out["report_dir"], "_raw", "changelogs", "PROJ-9.json")))
-        self.assertFalse([path for path in FakeJira.requests
+        self.assertFalse([path for path in requested()
                           if path.endswith("/changelog")])
         ids = [issue["id"] for issue in issues]
         pages = -(-sum(len(fixture.CHANGELOGS[i["key"]])
                        for i in issues) // BATCH_PAGE)
-        self.assertEqual(FakeJira.batches[0], {
+        self.assertEqual(batches()[0], {
                          "issueIdsOrKeys": ids, "maxResults": 10000})
-        self.assertEqual([body.get("nextPageToken") for body in FakeJira.batches],
+        self.assertEqual([body.get("nextPageToken") for body in batches()],
                          [None] + [str(n * BATCH_PAGE) for n in range(1, pages)])
         self.assertEqual(os.listdir(os.path.join(
             out["report_dir"], "_raw", "comments")), ["PROJ-7.json"])
@@ -517,7 +458,7 @@ class FetchTest(unittest.TestCase):
         # Every epic is fetched with its description, the issues' current
         # epics too, as their own fields carry only the epic's summary; a
         # sub-task's parent, its story, is not an epic.
-        jql, fields = FakeJira.parent_queries[0]
+        jql, fields = Site.parent_queries[0]
         self.assertEqual(sorted(re.findall(r"\d+", jql)),
                          sorted({fixture.IMPORT[2], fixture.EXPORT[2]}))
         self.assertEqual(fields, "summary,description")
@@ -531,7 +472,7 @@ class FetchTest(unittest.TestCase):
         # A ticket the changelogs have no entry for, which the search by id
         # then doesn't find either, is Jira's answer: said on stderr, its
         # changelog written empty, and the fetch goes on.
-        FakeJira.unknown = {
+        Site.unknown = {
             next(i["id"] for i in fixture.CURRENT if i["key"] == "PROJ-7")}
         proc = self.fetch("--project", "PROJ")
         self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -561,7 +502,7 @@ class FetchTest(unittest.TestCase):
                                 "body": "Waiting on Security."}]}
         current = copy.deepcopy(fixture.CURRENT)
         current[1]["fields"][fixture.FLAGGED_FIELD] = [{"value": "Impediment"}]
-        FakeJira.parents = [
+        Site.parents = [
             {"id": "1300", "key": "PROJ-130", "fields": {"summary": "Old epic"}}]
         with mock.patch.dict(fixture.CHANGELOGS, changelogs), mock.patch.dict(fixture.COMMENTS, comments), \
                 mock.patch.object(fixture, "CURRENT", current):
@@ -577,7 +518,7 @@ class FetchTest(unittest.TestCase):
         with open(os.path.join(out["report_dir"], "data.json"), encoding="utf-8") as f:
             self.assertEqual([c["text"] for c in json.load(f)["blocker_comments"]["PROJ-7"]],
                              ["Waiting on a dependency.", "Waiting on Security."])
-        self.assertEqual(self.raw(out, "parents.json"), FakeJira.parents)
+        self.assertEqual(self.raw(out, "parents.json"), Site.parents)
         self.assertEqual(self.raw(out, "statuses.json"), fixture.STATUSES)
         self.assertEqual(
             self.raw(out, "changelogs/PROJ-2.json"), changelogs["PROJ-2"])
@@ -592,12 +533,12 @@ class FetchTest(unittest.TestCase):
         proj_1, proj_2 = fixture.CURRENT[0]["id"], fixture.CURRENT[1]["id"]
         # PROJ-9, a sub-task of PROJ-1, lists a pull request of its own.
         # PROJ-2's panel lists only a commit, so it has none.
-        FakeJira.subtasks = [{"id": "20009", "key": "PROJ-9",
-                              "fields": {"parent": {"key": "PROJ-1"}}}]
-        FakeJira.panel = {proj_1: {"pullrequest": [{"url": fixture.PR.format(41), "status": "MERGED"}],
-                                   "repository": [{"name": "acme/api", "commits": [{"id": "c1"}]}]},
-                          "20009": {"pullrequest": [{"url": fixture.PR.format(43), "status": "OPEN"}]},
-                          proj_2: {"repository": [{"name": "acme/api", "commits": [{"id": "c2"}]}]}}
+        Site.subtasks = [{"id": "20009", "key": "PROJ-9",
+                          "fields": {"parent": {"key": "PROJ-1"}}}]
+        Site.panel = {proj_1: {"pullrequest": [{"url": fixture.PR.format(41), "status": "MERGED"}],
+                               "repository": [{"name": "acme/api", "commits": [{"id": "c1"}]}]},
+                      "20009": {"pullrequest": [{"url": fixture.PR.format(43), "status": "OPEN"}]},
+                      proj_2: {"repository": [{"name": "acme/api", "commits": [{"id": "c2"}]}]}}
         times = {number: {"url": fixture.PR.format(number), "state": "OPEN", "createdAt": "2026-03-05T10:00:00Z",
                           "mergedAt": None, "closedAt": None} for number in (41, 43)}
         answered = {
@@ -621,14 +562,14 @@ class FetchTest(unittest.TestCase):
                    "Check that gh works (gh auth status)"], None, None)]
         for name, github, gh_answers, expected, events, skipped in cases:
             with self.subTest(name):
-                FakeJira.requests, FakeJira.queries, FakeJira.data_types = [], [], []
+                FakeJira.requests = []
                 before = self.reports()
                 self.answer_gh(gh_answers)
                 self.write_config(github=github)
                 proc = self.run_script("fetch_sprint.py", "--project", "PROJ")
                 # No panel's commits read, and no gh call but GraphQL's:
                 # no commit lookup, no search.
-                self.assertNotIn("repository", FakeJira.data_types)
+                self.assertNotIn("repository", data_types())
                 with open(self.gh_log, encoding="utf-8") as f:
                     gh_calls = [json.loads(line) for line in f]
                 self.assertTrue(all(is_graphql(call)
@@ -643,7 +584,7 @@ class FetchTest(unittest.TestCase):
                     self.assertEqual(self.reports(), before)
                     if not github:
                         self.assertEqual(
-                            (FakeJira.requests, gh_calls), ([], []))
+                            (requested(), gh_calls), ([], []))
                     continue
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 pulls = self.raw(json.loads(proc.stdout), "pull_requests.json")
@@ -659,7 +600,7 @@ class FetchTest(unittest.TestCase):
                                   "PROJ-10", "PROJ-11"])
 
     def test_points_field_found_by_name_when_the_board_estimates_by_count(self):
-        FakeJira.estimation = {"typeId": "issueCount"}
+        Site.estimation = {"typeId": "issueCount"}
         out = self.assert_fetches("--project", "PROJ")
         self.assertEqual(self.raw(out, "_meta.json")[
                          "story_points_field"], "customfield_99999")
@@ -678,7 +619,7 @@ class FetchTest(unittest.TestCase):
                     changes = [fixture.added(16)]
                 else:
                     current.remove(candidate)
-                    FakeJira.removed = fixture.REMOVED + [candidate]
+                    Site.removed = fixture.REMOVED + [candidate]
                     changes.append(fixture.removed(16))
                     report["contents"]["puntedIssues"].append(
                         {"key": "PROJ-7"})
@@ -688,7 +629,7 @@ class FetchTest(unittest.TestCase):
                     out = self.assert_fetches("--project", "PROJ")
                 expected = [] if added_after else ["PROJ-7"]
                 self.assertEqual(self.comment_files(out), expected)
-                self.assertEqual("/rest/api/3/issue/PROJ-7/comment" in FakeJira.requests,
+                self.assertEqual("/rest/api/3/issue/PROJ-7/comment" in requested(),
                                  not added_after)
 
     # --- prepare_report.py: fetch, build and brief in one run

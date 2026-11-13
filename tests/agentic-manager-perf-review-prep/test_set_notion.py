@@ -13,13 +13,13 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import set_notion  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import IDENTITIES, PREP, REQUEST, WORK, WORK_ITEMS, temp_output, write_prep  # noqa: E402
+from prep_fixture import PERSON, PREP, WORK, WORK_ITEMS, temp_output, write_prep  # noqa: E402
 
 TABLE = {"title": "Lag monitors",
          "url": "https://www.notion.so/lag-monitors", "path": "Engineering"}
 PLAN = {"title": "Billing plan", "url": "https://www.notion.so/billing-plan",
         "path": "Engineering / Billing"}
-# REQUEST's period, 10/08/2026 to 10/11/2026: created pages a month at a
+# PERSON's period, 10/08/2026 to 10/11/2026: created pages a month at a
 # time, edited ones in one search.
 CREATED = [{"start": "2026-08-10", "end": "2026-08-31", "pages": [PLAN]},
            {"start": "2026-09-01", "end": "2026-09-30", "pages": []},
@@ -89,20 +89,11 @@ class SetNotionTest(unittest.TestCase):
         for name, found, expected in cases:
             with self.subTest(name):
                 problems = set_notion.searches_problems(
-                    found, set_notion.period_days(REQUEST))
+                    found, set_notion.period_days(PERSON))
                 if expected is None:
                     self.assertEqual(problems, [])
                 else:
                     self.assertIn(expected, " ".join(problems))
-
-    def test_absent(self):
-        # Absent only when the manager said the person isn't in Notion.
-        with self.assertRaisesRegex(SystemExit, "must be searched"):
-            set_notion.set_notion(PREP, {"absent": True})
-        write_prep(self.folder, identities={
-                   **IDENTITIES, "notion-mcp": {"absent": True}}, work=None)
-        with open(set_notion.set_notion(PREP, {"absent": True}), encoding="utf-8") as f:
-            self.assertEqual(json.load(f)["notion"], {"absent": True})
 
 
 if __name__ == "__main__":

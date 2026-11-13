@@ -10,7 +10,7 @@ and merges the synopses, as reading.py runs every reading.
 import os
 from datetime import date, timedelta
 
-from common import IDENTITIES, REQUEST, SLACK, days_between, months_of, prep_dir, read_json
+from common import PERSON, SLACK, days_between, months_of, prep_dir, read_json
 import reading
 from reading import MERGE
 
@@ -28,15 +28,12 @@ MERGE_ANSWER = """{"going_well": [{"point": "...", "values": ["<each company val
 def gather(prep):
     """The material of Slack: the months of the period, each a task, and the
     content, {account: {id, name}, months: {YYYY-MM: {start, end}}}, each
-    month's first and last day within the period; no task when the manager
-    said the person isn't in Slack."""
-    folder = prep_dir(prep)
-    request = read_json(os.path.join(folder, REQUEST))
-    account = read_json(os.path.join(folder, IDENTITIES))["slack-mcp"]
-    months = {} if account.get("absent") else months_of(
-        date.fromisoformat(request["start"]), date.fromisoformat(request["end"]))
+    month's first and last day within the period."""
+    person = read_json(os.path.join(prep_dir(prep), PERSON))
+    months = months_of(date.fromisoformat(
+        person["start"]), date.fromisoformat(person["end"]))
     return {"months": sorted(months), "tasks": [f"month:{month}" for month in sorted(months)],
-            "content": {"account": account, "months": months}}
+            "content": {"account": person["sources"]["slack-mcp"], "months": months}}
 
 
 def task_text(prep, task, material):

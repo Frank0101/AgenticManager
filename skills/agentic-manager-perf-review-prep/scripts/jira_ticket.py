@@ -1,4 +1,4 @@
-"""Reads one Jira ticket a note or a message links to: its summary, status, description and comments, as plain text.
+"""Reads one Jira ticket a note or a message links to: its summary, status, assignee, description and comments, as plain text.
 
 A note or a message that points at a ticket is judged by what the ticket
 says, so this prints what a reader needs to understand it, nothing more. Jira

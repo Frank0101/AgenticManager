@@ -9,7 +9,7 @@ import argparse
 import json
 import os
 
-from common import (FEEDBACK_YEARS, RATINGS, REQUEST, SUMMARY_PARTS, VALUED_PARTS, VALUES, company_setting,
+from common import (FEEDBACK_YEARS, PERSON, RATINGS, SUMMARY_PARTS, VALUED_PARTS, VALUES, company_setting,
                     earliest_feedback_end, prep_dir, read_json)
 
 OUTPUT = f"""Prints one line of JSON:
@@ -26,9 +26,9 @@ OUTPUT = f"""Prints one line of JSON:
 def rules(prep):
     """{parts, valued_parts, values, ratings, earliest_end}: what the
     summaries of the prep `prep` follow."""
-    request = read_json(os.path.join(prep_dir(prep), REQUEST))
+    person = read_json(os.path.join(prep_dir(prep), PERSON))
     return {"parts": SUMMARY_PARTS, "valued_parts": list(VALUED_PARTS), "values": company_setting(VALUES),
-            "ratings": company_setting(RATINGS), "earliest_end": earliest_feedback_end(request).isoformat()}
+            "ratings": company_setting(RATINGS), "earliest_end": earliest_feedback_end(person).isoformat()}
 
 
 def main(argv=None):

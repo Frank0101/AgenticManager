@@ -12,29 +12,23 @@ import argparse
 import json
 import os
 import subprocess
-import time
-from datetime import date
+from datetime import date, timedelta
 
-from common import (ABSENT, IDENTITIES, REQUEST, WORK_LISTS, GhError, JiraClient, browse_url, gather, gh_available,
-                    gh_json, gh_orgs, gh_signed_in, months_of, period_days, prep_dir, read_json, stops_on_failure,
+from common import (JIRA_SOURCE, PERSON, WORK_LISTS, JiraClient, browse_url, gather,
+                    gh_json, gh_orgs, period_days, prep_dir, read_json, require_gh, stops_on_failure,
                     write_work)
 
 JIRA_FIELDS = ["summary", "issuetype", "parent", "resolutiondate", "status"]
 PR_FIELDS = "number,title,repository,url,createdAt,closedAt"
 SEARCH_LIMIT = 1000
-# GitHub allows about 30 searches a minute, each page of results counting as
-# one, and refuses calls made in quick succession with its secondary rate
-# limit, so searches run one at a time, SEARCH_PAUSE seconds apart, a month
-# each to keep every one to few pages; one GitHub refuses so is tried again
-# after waiting LIMIT_WAIT seconds, as it asks, LIMIT_TRIES times at most.
-SEARCH_PAUSE = 5
-LIMIT_WAIT = 60
-LIMIT_TRIES = 3
+# Each list is one search over the whole period, so few searches run; one
+# that comes back full, at SEARCH_LIMIT, may be cut short, so its window is
+# split in halves and each searched again. GitHub's secondary rate limit,
+# which searches in quick succession meet, is the library's to wait out.
 OUTPUT = """Prints one line of JSON: path, the file written, and how many items each list holds.
 
 It writes jira and github to work.json, keeping its Notion pages, and
-dropping its facts and commentary, which work_commentary.py works out again.
-For a source the person isn't in, {"absent": true}, else:
+dropping its facts and commentary, which work_commentary.py works out again:
   jira     resolved, the issues resolved in the period, and open, those
            touched in it and not Done: key, id, title, type, parent ({key,
            title, type}, or null), status, url and, for resolved, date, the
@@ -49,30 +43,25 @@ def fetch(prep, client=None, run=subprocess.run):
     """Fetch the work of the prep `prep`'s person and write it to work.json;
     returns where it is and how many items each list holds."""
     folder = prep_dir(prep)
-    request = read_json(os.path.join(folder, REQUEST))
-    identities = read_json(os.path.join(folder, IDENTITIES))
-    jira = identities["jira-api"]
-    github = identities["github-cli"]
-    client = None if jira == ABSENT else client or JiraClient()
-    work = {"jira": ABSENT if client is None else jira_work(client, jira["id"], request),
-            "github": ABSENT if github == ABSENT else github_work(github["id"], request, run)}
-    if work["github"] != ABSENT:
-        link_issues(work["github"], {} if client is None else linked_prs(
-            client, work["jira"]))
-    path = write_work(prep, work, period_days(request))
+    person = read_json(os.path.join(folder, PERSON))
+    client = client or JiraClient()
+    work = {"jira": jira_work(client, person["sources"][JIRA_SOURCE]["id"], person),
+            "github": github_work(person["sources"]["github-cli"]["id"], person, run)}
+    link_issues(work["github"], linked_prs(client, work["jira"]))
+    path = write_work(prep, work, period_days(person))
     return {"path": path, "counts": {f"{source}.{name}": len(items) for source, lists in work.items()
-                                     if lists != ABSENT for name, items in lists.items()}}
+                                     for name, items in lists.items()}}
 
 
 # Jira.
 
-def jira_work(client, account, request):
+def jira_work(client, account, person):
     """{resolved, open}: the Jira issues of the account `account` in the
-    period of `request`."""
+    review's period in `person`."""
     # Neither filters on the resolution date alone, which Jira doesn't always
     # clear when an issue is reopened; dates are written to the minute, as a
     # literal with seconds silently matches nothing.
-    start, end = request["start"], f'{request["end"]} 23:59'
+    start, end = person["start"], f'{person["end"]} 23:59'
     resolved = client.search(f'assignee = "{account}" AND statusCategory = Done '
                              f'AND resolutiondate >= "{start}" AND resolutiondate <= "{end}"', JIRA_FIELDS)
     still_open = client.search(f'assignee = "{account}" AND statusCategory != Done '
@@ -122,49 +111,40 @@ def issue_item(client, issue, dated):
 
 # GitHub.
 
-def github_work(login, request, run=subprocess.run, pause=time.sleep):
+def github_work(login, person, run=subprocess.run):
     """{opened, merged}: the pull requests of the GitHub account `login` in
-    the period of `request`, in the organisations gh belongs to, searched a
-    month at a time, `pause` between searches. Reviews are left out: a search
+    the review's period in `person`, in the organisations gh belongs to. Reviews are left out: a search
     finds only the PRs updated in the period, not reviewed in it, and
     checking each one's reviews cost most of the fetch for little value."""
-    if not gh_available():
-        raise SystemExit("gh isn't installed or the github-cli source isn't enabled: the person's pull requests "
-                         "are fetched with it")
-    if not gh_signed_in(run):
-        raise SystemExit(
-            "gh isn't signed in: run gh auth login, then run this again")
-    windows = [f'{month["start"]}..{month["end"]}' for month in months_of(
-        date.fromisoformat(request["start"]), date.fromisoformat(request["end"])).values()]
+    require_gh(run, "the person's pull requests are fetched")
+    period = (person["start"], person["end"])
     lists = {"opened": [], "merged": []}
     for org in gh_orgs(run):
-        for window in windows:
-            lists["opened"] += [pr_item(pr, pr["createdAt"]) for pr in search(
-                ["--author", login, "--created", window], org, run, pause)]
-            lists["merged"] += [pr_item(pr, pr["closedAt"]) for pr in search(
-                ["--author", login, "--merged", "--merged-at", window], org, run, pause)]
+        lists["opened"] += [pr_item(pr, pr["createdAt"]) for pr in search(
+            ["--author", login], "--created", period, org, run)]
+        lists["merged"] += [pr_item(pr, pr["closedAt"]) for pr in search(
+            ["--author", login, "--merged"], "--merged-at", period, org, run)]
     return {name: sorted(items, key=lambda item: (item["date"], item["url"])) for name, items in lists.items()}
 
 
-def search(flags, org, run=subprocess.run, pause=time.sleep):
+def search(flags, date_flag, window, org, run=subprocess.run):
     """The pull requests `gh search prs` finds with `flags` in the
-    organisation `org`, after `pause`; stops when the search fills its last
-    page, which may be cut short, rather than counting what came back."""
-    found = []
-    for attempt in range(1, LIMIT_TRIES + 1):
-        pause(SEARCH_PAUSE)
-        try:
-            found = gh_json(["search", "prs", *flags, "--owner", org,
-                             "--limit", str(SEARCH_LIMIT), "--json", PR_FIELDS], run)
-            break
-        except GhError as error:
-            if "secondary rate limit" not in error.message or attempt == LIMIT_TRIES:
-                raise
-            pause(LIMIT_WAIT)
-    if len(found) >= SEARCH_LIMIT:
-        raise SystemExit(f"gh search prs {' '.join(flags)} --owner {org} found {SEARCH_LIMIT} pull requests, the "
-                         "most it returns in a month, so some may be missing")
-    return found
+    organisation `org`, dated by `date_flag` within `window`, (first, last)
+    as YYYY-MM-DD: a search that comes back full is split in halves, each
+    searched the same way, and exits when a single day comes back full."""
+    first, last = window
+    found = gh_json(["search", "prs", *flags, date_flag, f"{first}..{last}", "--owner", org,
+                     "--limit", str(SEARCH_LIMIT), "--json", PR_FIELDS], run)
+    if len(found) < SEARCH_LIMIT:
+        return found
+    if first == last:
+        raise SystemExit(f"gh search prs {' '.join(flags)} --owner {org} found {SEARCH_LIMIT} pull requests on "
+                         f"{first}, the most it returns, so some may be missing")
+    start = date.fromisoformat(first)
+    middle = start + (date.fromisoformat(last) - start) // 2
+    halves = [search(flags, date_flag, (first, middle.isoformat()), org, run),
+              search(flags, date_flag, ((middle + timedelta(days=1)).isoformat(), last), org, run)]
+    return list({pr["url"]: pr for half in halves for pr in half}.values())
 
 
 def pr_item(pr, stamp):

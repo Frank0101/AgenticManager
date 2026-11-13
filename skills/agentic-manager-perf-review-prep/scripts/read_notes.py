@@ -11,7 +11,7 @@ import os
 import re
 from datetime import date
 
-from common import IDENTITIES, NOTES, REQUEST, graph_path, links, notes, prep_dir, read_json
+from common import NOTES, PERSON, graph_path, links, notes, prep_dir, read_json
 import reading
 from reading import MERGE
 
@@ -41,14 +41,12 @@ def gather(prep):
     the notes of the period that link the person and the person's pages,
     from the links the manager confirmed."""
     folder = prep_dir(prep)
-    request = read_json(os.path.join(folder, REQUEST))
-    found = read_json(os.path.join(folder, IDENTITIES))["logseq-fs"]
-    wanted = {link.casefold() for link in found.get("links", [])}
+    person = read_json(os.path.join(folder, PERSON))
+    wanted = {link.casefold()
+              for link in person["sources"]["logseq-fs"]["links"]}
     first, last = date.fromisoformat(
-        request["start"]), date.fromisoformat(request["end"])
+        person["start"]), date.fromisoformat(person["end"])
     months, pages = {}, []
-    if not wanted:
-        return material(months, pages)
     for folder_name, title, text in notes(graph_path()):
         if folder_name == "pages":
             if title.casefold() in wanted:

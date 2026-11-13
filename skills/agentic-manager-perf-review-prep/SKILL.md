@@ -2,7 +2,7 @@
 name: agentic-manager-perf-review-prep
 disable-model-invocation: true
 description: Helps a manager prepare a performance review of one person over a review period, from the evidence of their work in Jira, GitHub, the documentation, the team's messages and the manager's own notes. In development; not ready to use.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_orientation.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_feedback.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_check_ins.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/work_commentary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_orientation.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_feedback.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_check_ins.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/work_commentary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py *)
 ---
 
 # Performance Review Prep
@@ -14,10 +14,10 @@ The skill's files go to the `perf-review-preps` folder of the user's configured 
 ```text
 perf-review-preps/
 └── Jane-Doe_26-11-10/
-    ├── _raw/             read_notes.py, read_slack.py and work_commentary.py write (each subagent's task and
-    │                     answer, by source)
-    ├── request.json      init_prep.py writes (the person and the period the manager confirmed)
-    ├── identities.json   set_identities.py writes (who the person is in each source, as the manager confirmed)
+    ├── _raw/             read_notes.py, read_slack.py and work_commentary.py write (what each reading
+    │                     gathered, each subagent's task and the readings' answers, by source)
+    ├── person.json       init_prep.py and set_identities.py write (the person, the period and who they are in each
+    │                     source, as the manager confirmed)
     ├── orientation.json  set_orientation.py writes (the manager's overall view of the person, summarised)
     ├── feedback.json     set_feedback.py writes (the person's previous feedback, each piece summarised)
     ├── check-ins.json    set_check_ins.py writes (the person's OKRs and 1:1 notes, each piece summarised)
@@ -35,7 +35,7 @@ This skill needs the `jira-api`, `github-cli`, `notion-mcp`, `slack-mcp` and `lo
 
 ## Writing to the manager
 
-In every message to the manager, and in every summary, write the person's name, or "they": never "he" or "she", nor any pronoun guessed from their name or anything else.
+In every message to the manager, and in every summary, write the person's name as the manager gave it, `person` in `person.json`, never the name an account shows, or "they": never "he" or "she", nor any pronoun guessed from their name or anything else.
 
 ## 1. Agree what the prep is for
 
@@ -48,29 +48,33 @@ The prep needs, from the manager:
 
 Take what the manager gave when calling the skill, such as "for Jane Doe over the last 6 months", and ask, in one message, only for what is missing.
 
-Turn the period into exact days with `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py`, for the last months or for days the manager named, which it checks. For any other wording, such as "this year" or "H1", work out the first and last day yourself and pass them. Then ask the manager to confirm the person and the period, as its `shown`: "I'll prepare Jane Doe's review for 10/05/2026 to 10/11/2026. Is that right?" If the script refuses a period, tell the manager why and ask again. Don't go on until they confirm.
+Turn the period into exact days with `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py`, for the last months or for days the manager named, which it checks. For any other wording, such as "this year" or "H1", work out the first and last day yourself and pass them. If the script refuses a period, tell the manager why and ask again.
 
-Once they do, start the prep with `python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py`, for the person and the period's days. It prints the prep folder's name, `prep`, which later steps pass as `<prep>`.
+Then look the person up in Jira with `python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py --person <name>`. Every other source is searched from the Jira account, so the manager confirms it with the period:
+
+- **Pick the account.** An account is the person when its name is theirs, in full or as a short form, such as Al for Alan. With several such accounts, propose the one you pick, such as the active one, and say briefly why. If none could be them, stop and tell the manager the person must be in Jira for the prep; if Jira hides the email of the one you pick, stop and tell them the prep needs it, as it finds the person in the other sources.
+- **Ask the manager to confirm** the account, its name and email, and the period, as `period.py`'s `shown`, in one message: "I'll prepare Jane Doe's review (Jira: Jane Doe, jane.doe@acme.test) for 10/05/2026 to 10/11/2026. Is that right?" Don't go on until they confirm both.
+
+Once they do, start the prep with `python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py`, for the person, the confirmed account's `accountId` and the period's days. It prints the prep folder's name, `prep`, which later steps pass as `<prep>`.
 
 ## 2. Find the person in each source
 
-Who the person is in each source is the manager's to confirm, as the period was: a wrong account would quietly bring in someone else's work.
+Who the person is in GitHub, Notion, Slack and the vault is the manager's to confirm, as their Jira account was: a wrong account would quietly bring in someone else's work. The prep needs the person in every source, as a review drawn from some of them would read as if they did nothing in the others: if a source has no one who could be them, or the manager says they aren't in one, stop and tell the manager which source, and that the prep needs the person in every one.
 
-1. **Look them up.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py --prep <prep>` for Jira, GitHub and the vault. Search Notion and Slack yourself, through their MCPs' user search: by the full name, and, if it finds no one, by each word of it and by the email Jira shows.
-2. **Pick the person in each source.** An account is the person when its name is theirs, in full or as a short form, such as Al for Alan, or when its email is the one Jira shows; the same email in several sources makes it surer. A source with no such account, or with several you can't tell apart, is a question for the manager. In the vault, pick every link about the person, their tag and the pages about them, such as `[[Jane]]` and `[[Jane Promotion]]`, and leave out one that only shares letters with their name, such as `[[Janet]]`.
+1. **Look them up.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py --prep <prep>` for GitHub and the vault. Search Notion and Slack yourself, through their MCPs' user search: Notion by the `email` it prints, the Jira account's, and only if that finds no one, by the person's name; Slack by the words of the person's name, each a keyword of its own, never in quotes, as its search doesn't match an email or a quoted name, and if that finds no one, by each word alone, picking the account that shows the Jira email.
+2. **Pick the person in each source.** An account is the person when its email is the Jira account's, or its name is theirs, in full or as a short form, such as Al for Alan; GitHub's accounts are found by that email already. Several accounts you can't tell apart are a question for the manager. In the vault, pick every link about the person, their tag and the pages about them, such as `[[Jane]]` and `[[Jane Promotion]]`, and every alias their page declares, such as `[[JD]]`, and leave out one that only shares letters with their name, such as `[[Janet]]`.
 3. **Ask the manager to confirm,** in one message: for each source, the account or links you picked and, briefly, why, and your questions where you couldn't pick. Don't list what you left out. For example:
 
    > Here's who I think Jane Doe is in each source:
    >
-   > - Jira: Jane Doe, jane.doe@acme.test.
-   > - GitHub: janedoe, whose commits use that email.
+   > - GitHub: janedoe, whose commits use Jane's Jira email.
    > - Notion: Jane Doe, with the same email.
    > - Slack: two accounts, Jane Doe and Jane Doe (Contractor). Which one is Jane?
    > - Your notes: `[[Jane]]` (120 mentions, its own page) and `[[Jane Promotion]]` (8).
    >
    > Is that right?
 
-   A reply that doesn't answer each question, such as a plain yes, confirms only what you found: ask the open questions again. The manager may say the person isn't in a source, such as someone with no GitHub account: record it as absent. Don't go on until every source is settled.
+   A reply that doesn't answer each question, such as a plain yes, confirms only what you found: ask the open questions again. Don't go on until every source is settled.
 
 4. **Record it** with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py --prep <prep>`; its `--help` shows the input. Run it again with every source to record a correction.
 
@@ -130,7 +134,7 @@ The manager's own notes on the person, in their vault, are many, and most aren't
 
 ## 7. Gather the data points
 
-The person's work in Jira, GitHub, Notion and Slack, in the period. Like step 6, it is read without the manager's view, and neither needs the other, so start it as soon as step 6's subagents are handed their tasks, without waiting for them, and hand out this step's Slack tasks alongside theirs. Say nothing to the manager about it while it runs, unless 3 stops; step 6's question about the notes is asked as soon as their merge is done, without waiting for this step. Don't search a source the manager said the person isn't in, but still run its script: it records the source as absent.
+The person's work in Jira, GitHub, Notion and Slack, in the period. Like step 6, it is read without the manager's view, and neither needs the other, so start it as soon as step 6's subagents are handed their tasks, without waiting for them, and hand out this step's Slack tasks alongside theirs. Say nothing to the manager about it while it runs, unless 3 stops; step 6's question about the notes is asked as soon as their merge is done, without waiting for this step.
 
 1. **Slack.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py start --prep <prep>`, and hand out its `tasks`, then its `merge`, as step 6 does; once the merge's subagent has replied, run `python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py finished --prep <prep>`.
 2. **Jira and GitHub.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py --prep <prep>`: it fetches the issues and pull requests, with no judgment, into `work.json`.

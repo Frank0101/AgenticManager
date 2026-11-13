@@ -53,6 +53,11 @@ NO_SUCH_TICKET = "Jira has no such ticket, or this account can't see it"
 # The answers that mean Jira is busy or briefly unwell, not that the request
 # is wrong, as when a skill reads many issues at once.
 TRANSIENT_CODES = {500, 502, 503, 504}
+# Jira's answer for a rate limit, and the header that says in how many
+# seconds to try again: a 429 is waited out only when Jira says how long, as
+# guessing could wait for nothing.
+RATE_LIMITED_CODE = 429
+RETRY_AFTER = "Retry-After"
 # The kind of a connection that failed, for the line a retry prints, by the
 # type of its error, never its text, which can echo the request or a secret;
 # the first that matches, so a subclass comes before its base.
@@ -160,9 +165,14 @@ class JiraClient:
         such as apps, are left out."""
         found = self._get("/rest/api/3/user/search",
                           {"query": query, "maxResults": USER_RESULTS})
-        return [{"accountId": user.get("accountId"), "displayName": user.get("displayName"),
-                 "emailAddress": user.get("emailAddress"), "active": user.get("active")}
-                for user in found if user.get("accountType") == "atlassian"]
+        return [_person(user) for user in found if user.get("accountType") == "atlassian"]
+
+    def user(self, account_id):
+        """The person whose Jira account is `account_id`, as users() gives
+        each one; None when Jira has no such account, or it isn't a
+        person's, such as an app's."""
+        found = self._found("/rest/api/3/user", {"accountId": account_id})
+        return _person(found) if found and found.get("accountType") == "atlassian" else None
 
     def fields(self):
         return self._get("/rest/api/3/field")
@@ -476,13 +486,14 @@ class JiraClient:
 
     def _send(self, path, request):
         """Jira's answer to `request`, to `path`, tried again while it fails
-        in passing; a failure raises JiraError, naming `path` and the setting
-        to check, never a secret."""
+        in passing or after the wait a short rate limit asks for; a failure
+        raises JiraError, naming `path` and the setting to check, never a
+        secret."""
         def attempt():
             with urlopen(request, timeout=30, context=ssl_context()) as response:
                 return json.load(response)
         try:
-            return retried(attempt, passing, lambda error: note(error, path))
+            return retried(attempt, passing, lambda error: note(error, path), rate_wait)
         except HTTPError as e:
             if e.code == 401:
                 raise JiraError(f"Jira returned 401 Unauthorized for {path}.",
@@ -494,7 +505,7 @@ class JiraClient:
             if e.code == 404:
                 raise JiraError(
                     f"Jira returned 404 Not Found for {path}.", not_found=True)
-            if e.code == 429:
+            if e.code == RATE_LIMITED_CODE:
                 raise JiraError(
                     f"Jira returned 429 Too Many Requests for {path}.", RATE_LIMITED)
             raise JiraError(f"Jira returned {e.code} for {path}.")
@@ -557,11 +568,21 @@ def tracked_changes(histories, fields):
 def passing(error):
     """Whether a failed request is passing, to retry.retried(): a dropped
     connection, a timeout or an answer of TRANSIENT_CODES; any other answer
-    is final, a 429 included: a rate limit, as every service's is, with the
-    advice to wait a minute."""
+    isn't, a 429 included, which rate_wait() may wait out."""
     if isinstance(error, HTTPError):
         return error.code in TRANSIENT_CODES
     return isinstance(error, (URLError, TimeoutError, ConnectionError))
+
+
+def rate_wait(error, tries):
+    """The seconds to wait out a 429, to retry.retried(): those its
+    Retry-After header gives, as a whole number; None, final, when it
+    gives none, or for any other failure. retry.py caps how long and how
+    often, so `tries` isn't needed here."""
+    if not isinstance(error, HTTPError) or error.code != RATE_LIMITED_CODE or error.headers is None:
+        return None
+    seconds = (error.headers.get(RETRY_AFTER) or "").strip()
+    return int(seconds) if seconds.isascii() and seconds.isdigit() else None
 
 
 def note(error, path):
@@ -586,6 +607,13 @@ def failure_kind(error):
 def excluded_reason(key):
     """Why issue or project `key`, of an excluded project, is never read."""
     return f"{key} is of a project excluded by `{EXCLUDED}` in {SOURCE}: it is never read"
+
+
+def _person(user):
+    """A Jira account as the client gives a person's: accountId,
+    displayName, emailAddress, None when the site hides it, and active."""
+    return {"accountId": user.get("accountId"), "displayName": user.get("displayName"),
+            "emailAddress": user.get("emailAddress"), "active": user.get("active")}
 
 
 class JiraError(Exception):

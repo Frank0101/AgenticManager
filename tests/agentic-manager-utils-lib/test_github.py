@@ -142,14 +142,14 @@ class GithubTest(unittest.TestCase):
                     retry.RETRY_WAITS) + 1 if name == "GitHub down" else 1)
 
     def test_advice(self):
-        # One wording for every skill: wait a minute for GitHub's rate limit,
+        # One wording for every skill: run it again later for GitHub's rate limit,
         # or fix gh or go on without it; the explanation puts gh's words on one line.
         # name: (gh's message, the advice, the explanation)
         cases = [
             ("rate limit", "HTTP 403: API rate limit exceeded for user ID 1.", github.RATE_LIMITED,
-             "HTTP 403: API rate limit exceeded for user ID 1. Wait a minute and run it again."),
+             "HTTP 403: API rate limit exceeded for user ID 1. Run it again later: the limit can take up to an hour to lift."),
             ("secondary rate limit", "You have exceeded a secondary Rate Limit.", github.RATE_LIMITED,
-             "You have exceeded a secondary Rate Limit. Wait a minute and run it again."),
+             "You have exceeded a secondary Rate Limit. Run it again later: the limit can take up to an hour to lift."),
             ("not signed in", "To get started with GitHub CLI, please run:  gh auth login\n", github.GH_BROKEN,
              "To get started with GitHub CLI, please run: gh auth login. Check that gh works (gh auth status) "
              "and run it again, or disable the github-cli source to go on without GitHub."),
@@ -164,8 +164,9 @@ class GithubTest(unittest.TestCase):
 
     def test_passing(self):
         # What retry.retried() makes of a gh failure: no answer in time or
-        # GitHub busy is passing, tried again; a rate limit, and anything
-        # else, is final.
+        # GitHub busy is passing, tried again; a rate limit isn't passing
+        # (rate_wait() decides which one is waited out); anything else is
+        # final.
         # name: (gh's message, whether it is passing)
         cases = [
             ("rate limit", "HTTP 403: API rate limit exceeded for user ID 1.", False),
@@ -183,6 +184,51 @@ class GithubTest(unittest.TestCase):
                 self.assertIs(github.passing(
                     github.GhError(["pr", "view"], message)), expected)
         self.assertIs(github.passing(ValueError("not gh's")), False)
+
+    def test_rate_limits(self):
+        # GitHub's secondary rate limit is waited out, 60, 120 then 240 s,
+        # then raised; its primary one, hourly, is raised at once, with the
+        # advice to run again later. Both gh_json() and the GraphQL call.
+        # name: (gh's message, the waits)
+        secondary = "HTTP 403: You have exceeded a secondary rate limit. Please wait a few minutes."
+        primary = "HTTP 403: API rate limit exceeded for user ID 1."
+        cases = [("secondary", secondary, [60, 120, 240]),
+                 ("primary", primary, [])]
+        calls = [("gh_json", lambda run: github.gh_json(["search", "prs"], run)),
+                 ("graphql", lambda run: github.pull_events([PR.format(1)], run))]
+        for (name, message, waits), (call, make) in [(case, c) for case in cases for c in calls]:
+            with self.subTest(name, call=call), mock.patch.object(retry.time, "sleep") as sleep:
+                run = Runner(code=1, stderr=message)
+                with self.assertRaises(github.GhError) as raised:
+                    make(run)
+                self.assertEqual([c.args[0]
+                                 for c in sleep.call_args_list], waits)
+                self.assertEqual(len(run.calls), len(waits) + 1)
+                self.assertEqual(raised.exception.advice, github.RATE_LIMITED)
+        # A secondary limit that lifts within the waits gives the answer.
+        answers = iter([subprocess.CompletedProcess([], 1, "", secondary),
+                        subprocess.CompletedProcess([], 0, json.dumps({"a": 1}), "")])
+        with mock.patch.object(retry.time, "sleep") as sleep:
+            self.assertEqual(github.gh_json(["search", "prs"], lambda command, **kwargs: next(answers)),
+                             {"a": 1})
+        self.assertEqual([c.args[0] for c in sleep.call_args_list], [60])
+
+    def test_rate_wait(self):
+        # What retry.retried() waits for a gh failure: each of
+        # SECONDARY_WAITS for the secondary rate limit, then none; none for
+        # any other failure.
+        # name: (gh's message, the waits already made, expected seconds)
+        secondary = "You have exceeded a secondary Rate Limit"
+        cases = [("secondary, first", secondary, 0, 60), ("secondary, second", secondary, 1, 120),
+                 ("secondary, third", secondary, 2,
+                  240), ("secondary, after the waits", secondary, 3, None),
+                 ("primary", "HTTP 403: API rate limit exceeded for user ID 1.", 0, None),
+                 ("GitHub busy", "HTTP 502: Bad Gateway", 0, None)]
+        for name, message, tries, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(github.rate_wait(github.GhError(
+                    ["search", "prs"], message), tries), expected)
+        self.assertIsNone(github.rate_wait(ValueError("not gh's"), 0))
 
     def test_command_name(self):
         # A failure names gh's command by its first words: its leading

@@ -11,15 +11,15 @@ import argparse
 import json
 import os
 
-from common import (ABSENT, COMMENTARY, COMMENTARY_WORDS, FACTS, MAX_COMMENTARY_WORDS, REQUEST, WORK, WORK_LISTS,
+from common import (COMMENTARY, COMMENTARY_WORDS, FACTS, MAX_COMMENTARY_WORDS, PERSON, WORK, WORK_LISTS,
                     commentary_problems, fill_protocol, period_days, prep_dir, read_json, script_command, stdin_json,
                     work_facts, work_problems, write_prep_file, write_raw)
 from reading import PROTOCOL, person_section, submit_section
 
 TASK = os.path.join("work", "task.md")
-ANSWER = """{"jira": "<a paragraph on the Jira work, or null when the person isn't in Jira>",
- "github": "<a paragraph on the pull requests, or null>",
- "notion": "<a paragraph on the Notion pages, or null>"}"""
+ANSWER = """{"jira": "<a paragraph on the Jira work>",
+ "github": "<a paragraph on the pull requests>",
+ "notion": "<a paragraph on the Notion pages>"}"""
 SCRIPTS = {"jira": "fetch_work.py",
            "github": "fetch_work.py", "notion": "set_notion.py"}
 
@@ -30,7 +30,7 @@ def start(prep):
     'Task work: <path>'. Exits when a source isn't gathered yet."""
     folder = prep_dir(prep)
     path, days = os.path.join(folder, WORK), period_days(
-        read_json(os.path.join(folder, REQUEST)))
+        read_json(os.path.join(folder, PERSON)))
     work = read_json(path) if os.path.exists(path) else {}
     if missing := [source for source in WORK_LISTS if source not in work]:
         scripts = sorted({SCRIPTS[source] for source in missing})
@@ -52,11 +52,11 @@ def submit(prep, commentary):
     if FACTS not in work:
         raise SystemExit(f"The work's facts aren't worked out: run {script_command('work_commentary.py')} start "
                          f"--prep {prep} first")
-    if problems := commentary_problems(commentary, work):
+    if problems := commentary_problems(commentary):
         raise SystemExit("; ".join(problems) +
                          "\n\nThe answer's shape:\n" + ANSWER)
     work = {**work, COMMENTARY: commentary}
-    if problems := work_problems(work, period_days(read_json(os.path.join(folder, REQUEST)))):
+    if problems := work_problems(work, period_days(read_json(os.path.join(folder, PERSON)))):
         raise SystemExit("; ".join(problems))
     return {"path": write_prep_file(prep, WORK, work)}
 
@@ -77,15 +77,10 @@ def task_text(prep, work, facts):
 def titles(work):
     """The titles of the Jira issues, by parent, and of the Notion pages, by
     where they sit, one line each."""
-    lines = []
-    if work["jira"] != ABSENT:
-        for name in WORK_LISTS["jira"]:
-            lines += [f"- Jira {name}, {(item.get('parent') or {}).get('title') or 'no parent'}: {item['title']}"
-                      for item in work["jira"][name]]
-    if work["notion"] != ABSENT:
-        for name in WORK_LISTS["notion"]:
-            lines += [f"- Notion {name}, {item['path'] or 'no location'}: {item['title']}"
-                      for item in work["notion"][name]]
+    lines = [f"- Jira {name}, {(item.get('parent') or {}).get('title') or 'no parent'}: {item['title']}"
+             for name in WORK_LISTS["jira"] for item in work["jira"][name]]
+    lines += [f"- Notion {name}, {item['path'] or 'no location'}: {item['title']}"
+              for name in WORK_LISTS["notion"] for item in work["notion"][name]]
     return "\n".join(lines) or "None."
 
 

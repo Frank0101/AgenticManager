@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import fetch_sprint  # noqa: E402
 from common import RAW_DIR, SPRINT_FILE  # noqa: E402
 from agentic_manager import retry  # noqa: E402
+from agentic_manager.github import GH_BROKEN  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from sprint_fixture import PR, report_folder  # noqa: E402
 # The fake gh's GraphQL answers follow the library's query.
@@ -340,12 +341,11 @@ class PullRequestsTest(unittest.TestCase):
         # Never taken for a pull request with no times: the fetch stops
         # instead, with the first failure's command, gh's words and the
         # library's advice. A pull request GitHub can't find beside it
-        # doesn't change that, and a rate limit stops at once, never tried
-        # again.
+        # doesn't change that, and GitHub's hourly rate limit stops at once,
+        # never tried again.
         stopped = "GitHub couldn't be read, so no report was written"
-        limited = f": {LIMIT} Wait a minute and run it again."
-        refused = ("Resource not accessible. Check that gh works (gh auth status) and run it again, or disable "
-                   "the github-cli source to go on without GitHub.")
+        limited = f": {LIMIT} {retry.RATE_LIMITED}"
+        refused = f"Resource not accessible. {GH_BROKEN}"
 
         def answer(*errors):
             """GitHub's answer to the GraphQL call with PR 41 (r0, p0) and

@@ -70,6 +70,19 @@ class LogseqTest(unittest.TestCase):
         self.assertEqual(logseq.links(text), [
                          "Jane", "Jane Doe", "Hiring", "okr", "Jane"])
 
+    def test_page_aliases(self):
+        # The aliases a page declares in its properties, before its first
+        # block, written plain, as links or as tags; an alias:: in a block
+        # is that block's property, not the page's.
+        for text, expected in [("alias:: JD, [[Jane D]], #Janie\ntags:: person\n- note\n  alias:: JJ",
+                                ["JD", "Jane D", "Janie"]),
+                               ("title:: Jane Doe\nAlias:: jd\n\n- note",
+                                ["jd"]),
+                               ("- alias:: JD\n- note", []),
+                               ("", [])]:
+            with self.subTest(text):
+                self.assertEqual(logseq.page_aliases(text), expected)
+
 
 if __name__ == "__main__":
     unittest.main()

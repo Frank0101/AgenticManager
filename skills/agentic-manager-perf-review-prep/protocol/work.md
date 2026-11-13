@@ -15,7 +15,7 @@ Cite only figures the facts hold, or that add up from them, such as a total. Des
 
 How to read the facts:
 
-- Jira: the issues resolved each month, and those still open at the end, by their parent, such as an epic, or "no parent".
+- Jira: the issues resolved each month, and those touched in the period and still open, by their parent, such as an epic, or "no parent".
 - GitHub: the pull requests opened and merged each month, by the parent of the Jira issue that lists them, or by repository when no issue does. Many small pull requests can be a way of working, such as stacking them, rather than more work.
 - Notion: the pages created and last edited each month, by where they sit.
 
@@ -23,4 +23,4 @@ How to read the facts:
 
 ## The answer
 
-For each of `jira`, `github` and `notion`, the paragraph, or null when the facts say the person isn't in it.
+For each of `jira`, `github` and `notion`, the paragraph.

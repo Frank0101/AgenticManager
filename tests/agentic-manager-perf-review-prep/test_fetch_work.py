@@ -15,9 +15,10 @@ TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
+import common  # noqa: E402
 import fetch_work  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import IDENTITIES, PREP, REQUEST, WORK, temp_output, write_prep  # noqa: E402
+from prep_fixture import PERSON, PREP, WORK, temp_output, write_prep  # noqa: E402
 
 
 def issue(key, summary, resolved=None, parent=None):
@@ -82,7 +83,7 @@ class FetchWorkTest(unittest.TestCase):
         # Resolved in the period and still open, each item with its parent,
         # and JQL dates to the minute.
         client = FakeJira()
-        work = fetch_work.jira_work(client, "a1", REQUEST)
+        work = fetch_work.jira_work(client, "a1", PERSON)
         self.assertEqual(work, {
             "resolved": [{"key": "PROJ-12", "id": "12", "title": "Migrate billing", "type": "Story",
                           "parent": {"key": "PROJ-1", "title": "Billing", "type": "Epic"}, "status": "Done",
@@ -96,9 +97,8 @@ class FetchWorkTest(unittest.TestCase):
         # Opened and merged as found, dated by when they were opened or
         # merged, only in the organisations gh belongs to.
         run = FakeGh({"--author": [pr(1, closed="2026-09-03T10:00:00Z")]})
-        with mock.patch.object(fetch_work, "gh_available", return_value=True):
-            work = fetch_work.github_work(
-                "janedoe", REQUEST, run, pause=lambda seconds: None)
+        with mock.patch.object(common, "gh_available", return_value=True):
+            work = fetch_work.github_work("janedoe", PERSON, run)
         self.assertEqual([(item["number"], item["date"]) for name in ("opened", "merged") for item in work[name]],
                          [(1, "2026-09-01"), (1, "2026-09-03")])
         self.assertEqual(sorted(work), ["merged", "opened"])
@@ -113,62 +113,59 @@ class FetchWorkTest(unittest.TestCase):
         github = {"opened": [{"url": "https://github.com/acme/billing/pull/1"},
                              {"url": "https://github.com/acme/billing/pull/2"}], "merged": []}
         fetch_work.link_issues(github, fetch_work.linked_prs(
-            client, fetch_work.jira_work(client, "a1", REQUEST)))
+            client, fetch_work.jira_work(client, "a1", PERSON)))
         self.assertEqual([item["issue"]
                          for item in github["opened"]], ["PROJ-12", None])
 
-    def test_a_full_search_stops(self):
-        # A search that fills its last page may be cut short.
-        run = FakeGh({"--author": [pr(n)
-                     for n in range(fetch_work.SEARCH_LIMIT)]})
-        with self.assertRaisesRegex(SystemExit, "most it returns in a month"):
-            fetch_work.search(["--author", "janedoe", "--created", "2026-09-01..2026-09-30"],
-                              "acme", run, pause=lambda seconds: None)
+    def test_a_full_search_is_split(self):
+        # A search that comes back full may be cut short: its window is
+        # split in halves, each searched again, until none is full; a single
+        # day that comes back full stops.
+        two_days = [pr(n, created=f"2026-09-0{1 + n % 2}T10:00:00Z")
+                    for n in range(fetch_work.SEARCH_LIMIT)]
+        run = FakeGh({"--author": two_days})
+        found = fetch_work.search(["--author", "janedoe"], "--created", ("2026-09-01", "2026-09-30"),
+                                  "acme", run)
+        self.assertEqual(sorted(item["number"] for item in found), list(
+            range(fetch_work.SEARCH_LIMIT)))
+        windows = [call[call.index("--created") + 1] for call in run.calls]
+        self.assertEqual((windows[0], len(windows) > 1),
+                         ("2026-09-01..2026-09-30", True))
+        one_day = [pr(n) for n in range(fetch_work.SEARCH_LIMIT)]
+        with self.assertRaisesRegex(SystemExit, "on 2026-09-01, the most it returns"):
+            fetch_work.search(["--author", "janedoe"], "--created", ("2026-09-01", "2026-09-30"),
+                              "acme", FakeGh({"--author": one_day}))
 
-    def test_a_rate_limited_search_waits_and_tries_again(self):
-        # GitHub's secondary rate limit: wait and try again, LIMIT_TRIES
-        # times; any other failure stops at once.
-        waits = []
-        answers = iter([subprocess.CompletedProcess([], 1, "", "HTTP 403: You have exceeded a secondary rate limit"),
-                        subprocess.CompletedProcess([], 0, json.dumps([pr(1)]), "")])
-        found = fetch_work.search(["--author", "janedoe", "--created", "2026-09-01..2026-09-30"], "acme",
-                                  lambda command, **kwargs: next(answers), pause=waits.append)
-        self.assertEqual(([item["number"] for item in found], waits),
-                         ([1], [fetch_work.SEARCH_PAUSE, fetch_work.LIMIT_WAIT, fetch_work.SEARCH_PAUSE]))
-        refused = subprocess.CompletedProcess(
-            [], 1, "", "HTTP 403: You have exceeded a secondary rate limit")
-        with self.assertRaisesRegex(Exception, "secondary rate limit"):
-            fetch_work.search(["--author", "janedoe", "--created", "2026-09-01..2026-09-30"], "acme",
-                              lambda command, **kwargs: refused, pause=lambda seconds: None)
-
-    def test_fetch_records_absent_sources(self):
-        # A source the person isn't in is recorded as absent, and not fetched;
-        # the Notion pages already in work.json are kept, and its facts and
+    def test_fetch(self):
+        # Jira by the person's account there, GitHub by their login,
+        # each pull request with the issue that lists it, or none; the
+        # Notion pages already in work.json are kept, and its facts and
         # commentary dropped, as they no longer match.
         folder = temp_output(self)
-        write_prep(folder, identities={
-                   **IDENTITIES, "github-cli": {"absent": True}}, work=WORK)
-        result = fetch_work.fetch(PREP, client=FakeJira())
-        with open(result["path"], encoding="utf-8") as f:
-            work = json.load(f)
-        self.assertEqual((sorted(work), work["github"], work["notion"]),
-                         (["github", "jira", "notion"], {"absent": True}, WORK["notion"]))
-        self.assertEqual(result["counts"], {
-                         "jira.resolved": 1, "jira.open": 1})
-
-    def test_pull_requests_without_jira_have_no_issue(self):
-        # With no Jira account, every pull request still says it has no
-        # issue, as work.json promises.
-        write_prep(temp_output(self), identities={
-                   **IDENTITIES, "jira-api": {"absent": True}}, work=None)
+        write_prep(folder, work=WORK)
         opened = {"repo": "acme/billing", "number": 1, "title": "PR 1",
                   "url": "https://github.com/acme/billing/pull/1", "date": "2026-09-01"}
-        found = {"opened": [opened], "merged": []}
-        with mock.patch.object(fetch_work, "github_work", lambda login, request, run: found):
-            result = fetch_work.fetch(PREP)
+        merged = {**opened, "number": 2,
+                  "url": "https://github.com/acme/billing/pull/2"}
+        logins = []
+
+        def github_work(login, person, run):
+            logins.append(login)
+            return {"opened": [opened], "merged": [merged]}
+        client = FakeJira(
+            {"12": [{"url": "https://github.com/acme/billing/pull/1"}]})
+        with mock.patch.object(fetch_work, "github_work", github_work):
+            result = fetch_work.fetch(PREP, client=client)
         with open(result["path"], encoding="utf-8") as f:
-            self.assertEqual(json.load(f)["github"]["opened"], [
-                             {**opened, "issue": None}])
+            work = json.load(f)
+        self.assertEqual((sorted(work), work["notion"], work["github"]),
+                         (["github", "jira", "notion"], WORK["notion"],
+                          {"opened": [{**opened, "issue": "PROJ-12"}], "merged": [{**merged, "issue": None}]}))
+        self.assertEqual(logins, [PERSON["sources"]["github-cli"]["id"]])
+        self.assertTrue(
+            all(f'assignee = "{PERSON["sources"]["jira-api"]["id"]}"' in jql for jql in client.queries))
+        self.assertEqual(result["counts"], {"jira.resolved": 1, "jira.open": 1,
+                                            "github.opened": 1, "github.merged": 1})
 
 
 if __name__ == "__main__":

@@ -73,7 +73,7 @@ class TicketsCommandTest(unittest.TestCase):
         # library's advice on stderr, and prints nothing: no partial output.
         # name: (gh's message, the advice)
         cases = [("rate limit", "HTTP 403: API rate limit exceeded for user ID 1.",
-                  "Wait a minute and run it again."),
+                  "Run it again later: the limit can take up to an hour to lift."),
                  ("not signed in", "HTTP 401: Bad credentials",
                   "Check that gh works (gh auth status) and run it again, or disable the github-cli source to "
                   "go on without GitHub.")]

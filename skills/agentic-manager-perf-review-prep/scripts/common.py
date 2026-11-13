@@ -1,6 +1,6 @@
 """What the skill's scripts share: the prep folder's name and the closed set of
-files it holds, how to find a prep's folder, the request a prep is built for
-and its period's days and months, who the person is in each source, the parts
+files it holds, how to find a prep's folder, the person a prep is for, the
+review's period and its days and months, who the person is in each source, the parts
 every summary has, the manager's view, previous feedback, check-ins, the
 manager's notes, the person's work in Jira, GitHub and Notion, and their Slack
 messages. The rules of each file are one function, applied when it is written
@@ -19,36 +19,39 @@ sys.path.insert(0, LIB_DIR)
 from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.config import company_setting  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
-from agentic_manager.github import GhError, commit_authors, gh_available, gh_json, gh_orgs, gh_signed_in, profile_name  # noqa: E402,F401
+from agentic_manager.github import commit_authors, gh_available, gh_json, gh_orgs, gh_signed_in, profile_name  # noqa: E402,F401
 from agentic_manager.jira import JiraClient, browse_url, plain_text  # noqa: E402,F401
-from agentic_manager.logseq import graph_path, links, notes  # noqa: E402,F401
+from agentic_manager.logseq import graph_path, links, notes, page_aliases  # noqa: E402,F401
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
 from agentic_manager.output_folder import DAY_FOLDER, clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.period import add_period_arguments, period_problem, shown  # noqa: E402,F401
 from agentic_manager.text import as_name, display_date, word_count  # noqa: E402,F401
 
-# The skill's output folder, and a prep folder's files in it: the request the
+# The skill's output folder, and a prep folder's files in it: the person the
 # manager confirmed, which every later step reads rather than being told again.
 FOLDER_NAME = "perf-review-preps"
-REQUEST = "request.json"
-# The request's fields: the person as the manager named them, and the
-# period's first and last days, as YYYY-MM-DD. How the period reads is worked
-# out from them wherever it is shown, never stored.
-REQUEST_FIELDS = ("person", "start", "end")
-# Who the person is in each source the skill reads, as the manager confirmed,
-# by the fields each records: an account's id and the name it gives, or in the
-# vault the links about the person, their tag and the pages about them, such
-# as [[Jane]] and [[Jane Promotion]], whose aliases count too. A field is a
-# text, or, in LIST_FIELDS, a list of texts. A source the manager says they
-# aren't in is {"absent": true}, so a later step reports them as not there
-# rather than as having done nothing.
-IDENTITIES = "identities.json"
+PERSON = "person.json"
+# The person's fields: the person as the manager named them, the name every
+# message to the manager and every summary uses; the period's first and last
+# days, as YYYY-MM-DD; and who the person is in each source the skill reads,
+# as the manager confirmed. How the period reads is worked out from them
+# wherever it is shown, never stored.
+PERSON_FIELDS = ("person", "start", "end", "sources")
+# Who the person is in each source, by the fields each records: an account's
+# id and the name it gives, or in the vault the links about the person, their
+# tag and the pages about them, such as [[Jane]] and [[Jane Promotion]], whose
+# aliases count too. A field is a text, or, in LIST_FIELDS, a list of texts.
+# The Jira account is confirmed with the period and read from Jira by its id;
+# its email finds the person in the other sources, so it can't be missing.
+# The others are confirmed once it is there. The person is in every source: a
+# review drawn from some of them would read as one where the person did
+# nothing in the others.
+JIRA_SOURCE = "jira-api"
 ACCOUNT = ("id", "name")
-SOURCES = {"jira-api": ACCOUNT, "github-cli": ACCOUNT,
-           "notion-mcp": ACCOUNT, "slack-mcp": ACCOUNT, "logseq-fs": ("links",)}
+SOURCES = {JIRA_SOURCE: ("id", "name", "email"), "github-cli": ACCOUNT, "notion-mcp": ACCOUNT,
+           "slack-mcp": ACCOUNT, "logseq-fs": ("links",)}
 LIST_FIELDS = {"links"}
-ABSENT = {"absent": True}
 # Every summary the skill records, of the manager's view, feedback, check-ins
 # or notes, has the same parts, so each reads, and is compared with the evidence, the same
 # way: each a list of points in the agent's words, a part with nothing to say
@@ -102,8 +105,7 @@ CHECK_INS = "check-ins.json"
 NOTES = "notes.json"
 # The person's work in the period, in Jira, GitHub and Notion: the items
 # themselves, each with its title, date and link, for the writing step to
-# cite. A source the person isn't in is {"absent": true}. Each source is
-# written by its own script, which keeps the others'. Once all are in, the
+# cite. Each source is written by its own script, which keeps the others'. Once all are in, the
 # facts, counts by month and by area, are worked out from the items, once,
 # and a subagent's commentary on each source reads them: the figures are the
 # script's, the reading of them, volume, focus and how they shifted, the
@@ -128,12 +130,12 @@ RAW_DIR = "_raw"
 
 
 def expected_files():
-    """Every file a prep folder holds, and nothing else: the request, who the
-    person is in each source, the manager's view of them, their previous
+    """Every file a prep folder holds, and nothing else: the person, the
+    period and who they are in each source, the manager's view of them, their previous
     feedback, their check-ins, the manager's notes on them, what their Slack
     messages show, their work in Jira, GitHub and Notion, and the _raw folder
     of what the subagents were shown and wrote."""
-    return {REQUEST, IDENTITIES, ORIENTATION, FEEDBACK, CHECK_INS, NOTES, SLACK, WORK, RAW_DIR}
+    return {PERSON, ORIENTATION, FEEDBACK, CHECK_INS, NOTES, SLACK, WORK, RAW_DIR}
 
 
 def write_raw(prep, relative, text):
@@ -182,12 +184,27 @@ def write_prep_file(prep, name, value):
 
 
 def script_command(script):
-    """The command that runs the skill's script `script`, by the path the
-    agent ran it with, so every command a task names matches the one the
-    skill pre-approves."""
-    path = sys.argv[0] if sys.argv[0].endswith(script) else os.path.join(
-        os.path.dirname(os.path.realpath(__file__)), script)
-    return f"python3 {os.path.abspath(path)}"
+    """The command that runs the skill's script `script`, by the folder the
+    agent ran one of the skill's scripts from, so every command a task names
+    matches the one the skill pre-approves."""
+    # abspath, not realpath: the agent runs a script by the path the skill
+    # pre-approves, which can be a symlink to the installed skill.
+    ran = os.path.dirname(os.path.abspath(sys.argv[0]))
+    here = os.path.dirname(os.path.realpath(__file__))
+    folder = ran if os.path.realpath(ran) == here else here
+    return f"python3 {os.path.join(folder, script)}"
+
+
+def require_gh(run, what):
+    """Exits, saying what to do, unless gh can be used and is signed in, as
+    `run` runs it; `what` says what is fetched with it, such as "the
+    person's pull requests are fetched"."""
+    if not gh_available():
+        raise SystemExit(
+            f"gh isn't installed or the github-cli source isn't enabled: {what} with it")
+    if not gh_signed_in(run):
+        raise SystemExit(
+            "gh isn't signed in: run gh auth login, then run this again")
 
 
 def stdin_json(usage):
@@ -199,37 +216,38 @@ def stdin_json(usage):
         raise SystemExit(f"the input isn't JSON: {error}\n\n{usage}")
 
 
-def request_problems(request, today):
-    """Why `request` isn't a valid request on `today`, empty when it is: its
-    fields are REQUEST_FIELDS, the person is named by letters or digits, and
-    the period's days are dates as YYYY-MM-DD of a period that can be
-    reported on."""
-    if not isinstance(request, dict):
-        return ["the request must be a JSON object"]
+def person_problems(person, today):
+    """Why `person` isn't a valid person.json on `today`, its sources aside,
+    empty when it is: its fields are PERSON_FIELDS, the person is named by
+    letters or digits, and the period's days are dates as YYYY-MM-DD of a
+    period that can be reported on. Its sources follow sources_problems()."""
+    if not isinstance(person, dict):
+        return ["the person must be a JSON object"]
     problems = []
-    if sorted(request) != sorted(REQUEST_FIELDS):
-        problems.append(f"the request's fields must be {', '.join(REQUEST_FIELDS)}, "
-                        f"not {', '.join(request) or 'none'}")
-    person = request.get("person")
-    if not isinstance(person, str) or not as_name(person):
-        problems.append(f"{person!r} must name the person, such as Jane Doe")
+    if sorted(person) != sorted(PERSON_FIELDS):
+        problems.append(f"the person's fields must be {', '.join(PERSON_FIELDS)}, "
+                        f"not {', '.join(person) or 'none'}")
+    name = person.get("person")
+    if not isinstance(name, str) or not as_name(name):
+        problems.append(f"{name!r} must name the person, such as Jane Doe")
     days = {}
     for field in ("start", "end"):
-        value = request.get(field)
+        value = person.get(field)
         try:
             days[field] = date.fromisoformat(
                 value if isinstance(value, str) else "")
         except ValueError:
             problems.append(
-                f"the request's {field}, {value!r}, must be a date as YYYY-MM-DD")
+                f"the period's {field}, {value!r}, must be a date as YYYY-MM-DD")
     if len(days) == 2 and (problem := period_problem(days["start"], days["end"], today)):
         problems.append(problem)
     return problems
 
 
-def period_days(request):
-    """Every day of the period of `request`, as YYYY-MM-DD."""
-    return days_between(request["start"], request["end"])
+def period_days(person):
+    """Every day of the review's period in `person`, a prep's person.json, as
+    YYYY-MM-DD."""
+    return days_between(person["start"], person["end"])
 
 
 def days_between(start, end):
@@ -250,27 +268,26 @@ def months_of(first, last):
     return months
 
 
-def identities_problems(identities):
-    """Why `identities` doesn't say who the person is in each source, empty
-    when it does: it has each of SOURCES, and each is ABSENT, or holds the
-    source's fields, each a text that isn't blank or, in LIST_FIELDS, a list
-    of such texts, at least one, each once."""
-    if not isinstance(identities, dict):
-        return ["the identities must be a JSON object"]
+def sources_problems(sources, names):
+    """Why `sources` doesn't say who the person is in each of the sources
+    `names`, empty when it does: it has those sources, no others, and each
+    holds its fields of SOURCES, each a text that isn't blank or, in
+    LIST_FIELDS, a list of such texts, at least one, each once."""
+    if not isinstance(sources, dict):
+        return ["the sources must be a JSON object"]
     problems = []
-    if sorted(identities) != sorted(SOURCES):
-        problems.append(f"the identities must be those of {', '.join(SOURCES)}, "
-                        f"not {', '.join(identities) or 'none'}")
-    for source, fields in SOURCES.items():
-        found = identities.get(source)
-        if source not in identities or found == ABSENT:
+    if sorted(sources) != sorted(names):
+        problems.append(f"the sources must be {', '.join(names)}, "
+                        f"not {', '.join(sources) or 'none'}")
+    for source in names:
+        if source not in sources:
             continue
+        fields, found = SOURCES[source], sources[source]
         if not (isinstance(found, dict) and sorted(found) == sorted(fields)
                 and all(_filled(found[field], field in LIST_FIELDS) for field in fields)):
             wanted = "{" + ", ".join(f'"{field}": ' + ('["...", ...]' if field in LIST_FIELDS else '"..."')
                                      for field in fields) + "}"
-            problems.append(f"{source} must be {wanted}, or {{\"absent\": true}} when the person isn't in "
-                            f"it, not {found!r}")
+            problems.append(f"{source} must be {wanted}, not {found!r}")
     return problems
 
 
@@ -288,6 +305,12 @@ def _is_text(item):
     return isinstance(item, str) and bool(item.strip())
 
 
+def name_words(text):
+    """The words of a name, accents dropped and case folded, so José and jose
+    are one word."""
+    return [word for word in as_name(text).casefold().split("-") if word]
+
+
 def company_names(key):
     """The names of the company setting `key`'s entries, such as each value
     of company.values, in the config's order."""
@@ -300,13 +323,13 @@ def orientation_problems(orientation, values):
     return summary_problems(orientation, "the orientation", values)
 
 
-def feedback_problems(feedback, request, ratings, values):
-    """Why `feedback` isn't the person's previous feedback for `request`, empty
+def feedback_problems(feedback, person, ratings, values):
+    """Why `feedback` isn't the previous feedback for the review of `person`, empty
     when it is: pieces, by pieces_problems(), each with a rating too, null or
     one of `ratings`, and ending, when it has an end day, from
     earliest_feedback_end() to the period's end."""
     earliest, latest = earliest_feedback_end(
-        request), date.fromisoformat(request["end"])
+        person), date.fromisoformat(person["end"])
 
     def rules(piece, days, what):
         problems = []
@@ -320,12 +343,12 @@ def feedback_problems(feedback, request, ratings, values):
     return pieces_problems(feedback, ("feedback", "feedback"), FEEDBACK_FIELDS, values, rules)
 
 
-def check_ins_problems(check_ins, request, values):
-    """Why `check_ins` aren't the person's check-ins for `request`,
+def check_ins_problems(check_ins, person, values):
+    """Why `check_ins` aren't the check-ins for the review of `person`,
     empty when they are: pieces, by pieces_problems(), each overlapping the
     period when it has a day."""
     first, last = date.fromisoformat(
-        request["start"]), date.fromisoformat(request["end"])
+        person["start"]), date.fromisoformat(person["end"])
 
     def rules(piece, days, what):
         if days.get("end", first) < first or days.get("start", last) > last:
@@ -382,10 +405,10 @@ def pieces_order(piece):
     return (first is None, first or "", last or "")
 
 
-def earliest_feedback_end(request):
+def earliest_feedback_end(person):
     """The first day dated previous feedback may end on: FEEDBACK_YEARS before the
-    request's period starts, the 28th for a 29 February."""
-    start = date.fromisoformat(request["start"])
+    review's period in `person` starts, the 28th for a 29 February."""
+    start = date.fromisoformat(person["start"])
     try:
         return start.replace(year=start.year - FEEDBACK_YEARS)
     except ValueError:
@@ -407,7 +430,7 @@ def slack_problems(slack, values, days):
 
 def work_problems(work, days, final=True):
     """Why `work` isn't the person's work, empty when it is: for each source
-    of WORK_LISTS, {"absent": true} or its lists, each item an object with a
+    of WORK_LISTS, its lists, each item an object with a
     title, a link and a date, one of `days`, but an open issue, undated, and
     a created Notion page, `between`, two of them, a Notion page with its
     path too, and listed once; then facts that match the items, and a
@@ -420,13 +443,13 @@ def work_problems(work, days, final=True):
         return [f"the work is missing {', '.join(missing)}"]
     problems = []
     for source, lists in WORK_LISTS.items():
-        found = work.get(source, ABSENT)
-        if found == ABSENT:
+        if source not in work:
             continue
+        found = work[source]
         if not (isinstance(found, dict) and sorted(found) == sorted(lists)
                 and all(isinstance(found[name], list) for name in lists)):
-            problems.append(f"the work's {source} must have the lists {', '.join(lists)}, or be "
-                            '{"absent": true}')
+            problems.append(
+                f"the work's {source} must have the lists {', '.join(lists)}")
             continue
         for name in lists:
             problems += [f"the work's {source} {name}: {item!r:.80} needs a title, a link"
@@ -444,7 +467,7 @@ def work_problems(work, days, final=True):
         problems.append(
             "the work's facts don't match its items: run work_commentary.py start again")
     if COMMENTARY in work:
-        problems += commentary_problems(work[COMMENTARY], work)
+        problems += commentary_problems(work[COMMENTARY])
     return problems
 
 
@@ -459,14 +482,17 @@ def _is_work_item(source, name, item, days):
 
 def _is_item(item, days, dated):
     """Whether `item` is an object with a title, a link and, when `dated`, a
-    date, one of `days`."""
-    return (isinstance(item, dict) and _is_text(item.get("title")) and str(item.get("url", "")).startswith("https://")
+    date, one of `days`. A link is a web address, http or https: a Jira
+    item's is made from the site's base-url, which a self-hosted site may
+    serve over http."""
+    return (isinstance(item, dict) and _is_text(item.get("title"))
+            and str(item.get("url", "")).startswith(("http://", "https://"))
             and (not dated or item.get("date") in days))
 
 
 def work_facts(work, days):
-    """The facts of the work `work` in the period of `days`, for each source
-    the person is in, else null: by_month, each month's count of each list,
+    """The facts of the work `work` in the period of `days`, for each source:
+    by_month, each month's count of each list,
     open issues aside as they have no date, of areas, how many it touched,
     and main_areas, the MAIN_AREAS it touched most, each with its count of
     items, so a shift in focus shows by month; and by_area, each area's count of each list, most first. An
@@ -475,7 +501,7 @@ def work_facts(work, days):
     Notion page's, where it sits."""
     months = sorted({day[:7] for day in days})
     issues = {item["key"]: item for name in WORK_LISTS["jira"]
-              for item in ({} if work["jira"] == ABSENT else work["jira"]).get(name, [])}
+              for item in work["jira"][name]}
 
     def parent_area(issue):
         parent = issue.get("parent")
@@ -494,9 +520,6 @@ def work_facts(work, days):
 
     facts = {}
     for source, lists in WORK_LISTS.items():
-        if work[source] == ABSENT:
-            facts[source] = None
-            continue
         dated = [name for name in lists if name != "open"]
         by_month = []
         for this in months:
@@ -523,20 +546,16 @@ def work_facts(work, days):
     return facts
 
 
-def commentary_problems(commentary, work):
-    """Why `commentary` isn't the commentary on the work `work`, empty when
-    it is: for each source of WORK_LISTS, a text of at most
-    MAX_COMMENTARY_WORDS words, or null for a source the person isn't in."""
+def commentary_problems(commentary):
+    """Why `commentary` isn't the commentary on the work, empty when it is:
+    for each source of WORK_LISTS, a text of at most MAX_COMMENTARY_WORDS
+    words."""
     if not (isinstance(commentary, dict) and sorted(commentary) == sorted(WORK_LISTS)):
         return [f"the commentary must have {', '.join(WORK_LISTS)}"]
     problems = []
     for source in WORK_LISTS:
         text = commentary[source]
-        if work.get(source) == ABSENT:
-            if text is not None:
-                problems.append(
-                    f"the commentary's {source} must be null: the person isn't in it")
-        elif not _is_text(text) or word_count(text) > MAX_COMMENTARY_WORDS:
+        if not _is_text(text) or word_count(text) > MAX_COMMENTARY_WORDS:
             problems.append(f"the commentary's {source} must be a paragraph of about {COMMENTARY_WORDS} words, "
                             f"at most {MAX_COMMENTARY_WORDS}")
     return problems

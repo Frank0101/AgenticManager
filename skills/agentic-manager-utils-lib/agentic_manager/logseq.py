@@ -2,9 +2,10 @@
 
 Only the source's `path`, the graph's folder, is read from the config, and
 the notes are only read, never changed. Links are read as Logseq writes them:
-[[Page]], #[[Page]] and #Page all link one page, whatever their case. A page's
-file name holds its title as the :triple-lowbar file name format writes it,
-___ for each /, with what a file name can't hold percent-encoded.
+[[Page]], #[[Page]] and #Page all link one page, whatever their case, and a
+page's alias:: property names other links to it. A page's file name holds
+its title as the :triple-lowbar file name format writes it, ___ for each /,
+with what a file name can't hold percent-encoded.
 """
 import os
 import re
@@ -20,6 +21,9 @@ FOLDERS = ("journals", "pages")
 # punctuation, and a # inside a word or a URL, such as a fragment, isn't one.
 LINK = re.compile(r"\[\[([^\[\]\n]+)\]\]")
 TAG = re.compile(r"(?<![\w#&/=])#([^\s#\[\]()\"',.;:!?]+)")
+# A property line, key:: value, as a page's properties are written before its
+# first block.
+PROPERTY = re.compile(r"([\w-]+)::\s*(.*)")
 
 
 def graph_path():
@@ -60,3 +64,21 @@ def links(text):
     found = [(m.start(), m[1].strip()) for m in LINK.finditer(text)]
     found += [(m.start(), m[1]) for m in TAG.finditer(text)]
     return [name for _, name in sorted(found)]
+
+
+def page_aliases(text):
+    """The aliases the page `text` declares in its alias:: property, each
+    written plain, as a link or as a tag, in order: the property lines before
+    its first block are the page's; one inside a block is the block's."""
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        match = PROPERTY.fullmatch(line)
+        if not match:
+            return []
+        if match[1].casefold() == "alias":
+            names = (name.strip().lstrip("#").removeprefix("[[").removesuffix("]]").strip()
+                     for name in match[2].split(","))
+            return [name for name in names if name]
+    return []

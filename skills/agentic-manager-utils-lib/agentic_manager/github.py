@@ -54,6 +54,12 @@ NOT_FOUND = "NOT_FOUND"
 # to a PullRequest with the number of 9." (gh pr view) and REST's "Not Found
 # (HTTP 404)" (gh api). gh tells it only in its message.
 NOT_FOUND_SIGNS = ("could not resolve to a ", "http 404")
+# What gh says, in lower case, when GitHub refuses a call with its secondary
+# rate limit, a cooldown on calls in quick succession, and the seconds waited
+# before each new try: GitHub asks for at least a minute, and it can take a
+# few. Its primary rate limit, an hourly quota, is final.
+SECONDARY_LIMIT = "secondary rate limit"
+SECONDARY_WAITS = (60, 120, 240)
 # What to do when gh fails for anything but a rate limit (retry.py's
 # RATE_LIMITED): gh's own setup, or the user goes on without GitHub.
 GH_BROKEN = ("Check that gh works (gh auth status) and run it again, or disable the github-cli source to go on "
@@ -116,8 +122,8 @@ def profile_name(login, run=subprocess.run):
 def pull_events(urls, run=subprocess.run):
     """(events, gone) of the pull requests at `urls`: events as {url: {url,
     state, createdAt, mergedAt, closedAt}}, when each was opened and, if it
-    was, merged and closed (else None), with state OPEN, CLOSED or MERGED; and gone as
-    {url: GitHub's words} of those GitHub says don't exist, in the order of
+    was, merged and closed (else None), with state OPEN, CLOSED or MERGED;
+    and gone as {url: GitHub's words} of those GitHub says don't exist, in the order of
     `urls`. Raises GhError for any other that gh couldn't read, such as one
     in a repository GitHub can't find (see _batch_events()) or a URL whose
     parts aren't safe to ask about. Read in a GraphQL call for each batch
@@ -167,7 +173,8 @@ def _batch_events(host, urls, run=subprocess.run):
     query, fields, aliases = _events_query(urls)
     args = [*GRAPHQL, *(["--hostname", host] if host !=
                         DEFAULT_HOST else []), "-f", f"query={query}", *fields]
-    answer = retried(lambda: _graphql_once(args, run), passing, note)
+    answer = retried(lambda: _graphql_once(
+        args, run), passing, note, rate_wait)
     errors: dict[tuple, dict] = {tuple(error.get("path") or ())[:2]: error
                                  for error in answer.get("errors") or [] if isinstance(error, dict)}
     events, missing = {}, {}
@@ -228,11 +235,12 @@ def gh_found(args, thing, run=subprocess.run) -> tuple[Any, str | None]:
 
 def gh_json(args, run=subprocess.run):
     """gh's JSON answer to `args`, the command after gh, tried again while gh
-    fails in passing; raises GhError when gh gives none, whether it fails,
-    times out or answers something other than JSON. It never returns an
+    fails in passing or hits GitHub's secondary rate limit; raises GhError
+    when gh gives none, whether it fails, times out or answers something
+    other than JSON. It never returns an
     empty answer for a failure, so one such as GitHub's rate limit is never
     taken for a thing that doesn't exist."""
-    return retried(lambda: _gh_once(args, run), passing, note)
+    return retried(lambda: _gh_once(args, run), passing, note, rate_wait)
 
 
 def _gh_once(args, run):
@@ -280,11 +288,22 @@ def _ran(args, words, run):
 
 def passing(error):
     """Whether a failed gh call is passing, to retry.retried(): no answer in
-    time, or GitHub busy or unreachable; a rate limit, something GitHub says
-    isn't there, and anything else, is final."""
+    time, or GitHub busy or unreachable. A rate limit isn't passing:
+    rate_wait() says which one is waited out. Something GitHub says isn't
+    there, and anything else, is final."""
     if not isinstance(error, GhError) or error.rate_limited or error.not_found:
         return False
     return any(sign in error.message.lower() for sign in PASSING_SIGNS)
+
+
+def rate_wait(error, tries):
+    """The seconds to wait out GitHub's secondary rate limit, to
+    retry.retried(), after `tries` such waits: each of SECONDARY_WAITS in
+    turn, then None, as for any other failure, the primary rate limit
+    included, which lifts only within the hour."""
+    if isinstance(error, GhError) and SECONDARY_LIMIT in error.message.lower() and tries < len(SECONDARY_WAITS):
+        return SECONDARY_WAITS[tries]
+    return None
 
 
 def note(error):
@@ -316,8 +335,9 @@ class GhError(Exception):
 
     @property
     def advice(self):
-        """What the user does about it: wait a minute for GitHub's rate limit,
-        or fix gh or disable the github-cli source."""
+        """What the user does about it: wait for GitHub's rate limit, which
+        is final once retry.retried() gave up on it, or fix gh or disable the
+        github-cli source."""
         return RATE_LIMITED if self.rate_limited else GH_BROKEN
 
     @property

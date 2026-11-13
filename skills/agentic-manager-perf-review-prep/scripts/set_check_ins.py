@@ -10,7 +10,7 @@ import argparse
 import json
 import os
 
-from common import (CHECK_INS, REQUEST, SUMMARY_HELP, VALUES, check_ins_problems, company_names, pieces_order,
+from common import (CHECK_INS, PERSON, SUMMARY_HELP, VALUES, check_ins_problems, company_names, pieces_order,
                     prep_dir, read_json, stdin_json, write_prep_file)
 
 INPUT = """Input, on stdin: every piece shared with the person, such as:
@@ -45,8 +45,8 @@ def set_check_ins(prep, check_ins):
     """Write the check-ins `check_ins` to the prep `prep`'s check-ins.json,
     in pieces_order(), after checking them; returns the file's path. Exits,
     writing nothing, with every problem."""
-    request = read_json(os.path.join(prep_dir(prep), REQUEST))
-    if problems := check_ins_problems(check_ins, request, company_names(VALUES)):
+    person = read_json(os.path.join(prep_dir(prep), PERSON))
+    if problems := check_ins_problems(check_ins, person, company_names(VALUES)):
         raise SystemExit("; ".join(problems) + "\n\n" + INPUT)
     pieces = sorted(check_ins["pieces"], key=pieces_order)
     return write_prep_file(prep, CHECK_INS, {"pieces": pieces})
