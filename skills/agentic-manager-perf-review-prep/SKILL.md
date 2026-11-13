@@ -78,14 +78,6 @@ Who the person is in GitHub, Notion, Slack and the vault is the manager's to con
 
 4. **Record it** with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py --prep <prep>`; its `--help` shows the input. Run it again with every source to record a correction.
 
-## Summaries
-
-What the manager tells you, and what the person's previous feedback and check-ins say, are recorded as summaries. Before your first one, run `python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py --prep <prep>` once: it prints the parts of a summary, the company's values and ratings, and what step 4 needs.
-
-Each part is a list of points, in your words: one sentence each, about 25 words at most, such as "Delivers tickets reliably and with good quality". Make the person the subject of a point: what they did, or what happened because of them. Each point stands on its own: say what it is about, such as a promotion, so it reads without the source. Keep every point the source makes, add none it doesn't, and put each in the part it belongs to; leave a part empty when the source says nothing of it.
-
-A point in a part that `rules.py` lists in `valued_parts` names every company value it clearly shows, at most two, the one it shows most first, judged from what the point says and each value's meaning, or none when no value fits. Consider every value, not only the most common one, and never stretch a point to fit one. Show them after the point when the manager confirms the summary, such as "Delivers tickets reliably (Ownership)", so they confirm them too; for a point with none, add briefly why when the point alone doesn't make it plain, such as "(no value: an overall verdict, not a behaviour)".
-
 ## 3. Hear the manager's view
 
 Before any evidence is gathered, ask the manager, in a message of its own, for their overall view of the person over the period:
@@ -150,3 +142,11 @@ The person's work in Jira, GitHub, Notion and Slack, in the period. Like step 6,
 ## 8. Tell the user
 
 First check the prep with `python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py --prep <prep>`. If it fails, fix what it names, by running again the step that writes that file, and check again. Once it passes, say the prep is ready, with a Markdown link to its `prep_dir`, and that the next step, writing the review from what was gathered, isn't built yet. If step 1's `temporary` is `true`, add that the folder is temporary and setting `output.root` in the config keeps preps.
+
+## Summaries
+
+What the manager tells you, and what the person's previous feedback and check-ins say, are recorded as summaries. Before your first one, run `python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py --prep <prep>` once: it prints the parts of a summary, the company's values and ratings, and what step 4 needs.
+
+Each part is a list of points, in your words: one sentence each, about 25 words at most, such as "Delivers tickets reliably and with good quality". Make the person the subject of a point: what they did, or what happened because of them. Each point stands on its own: say what it is about, such as a promotion, so it reads without the source. Keep every point the source makes, add none it doesn't, and put each in the part it belongs to; leave a part empty when the source says nothing of it.
+
+A point in a part that `rules.py` lists in `valued_parts` names every company value it clearly shows, at most two, the one it shows most first, judged from what the point says and each value's meaning, or none when no value fits. Consider every value, not only the most common one, and never stretch a point to fit one. Show them after the point when the manager confirms the summary, such as "Delivers tickets reliably (Ownership)", so they confirm them too; for a point with none, add briefly why when the point alone doesn't make it plain, such as "(no value: an overall verdict, not a behaviour)".
