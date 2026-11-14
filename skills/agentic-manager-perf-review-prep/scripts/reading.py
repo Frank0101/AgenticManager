@@ -5,15 +5,16 @@ synopsis of everything in a part, and judges nothing, so the merge sees all
 there is and alone decides what is feedback, with one threshold for the
 period: only the merge sees a small thing repeat into a pattern. Notes are
 numbered, so a reader can't skip one. What differs by source is a Source;
-the flow lives here once, writing to the prep's _raw folder, which keeps
-what each subagent was shown and wrote, an answer a file of its own.
+the flow lives here once. _raw keeps only each reader's answer, which the
+merge is built from: the rest lasts only a run, so it sits in work_dir().
 """
 import json
 import os
+import tempfile
 from dataclasses import dataclass, field
 from typing import Callable
 
-from common import (PERSON, PROTOCOL, RAW_DIR, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
+from common import (FOLDER_NAME, PERSON, PROTOCOL, RAW_DIR, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
                     fill_protocol, prep_dir, script_command, read_json, stdin_json, summary_problems, word_count, write_raw,
                     write_prep_file)
 
@@ -68,7 +69,7 @@ def command_line(source, description, argv=None):
                         "summary's path, in_doubt, what the merge left out in doubt, and correct, the command that "
                         "submits a correction"),
                        ("remerge", "once every reading task is answered: write the merge task again, from the "
-                        "synopses kept in _raw and the merge's protocol as it is now, dropping the merge's earlier "
+                        "answers kept in _raw and the merge's protocol as it is now, dropping the merge's earlier "
                         "answer; prints one line of JSON: merge, the merge task's line")):
         command = commands.add_parser(name, help=help, description=help)
         command.add_argument("--prep", required=True,
@@ -80,7 +81,7 @@ def command_line(source, description, argv=None):
     if args.command == "start":
         print(json.dumps(start(source, args.prep), ensure_ascii=False))
     elif args.command == "finished":
-        if not answered(work_dir(source, args.prep), MERGE) and load_material(source, args.prep)["tasks"]:
+        if not answered(source, args.prep, MERGE) and load_material(source, args.prep)["tasks"]:
             raise SystemExit(
                 "The merge isn't submitted yet: run finished once its subagent has finished")
         print(json.dumps(finished(source, args.prep), ensure_ascii=False))
@@ -95,16 +96,16 @@ def command_line(source, description, argv=None):
 
 def start(source, prep):
     """Gather the source of the prep `prep` into its working folder, emptied
-    first, and write every reading task, as they are independent and few;
-    returns what was gathered, a line for each task, 'Task <name>: <path>',
-    and the merge task's line, its file written once every reading task is
+    first with its answers in _raw, and write every reading task, as they
+    are independent and few; returns what was gathered, a line for each
+    task, 'Task <name>: <path>', and the merge task's line, its file written once every reading task is
     answered. With nothing to read, it records the empty summary and returns
     what finished() says."""
     material = source.gather(prep)
     work = work_dir(source, prep)
     clear_folder(work)
-    write_raw(prep, os.path.join(source.name, MATERIAL), json.dumps(
-        material, ensure_ascii=False, indent=1))
+    clear_folder(raw_dir(source, prep))
+    write_work_file(os.path.join(work, MATERIAL), material)
     result = {key: value for key, value in material.items()
               if key not in ("tasks", "content")}
     if not material["tasks"]:
@@ -118,9 +119,10 @@ def start(source, prep):
 
 def submit(source, prep, task, answer):
     """Check the answer `answer` to the task `task` of the prep `prep`, and
-    write it, a numbered note's item with its note's day; the answer to the last
-    reading task also writes the merge task, and the merge's summary goes to
-    the prep. Exits, writing nothing, with every problem."""
+    write it, a numbered note's item with its note's day and link; the answer
+    to the last reading task also writes the merge task, and the merge's
+    summary goes to the prep, in order(), and what it left out in doubt to
+    the working folder. Exits, writing nothing, with every problem."""
     material, notes, in_doubt = load_material(source, prep), None, None
     if task == MERGE:
         in_doubt = answer.pop("in_doubt", None) if isinstance(
@@ -141,18 +143,15 @@ def submit(source, prep, task, answer):
         raise SystemExit("; ".join(problems) +
                          "\n\nThe answer's shape:\n" + answer_shape(source, task))
     if task == MERGE:
-        stored = {**answer, "in_doubt": in_doubt}
-    elif notes is not None:
-        stored = {"items": [{**notes[item["note"] - 1], "synopsis": item["synopsis"]}
-                            for item in sorted(answer["items"], key=lambda item: item["note"])]}
-    else:
-        stored = answer
-    write_raw(prep, os.path.join(source.name, *task.split(":"), ANSWER),
-              json.dumps(stored, ensure_ascii=False, indent=1))
-    if task == MERGE:
-        write_prep_file(prep, source.output, answer)
+        write_work_file(answer_path(source, prep, MERGE), {
+                        "in_doubt": sorted(in_doubt or [], key=newest_first, reverse=True)})
+        write_prep_file(prep, source.output, order(answer))
         return {"task": task, source.name: os.path.join(prep_dir(prep), source.output)}
-    if all(answered(work_dir(source, prep), name) for name in material["tasks"]):
+    stored = answer if notes is None else {"items": [{**notes[item["note"] - 1], "synopsis": item["synopsis"]}
+                                                     for item in sorted(answer["items"], key=lambda item: item["note"])]}
+    write_raw(prep, os.path.join(source.name, raw_name(task)),
+              json.dumps(stored, ensure_ascii=False, indent=1))
+    if all(answered(source, prep, name) for name in material["tasks"]):
         write_task(source, prep, MERGE, merge_task(source, prep, material))
     return {"task": task, "items": len(answer["items"])}
 
@@ -162,7 +161,7 @@ def finished(source, prep):
     summary is, what the merge left out in doubt, as it wrote it, and the
     command that submits a correction."""
     in_doubt = read_answer(source, prep, MERGE)["in_doubt"] if answered(
-        work_dir(source, prep), MERGE) else []
+        source, prep, MERGE) else []
     return {"finished": True, source.name: os.path.join(prep_dir(prep), source.output),
             "in_doubt": in_doubt, "correct": f"{call(source)} submit --prep {prep} --task {MERGE}"}
 
@@ -173,23 +172,23 @@ def remerge(source, prep):
     the merge's rules is tried without reading the source again; drops the
     merge's earlier answer, so finished waits for the new one. Exits when a
     reading task isn't answered."""
-    material, work = load_material(source, prep), work_dir(source, prep)
-    if missing := [task for task in material["tasks"] if not answered(work, task)]:
+    material = load_material(source, prep)
+    if missing := [task for task in material["tasks"] if not answered(source, prep, task)]:
         raise SystemExit(
             f"{', '.join(missing)} not answered yet: the merge is written once every reading task is")
-    clear_folder(os.path.join(work, MERGE))
+    if answered(source, prep, MERGE):
+        os.remove(answer_path(source, prep, MERGE))
     return {"merge": write_task(source, prep, MERGE, merge_task(source, prep, material))}
 
 
 # The tasks.
 
 def reading_task(source, prep, task, material):
-    """The text of the reading task `task`: its protocol, the person, how to
-    read a linked ticket, the source's part and how to submit."""
+    """The text of the reading task `task`: its protocol, the person, the
+    source's part and how to submit."""
     protocol, body = source.task_text(prep, task, material)
-    return "\n\n".join([read_protocol(protocol), person_section(prep), links_section(source),
-                        body, submit_section(f"{call(source)} submit --prep {prep} --task {task}",
-                                             answer_shape(source, task))])
+    return "\n\n".join([read_protocol(protocol), person_section(prep), body, submit_section(f"{call(source)} submit --prep {prep} --task {task}",
+                                                                                            answer_shape(source, task))])
 
 
 def merge_task(source, prep, material):
@@ -216,13 +215,6 @@ def values_section():
                                                      for entry in company_setting(VALUES))
 
 
-def links_section(source):
-    """How a task reads a Jira ticket a link points to: the command, by the
-    path the skill pre-approves."""
-    return (f"## Reading links\n\nA Jira ticket: `{script_command('jira_ticket.py')} --key <key>`, "
-            "such as PROJ-123.")
-
-
 def submit_section(command, answer):
     """How a task submits its answer: the command `command` that takes it,
     and `answer`, its shape."""
@@ -237,11 +229,33 @@ def answer_shape(source, task):
 
 
 def write_task(source, prep, task, text):
-    """Write the task `task`'s text to its file; returns the line that hands
-    it out, 'Task <name>: <path>'."""
-    path = write_raw(prep, os.path.join(
-        source.name, *task.split(":"), TASK_FILE), text)
+    """Write the task `task`'s text to its file in the working folder;
+    returns the line that hands it out, 'Task <name>: <path>'."""
+    path = task_path(work_dir(source, prep), task)
+    write_work_file(path, text)
     return f"Task {task}: {path}"
+
+
+# The order.
+
+def order(summary):
+    """`summary` with each part's points from the most recent, by their
+    latest day, those with no day first, as the most recent of all, and each
+    point's days from the latest: the order every list of the prep keeps."""
+    def latest(point):
+        return newest_first(max(point["dates"]) if isinstance(point, dict) and point.get("dates") else "")
+    return {part: sorted([{**point, "dates": sorted(point["dates"], reverse=True)}
+                          if isinstance(point, dict) and "dates" in point else point for point in points],
+                         key=latest, reverse=True) for part, points in summary.items()}
+
+
+def newest_first(text):
+    """The key that sorts, with reverse=True, texts that start with a day,
+    YYYY-MM-DD, from the latest, those that don't first, each kept in the
+    order given."""
+    day = text[:10]
+    dated = len(day) == 10 and day[4] == "-" and day[7] == "-"
+    return (not dated, day if dated else "")
 
 
 # Checking the answers.
@@ -294,8 +308,17 @@ def in_doubt_problems(in_doubt):
 # Where things are.
 
 def work_dir(source, prep):
-    """The prep `prep`'s working folder for `source`, in its _raw folder:
-    start empties it, never finding what an earlier run left."""
+    """The prep `prep`'s working folder for `source`, in the system's
+    temporary folder, as the tech investigation keeps its own: the material,
+    the tasks and what the merge left out in doubt, needed only while a run
+    lasts. start empties it, never finding what an earlier run left. Exits
+    when the prep isn't there."""
+    prep_dir(prep)
+    return os.path.join(tempfile.gettempdir(), FOLDER_NAME, prep, source.name)
+
+
+def raw_dir(source, prep):
+    """The prep `prep`'s folder of `source`'s answers, in its _raw folder."""
     return os.path.join(prep_dir(prep), RAW_DIR, source.name)
 
 
@@ -304,14 +327,38 @@ def task_path(work, task):
     return os.path.join(work, *task.split(":"), TASK_FILE)
 
 
-def answered(work, task):
-    """Whether `task` has an answer in the working folder `work`."""
-    return os.path.exists(os.path.join(work, *task.split(":"), ANSWER))
+def answer_path(source, prep, task):
+    """The file of `task`'s answer: a reader's in _raw, by raw_name(), and
+    the merge's in the working folder."""
+    if task == MERGE:
+        return os.path.join(work_dir(source, prep), MERGE, ANSWER)
+    return os.path.join(raw_dir(source, prep), raw_name(task))
+
+
+def raw_name(task):
+    """The name of the reading task `task`'s answer in its source's _raw
+    folder: a month's in months, such as months/2026-07.json, else the
+    task's own, such as pages.json."""
+    kind, _, part = task.partition(":")
+    return os.path.join(*((f"{kind}s", part) if part else (kind,))) + ".json"
+
+
+def answered(source, prep, task):
+    """Whether `task` of the prep `prep` has an answer."""
+    return os.path.exists(answer_path(source, prep, task))
 
 
 def read_answer(source, prep, task):
     """The answer to `task`, as submitted."""
-    return read_json(os.path.join(work_dir(source, prep), *task.split(":"), ANSWER))
+    return read_json(answer_path(source, prep, task))
+
+
+def write_work_file(path, value):
+    """Write `value`, a text or JSON, to the working folder's file `path`."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(value if isinstance(value, str) else json.dumps(
+            value, ensure_ascii=False, indent=1))
 
 
 def load_material(source, prep):
@@ -324,9 +371,11 @@ def load_material(source, prep):
 
 
 def read_protocol(name):
-    """The protocol file `name`'s text, its shared parts filled in."""
+    """The protocol file `name`'s text, its shared parts filled in, with the
+    command that reads a Jira ticket by the path the skill pre-approves."""
     return fill_protocol(PROTOCOL, name, {"synopsis_words": SYNOPSIS_WORDS,
-                                          "max_synopsis_words": MAX_SYNOPSIS_WORDS})
+                                          "max_synopsis_words": MAX_SYNOPSIS_WORDS,
+                                          "jira_ticket": f"{script_command('jira_ticket.py')} --key <key>"})
 
 
 def call(source):

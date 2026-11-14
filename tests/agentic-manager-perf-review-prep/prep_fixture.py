@@ -108,12 +108,15 @@ def temp_output(test):
     tmp = tempfile.TemporaryDirectory()
     test.addCleanup(tmp.cleanup)
     root = os.path.realpath(tmp.name)
+    os.makedirs(os.path.join(root, "system-temp"))
     path = os.path.join(root, "config.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"sources": {}, "output": {"root": os.path.join(root, "out")},
                    "company": {"perf-review-ratings": RATINGS, "values": VALUES}}, f)
     for target, attribute, value in ((config, "CONFIG_PATH", path),
-                                     (output_folder, "TEMP_ROOT", os.path.join(root, "temp"))):
+                                     (output_folder, "TEMP_ROOT",
+                                      os.path.join(root, "temp")),
+                                     (tempfile, "tempdir", os.path.join(root, "system-temp"))):
         patcher = mock.patch.object(target, attribute, value)
         patcher.start()
         test.addCleanup(patcher.stop)

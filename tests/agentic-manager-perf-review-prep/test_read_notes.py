@@ -2,8 +2,9 @@
 Run as a script, it has end-to-end tests in test_e2e_init.py.
 Run with: python3 tests/run.py agentic-manager-perf-review-prep
 
-The vault is a temporary folder of the test's own; the notes' working
-folder is the prep's _raw folder, in the test's output folder.
+The vault is a temporary folder of the test's own; the readers' answers go
+to the prep's _raw folder, in the test's output folder, and the tasks to the
+working folder, in the test's own system temporary folder.
 """
 
 import json
@@ -98,16 +99,19 @@ class ReadNotesTest(unittest.TestCase):
 
     def test_runs_the_tasks_then_merges(self):
         # start gathers, writes every month and the pages, each saying how
-        # the notes write the person and each note numbered, and names the merge task, which the last reading answer
-        # writes, every synopsis with its note's day; the merge's submit
-        # says finished, with what it left out in doubt.
+        # the notes write the person and each note numbered, in the working
+        # folder, and names the merge task, which the last reading answer
+        # writes, every synopsis with its note's day and link; each answer
+        # is kept in _raw, a month in months; the merge's summary is kept
+        # most recent first, and its submit says finished, with what it left
+        # out in doubt.
         started = reading.start(read_notes.SOURCE, PREP)
         self.assertEqual(started["months"], ["2026-08", "2026-09"])
         lines = started["tasks"]
         self.assertEqual([line.split(": ")[0] for line in lines],
                          ["Task month:2026-08", "Task month:2026-09", "Task pages"])
-        self.assertTrue(lines[0].endswith(os.path.join(
-            "Jane-Doe_26-11-10", "_raw", "notes", "month", "2026-08", "task.md")))
+        self.assertEqual(lines[0].split(": ", 1)[1], os.path.join(
+            tempfile.gettempdir(), "perf-review-preps", "Jane-Doe_26-11-10", "notes", "month", "2026-08", "task.md"))
         with open(lines[0].split(": ", 1)[1], encoding="utf-8") as f:
             task = f.read()
         for expected in ("# Read a month of a manager's notes", "## The person\n\nJane Doe",
@@ -126,6 +130,10 @@ class ReadNotesTest(unittest.TestCase):
                        {"items": [{"note": 1, "synopsis": "The promotion talk went well"}]})
         reading.submit(read_notes.SOURCE,
                        PREP, "pages", {"items": [{"note": 1, "synopsis": "Moved to payments"}]})
+        raw = os.path.join(self.folder, PREP, "_raw", "notes")
+        self.assertEqual(sorted(os.path.relpath(os.path.join(where, name), raw)
+                                for where, _, names in os.walk(raw) for name in names),
+                         [os.path.join("months", "2026-08.json"), os.path.join("months", "2026-09.json"), "pages.json"])
         with open(merge, encoding="utf-8") as f:
             text = f.read()
         august = Path(self.graph, "journals", "2026_08_20.md").as_uri()
@@ -136,8 +144,11 @@ class ReadNotesTest(unittest.TestCase):
             self.assertIn(expected, text)
         self.assertLess(text.index("Presented the migration"),
                         text.index("Didn't flag"))
+        september = Path(self.graph, "journals", "2026_09_02.md").as_uri()
         summary = {"going_well": [{"point": "Presented the migration to the team", "values": ["Teamwork"],
-                                   "dates": ["2026-08-20"], "links": [august]}],
+                                   "dates": ["2026-08-20"], "links": [august]},
+                                  {"point": "The promotion talk went well", "values": [],
+                                   "dates": ["2026-08-20", "2026-09-02"], "links": [september]}],
                    "to_improve": [], "context": [{"point": "Moved to payments", "dates": [], "links": [page]}]}
         with self.assertRaisesRegex(SystemExit, "must each be a day the source was read on"):
             reading.submit(read_notes.SOURCE, PREP, "merge", {**summary, "in_doubt": [], "going_well": [
@@ -147,13 +158,17 @@ class ReadNotesTest(unittest.TestCase):
                 {**summary["going_well"][0], "links": [Path(self.graph, "journals", "2026_08_21.md").as_uri()]}]})
         with self.assertRaisesRegex(SystemExit, '"in_doubt" must be a list of texts'):
             reading.submit(read_notes.SOURCE, PREP, "merge", summary)
-        doubt = "2026-08-20: Didn't flag a delay, but only once and minor"
+        doubts = ["2026-08-20: Didn't flag a delay, but only once and minor",
+                  "2026-09-02: Talked about a promotion", "Jane: a page note"]
         submitted = reading.submit(read_notes.SOURCE,
-                                   PREP, "merge", {**summary, "in_doubt": [doubt]})
+                                   PREP, "merge", {**summary, "in_doubt": doubts})
         with open(submitted["notes"], encoding="utf-8") as f:
-            self.assertEqual(json.load(f), summary)
+            self.assertEqual(json.load(f), {**summary, "going_well": [
+                {**summary["going_well"][1], "dates": ["2026-09-02", "2026-08-20"]}, summary["going_well"][0]]})
+        self.assertFalse(os.path.exists(os.path.join(raw, "merge.json")))
         done = reading.finished(read_notes.SOURCE, PREP)
-        self.assertEqual((done["finished"], done["in_doubt"]), (True, [doubt]))
+        self.assertEqual((done["finished"], done["in_doubt"]),
+                         (True, [doubts[2], doubts[1], doubts[0]]))
         self.assertTrue(done["correct"].endswith(
             "submit --prep Jane-Doe_26-11-10 --task merge"))
         # remerge writes the merge task again from the kept synopses, with
@@ -165,8 +180,7 @@ class ReadNotesTest(unittest.TestCase):
             text = f.read()
         self.assertTrue(text.startswith("# A changed merge"))
         self.assertIn('"synopsis": "Moved to payments"', text)
-        self.assertFalse(reading.answered(
-            reading.work_dir(read_notes.SOURCE, PREP), "merge"))
+        self.assertFalse(reading.answered(read_notes.SOURCE, PREP, "merge"))
 
     def test_no_notes(self):
         # With nothing to read, start records the empty summary at once.

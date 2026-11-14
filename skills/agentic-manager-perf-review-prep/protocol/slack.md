@@ -4,7 +4,7 @@ A manager is preparing a performance review of the person named below. Read what
 
 ## What to read
 
-Search Slack's public channels only, with its MCP's search of them, never one that reaches private channels or DMs, with the filters under "The month", and read every page of each search until there is no next one:
+Search Slack's public channels only, with `slack_search_public`, never `slack_search_public_and_private`, with the filters under "The month", and read every page of each search until there is no next one:
 
 - what the person sent: `from:` the person;
 - what others wrote about them: messages that mention the person.

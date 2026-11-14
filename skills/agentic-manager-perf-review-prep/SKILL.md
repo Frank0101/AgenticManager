@@ -14,8 +14,8 @@ The skill's files go to the `perf-review-preps` folder of the user's configured 
 ```text
 perf-review-preps/
 └── Jane-Doe_26-11-10/
-    ├── _raw/             read_notes.py, read_slack.py and work_commentary.py write (what each reading
-    │                     gathered, each subagent's task and the readings' answers, by source)
+    ├── _raw/             read_notes.py and read_slack.py write (each reader's answer, by source: a month's in
+    │                     months/, the notes' pages in pages.json); work_commentary.py writes the commentary's task
     ├── person.json       init_prep.py and set_identities.py write (the person, the period and who they are in each
     │                     source, as the manager confirmed)
     ├── orientation.json  set_summary.py writes (the manager's overall view of the person, summarised)
@@ -109,7 +109,7 @@ Record their answer as [Summaries](#summaries) says, with `python3 ${CLAUDE_SKIL
 The manager's own notes on the person, in their vault, and the person's Slack messages are many, and most aren't feedback, so subagents read them, each source on its own: one task for each month of the period, and for the notes one for the person's pages, which give only context, each writing a synopsis of every note or conversation; then, for each source, one judges them all and merges what matters into a summary, so a behaviour seen in several months becomes one point with all its days. Each task holds its own instructions. You coordinate, and read none of the notes or messages yourself: a fresh subagent hasn't heard the manager's view, so what they say is read without it. Your one judgment is on what the merges left out in doubt, in 3. Say nothing to the manager while the subagents work, not even as each one finishes.
 
 1. **Start.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py start --prep <prep>` and `python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py start --prep <prep>`: each prints `tasks`, a line `Task <name>: <path>` for each of its tasks, and `merge`, its merge task's line. When there is nothing to read, a script records an empty summary and prints what `finished` would.
-2. **Hand out the tasks.** Give each of both scripts' `tasks` to a fresh subagent, all at once, only its path, with: "Do the task in <path> exactly as written there, then reply in one line." Once all of a source's tasks have replied, give its `merge` to one more fresh subagent the same way, and once that one has replied, run its script's `finished`. After a break, run `start` again: step 6 starts over.
+2. **Hand out the tasks.** Give each of both scripts' `tasks` to a fresh subagent, all at once, only its path, with: "Do the task in <path> exactly as written there, then reply in one line." Give a reading task a smaller model than your own, as it only reads and summarises, and a merge your own, as it judges. Once all of a source's tasks have replied, give its `merge` to one more fresh subagent the same way, and once that one has replied, run its script's `finished`. After a break, run `start` again: step 6 starts over.
 3. **Finish** as steps 3 to 5 do, once both are finished: your one question is about what the merges left out in doubt, each `finished`'s `in_doubt`. List only those you think may belong in a summary, each with why, and ask whether to add them; when there are none, ask nothing. To add one, read its summary and submit it again, with the point added and its `finished`'s `in_doubt`, with its `correct` command. Then tell the manager, in one line, that what their notes say and what the person's Slack shows are recorded, with a Markdown link to each, the path its `finished` printed, and go on.
 
 ## 7. Gather the data points
