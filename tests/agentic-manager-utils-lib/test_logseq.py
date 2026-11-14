@@ -47,14 +47,17 @@ class LogseqTest(unittest.TestCase):
 
     def test_notes(self):
         # Journals then pages, each in name order, only Markdown; a page by
-        # its title.
+        # its title; each with its file.
         self.write("pages", "Team___Platform.md", "platform")
         self.write("pages", "Jane Doe.md", "about Jane")
         self.write("journals", "2026_07_22.md", "- met [[Jane]]")
         self.write("journals", "notes.txt", "not a note")
         self.assertEqual(list(logseq.notes(self.graph)), [
-            ("journals", "2026_07_22", "- met [[Jane]]"),
-            ("pages", "Jane Doe", "about Jane"), ("pages", "Team/Platform", "platform")])
+            ("journals", "2026_07_22", "- met [[Jane]]",
+             os.path.join(self.graph, "journals", "2026_07_22.md")),
+            ("pages", "Jane Doe", "about Jane", os.path.join(
+                self.graph, "pages", "Jane Doe.md")),
+            ("pages", "Team/Platform", "platform", os.path.join(self.graph, "pages", "Team___Platform.md"))])
 
     def test_page_title(self):
         for stem, title in [("Jane Doe", "Jane Doe"), ("Team___Platform", "Team/Platform"),

@@ -30,6 +30,7 @@ import sys
 import tempfile
 import unittest
 from datetime import date
+from pathlib import Path
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
@@ -231,7 +232,8 @@ class ScriptsTest(unittest.TestCase):
         self.run_ok(NOTES_SCRIPT, "submit", "--prep", prep, "--task",
                     month, stdin=json.dumps({"items": [item]}))
         self.assertTrue(os.path.exists(started["merge"].split(": ", 1)[1]))
-        merged = {"going_well": [{"point": item["synopsis"], "values": ["Ownership"], "dates": [TODAY.isoformat()]}],
+        merged = {"going_well": [{"point": item["synopsis"], "values": ["Ownership"], "dates": [TODAY.isoformat()],
+                                  "links": [Path(self.root, "graph", "journals", f"{TODAY:%Y_%m_%d}.md").as_uri()]}],
                   "to_improve": [], "context": [], "in_doubt": []}
         self.run_ok(NOTES_SCRIPT, "submit", "--prep", prep,
                     "--task", "merge", stdin=json.dumps(merged))

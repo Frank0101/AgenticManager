@@ -4,7 +4,7 @@ A manager is preparing a performance review of the person named below. Read what
 
 ## What to read
 
-Search Slack with its MCP's search across public and private channels, group DMs and DMs, with the filters under "The month", and read every page of each search until there is no next one:
+Search Slack's public channels only, with its MCP's search of them, never one that reaches private channels or DMs, with the filters under "The month", and read every page of each search until there is no next one:
 
 - what the person sent: `from:` the person;
 - what others wrote about them: messages that mention the person.
@@ -15,18 +15,17 @@ When a message the person sent starts a thread, read the thread too.
 
 ## What to skip
 
-- The direct messages between the manager and the person: the manager knows them already.
 - A message that is only an acknowledgement or a reaction, such as "+1", "thanks" or "on it", with nothing else in its conversation.
 - Posts by bots and apps, such as alerts and pull request notifications.
 
 ## Each synopsis
 
-One synopsis for each conversation: a thread, or the messages in a row on one topic in a channel or a DM. Say:
+One synopsis for each conversation: a thread, or the messages in a row on one topic in a channel. Say:
 
 - where: the channel, and its audience, judged by its name, its purpose and who replies, such as the person's team, a cross-team, leadership or product channel, or an incident, alert, on-call, security or reliability channel;
 - what the person said or did, such as an update, a plan, an answer, a diagnosis or a fix;
 - who it was for or helped, and what changed because of it, such as a new way of working, another team unblocked or a process improved, as far as the conversation says;
-- how others responded, such as thanks, praise, follow-up questions or a problem raised with the person's work, and how the conversation ended.
+- how others responded, such as thanks, praise, follow-up questions or a problem raised with the person's work, and how many people reacted to the person's messages, from the search result or, when it doesn't show them, the message's reactions; and how the conversation ended.
 
 ## Links and writing
 

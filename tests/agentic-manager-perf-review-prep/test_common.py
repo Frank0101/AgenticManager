@@ -149,24 +149,34 @@ class CommonTest(unittest.TestCase):
 
     def test_notes_problems(self):
         # The notes summary is a summary whose valued points have the days
-        # they were seen on, each one of the days given, and which may be
-        # empty. name: (changes to it, expected in its problems, or None).
+        # they were seen on, each one of the days given, every point the
+        # links of its notes, a context point's days empty when it comes from
+        # a page, and which may be empty. name: (changes to it, expected in its problems, or None).
+        link = ["file:///vault/journals/2026_09_02.md"]
         days = ["2026-08-20", "2026-09-02", "2026-10-01"]
         cases = [("valid", {}, None),
                  ("empty", {"going_well": [], "to_improve": [],
                   "context": []}, None),
-                 ("no dates", {"going_well": [{"point": "Presented it", "values": []}]},
+                 ("no dates", {"going_well": [{"point": "Presented it", "values": [], "links": link}]},
                   'going_well must be a list of points, each {"point": "...", "values": ["...", ...] or [], '
-                  '"dates": ["YYYY-MM-DD", ...]}'),
-                 ("dates empty", {"going_well": [{"point": "Presented it", "values": [], "dates": []}]},
+                  '"dates": ["YYYY-MM-DD", ...], "links"'),
+                 ("dates empty", {"going_well": [{"point": "Presented it", "values": [], "dates": [],
+                                                  "links": link}]}, "going_well must be a list of points"),
+                 ("no links", {"going_well": [{"point": "Presented it", "values": [], "dates": ["2026-09-02"]}]},
+                  "going_well must be a list of points"),
+                 ("a link not a file's or a web page's", {"going_well": [
+                     {"point": "Presented it", "values": [], "dates": ["2026-09-02"], "links": ["journals/x.md"]}]},
                   "going_well must be a list of points"),
                  ("a day no note was taken on", {"going_well": [
-                     {"point": "Presented it", "values": [], "dates": ["2026-09-03"]}]},
+                     {"point": "Presented it", "values": [], "dates": ["2026-09-03"], "links": link}]},
                   "must each be a day the source was read on, listed once"),
-                 ("a day twice", {"to_improve": [{"point": "Late", "values": [],
+                 ("a day twice", {"to_improve": [{"point": "Late", "values": [], "links": link,
                                                   "dates": ["2026-08-20", "2026-08-20"]}]}, "listed once"),
-                 ("dates on context", {"context": [{"point": "Moved", "values": [], "dates": ["2026-08-20"]}]},
-                  "context must be a list of points, each a sentence")]
+                 ("context dated", {"context": [
+                  {"point": "Moved", "dates": ["2026-08-20"], "links": link}]}, None),
+                 ("context without dates", {"context": [{"point": "Moved", "links": link}]},
+                  'context must be a list of points, each {"point": "...", "dates"'),
+                 ("context a sentence alone", {"context": ["Moved"]}, "context must be a list of points")]
         for name, changes, expected in cases:
             with self.subTest(name):
                 problems = common.notes_problems(
@@ -243,12 +253,16 @@ class CommonTest(unittest.TestCase):
                          ("2026-08-10", "2026-08-11", "2026-11-10", 93))
 
     def test_slack_problems(self):
-        # Every point, context too, has its days and links.
+        # Every point, context too, has its days and links: a message always
+        # has a day.
         days = common.period_days(PERSON)
         self.assertEqual(common.slack_problems(SLACK, VALUE_NAMES, days), [])
-        unlinked = {**SLACK, "context": [{**SLACK["context"][0], "links": []}]}
-        self.assertIn("must be a list of points", " ".join(
-            common.slack_problems(unlinked, VALUE_NAMES, days)))
+        for name, change in [("no links", {"links": []}), ("no days", {"dates": []})]:
+            with self.subTest(name):
+                broken = {
+                    **SLACK, "context": [{**SLACK["context"][0], **change}]}
+                self.assertIn("must be a list of points", " ".join(
+                    common.slack_problems(broken, VALUE_NAMES, days)))
 
     def test_work_problems_links(self):
         # name: (a resolved issue's url, whether the work is accepted): a

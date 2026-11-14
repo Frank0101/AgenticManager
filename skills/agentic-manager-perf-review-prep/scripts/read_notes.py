@@ -1,15 +1,16 @@
 """Reads the manager's notes on a prep's person: start gathers them and writes the tasks, submit takes each answer, finished reports the result.
 
-A note is a journal block that links the person, shown in the block it sits
-in, with its siblings, dated by its journal day; the person's pages have no
-date, so they give only context. Subagents write a synopsis of each, a month
-of journals or the pages a task, and a last one judges and merges them, as
+A note is a journal block that links the person, shown as written in the
+block it sits in, with its siblings, dated by its journal day; the person's
+pages have no date, so they give only context. Subagents write a synopsis
+of each, a month or the pages a task, and a last one merges them, as
 reading.py runs every reading; this script knows only where the notes are
-and what each task shows, each note numbered so none goes without a synopsis.
+and what each task shows, each note numbered so none goes without one.
 """
 import os
 import re
 from datetime import date
+from pathlib import Path
 
 from common import NOTES, PERSON, graph_path, links, notes, prep_dir, read_json
 import reading
@@ -19,16 +20,14 @@ PAGES = "pages"
 # A journal's file name, such as 2026_07_22, and a block's first line.
 JOURNAL = re.compile(r"(\d{4})_(\d{2})_(\d{2})")
 BLOCK = re.compile(r"^(\s*)- ")
-# What marks a line that links the person in the block a note is shown in.
-MARK = "→ "
 READING_ANSWER = """{"items": [
   {"note": 1, "synopsis": "Presented the billing migration to the wider team; Sam asked for the slides, and Jane..."},
   {"note": 2, "synopsis": "..."}
  ]}"""
 MERGE_ANSWER = """{"going_well": [{"point": "...", "values": ["<each company value it clearly shows or calls for, at most two>"],
-                 "dates": ["YYYY-MM-DD", ...]}],
- "to_improve": [{"point": "...", "values": [], "dates": ["YYYY-MM-DD"]}],
- "context": ["..."],
+                 "dates": ["YYYY-MM-DD", ...], "links": ["file://...", ...]}],
+ "to_improve": [{"point": "...", "values": [], "dates": ["YYYY-MM-DD"], "links": ["file://..."]}],
+ "context": [{"point": "...", "dates": ["YYYY-MM-DD", ...], "links": ["file://..."]}],
  "in_doubt": ["YYYY-MM-DD: what the note says, and why you left it out"]}"""
 
 
@@ -47,17 +46,19 @@ def gather(prep):
     first, last = date.fromisoformat(
         person["start"]), date.fromisoformat(person["end"])
     months, pages = {}, []
-    for folder_name, title, text in notes(graph_path()):
+    for folder_name, title, text, file in notes(graph_path()):
+        link = Path(file).as_uri()
         if folder_name == "pages":
             if title.casefold() in wanted:
-                pages.append({"title": title, "text": text.strip()})
+                pages.append(
+                    {"title": title, "text": text.strip(), "link": link})
             continue
         day = journal_day(title)
         if day is None or not first <= day <= last:
             continue
         for note in linking_blocks(text, wanted):
             months.setdefault(f"{day:%Y-%m}", []).append(
-                {"date": day.isoformat(), **note})
+                {"date": day.isoformat(), "link": link, **note})
     return material(months, pages)
 
 
@@ -85,9 +86,8 @@ def linking_blocks(text, wanted):
     """[{text}]: each block of the journal `text` that links a page of
     `wanted`, casefolded, shown inside the block it sits in, with that
     block's other nested blocks, so the note keeps the context its siblings
-    give; a block at the top shows itself and its nested blocks. Each line
-    that links the person starts with MARK, and a block shown already isn't
-    shown again."""
+    give; a block at the top shows itself and its nested blocks. A block
+    shown already isn't shown again."""
     blocks = parse_blocks(text)
     linking = [number for number, block in enumerate(blocks)
                if any(link.casefold() in wanted for link in links(block["text"]))]
@@ -99,8 +99,7 @@ def linking_blocks(text, wanted):
         root = number if parent is None else parent
         tree = [root] + descendants(blocks, root)
         shown.update(tree)
-        found.append({"text": "\n".join(
-            (MARK if n in linking else "") + blocks[n]["line"] for n in tree)})
+        found.append({"text": "\n".join(blocks[n]["line"] for n in tree)})
     return found
 
 
@@ -138,23 +137,29 @@ def descendants(blocks, number):
 
 def task_text(prep, task, material):
     """(protocol, body) of the reading task `task`: a month of notes, or the
-    person's pages, each numbered."""
+    person's pages, each numbered, after how the notes write the person."""
     content = material["content"]
+    # The links the manager confirmed, so a reader knows an alias or a tag
+    # is the person.
+    person = read_json(os.path.join(prep_dir(prep), PERSON))
+    wanted = person["sources"]["logseq-fs"]["links"]
+    intro = (f"## The notes\n\nThe notes write {person['person']} as "
+             f"{' or '.join(f'[[{link}]]' for link in wanted)}, or as a tag, such as #{wanted[0]}.\n\n")
     if task == PAGES:
-        return "pages", "## The notes\n\n" + "\n\n".join(
+        return "pages", intro + "\n\n".join(
             f"### Note {number}, page {page['title']}\n\n{page['text']}"
             for number, page in enumerate(content["pages"], 1))
-    return "notes", "## The notes\n\n" + "\n\n".join(
+    return "notes", intro + "\n\n".join(
         f"### Note {number}, {note['date']}\n\n{note['text']}"
         for number, note in enumerate(content["months"][task.split(":")[1]], 1))
 
 
 def task_notes(material, task):
-    """The day of each note of the reading task `task`, in order, null for
-    each of the pages."""
+    """The day and link of each note of the reading task `task`, in order,
+    {date, link}, the day null for each of the pages."""
     if task == PAGES:
-        return [None] * len(material["content"]["pages"])
-    return [note["date"] for note in material["content"]["months"][task.split(":")[1]]]
+        return [{"date": None, "link": page["link"]} for page in material["content"]["pages"]]
+    return [{"date": note["date"], "link": note["link"]} for note in material["content"]["months"][task.split(":")[1]]]
 
 
 def merge_days(material):
@@ -163,8 +168,8 @@ def merge_days(material):
 
 
 SOURCE = reading.Source(name="notes", script="read_notes.py", output=NOTES, what="notes summary", gather=gather,
-                        task_text=task_text, merge_days=merge_days, task_notes=task_notes,
-                        answers={"reading": READING_ANSWER, MERGE: MERGE_ANSWER})
+                        task_text=task_text, merge_days=merge_days, task_notes=task_notes, linked=True,
+                        undated_context=True, answers={"reading": READING_ANSWER, MERGE: MERGE_ANSWER})
 
 
 def main(argv=None):

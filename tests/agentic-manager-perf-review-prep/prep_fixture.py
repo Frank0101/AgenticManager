@@ -31,10 +31,12 @@ NOTE = {"period": "Q3 2026",
         "to_improve": [], "context": []}
 FEEDBACK = {"pieces": [NOTE]}
 NOTES = {"going_well": [{"point": "Presented the migration to the wider team", "values": ["Teamwork"],
-                         "dates": ["2026-09-02"]}],
+                         "dates": ["2026-09-02"], "links": ["file:///vault/journals/2026_09_02.md"]}],
          "to_improve": [{"point": "Didn't flag delays until asked, many times", "values": ["Ownership"],
-                         "dates": ["2026-08-20", "2026-10-01"]}],
-         "context": ["Moved to the payments team in the summer"]}
+                         "dates": ["2026-08-20", "2026-10-01"],
+                         "links": ["file:///vault/journals/2026_08_20.md", "file:///vault/journals/2026_10_01.md"]}],
+         "context": [{"point": "Moved to the payments team in the summer", "dates": [],
+                      "links": ["file:///vault/pages/Jane.md"]}]}
 # The work's items, and its facts and commentary worked out by hand, over
 # PERSON's period, 10/08/2026 to 10/11/2026.
 WORK_ITEMS = {"jira": {"resolved": [{"key": "PROJ-12", "title": "Migrate billing", "type": "Story",

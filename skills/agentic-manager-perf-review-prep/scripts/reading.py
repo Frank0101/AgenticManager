@@ -32,9 +32,11 @@ class Source:
     task, material)` the protocol and body of a reading task;
     `merge_days(material)` the days a merged point may cite. A reading
     task's items are either numbered, when `task_notes(material, task)`
-    gives the day of each note it shows, null for an undated one, or else
-    dated, each a day of `task_days(material, task)`; `linked` whether every
-    item and point carries the links it rests on."""
+    gives the {date, link} of each note it shows, the date null for an
+    undated one, or else dated, each a day of `task_days(material, task)`;
+    `linked` whether every item and point carries the links it rests on, and
+    `undated_context` whether a context point may have no dates, as one from
+    an undated note."""
     name: str
     script: str
     output: str
@@ -45,6 +47,7 @@ class Source:
     task_notes: Callable | None = None
     task_days: Callable | None = None
     linked: bool = False
+    undated_context: bool = False
     answers: dict = field(default_factory=dict)
 
 
@@ -122,8 +125,10 @@ def submit(source, prep, task, answer):
     if task == MERGE:
         in_doubt = answer.pop("in_doubt", None) if isinstance(
             answer, dict) else None
+        read_links = [item["link"] for name in material["tasks"]
+                      for item in read_answer(source, prep, name)["items"]] if source.linked else None
         problems = summary_problems(answer, f"the {source.what}", company_names(VALUES), source.merge_days(material),
-                                    source.linked) + in_doubt_problems(in_doubt)
+                                    source.linked, source.undated_context, read_links) + in_doubt_problems(in_doubt)
     elif task in material["tasks"]:
         notes = source.task_notes(
             material, task) if source.task_notes else None
@@ -138,7 +143,7 @@ def submit(source, prep, task, answer):
     if task == MERGE:
         stored = {**answer, "in_doubt": in_doubt}
     elif notes is not None:
-        stored = {"items": [{"date": notes[item["note"] - 1], "synopsis": item["synopsis"]}
+        stored = {"items": [{**notes[item["note"] - 1], "synopsis": item["synopsis"]}
                             for item in sorted(answer["items"], key=lambda item: item["note"])]}
     else:
         stored = answer
@@ -244,7 +249,7 @@ def write_task(source, prep, task, text):
 def items_problems(answer, notes=None, days=None, linked=False):
     """Why `answer` isn't a reading task's answer, empty when it is: items,
     each a synopsis of at most MAX_SYNOPSIS_WORDS words and, with `notes`,
-    the days of the task's notes, the number of its note, every note's
+    the task's notes, the number of its note, every note's
     once; else a date, one of `days`, and, when `linked`, a link."""
     if not (isinstance(answer, dict) and sorted(answer) == ["items"] and isinstance(answer["items"], list)):
         return ['the answer must be {"items": [...]}, [] when there is nothing']

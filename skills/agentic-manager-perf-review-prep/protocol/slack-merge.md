@@ -20,28 +20,19 @@ Put a point in `going_well` only when the messages themselves show it: someone t
 - Routine chatter, scheduling and status with nothing of the person's in it.
 - A conversation where the person is only a name in passing.
 
-When you're in doubt whether a conversation should be a point, leave it out, and list it in `in_doubt` with its day, what it says and why, so the manager can see it.
-
-## How to merge
-
-- Conversations about the same behaviour or outcome become one point, with every day in `dates`, oldest first, and every link in `links`. Write a pattern as one: "Answered alerts in the on-call channel, many times", not one point per day. Keep apart points that are about different things, even when they share a value.
-- When conversations about the same thing disagree, keep both as points, or say how it changed.
-- `context` points have `dates` and `links` too. Merge context that says the same thing into one.
-- When nothing is worth keeping, submit every part empty.
+{{merge}}
 
 ## Examples
 
-| Synopses                                                                                          | Decision           | Why                                                |
-| ------------------------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------- |
-| In a cross-team channel, Jane posted the rollout plan, and three people asked follow-ups          | Keep, context      | Communication to a wide audience; no one judged it |
-| In the cross-team channel, Jane posted the monthly rollout update (Jul); again (Aug, Sep)         | One point, context | A pattern of stakeholder communication             |
-| In the incident channel, Jane explained the root cause, and Sam replied that it fixed the problem | Keep, going well   | The reply shows it helped                          |
-| In a squad channel, Sam wrote that Jane's estimate was far off, again                             | Keep, to improve   | Someone raises a problem with Jane's work          |
-| In the squad channel, Jane answered a question about a config flag, and Sam thanked them          | Leave out          | A small thing seen once                            |
-| Jane said they'd be late for standup                                                              | Leave out          | Scheduling                                         |
-
-## Writing
-
-{{point}}
-
-Each line of `in_doubt` is written as a point is.
+| Synopses                                                                                          | Decision                                                                               | Why                                                                                            |
+| ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| In a cross-team channel, Jane posted the rollout plan, and three people asked follow-ups          | Keep, context                                                                          | Communication to a wide audience; no one judged it                                             |
+| In the cross-team channel, Jane posted the monthly rollout update (Jul); again (Aug, Sep)         | One point, context                                                                     | A pattern of stakeholder communication                                                         |
+| In the incident channel, Jane explained the root cause, and Sam replied that it fixed the problem | Keep, going well                                                                       | The reply shows it helped                                                                      |
+| In the release channel, Sam thanked Jane, Alex and Kim by name for the launch; 30 people reacted  | Keep, going well                                                                       | A direct recognition, for something many people noticed                                        |
+| In the squad channel, Sam thanked Jane by name for a quick answer; one reaction                   | Leave out                                                                              | A one-off thanks for a small thing                                                             |
+| Sam (Jul), Alex (Aug) and Kim (Sep) each thanked Jane by name for help with the API               | One point, going well, every day                                                       | Small each time, but a pattern                                                                 |
+| In a thread Jane started about the release, Sam thanked the squad                                 | Leave out the thanks; Jane's post counts as any other                                  | Praise addressed to the team isn't Jane's                                                      |
+| Jane posted the release update (Jul), again (Aug, Sep), and each time people thanked the squad    | One point, going well: Jane often shares the team's results, keeping others up to date | The results are the team's, but sharing them is Jane's, and the replies show it reaches people |
+| In a squad channel, Sam wrote that Jane's estimate was far off, again                             | Keep, to improve                                                                       | Someone raises a problem with Jane's work                                                      |
+| Jane said they'd be late for standup                                                              | Leave out                                                                              | Scheduling                                                                                     |

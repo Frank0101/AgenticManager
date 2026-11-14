@@ -62,12 +62,12 @@ def vault_candidates(path, person):
         return found.setdefault(name.casefold(), {"link": name, "mentions": 0, "page": False,
                                                   "alias_of": aliases.get(name.casefold())})
     # The person's pages, by title, each with its aliases.
-    pages = {title: page_aliases(text) for folder, title, text in graph
+    pages = {title: page_aliases(text) for folder, title, text, _ in graph
              if folder == "pages" and could_name(title, words)}
     for title, names in pages.items():
         for alias in names:
             aliases.setdefault(alias.casefold(), title)
-    for folder, title, text in graph:
+    for folder, title, text, _ in graph:
         if folder == "pages" and title in pages:
             entry(title)["page"] = True
             for alias in pages[title]:

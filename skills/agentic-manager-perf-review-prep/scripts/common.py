@@ -78,6 +78,8 @@ MAX_POINT_WORDS = 40
 VALUES = "values"
 RATINGS = "perf-review-ratings"
 MAX_VALUES = 2
+# A point's links: a Slack message's address, or a note's file.
+LINK_SCHEMES = ("https://", "file://")
 SUMMARY_HELP = "\n".join(
     f"  {part:<11} {meaning}, each point "
     + ('{"point": "...", "values": ["..."]}, values every company value it clearly shows or calls for, as rules.py prints '
@@ -105,9 +107,10 @@ REVIEW_FIELDS = (*PIECE_FIELDS, "rating")
 # commitments.
 FEEDBACK = "feedback.json"
 # The manager's own notes on the person in their vault: from the journals of
-# the period, what they noticed, each point with the days it was seen on, a
-# pattern one point with all its days; from the person's pages, only context,
-# which has no date. Read by subagents, a month of journals each, then merged.
+# the period, what they noticed, each point with the days it was seen on and
+# the notes' files, a pattern one point with all of them; from the person's
+# pages, only context, which has no date. Read by subagents, a month of
+# journals each, then merged, as Slack is.
 NOTES = "notes.json"
 # The person's work in the period, in Jira, GitHub and Notion: the items
 # themselves, each with its title, date and link, for the writing step to
@@ -374,8 +377,10 @@ def pieces_problems(value, names, fields, values, rules):
 
 def notes_problems(notes, values, days):
     """Why `notes` aren't the summary of the manager's notes, empty when they
-    are: summary_problems() with `days`, every day of the period."""
-    return summary_problems(notes, "the notes summary", values, days)
+    are: summary_problems() with `days`, every day of the period, every point
+    linked to its notes, a context point's dates empty when it comes from a
+    page, which has no day."""
+    return summary_problems(notes, "the notes summary", values, days, linked=True, undated_context=True)
 
 
 def slack_problems(slack, values, days):
@@ -518,7 +523,7 @@ def commentary_problems(commentary):
     return problems
 
 
-def summary_problems(summary, what, values, days=None, linked=False):
+def summary_problems(summary, what, values, days=None, linked=False, undated_context=False, read_links=None):
     """Why `summary`, the summary of `what`, such as "the orientation", doesn't
     have the parts of SUMMARY_PARTS, empty when it does: each a list of
     points, a point of VALUED_PARTS {"point", "values"}, its values up to
@@ -527,8 +532,11 @@ def summary_problems(summary, what, values, days=None, linked=False):
     least one point in all. With `days`, the days the source was read on as
     YYYY-MM-DD, a point of VALUED_PARTS also has "dates", the days it was
     seen on, each one of `days`, and the summary may be empty, as a source
-    may hold nothing to say. `linked`, as for messages, gives every point,
-    context too, "dates" and "links", the addresses of what it rests on."""
+    may hold nothing to say. `linked` gives every point, context too,
+    "links", the addresses of what it rests on, a web or a file address, and
+    "dates", empty for a context point only with `undated_context`, as one
+    from an undated page; with
+    `read_links`, each link one of them, the links of what was read."""
     if not (isinstance(summary, dict) and sorted(summary) == sorted(SUMMARY_PARTS)):
         found = ", ".join(summary) if isinstance(
             summary, dict) else repr(summary)
@@ -536,10 +544,11 @@ def summary_problems(summary, what, values, days=None, linked=False):
     problems = []
     for part, points in summary.items():
         fields = point_fields(part, days is not None, linked)
-        if not (isinstance(points, list) and all(_is_point(point, fields) for point in points)):
+        undated = part not in VALUED_PARTS and undated_context
+        if not (isinstance(points, list) and all(_is_point(point, fields, undated) for point in points)):
             shape = ("{" + ", ".join(f'"{field}": ' + {"point": '"..."', "values": '["...", ...] or []',
                                                        "dates": '["YYYY-MM-DD", ...]',
-                                                       "links": '["https://...", ...]'}[field] for field in fields)
+                                                       "links": '["https://... or file://...", ...]'}[field] for field in fields)
                      + "}" if fields else "a sentence")
             problems.append(
                 f"{what}'s {part} must be a list of points, each {shape}, or [] for none")
@@ -561,6 +570,10 @@ def summary_problems(summary, what, values, days=None, linked=False):
                          "day the source was read on, listed once"
                          for point in points if len(set(point["dates"])) != len(point["dates"])
                          or not set(point["dates"]) <= set(days or [])]
+        if "links" in fields and read_links is not None:
+            problems += [f"{what}'s {part}: {point['point'][:60]!r}...'s links must each be the link of something "
+                         "read, as its synopsis gives it"
+                         for point in points if not set(point["links"]) <= set(read_links)]
     if not problems and days is None and not any(summary.values()):
         problems.append(
             f"{what} has no points: summarise what it says in its parts")
@@ -579,11 +592,11 @@ def point_fields(part, dated, linked):
             *(("links",) if linked else ()))
 
 
-def _is_point(point, fields):
+def _is_point(point, fields, undated=False):
     """Whether `point` is a point with `fields`: an object of them, its point
     a text that isn't blank, its values a list of texts, its dates a list of
-    texts, at least one, and its links a list of web addresses, at least
-    one; with no fields, such a text alone."""
+    texts, at least one unless `undated`, and its links a list of web or file
+    addresses, at least one; with no fields, such a text alone."""
     if not fields:
         return _is_text(point)
 
@@ -592,6 +605,6 @@ def _is_point(point, fields):
                 and all(isinstance(item, str) for item in point[key]))
     return (isinstance(point, dict) and sorted(point) == sorted(fields) and _is_text(point["point"])
             and ("values" not in point or texts("values", False))
-            and ("dates" not in point or texts("dates", True))
-            and ("links" not in point or (texts("links", True) and all(link.startswith("https://")
+            and ("dates" not in point or texts("dates", not undated))
+            and ("links" not in point or (texts("links", True) and all(link.startswith(LINK_SCHEMES)
                                                                        for link in point["links"]))))

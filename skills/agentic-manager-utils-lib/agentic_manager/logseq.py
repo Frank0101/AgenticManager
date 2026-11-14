@@ -37,9 +37,10 @@ def graph_path():
 
 
 def notes(path):
-    """(folder, title, text) of each note of the graph at `path`, the journals
-    then the pages, each in name order: a journal's title is its file's name,
-    such as 2026_07_22, a page's its page_title()."""
+    """(folder, title, text, file) of each note of the graph at `path`, the
+    journals then the pages, each in name order: a journal's title is its
+    file's name, such as 2026_07_22, a page's its page_title(); file is the
+    note's file."""
     for folder in FOLDERS:
         where = os.path.join(path, folder)
         if not os.path.isdir(where):
@@ -47,10 +48,11 @@ def notes(path):
         for name in sorted(os.listdir(where)):
             if not name.endswith(".md"):
                 continue
-            with open(os.path.join(where, name), encoding="utf-8", errors="replace") as f:
+            file = os.path.join(where, name)
+            with open(file, encoding="utf-8", errors="replace") as f:
                 text = f.read()
             stem = name[:-len(".md")]
-            yield folder, page_title(stem) if folder == "pages" else stem, text
+            yield folder, page_title(stem) if folder == "pages" else stem, text, file
 
 
 def page_title(stem):
