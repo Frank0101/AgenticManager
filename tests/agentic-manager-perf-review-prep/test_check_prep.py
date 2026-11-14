@@ -59,8 +59,10 @@ class CheckTest(unittest.TestCase):
                  ("feedback that breaks a rule", {"feedback": {"pieces": [{**NOTE, "period": ""}]}},
                   None, "feedback.json: feedback piece 1's period, '', must be a text"),
                  ("notes dated outside the period", {"notes": {**NOTES, "going_well": [
-                     {**NOTES["going_well"][0], "dates": ["2026-06-30"]}]}},
-                  None, "notes.json: the notes summary's going_well"),
+                     {**NOTES["going_well"][0], "evidence": [
+                         {**NOTES["going_well"][0]["evidence"][0], "date": "2026-06-30"}]}]}},
+                  None, "notes.json: the notes summary's going_well: 'Presented the migration to the wider team'...'s "
+                  "evidence must each be of a day"),
                  ("no work", {"work": None}, None, "missing work.json"),
                  ("work dated outside the period", {"work": {**WORK, "jira": {**WORK["jira"], "resolved": [
                      {**WORK["jira"]["resolved"][0], "date": "2026-07-01"}]}}},

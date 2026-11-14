@@ -145,14 +145,16 @@ class ReadNotesTest(unittest.TestCase):
         self.assertLess(text.index("Presented the migration"),
                         text.index("Didn't flag"))
         september = Path(self.graph, "journals", "2026_09_02.md").as_uri()
+        # The merge gives each point's links; the script adds each one's day,
+        # so a page, which has none, can back only context.
         summary = {"going_well": [{"point": "Presented the migration to the team", "values": ["Teamwork"],
-                                   "dates": ["2026-08-20"], "links": [august]},
+                                   "links": [august]},
                                   {"point": "The promotion talk went well", "values": [],
-                                   "dates": ["2026-08-20", "2026-09-02"], "links": [september]}],
-                   "to_improve": [], "context": [{"point": "Moved to payments", "dates": [], "links": [page]}]}
-        with self.assertRaisesRegex(SystemExit, "must each be a day the source was read on"):
+                                   "links": [august, september]}],
+                   "to_improve": [], "context": [{"point": "Moved to payments", "links": [page]}]}
+        with self.assertRaisesRegex(SystemExit, "must each be of a day the source was read on"):
             reading.submit(read_notes.SOURCE, PREP, "merge", {**summary, "in_doubt": [], "going_well": [
-                {**summary["going_well"][0], "dates": ["2026-09-03"]}]})
+                {**summary["going_well"][0], "links": [page]}]})
         with self.assertRaisesRegex(SystemExit, "must each be the link of something read"):
             reading.submit(read_notes.SOURCE, PREP, "merge", {**summary, "in_doubt": [], "going_well": [
                 {**summary["going_well"][0], "links": [Path(self.graph, "journals", "2026_08_21.md").as_uri()]}]})
@@ -163,8 +165,13 @@ class ReadNotesTest(unittest.TestCase):
         submitted = reading.submit(read_notes.SOURCE,
                                    PREP, "merge", {**summary, "in_doubt": doubts})
         with open(submitted["notes"], encoding="utf-8") as f:
-            self.assertEqual(json.load(f), {**summary, "going_well": [
-                {**summary["going_well"][1], "dates": ["2026-09-02", "2026-08-20"]}, summary["going_well"][0]]})
+            self.assertEqual(json.load(f), {"going_well": [
+                {"point": "The promotion talk went well", "values": [],
+                 "evidence": [{"date": "2026-09-02", "link": september}, {"date": "2026-08-20", "link": august}]},
+                {"point": "Presented the migration to the team", "values": ["Teamwork"],
+                 "evidence": [{"date": "2026-08-20", "link": august}]}],
+                "to_improve": [], "context": [{"point": "Moved to payments",
+                                               "evidence": [{"date": None, "link": page}]}]})
         self.assertFalse(os.path.exists(os.path.join(raw, "merge.json")))
         done = reading.finished(read_notes.SOURCE, PREP)
         self.assertEqual((done["finished"], done["in_doubt"]),

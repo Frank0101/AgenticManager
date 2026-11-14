@@ -49,7 +49,7 @@ class ReadSlackTest(unittest.TestCase):
         with open(started["merge"].split(": ", 1)[1], encoding="utf-8") as f:
             self.assertIn(json.dumps(ITEM, ensure_ascii=False), f.read())
         summary = {"going_well": [], "to_improve": [],
-                   "context": [{"point": POINT, "dates": ["2026-08-20"], "links": [LINK]}]}
+                   "context": [{"point": POINT, "links": [LINK]}]}
         with self.assertRaisesRegex(SystemExit, "context must be a list of points"):
             reading.submit(read_slack.SOURCE,
                            PREP, "merge", {**summary, "context": [POINT], "in_doubt": []})
@@ -57,7 +57,8 @@ class ReadSlackTest(unittest.TestCase):
                        {**summary, "in_doubt": []})
         done = reading.finished(read_slack.SOURCE, PREP)
         with open(done["slack"], encoding="utf-8") as f:
-            self.assertEqual(json.load(f), summary)
+            self.assertEqual(json.load(f), {**summary, "context": [
+                {"point": POINT, "evidence": [{"date": "2026-08-20", "link": LINK}]}]})
 
 
 if __name__ == "__main__":

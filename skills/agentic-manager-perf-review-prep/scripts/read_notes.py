@@ -25,9 +25,9 @@ READING_ANSWER = """{"items": [
   {"note": 2, "synopsis": "..."}
  ]}"""
 MERGE_ANSWER = """{"going_well": [{"point": "...", "values": ["<each company value it clearly shows or calls for, at most two>"],
-                 "dates": ["YYYY-MM-DD", ...], "links": ["file://...", ...]}],
- "to_improve": [{"point": "...", "values": [], "dates": ["YYYY-MM-DD"], "links": ["file://..."]}],
- "context": [{"point": "...", "dates": ["YYYY-MM-DD", ...], "links": ["file://..."]}],
+                 "links": ["file://...", ...]}],
+ "to_improve": [{"point": "...", "values": [], "links": ["file://..."]}],
+ "context": [{"point": "...", "links": ["file://...", ...]}],
  "in_doubt": ["YYYY-MM-DD: what the note says, and why you left it out"]}"""
 
 
@@ -162,13 +162,8 @@ def task_notes(material, task):
     return [{"date": note["date"], "link": note["link"]} for note in material["content"]["months"][task.split(":")[1]]]
 
 
-def merge_days(material):
-    """The days a merged point may cite: those of every note read."""
-    return sorted({note["date"] for notes_of in material["content"]["months"].values() for note in notes_of})
-
-
 SOURCE = reading.Source(name="notes", script="read_notes.py", output=NOTES, what="notes summary", gather=gather,
-                        task_text=task_text, merge_days=merge_days, task_notes=task_notes, linked=True,
+                        task_text=task_text, task_notes=task_notes,
                         undated_context=True, answers={"reading": READING_ANSWER, MERGE: MERGE_ANSWER})
 
 

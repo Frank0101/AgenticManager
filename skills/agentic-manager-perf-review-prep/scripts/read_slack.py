@@ -19,9 +19,9 @@ READING_ANSWER = """{"items": [
    "synopsis": "In #<channel>, a cross-team channel, posted the rollout plan; three people asked..."}
  ]}"""
 MERGE_ANSWER = """{"going_well": [{"point": "...", "values": ["<each company value it clearly shows or calls for, at most two>"],
-                 "dates": ["YYYY-MM-DD", ...], "links": ["https://...", ...]}],
- "to_improve": [{"point": "...", "values": [], "dates": ["YYYY-MM-DD"], "links": ["https://..."]}],
- "context": [{"point": "...", "dates": ["YYYY-MM-DD"], "links": ["https://..."]}],
+                 "links": ["https://...", ...]}],
+ "to_improve": [{"point": "...", "values": [], "links": ["https://..."]}],
+ "context": [{"point": "...", "links": ["https://...", ...]}],
  "in_doubt": ["YYYY-MM-DD: what the conversation says, and why you left it out"]}"""
 
 
@@ -59,14 +59,8 @@ def task_days(material, task):
     return days_between(**material["content"]["months"][task.split(":")[1]])
 
 
-def merge_days(material):
-    """Every day of the period, which a merged point may cite."""
-    months = material["content"]["months"].values()
-    return [day for month in months for day in days_between(**month)]
-
-
 SOURCE = reading.Source(name="slack", script="read_slack.py", output=SLACK, what="Slack summary", gather=gather,
-                        task_text=task_text, merge_days=merge_days, task_days=task_days, linked=True,
+                        task_text=task_text, task_days=task_days,
                         answers={"reading": READING_ANSWER, MERGE: MERGE_ANSWER})
 
 

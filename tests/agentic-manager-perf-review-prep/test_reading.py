@@ -65,7 +65,7 @@ class ReadingTest(unittest.TestCase):
         for name, item, expected in cases:
             with self.subTest(name):
                 problems = reading.items_problems(
-                    {"items": [item]}, days=days, linked=True)
+                    {"items": [item]}, days=days)
                 if expected is None:
                     self.assertEqual(problems, [])
                 else:

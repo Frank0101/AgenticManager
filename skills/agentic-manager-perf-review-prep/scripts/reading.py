@@ -15,7 +15,8 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from common import (FOLDER_NAME, PERSON, PROTOCOL, RAW_DIR, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
-                    fill_protocol, prep_dir, script_command, read_json, stdin_json, summary_problems, word_count, write_raw,
+                    fill_protocol, is_point, point_fields, point_shape, prep_dir, script_command, read_json, stdin_json,
+                    summary_problems, word_count, write_raw,
                     write_prep_file)
 
 MATERIAL = "material.json"
@@ -30,24 +31,20 @@ MAX_SYNOPSIS_WORDS = 120
 class Source:
     """What a reading needs to know about its source. `gather(prep)` returns
     the material, with `tasks`, the reading tasks in order; `task_text(prep,
-    task, material)` the protocol and body of a reading task;
-    `merge_days(material)` the days a merged point may cite. A reading
+    task, material)` the protocol and body of a reading task. A reading
     task's items are either numbered, when `task_notes(material, task)`
     gives the {date, link} of each note it shows, the date null for an
-    undated one, or else dated, each a day of `task_days(material, task)`;
-    `linked` whether every item and point carries the links it rests on, and
-    `undated_context` whether a context point may have no dates, as one from
-    an undated note."""
+    undated one, or else each {date, link}, the date one of
+    `task_days(material, task)`; `undated_context` whether a context point
+    may rest on an undated item, as one from a page."""
     name: str
     script: str
     output: str
     what: str
     gather: Callable
     task_text: Callable
-    merge_days: Callable
     task_notes: Callable | None = None
     task_days: Callable | None = None
-    linked: bool = False
     undated_context: bool = False
     answers: dict = field(default_factory=dict)
 
@@ -121,21 +118,23 @@ def submit(source, prep, task, answer):
     """Check the answer `answer` to the task `task` of the prep `prep`, and
     write it, a numbered note's item with its note's day and link; the answer
     to the last reading task also writes the merge task, and the merge's
-    summary goes to the prep, in order(), and what it left out in doubt to
-    the working folder. Exits, writing nothing, with every problem."""
-    material, notes, in_doubt = load_material(source, prep), None, None
+    summary goes to the prep, each point's links turned into its evidence,
+    in order(), and what it left out in doubt to the working folder. Exits,
+    writing nothing, with every problem."""
+    material = load_material(source, prep)
+    notes, in_doubt, read = None, None, {}
     if task == MERGE:
         in_doubt = answer.pop("in_doubt", None) if isinstance(
             answer, dict) else None
-        read_links = [item["link"] for name in material["tasks"]
-                      for item in read_answer(source, prep, name)["items"]] if source.linked else None
-        problems = summary_problems(answer, f"the {source.what}", company_names(VALUES), source.merge_days(material),
-                                    source.linked, source.undated_context, read_links) + in_doubt_problems(in_doubt)
+        read = {item["link"]: item["date"] for name in material["tasks"]
+                for item in read_answer(source, prep, name)["items"]}
+        problems = merge_problems(source, answer, read) + \
+            in_doubt_problems(in_doubt)
     elif task in material["tasks"]:
         notes = source.task_notes(
             material, task) if source.task_notes else None
         problems = items_problems(answer, notes, None if source.task_days is None
-                                  else source.task_days(material, task), source.linked)
+                                  else source.task_days(material, task))
     else:
         raise SystemExit(
             f"{task!r} isn't a task of this prep: start printed them")
@@ -145,7 +144,8 @@ def submit(source, prep, task, answer):
     if task == MERGE:
         write_work_file(answer_path(source, prep, MERGE), {
                         "in_doubt": sorted(in_doubt or [], key=newest_first, reverse=True)})
-        write_prep_file(prep, source.output, order(answer))
+        write_prep_file(prep, source.output, order(
+            with_evidence(answer, read)))
         return {"task": task, source.name: os.path.join(prep_dir(prep), source.output)}
     stored = answer if notes is None else {"items": [{**notes[item["note"] - 1], "synopsis": item["synopsis"]}
                                                      for item in sorted(answer["items"], key=lambda item: item["note"])]}
@@ -239,14 +239,15 @@ def write_task(source, prep, task, text):
 # The order.
 
 def order(summary):
-    """`summary` with each part's points from the most recent, by their
-    latest day, those with no day first, as the most recent of all, and each
-    point's days from the latest: the order every list of the prep keeps."""
-    def latest(point):
-        return newest_first(max(point["dates"]) if isinstance(point, dict) and point.get("dates") else "")
-    return {part: sorted([{**point, "dates": sorted(point["dates"], reverse=True)}
-                          if isinstance(point, dict) and "dates" in point else point for point in points],
-                         key=latest, reverse=True) for part, points in summary.items()}
+    """`summary` with each point's evidence from the most recent, the undated
+    first, as the most recent of all, and each part's points by their most
+    recent evidence, the same way: the order every list of the prep keeps."""
+    def newest(item):
+        return newest_first(item["date"] or "")
+    points_of = {part: [{**point, "evidence": sorted(point["evidence"], key=newest, reverse=True)}
+                        for point in points] for part, points in summary.items()}
+    return {part: sorted(points, key=lambda point: newest(point["evidence"][0]), reverse=True)
+            for part, points in points_of.items()}
 
 
 def newest_first(text):
@@ -260,15 +261,48 @@ def newest_first(text):
 
 # Checking the answers.
 
-def items_problems(answer, notes=None, days=None, linked=False):
+def merge_problems(source, answer, read):
+    """Why `answer` isn't the merge's summary, empty when it is: its parts'
+    points, each with "links", at least one, each the link of an item in
+    `read`, {link: date}, the items the reading tasks wrote, and, its links
+    turned into evidence, the summary summary_problems() takes, over the
+    days read."""
+    what = f"the {source.what}"
+    if not (isinstance(answer, dict) and sorted(answer) == sorted(SUMMARY_PARTS)):
+        return summary_problems(answer, what, [])
+    problems = []
+    for part, points in answer.items():
+        fields = point_fields(part, "links")
+        if not (isinstance(points, list) and all(is_point(point, fields) for point in points)):
+            problems.append(
+                f"{what}'s {part} must be a list of points, each {point_shape(fields)}, or [] for none")
+            continue
+        problems += [f"{what}'s {part}: {point['point'][:60]!r}...'s links must each be the link of something "
+                     "read, as its synopsis gives it" for point in points if not set(point["links"]) <= set(read)]
+    if problems:
+        return problems
+    return summary_problems(with_evidence(answer, read), what, company_names(VALUES),
+                            sorted({day for day in read.values() if day}), source.undated_context)
+
+
+def with_evidence(answer, read):
+    """The merge's answer `answer` with each point's links turned into its
+    evidence, each {date, link}, the date the one `read`, {link: date},
+    gives the link."""
+    return {part: [{**{key: value for key, value in point.items() if key != "links"},
+                    "evidence": [{"date": read[link], "link": link} for link in point["links"]]}
+                   for point in points] for part, points in answer.items()}
+
+
+def items_problems(answer, notes=None, days=None):
     """Why `answer` isn't a reading task's answer, empty when it is: items,
     each a synopsis of at most MAX_SYNOPSIS_WORDS words and, with `notes`,
-    the task's notes, the number of its note, every note's
-    once; else a date, one of `days`, and, when `linked`, a link."""
+    the task's notes, the number of its note, every note's once; else a
+    date, one of `days`, and a link."""
     if not (isinstance(answer, dict) and sorted(answer) == ["items"] and isinstance(answer["items"], list)):
         return ['the answer must be {"items": [...]}, [] when there is nothing']
-    fields = ["note", "synopsis"] if notes is not None else (
-        ["date", "link", "synopsis"] if linked else ["date", "synopsis"])
+    fields = ["note", "synopsis"] if notes is not None else [
+        "date", "link", "synopsis"]
     problems = []
     for number, item in enumerate(answer["items"], 1):
         what = f"item {number}"
@@ -284,7 +318,7 @@ def items_problems(answer, notes=None, days=None, linked=False):
         if item["date"] not in (days or []):
             problems.append(
                 f"{what}'s date, {item['date']!r}, must be the day of what it comes from")
-        if linked and not (isinstance(item["link"], str) and item["link"].startswith("https://")):
+        if not (isinstance(item["link"], str) and item["link"].startswith("https://")):
             problems.append(
                 f"{what}'s link, {item['link']!r}, must be the address of what it comes from")
     if notes is not None and not problems:

@@ -148,34 +148,36 @@ class CommonTest(unittest.TestCase):
             ORIENTATION, VALUE_NAMES), [])
 
     def test_notes_problems(self):
-        # The notes summary is a summary whose valued points have the days
-        # they were seen on, each one of the days given, every point the
-        # links of its notes, a context point's days empty when it comes from
-        # a page, and which may be empty. name: (changes to it, expected in its problems, or None).
-        link = ["file:///vault/journals/2026_09_02.md"]
+        # The notes summary is a reading's: every point has its evidence,
+        # each {date, link}, the date one of the days given, or null in a
+        # context point, from a page, and it may be empty. name: (changes to
+        # it, expected in its problems, or None).
+        def evidence(*dates):
+            return [{"date": date, "link": f"file:///vault/{date}.md"} for date in dates]
         days = ["2026-08-20", "2026-09-02", "2026-10-01"]
         cases = [("valid", {}, None),
                  ("empty", {"going_well": [], "to_improve": [],
                   "context": []}, None),
-                 ("no dates", {"going_well": [{"point": "Presented it", "values": [], "links": link}]},
+                 ("no evidence", {"going_well": [{"point": "Presented it", "values": []}]},
                   'going_well must be a list of points, each {"point": "...", "values": ["...", ...] or [], '
-                  '"dates": ["YYYY-MM-DD", ...], "links"'),
-                 ("dates empty", {"going_well": [{"point": "Presented it", "values": [], "dates": [],
-                                                  "links": link}]}, "going_well must be a list of points"),
-                 ("no links", {"going_well": [{"point": "Presented it", "values": [], "dates": ["2026-09-02"]}]},
+                  '"evidence": [{"date": "YYYY-MM-DD", "link"'),
+                 ("evidence empty", {"going_well": [{"point": "Presented it", "values": [], "evidence": []}]},
                   "going_well must be a list of points"),
                  ("a link not a file's or a web page's", {"going_well": [
-                     {"point": "Presented it", "values": [], "dates": ["2026-09-02"], "links": ["journals/x.md"]}]},
+                     {"point": "Presented it", "values": [],
+                      "evidence": [{"date": "2026-09-02", "link": "journals/x.md"}]}]},
                   "going_well must be a list of points"),
                  ("a day no note was taken on", {"going_well": [
-                     {"point": "Presented it", "values": [], "dates": ["2026-09-03"], "links": link}]},
-                  "must each be a day the source was read on, listed once"),
-                 ("a day twice", {"to_improve": [{"point": "Late", "values": [], "links": link,
-                                                  "dates": ["2026-08-20", "2026-08-20"]}]}, "listed once"),
+                     {"point": "Presented it", "values": [], "evidence": evidence("2026-09-03")}]},
+                  "evidence must each be of a day the source was read on, each link once"),
+                 ("a link twice", {"to_improve": [{"point": "Late", "values": [],
+                                                   "evidence": evidence("2026-08-20", "2026-08-20")}]}, "each link once"),
+                 ("valued undated", {"going_well": [{"point": "Presented it", "values": [], "evidence": evidence(None)}]},
+                  "must each be of a day the source was read on, each link once"),
                  ("context dated", {"context": [
-                  {"point": "Moved", "dates": ["2026-08-20"], "links": link}]}, None),
-                 ("context without dates", {"context": [{"point": "Moved", "links": link}]},
-                  'context must be a list of points, each {"point": "...", "dates"'),
+                  {"point": "Moved", "evidence": evidence("2026-08-20")}]}, None),
+                 ("context undated", {"context": [
+                  {"point": "Moved", "evidence": evidence(None)}]}, None),
                  ("context a sentence alone", {"context": ["Moved"]}, "context must be a list of points")]
         for name, changes, expected in cases:
             with self.subTest(name):
@@ -253,15 +255,18 @@ class CommonTest(unittest.TestCase):
                          ("2026-08-10", "2026-08-11", "2026-11-10", 93))
 
     def test_slack_problems(self):
-        # Every point, context too, has its days and links: a message always
-        # has a day.
+        # Every point, context too, has its evidence, each of a day: a
+        # message always has one.
         days = common.period_days(PERSON)
         self.assertEqual(common.slack_problems(SLACK, VALUE_NAMES, days), [])
-        for name, change in [("no links", {"links": []}), ("no days", {"dates": []})]:
+        link = "https://acme.slack.com/archives/C2/p2"
+        for name, change, expected in [("no evidence", {"evidence": []}, "must be a list of points"),
+                                       ("undated", {"evidence": [{"date": None, "link": link}]},
+                                        "must each be of a day the source was read on")]:
             with self.subTest(name):
                 broken = {
                     **SLACK, "context": [{**SLACK["context"][0], **change}]}
-                self.assertIn("must be a list of points", " ".join(
+                self.assertIn(expected, " ".join(
                     common.slack_problems(broken, VALUE_NAMES, days)))
 
     def test_work_problems_links(self):

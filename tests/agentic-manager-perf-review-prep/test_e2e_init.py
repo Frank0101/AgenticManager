@@ -178,8 +178,7 @@ class ScriptsTest(unittest.TestCase):
                         stdin=json.dumps({"items": [{"date": TODAY.isoformat(), "link": LINK,
                                                      "synopsis": "Posted the billing rollout plan"}]}))
         merged = {"going_well": [], "to_improve": [],
-                  "context": [{"point": "Posted the billing rollout plan", "dates": [TODAY.isoformat()],
-                               "links": [LINK]}], "in_doubt": []}
+                  "context": [{"point": "Posted the billing rollout plan", "links": [LINK]}], "in_doubt": []}
         self.run_ok(SLACK_SCRIPT, "submit", "--prep", prep,
                     "--task", "merge", stdin=json.dumps(merged))
         self.assertEqual(self.run_ok(SLACK_SCRIPT, "finished",
@@ -232,7 +231,7 @@ class ScriptsTest(unittest.TestCase):
         self.run_ok(NOTES_SCRIPT, "submit", "--prep", prep, "--task",
                     month, stdin=json.dumps({"items": [item]}))
         self.assertTrue(os.path.exists(started["merge"].split(": ", 1)[1]))
-        merged = {"going_well": [{"point": item["synopsis"], "values": ["Ownership"], "dates": [TODAY.isoformat()],
+        merged = {"going_well": [{"point": item["synopsis"], "values": ["Ownership"],
                                   "links": [Path(self.root, "graph", "journals", f"{TODAY:%Y_%m_%d}.md").as_uri()]}],
                   "to_improve": [], "context": [], "in_doubt": []}
         self.run_ok(NOTES_SCRIPT, "submit", "--prep", prep,

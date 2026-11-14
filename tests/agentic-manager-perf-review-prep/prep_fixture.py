@@ -31,12 +31,12 @@ NOTE = {"period": "Q3 2026",
         "to_improve": [], "context": []}
 FEEDBACK = {"pieces": [NOTE]}
 NOTES = {"going_well": [{"point": "Presented the migration to the wider team", "values": ["Teamwork"],
-                         "dates": ["2026-09-02"], "links": ["file:///vault/journals/2026_09_02.md"]}],
+                         "evidence": [{"date": "2026-09-02", "link": "file:///vault/journals/2026_09_02.md"}]}],
          "to_improve": [{"point": "Didn't flag delays until asked, many times", "values": ["Ownership"],
-                         "dates": ["2026-08-20", "2026-10-01"],
-                         "links": ["file:///vault/journals/2026_08_20.md", "file:///vault/journals/2026_10_01.md"]}],
-         "context": [{"point": "Moved to the payments team in the summer", "dates": [],
-                      "links": ["file:///vault/pages/Jane.md"]}]}
+                         "evidence": [{"date": "2026-10-01", "link": "file:///vault/journals/2026_10_01.md"},
+                                      {"date": "2026-08-20", "link": "file:///vault/journals/2026_08_20.md"}]}],
+         "context": [{"point": "Moved to the payments team in the summer",
+                      "evidence": [{"date": None, "link": "file:///vault/pages/Jane.md"}]}]}
 # The work's items, and its facts and commentary worked out by hand, over
 # PERSON's period, 10/08/2026 to 10/11/2026.
 WORK_ITEMS = {"jira": {"resolved": [{"key": "PROJ-12", "title": "Migrate billing", "type": "Story",
@@ -85,11 +85,11 @@ COMMENTARY = {"jira": "Resolved one issue, in September, on the billing epic, wi
               "notion": "Wrote the billing plan in August and edited it in September."}
 WORK = {**WORK_ITEMS, "facts": WORK_FACTS, "commentary": COMMENTARY}
 SLACK = {"going_well": [{"point": "Explained the outage's cause in the incident channel, and colleagues thanked them",
-                         "values": ["Teamwork"], "dates": ["2026-09-03"],
-                         "links": ["https://acme.slack.com/archives/C1/p1"]}],
+                         "values": ["Teamwork"],
+                         "evidence": [{"date": "2026-09-03", "link": "https://acme.slack.com/archives/C1/p1"}]}],
          "to_improve": [],
-         "context": [{"point": "Posted the billing rollout plan in a cross-team channel", "dates": ["2026-08-20"],
-                      "links": ["https://acme.slack.com/archives/C2/p2"]}]}
+         "context": [{"point": "Posted the billing rollout plan in a cross-team channel",
+                      "evidence": [{"date": "2026-08-20", "link": "https://acme.slack.com/archives/C2/p2"}]}]}
 # A reading task's answer: the synopses of the notes it was shown, by number.
 PRESENTED = {
     "note": 1, "synopsis": "Presented the migration to the team, who asked for the slides; Jane shared them"}
