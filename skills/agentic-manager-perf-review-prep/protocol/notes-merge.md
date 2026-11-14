@@ -4,7 +4,7 @@ A manager is preparing a performance review of the person named below. Other age
 
 ## What to keep
 
-The review needs the picture over the whole period, not every detail. Keep only what has a clear impact or is a significant signal about the person; a small thing, such as a minor slip, a one-off thanks or a routine task, stays out unless it repeats into a pattern, which is then one point.
+{{keep}}
 
 Keep a note only when the person is the one acting or the one judged in it, including when they're compared with others or held up as a model:
 
@@ -17,10 +17,9 @@ Judge a note by what it ends up saying, as its synopsis gives it.
 
 ## What to leave out
 
-- A small thing seen once, with no clear impact.
 - A light-hearted remark, such as a joke about the person.
 - A reminder or a to-do for the manager.
-- A note where the person is only a name in passing, or a reference for something else.
+- A note where the person is only a reference for something else.
 - The status of the work, with no behaviour of the person in it.
 
 {{merge}}

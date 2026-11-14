@@ -4,7 +4,7 @@ A manager is preparing a performance review of the person named below. Other age
 
 ## What to keep
 
-The review needs the picture over the whole period, not every detail. Keep only what has a clear impact or is a significant signal about the person; a small thing, such as a one-off thanks or a routine answer, stays out unless it repeats into a pattern, which is then one point.
+{{keep}}
 
 Where it matters most:
 
@@ -16,10 +16,8 @@ Put a point in `going_well` when someone thanks or praises the person, when what
 
 ## What to leave out
 
-- A small thing seen once, with no clear impact.
 - Routine chatter, scheduling and status with nothing of the person's in it.
 - The work itself, such as what the person built or the pull requests they posted: the prep gathers it from their tools. Someone's thanks or praise for it is kept.
-- A conversation where the person is only a name in passing.
 
 {{merge}}
 

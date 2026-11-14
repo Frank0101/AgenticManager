@@ -2,7 +2,7 @@
 name: agentic-manager-perf-review-prep
 disable-model-invocation: true
 description: Helps a manager prepare a performance review of one person over a review period, from the evidence of their work in Jira, GitHub, the documentation, the team's messages and the manager's own notes. In development; not ready to use.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/work_commentary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py *)
 ---
 
 # Performance Review Prep
@@ -15,7 +15,8 @@ The skill's files go to the `perf-review-preps` folder of the user's configured 
 perf-review-preps/
 └── Jane-Doe_26-11-10/
     ├── _raw/             read_notes.py and read_slack.py write (each reader's answer, by source: a month's in
-    │                     months/, the notes' pages in pages.json); work_commentary.py writes the commentary's task
+    │                     months/, the notes' pages in pages.json); fetch_work.py and set_notion.py write what
+    │                     each source gave, with its searches, jira.json, github.json and notion.json
     ├── person.json       init_prep.py and set_identities.py write (the person, the period and who they are in each
     │                     source, as the manager confirmed)
     ├── orientation.json  set_summary.py writes (the manager's overall view of the person, summarised)
@@ -25,8 +26,10 @@ perf-review-preps/
     ├── notes.json        read_notes.py writes (what the manager's own notes say about the person, merged, with
     │                     their links)
     ├── slack.json        read_slack.py writes (what the person's Slack messages show, merged, with their links)
-    └── work.json         fetch_work.py, set_notion.py and work_commentary.py write (the person's Jira issues, pull
-                          requests and Notion pages in the period, their facts and a commentary on each source)
+    └── work.json         fetch_work.py or set_notion.py builds, once _raw holds every source (by source, the
+                          person's Jira issues, pull requests and Notion pages in the period, each with its day,
+                          and their facts: the counts, the issues resolved and created by type, the main focus
+                          and the link to each search)
 ```
 
 ## Prerequisite
@@ -116,15 +119,12 @@ The manager's own notes on the person, in their vault, and the person's Slack me
 
 The person's work in Jira, GitHub and Notion, in the period. Like step 6, it is read without the manager's view, and neither needs the other, so start it as soon as step 6's subagents are handed their tasks, without waiting for them. Say nothing to the manager about it while it runs, unless 2 stops; step 6's message is sent as soon as its merges are done, without waiting for this step.
 
-1. **Jira and GitHub.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py --prep <prep>`: it fetches the issues and pull requests, with no judgment, into `work.json`.
-2. **Notion.** Search with the Notion MCP's search, with an empty `query` and only filters, as any query text silently drops pages, and `page_size` 50, keeping only results of type page, each with its title, url and path:
+1. **Jira and GitHub.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py --prep <prep>`: it fetches the issues and pull requests, with no judgment, into their raw files, and builds `work.json` once Notion's pages are recorded, in 2.
+2. **Notion.** Search with the Notion MCP's search, with an empty `query` and only filters, as any query text silently drops pages, and `page_size` 50, keeping only results of type page that aren't a database's row, those with no `parent_data_source_url`, each with its title, url and path:
    - pages the person created: one search per calendar month of the period, clipped to it, with `created_by_user_ids` set to their Notion id and `created_date_range` set to the month. A result's date is its last edit, not its creation, so each page is dated by the month it was found in;
    - pages the person last edited: one search for the whole period, with `edited_by_user_ids` and `last_edited_date_range`, each page dated as the result gives it.
 
-   When a search returns 50 pages, search its range again in shorter ranges, and record those instead. A day that still returns 50, nearly all the rows of one database, is recorded with the database once, as `set_notion.py`'s `--help` says. If a result says the edited filters were dropped, as they need a Business plan, stop and tell the manager: their pages can't be gathered without them. Record what you found with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py --prep <prep>`.
-
-3. **Comment on the work.** Once 1 and 2 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/work_commentary.py start --prep <prep>`: it works out the work's facts and prints `task`, which you give to a fresh subagent as step 6 does.
-4. **Ask the manager** about the work's commentary: a Markdown link to `work.json`, whose `commentary` holds a paragraph on each source, and whether they're OK with it. For a correction of the commentary, submit it again, corrected, with `python3 ${CLAUDE_SKILL_DIR}/scripts/work_commentary.py submit --prep <prep>`.
+   When a search returns 50 results, rows included, search its range again in shorter ranges, and record those instead; a single day that still returns 50 is recorded as full, as `set_notion.py`'s `--help` says. If a result says the edited filters were dropped, as they need a Business plan, stop and tell the manager: their pages can't be gathered without them. Record what you found with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py --prep <prep>`.
 
 ## 8. Tell the user
 

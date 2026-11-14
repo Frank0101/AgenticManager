@@ -6,7 +6,7 @@ import os
 import sys
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from unittest import mock
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -15,7 +15,8 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP, SLACK, WORK_FACTS, WORK_ITEMS, temp_output, write_prep  # noqa: E402
+from prep_fixture import (NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP, SLACK, WORK, WORK_ITEMS, WORK_RAW,  # noqa: E402
+                           temp_output, write_prep)  # noqa: E402
 
 TODAY = date(2026, 11, 10)
 VALUE_NAMES = ["Ownership", "Teamwork"]
@@ -280,45 +281,83 @@ class CommonTest(unittest.TestCase):
         days = common.period_days(PERSON)
         for name, url, accepted in cases:
             with self.subTest(name):
-                work = {**WORK_ITEMS, "jira": {**WORK_ITEMS["jira"], "resolved": [
-                    {**WORK_ITEMS["jira"]["resolved"][0], "url": url}]}}
-                problems = common.work_problems(work, days, final=False)
+                problems = common.items_problems("jira", {"resolved": [
+                    {**WORK_ITEMS["jira"]["resolved"][0], "url": url}]}, days)
                 self.assertEqual(problems == [], accepted, problems)
 
-    def test_work_facts(self):
-        # name: (the work, the facts expected): a pull request's area is its
-        # issue's parent, "no parent" when the issue has none, or its
-        # repository when no issue lists it; most work first.
+    def test_build_work(self):
+        # The fixture's work.json, worked out by hand from its raw files: each
+        # source's items without the fields kept only to check them, its
+        # facts, such as the main focus of its one resolved issue, and each
+        # search's address.
+        self.assertEqual(common.build_work(
+            WORK_RAW, common.period_days(PERSON)), WORK)
+
+    def test_write_work(self):
+        # work.json is built once every source's raw file is in and follows
+        # its rules: one in an earlier format waits to be fetched again.
+        folder = temp_output(self)
+        write_prep(folder, work=None, raw_work={
+                   "jira": WORK_RAW["jira"], "github": {"opened": [], "merged": []}})
         days = common.period_days(PERSON)
-        pr = {"repo": "acme/billing", "title": "PR", "date": "2026-09-02"}
-        github = {"opened": [{**pr, "number": 1, "url": "https://github.com/acme/billing/pull/1", "issue": "PROJ-12"},
-                             {**pr, "number": 2, "url": "https://github.com/acme/billing/pull/2",
-                                 "issue": "PROJ-13"},
-                             {**pr, "number": 3, "url": "https://github.com/acme/billing/pull/3", "issue": None,
-                              "date": "2026-10-01"}],
-                  "merged": [{**pr, "number": 1, "url": "https://github.com/acme/billing/pull/1", "issue": "PROJ-12"}]}
-        months = [{"month": "2026-08", "opened": 0, "merged": 0, "areas": 0, "main_areas": []},
-                  {"month": "2026-09", "opened": 2, "merged": 1, "areas": 2,
-                   "main_areas": [{"area": "Billing", "items": 2}, {"area": "no parent", "items": 1}]},
-                  {"month": "2026-10", "opened": 1, "merged": 0, "areas": 1,
-                   "main_areas": [{"area": "acme/billing", "items": 1}]},
-                  {"month": "2026-11", "opened": 0, "merged": 0, "areas": 0, "main_areas": []}]
-        cases = [("the fixture", WORK_ITEMS, WORK_FACTS),
-                 ("pull requests", {**WORK_ITEMS, "github": github}, {**WORK_FACTS, "github": {
-                     "by_month": months,
-                     "by_area": [{"kind": "Epic", "key": "PROJ-1", "title": "Billing", "opened": 1, "merged": 1},
-                                 {"kind": "no parent", "key": None,
-                                     "title": None, "opened": 1, "merged": 0},
-                                 {"kind": "repository", "key": None, "title": "acme/billing", "opened": 1,
-                                  "merged": 0}]}}),
-                 ("nothing", {source: dict.fromkeys(lists, []) for source, lists in common.WORK_LISTS.items()},
-                  {source: {"by_month": [{"month": month, **dict.fromkeys((name for name in lists if name != "open"), 0),
-                                          "areas": 0, "main_areas": []}
-                                         for month in ("2026-08", "2026-09", "2026-10", "2026-11")],
-                            "by_area": []} for source, lists in common.WORK_LISTS.items()})]
-        for name, work, expected in cases:
+        self.assertIsNone(common.write_work(
+            PREP, "notion", WORK_RAW["notion"], days)["work"])
+        written = common.write_work(PREP, "github", WORK_RAW["github"], days)
+        self.assertEqual(common.read_json(written["work"]), WORK)
+
+    def test_raw_work_problems(self):
+        # name: (the source, a change to its raw file, expected in its
+        # problems, or None for none).
+        issue = WORK_RAW["jira"]["resolved"][0]
+        cases = [("valid", "jira", {}, None),
+                 ("an issue without its status", "jira", {"resolved": [
+                     {**issue, "fields": {k: v for k, v in issue["fields"].items() if k != "status"}}]},
+                  "lacks fields.status.name"),
+                 ("a parent without its fields", "jira", {"resolved": [
+                     {**issue, "fields": {**issue["fields"], "parent": {"key": "PROJ-1", "fields": {}}}}]},
+                  "lacks fields.parent.fields.summary"),
+                 ("a pull request without its author", "github", {"opened": [
+                     {k: v for k, v in WORK_RAW["github"]["opened"][0].items() if k != "author"}]}, "lacks author"),
+                 ("another period", "github", {"start": "2026-08-01"},
+                  "is for 2026-08-01 to 2026-11-10, not the period"),
+                 ("no search", "jira", {
+                  "created_jql": None, "resolved": "PROJ-12"}, "must hold"),
+                 ("an issue resolved outside the period", "jira", {"resolved": [
+                     {**issue, "fields": {**issue["fields"], "resolutiondate": "2026-07-01T10:00:00.000+0100"}}]},
+                  "the work's jira resolved")]
+        days = common.period_days(PERSON)
+        for name, source, change, expected in cases:
             with self.subTest(name):
-                self.assertEqual(common.work_facts(work, days), expected)
+                problems = " ".join(common.raw_work_problems(
+                    source, {**WORK_RAW[source], **change}, days))
+                if expected is None:
+                    self.assertEqual(problems, "")
+                else:
+                    self.assertIn(expected, problems)
+
+    def test_focus(self):
+        # name: (parents of the resolved issues, by key, None for none, the
+        # focus expected as (key, issues)): the fewest parents covering 80%
+        # of the issues with one, those tied with the last one too; with no
+        # parent at all, the projects.
+        def issues(*parents):
+            return [{"key": f"PROJ-{n}", "parent": {"key": parent, "title": parent.title()} if parent else None}
+                    for n, parent in enumerate(parents)]
+        cases = [("nothing", [], []),
+                 ("one parent", issues("billing"), [("billing", 1)]),
+                 ("80% covered", issues(
+                     *["a"] * 5, *["b"] * 3, "c", "d"), [("a", 5), ("b", 3)]),
+                 ("tied at the cutoff", issues(*["a"] * 4, *["b"] * 2, *["c"] * 2, *["d"] * 2),
+                  [("a", 4), ("b", 2), ("c", 2), ("d", 2)]),
+                 ("no parent left out", issues("a", "a", None, None, None), [("a", 2)])]
+        for name, resolved, expected in cases:
+            with self.subTest(name):
+                self.assertEqual([(entry["key"], entry["issues"])
+                                 for entry in common.focus(resolved)], expected)
+        projects = [{"key": key, "parent": None}
+                    for key in ("PROJ-1", "PROJ-2", "OPS-3")]
+        self.assertEqual(common.focus(projects), [{"key": "PROJ", "title": None, "issues": 2},
+                                                  {"key": "OPS", "title": None, "issues": 1}])
 
     def test_name_words(self):
         for name, words in [("Jane Doe", ["jane", "doe"]), ("José  Núñez-Ruiz", ["jose", "nunez", "ruiz"]),

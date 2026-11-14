@@ -11,8 +11,8 @@ import os
 
 from common import (FEEDBACK, NOTES, ORIENTATION, PERSON, RATINGS, RAW_DIR, REVIEWS, SLACK, SOURCES, VALUES, WORK,
                     company_names, expected_files, feedback_problems, notes_problems, orientation_problems,
-                    period_days, person_problems, prep_dir, read_json, reviews_problems, slack_problems,
-                    sources_problems, work_problems)
+                    period_days, person_problems, prep_dir, read_json, read_raw_work, reviews_problems,
+                    slack_problems, sources_problems, work_from_raw_problems, work_problems)
 
 
 def check_prep(prep, today=None):
@@ -48,7 +48,8 @@ def check_prep(prep, today=None):
         days = period_days(person)
         rules[NOTES] = lambda value: notes_problems(value, values, days)
         rules[SLACK] = lambda value: slack_problems(value, values, days)
-        rules[WORK] = lambda value: work_problems(value, days)
+        rules[WORK] = lambda value: work_problems(value, days) or work_from_raw_problems(
+            value, read_raw_work(prep), days)
     for name, problems in rules.items():
         if name in read:
             errors += [

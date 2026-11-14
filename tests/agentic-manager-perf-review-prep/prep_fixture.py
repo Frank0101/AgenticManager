@@ -5,6 +5,7 @@ output folder of the test's own."""
 import json
 import os
 import tempfile
+from urllib.parse import quote
 from unittest import mock
 
 import common  # noqa: F401  (puts the library on the path)
@@ -37,53 +38,60 @@ NOTES = {"going_well": [{"point": "Presented the migration to the wider team", "
                                       {"date": "2026-08-20", "link": "file:///vault/journals/2026_08_20.md"}]}],
          "context": [{"point": "Moved to the payments team in the summer",
                       "evidence": [{"date": None, "link": "file:///vault/pages/Jane.md"}]}]}
-# The work's items, and its facts and commentary worked out by hand, over
-# PERSON's period, 10/08/2026 to 10/11/2026.
+# The work's items, as work.json records them, in PERSON's period.
 WORK_ITEMS = {"jira": {"resolved": [{"key": "PROJ-12", "title": "Migrate billing", "type": "Story",
                                      "parent": {"key": "PROJ-1", "title": "Billing", "type": "Epic"}, "status": "Done",
                                      "url": "https://acme.atlassian.net/browse/PROJ-12", "date": "2026-09-01"}],
-                       "open": [{"key": "PROJ-13", "title": "Retire old billing", "type": "Task", "parent": None,
-                                 "status": "In Progress", "url": "https://acme.atlassian.net/browse/PROJ-13"}]},
+                       "created": [{"key": "PROJ-13", "title": "Retire old billing", "type": "Task", "parent": None,
+                                    "status": "In Progress", "url": "https://acme.atlassian.net/browse/PROJ-13",
+                                    "date": "2026-08-20"}]},
               "github": {"opened": [{"repo": "acme/billing", "number": 1, "title": "Migrate billing",
-                                     "url": "https://github.com/acme/billing/pull/1", "date": "2026-08-28",
-                                     "issue": "PROJ-12"}],
+                                     "url": "https://github.com/acme/billing/pull/1", "date": "2026-08-28"}],
                          "merged": [{"repo": "acme/billing", "number": 1, "title": "Migrate billing",
-                                     "url": "https://github.com/acme/billing/pull/1", "date": "2026-09-01",
-                                     "issue": "PROJ-12"}]},
+                                     "url": "https://github.com/acme/billing/pull/1", "date": "2026-09-01"}]},
               "notion": {"created": [{"title": "Billing plan", "url": "https://www.notion.so/billing-plan",
                                       "path": "Engineering / Billing", "between": ["2026-08-10", "2026-08-31"]}],
                          "edited": [{"title": "Billing plan", "url": "https://www.notion.so/billing-plan",
                                      "path": "Engineering / Billing", "date": "2026-09-02"}]}}
-WORK_FACTS = {
-    "jira": {"by_month": [{"month": "2026-08", "resolved": 0, "areas": 0, "main_areas": []},
-                          {"month": "2026-09", "resolved": 1, "areas": 1,
-                           "main_areas": [{"area": "Billing", "items": 1}]},
-                          {"month": "2026-10", "resolved": 0,
-                              "areas": 0, "main_areas": []},
-                          {"month": "2026-11", "resolved": 0, "areas": 0, "main_areas": []}],
-             "by_area": [{"kind": "Epic", "key": "PROJ-1", "title": "Billing", "resolved": 1, "open": 0},
-                         {"kind": "no parent", "key": None, "title": None, "resolved": 0, "open": 1}]},
-    "github": {"by_month": [{"month": "2026-08", "opened": 1, "merged": 0, "areas": 1,
-                             "main_areas": [{"area": "Billing", "items": 1}]},
-                            {"month": "2026-09", "opened": 0, "merged": 1, "areas": 1,
-                             "main_areas": [{"area": "Billing", "items": 1}]},
-                            {"month": "2026-10", "opened": 0,
-                                "merged": 0, "areas": 0, "main_areas": []},
-                            {"month": "2026-11", "opened": 0, "merged": 0, "areas": 0, "main_areas": []}],
-               "by_area": [{"kind": "Epic", "key": "PROJ-1", "title": "Billing", "opened": 1, "merged": 1}]},
-    "notion": {"by_month": [{"month": "2026-08", "created": 1, "edited": 0, "areas": 1,
-                             "main_areas": [{"area": "Engineering / Billing", "items": 1}]},
-                            {"month": "2026-09", "created": 0, "edited": 1, "areas": 1,
-                             "main_areas": [{"area": "Engineering / Billing", "items": 1}]},
-                            {"month": "2026-10", "created": 0,
-                                "edited": 0, "areas": 0, "main_areas": []},
-                            {"month": "2026-11", "created": 0, "edited": 0, "areas": 0, "main_areas": []}],
-               "by_area": [{"kind": "location", "key": None, "title": "Engineering / Billing", "created": 1,
-                            "edited": 1}]}}
-COMMENTARY = {"jira": "Resolved one issue, in September, on the billing epic, with one more still open.",
-              "github": "Opened one pull request on the billing epic in August, merged in September.",
-              "notion": "Wrote the billing plan in August and edited it in September."}
-WORK = {**WORK_ITEMS, "facts": WORK_FACTS, "commentary": COMMENTARY}
+# The raw files work.json is built from: what Jira and gh return, with the
+# period and the searches, and Notion's pages as recorded.
+JIRA_ID = PERSON["sources"]["jira-api"]["id"]
+JIRA_BASE = "https://acme.atlassian.net"
+JQL = {"resolved": f'assignee = "{JIRA_ID}" AND statusCategory = Done AND resolutiondate >= "2026-08-10" '
+       'AND resolutiondate <= "2026-11-10 23:59"',
+       "created": f'reporter = "{JIRA_ID}" AND created >= "2026-08-10" AND created <= "2026-11-10 23:59"'}
+QUERY = {"opened": "is:pr author:janedoe created:2026-08-10..2026-11-10 org:acme",
+         "merged": "is:pr is:merged author:janedoe merged:2026-08-10..2026-11-10 org:acme"}
+PULL = {"number": 1, "title": "Migrate billing", "repository": {"nameWithOwner": "acme/billing"},
+        "url": "https://github.com/acme/billing/pull/1", "createdAt": "2026-08-28T10:00:00Z",
+        "closedAt": "2026-09-01T10:00:00Z", "author": {"login": "janedoe"}, "updatedAt": "2026-09-01T10:00:00Z"}
+WORK_RAW = {"jira": {"start": "2026-08-10", "end": "2026-11-10", "base_url": JIRA_BASE,
+                     "resolved_jql": JQL["resolved"], "created_jql": JQL["created"],
+                     "resolved": [{"key": "PROJ-12", "fields": {
+                         "summary": "Migrate billing", "issuetype": {"name": "Story"}, "status": {"name": "Done"},
+                         "created": "2026-08-12T10:00:00.000+0100", "resolutiondate": "2026-09-01T10:00:00.000+0100",
+                         "parent": {"key": "PROJ-1", "fields": {"summary": "Billing", "issuetype": {"name": "Epic"}}},
+                         "assignee": {"accountId": JIRA_ID}, "reporter": {"accountId": "a2"},
+                         "updated": "2026-09-01T10:00:00.000+0100"}}],
+                     "created": [{"key": "PROJ-13", "fields": {
+                         "summary": "Retire old billing", "issuetype": {"name": "Task"},
+                         "status": {"name": "In Progress"}, "created": "2026-08-20T10:00:00.000+0100",
+                         "resolutiondate": None, "assignee": None, "reporter": {"accountId": JIRA_ID},
+                         "updated": "2026-08-20T10:00:00.000+0100"}}]},
+            "github": {"start": "2026-08-10", "end": "2026-11-10", "orgs": ["acme"],
+                       "opened_query": QUERY["opened"], "merged_query": QUERY["merged"],
+                       "opened": [PULL], "merged": [PULL]},
+            "notion": WORK_ITEMS["notion"]}
+# work.json as built from them, its facts worked out by hand.
+WORK = {"jira": {**WORK_ITEMS["jira"], "counts": {"resolved": 1, "created": 1},
+                 "resolved_by_type": [{"type": "Story", "issues": 1}],
+                 "created_by_type": [{"type": "Task", "issues": 1}],
+                 "focus": [{"key": "PROJ-1", "title": "Billing", "issues": 1}],
+                 **{f"{name}_search_url": f"{JIRA_BASE}/issues/?jql={quote(jql)}" for name, jql in JQL.items()}},
+        "github": {**WORK_ITEMS["github"], "counts": {"opened": 1, "merged": 1},
+                   **{f"{name}_search_url": f"https://github.com/search?q={quote(query)}&type=pullrequests"
+                      for name, query in QUERY.items()}},
+        "notion": {**WORK_ITEMS["notion"], "counts": {"created": 1, "edited": 1}}}
 SLACK = {"going_well": [{"point": "Explained the outage's cause in the incident channel, and colleagues thanked them",
                          "values": ["Teamwork"],
                          "evidence": [{"date": "2026-09-03", "link": "https://acme.slack.com/archives/C1/p1"}]}],
@@ -124,12 +132,15 @@ def temp_output(test):
 
 
 def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
-               reviews=REVIEWS, feedback=FEEDBACK, notes=NOTES, work=WORK, slack=SLACK):
+               reviews=REVIEWS, feedback=FEEDBACK, notes=NOTES, work=WORK, slack=SLACK, raw_work=WORK_RAW):
     """Writes the prep `prep` in the output folder `folder`, holding `person`,
     `orientation`, `reviews`, `feedback`, `notes`, `work`,
-    and `slack`, each left out when None, and the _raw folder the readings
-    write."""
+    and `slack`, each left out when None, and the _raw folder, with
+    `raw_work`, each source's raw file, unless None."""
     os.makedirs(os.path.join(folder, prep, "_raw"), exist_ok=True)
+    for source, lists in (raw_work or {}).items():
+        with open(os.path.join(folder, prep, "_raw", f"{source}.json"), "w", encoding="utf-8") as f:
+            json.dump(lists, f)
     for name, value in (("person.json", person),
                         ("orientation.json", orientation), ("reviews.json", reviews),
                         ("feedback.json", feedback), ("notes.json", notes),

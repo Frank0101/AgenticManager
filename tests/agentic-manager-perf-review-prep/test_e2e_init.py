@@ -1,7 +1,7 @@
 """End-to-end tests for skills/agentic-manager-perf-review-prep/scripts/find_jira_account.py,
 init_prep.py, find_person.py, set_identities.py, rules.py, set_summary.py,
 read_notes.py, fetch_work.py,
-set_notion.py, read_slack.py, work_commentary.py and check_prep.py: they run
+set_notion.py, read_slack.py and check_prep.py: they run
 each as a script, as the agent does, from looking the person up in Jira and
 starting the prep on the account the manager confirmed, through who the
 person is in each other source, their view, the person's previous reviews
@@ -13,11 +13,10 @@ Run with: python3 tests/run.py agentic-manager-perf-review-prep
 The scripts run against the library's tests' fake Jira, served on a local
 port and set as the config's base-url, and its fake gh, put first on PATH,
 so nothing reaches a service. The fake Jira holds the person's account and
-two of their issues, one resolved in the period, under an epic, and one
-still open; the fake gh is in one organisation, where the person opened and
-merged one pull request in the period, which the resolved issue's
-Development panel lists, so the work flows through to the final check with
-an item in every list. The period is a single day, which fetch_work.py
+two of their issues, one they resolved in the period, under an epic, and one
+they created in it; the fake gh is in one organisation, where the person
+opened and merged one pull request in the period, so the work flows through to the final check with an
+item in every list. The period is a single day, which fetch_work.py
 searches whole. Notion and Slack are the agent's, through their MCPs, so the
 test gives their scripts what a search and a subagent would. HOME points at a temporary folder holding the test's own config, and
 TMPDIR at the same folder, so nothing falls back to the system temp folder.
@@ -52,7 +51,6 @@ RULES_SCRIPT = os.path.join(SCRIPTS, "rules.py")
 NOTES_SCRIPT = os.path.join(SCRIPTS, "read_notes.py")
 WORK_SCRIPT = os.path.join(SCRIPTS, "fetch_work.py")
 NOTION_SCRIPT = os.path.join(SCRIPTS, "set_notion.py")
-COMMENTARY_SCRIPT = os.path.join(SCRIPTS, "work_commentary.py")
 SLACK_SCRIPT = os.path.join(SCRIPTS, "read_slack.py")
 TOKEN = "s3cret-token"
 JANE = {"accountId": "5b10ac8d82e05b22cc7d4ef5", "accountType": "atlassian", "displayName": "Jane Doe",
@@ -62,26 +60,28 @@ TODAY = date.today()
 STAMP = f"{TODAY.isoformat()}T10:00:00Z"
 # The person's pull request, opened and merged in the period.
 PR = {"number": 7, "title": "Move invoices to the new billing service", "repository": {"nameWithOwner": "acme/billing"},
-      "url": "https://github.com/acme/billing/pull/7", "createdAt": STAMP, "closedAt": STAMP}
+      "url": "https://github.com/acme/billing/pull/7", "createdAt": STAMP, "closedAt": STAMP,
+      "author": {"login": "janedoe"}, "updatedAt": STAMP}
 # What the fake gh answers, by the words of each command: signed in, the
 # commit search by the Jira email, the login's profile, one organisation,
-# and the pull request to both of fetch_work.py's searches, those opened
-# and those merged in the period.
+# and the pull request to both of fetch_work.py's searches, those opened and
+# those merged in the period.
 GH_ANSWERS = {"auth status": {}, "api": {"items": [{"author": {"login": "janedoe"}}]},
               "api users/janedoe": {"name": "Jane Doe"}, "api user/orgs?per_page=100": [{"login": "acme"}],
               "search prs": [PR]}
 EPIC = {"key": "PROJ-1", "fields": {"summary": "Billing migration",
                                     "issuetype": {"name": "Epic"}}}
-# The person's issues: one resolved in the period, under the epic, its
-# Development panel listing the pull request, and one still open.
+# The person's issues: one they resolved in the period, under the epic, and
+# one they created in it.
 RESOLVED = {"key": "PROJ-12", "id": "10012", "fields": {
     "summary": "Migrate invoices", "issuetype": {"name": "Story"}, "status": {"name": "Done"},
-    "resolutiondate": f"{TODAY.isoformat()}T10:00:00.000+0000", "parent": EPIC}}
-STILL_OPEN = {"key": "PROJ-13", "id": "10013", "fields": {
-    "summary": "Retire the old billing service", "issuetype": {"name": "Story"}, "status": {"name": "In Progress"},
-    "resolutiondate": None, "parent": None}}
-PANELS = {RESOLVED["id"]: [
-    {"name": PR["title"], "url": PR["url"], "status": "MERGED"}]}
+    "created": "2026-01-05T10:00:00.000+0000", "resolutiondate": f"{TODAY.isoformat()}T10:00:00.000+0000",
+    "parent": EPIC, "assignee": {"accountId": JANE["accountId"]}, "reporter": None,
+    "updated": f"{TODAY.isoformat()}T10:00:00.000+0000"}}
+CREATED = {"key": "PROJ-13", "id": "10013", "fields": {
+    "summary": "Retire the old billing service", "issuetype": {"name": "Story"}, "status": {"name": "To Do"},
+    "created": f"{TODAY.isoformat()}T09:00:00.000+0000", "resolutiondate": None, "parent": None,
+    "assignee": None, "reporter": {"accountId": JANE["accountId"]}, "updated": f"{TODAY.isoformat()}T09:00:00.000+0000"}}
 # Who the person is in each source but Jira, as the manager confirmed.
 CONFIRMED = {"github-cli": {"id": "janedoe", "name": "Jane Doe"},
              "notion-mcp": {"id": "2a4c1e8f-1234-4abc-9def-0123456789ab", "name": "Jane Doe"},
@@ -102,17 +102,13 @@ LINK = "https://acme.slack.com/archives/C1/p1"
 
 def jira_routes():
     """The fake Jira's answers: the person's account, found by their name
-    and read by its id; their issues, resolved or still open as the JQL
-    asks; and each issue's Development panel, from a single GitHub host."""
+    and read by its id; and their issues, resolved or created as the JQL
+    asks."""
     return {"/rest/api/3/user/search": [JANE],
             "/rest/api/3/user": lambda query: JANE if query["accountId"] == JANE["accountId"]
             else (404, {"errorMessages": ["not found"]}),
             "/rest/api/3/search/jql": lambda query: {
-                "issues": [RESOLVED if "statusCategory = Done" in query["jql"] else STILL_OPEN]},
-            "/rest/dev-status/latest/issue/summary": lambda query: {"summary": {"pullrequest": {
-                "byInstanceType": {"GitHub": {}} if query["issueId"] in PANELS else {}}}},
-            "/rest/dev-status/latest/issue/detail": lambda query: {
-                "detail": [{"pullRequests": PANELS.get(query["issueId"], [])}]}}
+                "issues": [RESOLVED if "statusCategory = Done" in query["jql"] else CREATED]}}
 
 
 class ScriptsTest(unittest.TestCase):
@@ -193,7 +189,7 @@ class ScriptsTest(unittest.TestCase):
         # manager's view, the previous reviews and the period's feedback, read_notes.py hands out the notes'
         # tasks and takes their answers, fetch_work.py and set_notion.py
         # record the work, read_slack.py the Slack messages, and
-        # work_commentary.py the work's facts and commentary; check_prep.py
+        # the work's facts are worked out once all three are in; check_prep.py
         # passes the prep, and fails it once the folder holds a file of the
         # agent's.
         found = self.run_ok(ACCOUNT_SCRIPT, "--person", "Jane Doe")
@@ -239,37 +235,38 @@ class ScriptsTest(unittest.TestCase):
         self.assertEqual(self.run_ok(NOTES_SCRIPT, "finished",
                          "--prep", prep)["finished"], True)
         # The work: Jira searched by the person's account there, both lists, the
-        # pull request in the organisation, opened and merged, with the
-        # issue whose Development panel lists it, and the Notion pages a
-        # search found.
+        # pull request, opened and merged, and the Notion pages a search
+        # found.
         fetched = self.run_ok(WORK_SCRIPT, "--prep", prep)
         self.assertEqual(fetched["counts"],
-                         {"jira.resolved": 1, "jira.open": 1, "github.opened": 1, "github.merged": 1})
+                         {"jira.resolved": 1, "jira.created": 1, "github.opened": 1, "github.merged": 1})
         searches = [query["jql"] for path,
                     query in FakeJira.requests if path == "/rest/api/3/search/jql"]
-        self.assertEqual((len(searches), all(f'assignee = "{JANE["accountId"]}"' in jql for jql in searches)),
+        self.assertEqual((len(searches), all(f'= "{JANE["accountId"]}"' in jql for jql in searches)),
                          (2, True))
-        with open(fetched["path"], encoding="utf-8") as f:
-            work = json.load(f)
-        self.assertEqual(work["jira"]["resolved"], [
-            {"key": "PROJ-12", "id": "10012", "title": "Migrate invoices", "type": "Story",
-             "parent": {"key": "PROJ-1", "title": "Billing migration", "type": "Epic"}, "status": "Done",
-             "url": f"{self.base_url}/browse/PROJ-12", "date": TODAY.isoformat()}])
-        self.assertEqual([item["key"]
-                         for item in work["jira"]["open"]], ["PROJ-13"])
-        pr = {"repo": "acme/billing", "number": 7, "title": PR["title"], "url": PR["url"],
-              "date": TODAY.isoformat(), "issue": "PROJ-12"}
-        self.assertEqual(work["github"], {"opened": [pr], "merged": [pr]})
+        self.assertIsNone(fetched["work"])
+        with open(fetched["raw"][0], encoding="utf-8") as f:
+            jira = json.load(f)
+        self.assertEqual(([issue["key"] for issue in jira["resolved"]], [issue["key"] for issue in jira["created"]],
+                          jira["resolved_jql"], jira["base_url"]),
+                         (["PROJ-12"], ["PROJ-13"], searches[0], self.base_url))
+        with open(fetched["raw"][1], encoding="utf-8") as f:
+            github = json.load(f)
+        self.assertEqual(
+            (github["opened"], github["merged"], github["orgs"]), ([PR], [PR], ["acme"]))
         day = {"start": TODAY.isoformat(), "end": TODAY.isoformat()}
-        self.run_ok(NOTION_SCRIPT, "--prep", prep, stdin=json.dumps(
+        recorded = self.run_ok(NOTION_SCRIPT, "--prep", prep, stdin=json.dumps(
             {"created": [{**day, "pages": [PAGE]}], "edited": [{**day, "pages": [{**PAGE, "date": TODAY.isoformat()}]}]}))
         self.read_slack(prep)
-        self.assertTrue(self.run_ok(COMMENTARY_SCRIPT, "start", "--prep", prep)[
-                        "task"].startswith("Task work: "))
-        self.run_ok(COMMENTARY_SCRIPT, "submit", "--prep", prep, stdin=json.dumps(
-            {"jira": "Resolved the invoice migration under the billing epic; retiring the old service is open.",
-             "github": "Opened and merged the invoice move, tied to its ticket.",
-             "notion": "Created and edited the billing plan."}))
+        with open(recorded["work"], encoding="utf-8") as f:
+            work = json.load(f)
+        self.assertEqual(work["jira"]["resolved"], [
+            {"key": "PROJ-12", "title": "Migrate invoices", "type": "Story",
+             "parent": {"key": "PROJ-1", "title": "Billing migration", "type": "Epic"}, "status": "Done",
+             "url": f"{self.base_url}/browse/PROJ-12", "date": TODAY.isoformat()}])
+        self.assertEqual((work["jira"]["focus"], work["github"]["opened"]), (
+            [{"key": "PROJ-1", "title": "Billing migration", "issues": 1}],
+            [{"repo": "acme/billing", "number": 7, "title": PR["title"], "url": PR["url"], "date": TODAY.isoformat()}]))
         self.assertEqual(self.run_ok(CHECK_SCRIPT, "--prep", prep), {
                          "ok": True, "errors": []})
         open(os.path.join(result["prep_dir"], "draft.md"), "w").close()

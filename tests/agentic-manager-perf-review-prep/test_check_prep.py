@@ -70,15 +70,12 @@ class CheckTest(unittest.TestCase):
                  ("Notion pages twice", {"work": {**WORK, "notion": {**WORK["notion"],
                                                                      "edited": WORK["notion"]["edited"] * 2}}},
                   None, "work.json: the work's notion edited lists"),
-                 ("facts that don't match the items", {"work": {**WORK, "facts": {**WORK["facts"], "github": {}}}},
-                  None, "work.json: the work's facts don't match its items"),
-                 ("no commentary", {"work": {k: v for k, v in WORK.items() if k != "commentary"}},
-                  None, "work.json: the work is missing commentary"),
-                 ("a source with no commentary", {"work": {**WORK, "commentary": {**WORK["commentary"],
-                                                                                  "github": None}}},
-                  None, "work.json: the commentary's github must be a paragraph"),
-                 ("a Slack point with no link", {"slack": {**SLACK, "going_well": [
-                     {**SLACK["going_well"][0], "links": []}]}},
+                 ("facts that don't match the items", {"work": {**WORK, "jira": {**WORK["jira"], "focus": []}}},
+                  None, "work.json: the work's jira facts don't match its items"),
+                 ("no facts", {"work": {**WORK, "github": {k: v for k, v in WORK["github"].items() if k != "counts"}}},
+                  None, "work.json: the work's github must hold"),
+                 ("a Slack point with no evidence", {"slack": {**SLACK, "going_well": [
+                     {**SLACK["going_well"][0], "evidence": []}]}},
                   None, "slack.json: the Slack summary's going_well must be a list of points")]
         for i, (name, changes, extra, expected) in enumerate(cases):
             with self.subTest(name):

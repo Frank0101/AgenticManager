@@ -1,12 +1,12 @@
-"""Fetches a prep's person's work in the period from Jira and GitHub into work.json: the items themselves.
+"""Fetches a prep's person's work in the period from Jira and GitHub into their raw files, which work.json is built from.
 
-The writing step cites work, such as a ticket or a pull request, so each item
-keeps its title, date and link; the counts are worked out later, once Notion
-is in too. Jira gives the issues resolved in the period and those still
-open, which show work carried across it; GitHub the pull requests opened and
-merged, only in the organisations the user's gh belongs to, so personal
-repositories stay out of a work review, each with the Jira issue that lists
-it, so the work counts by epic and what has no ticket shows.
+Each raw file keeps what the API returned, with the period and the searches
+that found it, so whose each item is can be checked again without searching
+again. Jira gives the issues the person resolved in the period and those
+they created in it, whatever their status now; GitHub the pull requests they
+opened and merged, only in the organisations gh belongs to, so personal
+repositories stay out. Done is a status's category, never a resolution date
+alone, which Jira doesn't always clear when an issue is reopened.
 """
 import argparse
 import json
@@ -14,124 +14,92 @@ import os
 import subprocess
 from datetime import date, timedelta
 
-from common import (JIRA_SOURCE, PERSON, WORK_LISTS, JiraClient, browse_url, gather,
-                    gh_json, gh_orgs, period_days, prep_dir, read_json, require_gh, stops_on_failure,
-                    write_work)
+from common import (JIRA_SOURCE, PERSON, JiraClient, gh_json, gh_orgs, period_days, prep_dir, read_json, require_gh,
+                    stops_on_failure, WORK_LISTS, write_work)
 
-JIRA_FIELDS = ["summary", "issuetype", "parent", "resolutiondate", "status"]
-PR_FIELDS = "number,title,repository,url,createdAt,closedAt"
+JIRA_FIELDS = ["summary", "issuetype", "parent", "resolutiondate", "created", "status", "assignee", "reporter",
+               "updated"]
+PR_FIELDS = "number,title,repository,url,createdAt,closedAt,author,updatedAt"
 SEARCH_LIMIT = 1000
 # Each list is one search over the whole period, so few searches run; one
 # that comes back full, at SEARCH_LIMIT, may be cut short, so its window is
 # split in halves and each searched again. GitHub's secondary rate limit,
 # which searches in quick succession meet, is the library's to wait out.
-OUTPUT = """Prints one line of JSON: path, the file written, and how many items each list holds.
+OUTPUT = """Prints one line of JSON: raw, the raw files written, work, work.json's path once
+set_notion.py has recorded Notion too, else null, and how many items each list holds.
 
-It writes jira and github to work.json, keeping its Notion pages, and
-dropping its facts and commentary, which work_commentary.py works out again:
-  jira     resolved, the issues resolved in the period, and open, those
-           touched in it and not Done: key, id, title, type, parent ({key,
-           title, type}, or null), status, url and, for resolved, date, the
-           day it was resolved
-  github   opened and merged, each PR's repo, number, title, url, date,
-           the day it was opened or merged, and issue, the key of the
-           person's Jira issue whose Development panel lists it, or null
+It writes each source's raw file in the prep's _raw, and work.json once
+every source's is in:
+  jira     start and end, the period; base_url, the Jira site's; resolved,
+           the issues assigned to the person and resolved in the period, and
+           created, those they created in it, as Jira's search returns them;
+           and resolved_jql and created_jql, the searches that found them
+  github   start and end; orgs, the organisations searched; opened and
+           merged, the person's pull requests opened and merged in the
+           period, as gh's search returns them; and opened_query and
+           merged_query, the same searches on github.com
 """
 
 
 def fetch(prep, client=None, run=subprocess.run):
-    """Fetch the work of the prep `prep`'s person and write it to work.json;
-    returns where it is and how many items each list holds."""
+    """Fetch the work of the prep `prep`'s person and write it to its raw
+    files, and work.json once Notion is in too; returns where they are and
+    how many items each list holds."""
     folder = prep_dir(prep)
     person = read_json(os.path.join(folder, PERSON))
-    client = client or JiraClient()
-    work = {"jira": jira_work(client, person["sources"][JIRA_SOURCE]["id"], person),
-            "github": github_work(person["sources"]["github-cli"]["id"], person, run)}
-    link_issues(work["github"], linked_prs(client, work["jira"]))
-    path = write_work(prep, work, period_days(person))
-    return {"path": path, "counts": {f"{source}.{name}": len(items) for source, lists in work.items()
-                                     for name, items in lists.items()}}
+    raws = {"jira": jira_raw(client or JiraClient(), person["sources"][JIRA_SOURCE]["id"], person),
+            "github": github_raw(person["sources"]["github-cli"]["id"], person, run)}
+    written = [write_work(prep, source, raw, period_days(person))
+               for source, raw in raws.items()]
+    return {"raw": [paths["raw"] for paths in written], "work": written[-1]["work"],
+            "counts": {f"{source}.{name}": len(raw[name]) for source, raw in raws.items() for name in WORK_LISTS[source]}}
 
 
 # Jira.
 
-def jira_work(client, account, person):
-    """{resolved, open}: the Jira issues of the account `account` in the
-    review's period in `person`."""
-    # Neither filters on the resolution date alone, which Jira doesn't always
-    # clear when an issue is reopened; dates are written to the minute, as a
-    # literal with seconds silently matches nothing.
+def jira_raw(client, account, person):
+    """Jira's raw file: the issues the account `account` resolved and those
+    it created in the review's period in `person`, with the searches."""
+    # Dates are written to the minute, as a literal with seconds silently
+    # matches nothing.
     start, end = person["start"], f'{person["end"]} 23:59'
-    resolved = client.search(f'assignee = "{account}" AND statusCategory = Done '
-                             f'AND resolutiondate >= "{start}" AND resolutiondate <= "{end}"', JIRA_FIELDS)
-    still_open = client.search(f'assignee = "{account}" AND statusCategory != Done '
-                               f'AND updated >= "{start}" AND updated <= "{end}"', JIRA_FIELDS)
-    return {"resolved": [issue_item(client, issue, dated=True) for issue in resolved],
-            "open": [issue_item(client, issue, dated=False) for issue in still_open]}
-
-
-def linked_prs(client, jira):
-    """{url: issue key}: the pull requests the Development panel of each
-    issue of `jira`, resolved or still open, lists, read four at a time."""
-    issues = [item for name in WORK_LISTS["jira"] for item in jira[name]]
-    found = gather(issues, lambda item: client.pull_requests(item["id"]))
-    return {pull_key(pr["url"]): item["key"] for item, prs in zip(issues, found) for pr in prs if pr.get("url")}
-
-
-def link_issues(github, linked):
-    """Give each pull request of `github` its Jira issue, from `linked`, or
-    null when no issue lists it, so the work can be counted by epic and what
-    has no ticket shows."""
-    for items in github.values():
-        for item in items:
-            item["issue"] = linked.get(pull_key(item["url"]))
-
-
-def pull_key(url):
-    """A pull request's address as Jira and GitHub can both be matched by:
-    lowercase, without a trailing slash."""
-    return url.rstrip("/").casefold()
-
-
-def issue_item(client, issue, dated):
-    """An issue as work.json records it, with its resolution day when
-    `dated`. Its parent is kept with its type and title, as the work's facts
-    count issues by parent, their area."""
-    fields = issue["fields"]
-    parent = fields.get("parent")
-    item = {"key": issue["key"], "id": issue["id"], "title": fields.get("summary") or "",
-            "type": fields["issuetype"]["name"],
-            "parent": {"key": parent["key"], "title": parent["fields"].get("summary") or "",
-                       "type": parent["fields"]["issuetype"]["name"]} if parent else None,
-            "status": fields["status"]["name"], "url": browse_url(client.base_url, issue["key"])}
-    if dated:
-        item["date"] = fields["resolutiondate"][:10]
-    return item
+    jqls = {"resolved": f'assignee = "{account}" AND statusCategory = Done '
+            f'AND resolutiondate >= "{start}" AND resolutiondate <= "{end}"',
+            "created": f'reporter = "{account}" AND created >= "{start}" AND created <= "{end}"'}
+    return {"start": person["start"], "end": person["end"], "base_url": client.base_url,
+            **{f"{name}_jql": jql for name, jql in jqls.items()},
+            **{name: client.search(jql, JIRA_FIELDS) for name, jql in jqls.items()}}
 
 
 # GitHub.
 
-def github_work(login, person, run=subprocess.run):
-    """{opened, merged}: the pull requests of the GitHub account `login` in
-    the review's period in `person`, in the organisations gh belongs to. Reviews are left out: a search
-    finds only the PRs updated in the period, not reviewed in it, and
-    checking each one's reviews cost most of the fetch for little value."""
+def github_raw(login, person, run=subprocess.run):
+    """GitHub's raw file: the pull requests the account `login` opened and
+    merged in the review's period in `person`, in the organisations gh
+    belongs to, with the same searches on github.com."""
     require_gh(run, "the person's pull requests are fetched")
-    period = (person["start"], person["end"])
-    lists = {"opened": [], "merged": []}
-    for org in gh_orgs(run):
-        lists["opened"] += [pr_item(pr, pr["createdAt"]) for pr in search(
-            ["--author", login], "--created", period, org, run)]
-        lists["merged"] += [pr_item(pr, pr["closedAt"]) for pr in search(
-            ["--author", login, "--merged"], "--merged-at", period, org, run)]
-    return {name: sorted(items, key=lambda item: (item["date"], item["url"])) for name, items in lists.items()}
+    period, window = (person["start"], person["end"]
+                      ), f'{person["start"]}..{person["end"]}'
+    orgs = gh_orgs(run)
+    in_orgs = [f"org:{org}" for org in orgs]
+    raw = {"start": person["start"], "end": person["end"], "orgs": orgs,
+           "opened_query": " ".join(["is:pr", f"author:{login}", f"created:{window}", *in_orgs]),
+           "merged_query": " ".join(["is:pr", "is:merged", f"author:{login}", f"merged:{window}", *in_orgs]),
+           "opened": [], "merged": []}
+    for org in orgs:
+        raw["opened"] += search(["--author", login],
+                                "--created", period, org, run)
+        raw["merged"] += search(["--author", login, "--merged"],
+                                "--merged-at", period, org, run)
+    return raw
 
 
 def search(flags, date_flag, window, org, run=subprocess.run):
     """The pull requests `gh search prs` finds with `flags` in the
-    organisation `org`, dated by `date_flag` within `window`, (first, last)
-    as YYYY-MM-DD: a search that comes back full is split in halves, each
-    searched the same way, and exits when a single day comes back full."""
+    organisation `org`, dated by
+    `date_flag` within `window`, (first, last) as YYYY-MM-DD: a search that
+    comes back full is split in halves, each searched the same way, and
+    exits when a single day comes back full, as some would be missing."""
     first, last = window
     found = gh_json(["search", "prs", *flags, date_flag, f"{first}..{last}", "--owner", org,
                      "--limit", str(SEARCH_LIMIT), "--json", PR_FIELDS], run)
@@ -147,16 +115,9 @@ def search(flags, date_flag, window, org, run=subprocess.run):
     return list({pr["url"]: pr for half in halves for pr in half}.values())
 
 
-def pr_item(pr, stamp):
-    """A pull request as work.json records it, dated by the day of
-    `stamp`."""
-    return {"repo": pr["repository"]["nameWithOwner"], "number": pr["number"], "title": pr["title"],
-            "url": pr["url"], "date": date.fromisoformat(stamp[:10]).isoformat()}
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Fetch the prep's person's work in the period from Jira and GitHub into work.json.",
+        description="Fetch the prep's person's work in the period from Jira and GitHub into their raw files, and build work.json once Notion's is in too.",
         epilog=OUTPUT, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--prep", required=True,
                         help="the prep's folder, <Person>_<YY-MM-DD>, as init_prep.py printed it")

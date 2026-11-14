@@ -25,7 +25,8 @@ from prep_fixture import PERSON, PREP, temp_output, write_prep  # noqa: E402
 
 class FakeGh:
     """A gh runner: each search's {login: commits} by its query, and each
-    login's profile name; signed in. Records each command."""
+    login's profile name; signed in, to two organisations. Records each
+    command."""
 
     def __init__(self, searches, names):
         self.searches, self.names, self.calls = searches, names, []
@@ -35,6 +36,8 @@ class FakeGh:
         args = command[1:]
         if args[:2] == ["auth", "status"]:
             return subprocess.CompletedProcess(command, 0, "", "")
+        if args[1].startswith("user/orgs"):
+            return subprocess.CompletedProcess(command, 0, json.dumps([{"login": "acme"}, {"login": "acme-labs"}]), "")
         if "search/commits" in args:
             counts = self.searches.get(
                 args[args.index("-f") + 1].removeprefix("q="), {})
@@ -47,14 +50,16 @@ class FakeGh:
 
 class FindPersonTest(unittest.TestCase):
     def test_github_candidates(self):
-        # One search, by the email, each account that authored its commits
-        # once, with its profile's name, or none.
-        run = FakeGh({"author-email:jane@acme.test": {"janedoe": 3, "jdoe-work": 1}},
+        # A search by the email in each organisation gh belongs to, each
+        # account that authored its commits once, with its profile's name,
+        # or none.
+        run = FakeGh({"author-email:jane@acme.test org:acme": {"janedoe": 3, "jdoe-work": 1},
+                      "author-email:jane@acme.test org:acme-labs": {"janedoe": 1}},
                      {"janedoe": "Jane Doe"})
         self.assertEqual(find_person.github_candidates("jane@acme.test", run), [
             {"login": "janedoe", "name": "Jane Doe"}, {"login": "jdoe-work", "name": None}])
         self.assertEqual(
-            sum("search/commits" in call for call in run.calls), 1)
+            sum("search/commits" in call for call in run.calls), 2)
 
     def test_vault_candidates(self):
         # Every page and link with a word that starts a word of the name, or
@@ -107,7 +112,7 @@ class FindPersonTest(unittest.TestCase):
         folder = temp_output(self)
         write_prep(folder, person={**PERSON, "sources": {"jira-api": PERSON["sources"]["jira-api"]}},
                    orientation=None, reviews=None)
-        run = FakeGh({"author-email:jane@acme.test": {"janedoe": 1}},
+        run = FakeGh({"author-email:jane@acme.test org:acme": {"janedoe": 1}},
                      {"janedoe": "Jane Doe"})
         with tempfile.TemporaryDirectory() as graph, \
                 mock.patch.object(common, "gh_available", return_value=True), \

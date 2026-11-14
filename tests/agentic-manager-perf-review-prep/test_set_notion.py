@@ -15,8 +15,6 @@ import set_notion  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from prep_fixture import PERSON, PREP, WORK, WORK_ITEMS, temp_output, write_prep  # noqa: E402
 
-TABLE = {"title": "Lag monitors",
-         "url": "https://www.notion.so/lag-monitors", "path": "Engineering"}
 PLAN = {"title": "Billing plan", "url": "https://www.notion.so/billing-plan",
         "path": "Engineering / Billing"}
 # PERSON's period, 10/08/2026 to 10/11/2026: created pages a month at a
@@ -35,26 +33,14 @@ class SetNotionTest(unittest.TestCase):
         write_prep(self.folder, work=WORK)
 
     def test_writes_created_pages_with_their_range(self):
-        # Into work.json, keeping Jira and GitHub, and dropping the facts
-        # and commentary, which no longer match.
-        path = set_notion.set_notion(
+        # Into Notion's raw file, then work.json, built from it and Jira's
+        # and GitHub's, already in.
+        paths = set_notion.set_notion(
             PREP, {"created": CREATED, "edited": EDITED})
-        with open(path, encoding="utf-8") as f:
-            self.assertEqual(json.load(f), {"jira": WORK_ITEMS["jira"], "github": WORK_ITEMS["github"], "notion": {
-                "created": [{**PLAN, "between": ["2026-08-10", "2026-08-31"]}],
-                "edited": [{**PLAN, "date": "2026-09-02"}]}})
-
-    def test_a_database_counts_as_one_page(self):
-        # A day full of one database's rows records the database once, as a
-        # page of that day, with the day's other pages.
-        path = set_notion.set_notion(PREP, {"created": [
-            {"start": "2026-08-10", "end": "2026-08-10",
-                "pages": [PLAN], "full_of": TABLE},
-            {**CREATED[0], "start": "2026-08-11", "pages": []}, *CREATED[1:]], "edited": EDITED})
-        with open(path, encoding="utf-8") as f:
-            self.assertEqual(json.load(f)["notion"]["created"], [
-                {**page, "between": ["2026-08-10", "2026-08-10"]} for page in sorted([PLAN, TABLE],
-                                                                                     key=lambda page: page["url"])])
+        with open(paths["raw"], encoding="utf-8") as f:
+            self.assertEqual(json.load(f), WORK_ITEMS["notion"])
+        with open(paths["work"], encoding="utf-8") as f:
+            self.assertEqual(json.load(f), WORK)
 
     def test_searches_problems(self):
         # name: (the searches, expected in their problems, or None for none).
@@ -78,12 +64,12 @@ class SetNotionTest(unittest.TestCase):
                  ("a page without its url", {"created": CREATED, "edited": [
                      {**EDITED[0], "pages": [{"title": "Billing plan", "link": PLAN["url"], "path": "", "date": "2026-09-02"}]}]},
                   "each page must be {\"title\", \"url\", \"path\"}"),
-                 ("a day full of one database's rows", {"created": [
+                 ("a single day still full", {"created": [
                      {"start": "2026-08-10", "end": "2026-08-10",
-                         "pages": [], "full_of": TABLE},
-                     {**CREATED[0], "start": "2026-08-11"}, *CREATED[1:]], "edited": EDITED}, None),
-                 ("full_of over more than a day", {"created": [{**CREATED[0], "full_of": TABLE}, *CREATED[1:]],
-                                                   "edited": EDITED}, "only a search of a single day may"),
+                         "pages": [PLAN], "full": True},
+                     {**CREATED[0], "start": "2026-08-11", "pages": []}, *CREATED[1:]], "edited": EDITED}, None),
+                 ("full over more than a day", {"created": [{**CREATED[0], "full": True}, *CREATED[1:]],
+                                                "edited": EDITED}, "only a search of a single day may be"),
                  ("not a day", {"created": [{**CREATED[0], "start": "10/08/2026"}, *CREATED[1:]], "edited": EDITED},
                   "must be days")]
         for name, found, expected in cases:

@@ -13,7 +13,7 @@ import json
 import os
 import subprocess
 
-from common import (JIRA_SOURCE, PERSON, commit_authors, graph_path, links, name_words, notes,
+from common import (JIRA_SOURCE, PERSON, commit_authors, gh_orgs, graph_path, links, name_words, notes,
                     page_aliases, prep_dir, profile_name, read_json, require_gh, stops_on_failure)
 
 # The fewest letters a word of a link needs to be taken for a name, or a short
@@ -44,9 +44,10 @@ def find(prep, run=subprocess.run):
 
 def github_candidates(email, run=subprocess.run):
     """Each GitHub account that authored the commits a search by `email`
-    found, with its profile's name."""
-    return [{"login": login, "name": profile_name(login, run)}
-            for login in commit_authors(f"author-email:{email}", run)]
+    found in the organisations gh belongs to, with its profile's name."""
+    logins = {login: None for org in gh_orgs(run)
+              for login in commit_authors(f"author-email:{email} org:{org}", run)}
+    return [{"login": login, "name": profile_name(login, run)} for login in logins]
 
 
 def vault_candidates(path, person):

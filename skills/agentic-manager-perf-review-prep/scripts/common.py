@@ -11,12 +11,12 @@ from datetime import date, timedelta
 import json
 import os
 import sys
+from urllib.parse import quote
 
 # The agentic-manager-utils-lib skill, installed next to this one.
 LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
-from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.config import company_setting  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
 from agentic_manager.github import commit_authors, gh_available, gh_json, gh_orgs, gh_signed_in, profile_name  # noqa: E402,F401
@@ -112,29 +112,50 @@ FEEDBACK = "feedback.json"
 # pages, only context, which has no date. Read by subagents, a month of
 # journals each, then merged, as Slack is.
 NOTES = "notes.json"
-# The person's work in the period, in Jira, GitHub and Notion: the items
-# themselves, each with its title, date and link, for the writing step to
-# cite. Each source is written by its own script, which keeps the others'. Once all are in, the
-# facts, counts by month and by area, are worked out from the items, once,
-# and a subagent's commentary on each source reads them: the figures are the
-# script's, the reading of them, volume, focus and how they shifted, the
-# commentary's. Notion's search filters by creation date but returns only the
-# last edit's, so a created page is dated by the range it was found in,
-# `between`, and an edited one by its last edit; `path` is where it sits.
+# The person's work in the period, in Jira, GitHub and Notion. Each source's
+# script writes what it gathered to its raw file, _raw/<source>.json: Jira's
+# issues and GitHub's pull requests as their APIs return them, with the
+# period and the searches that found them, so whose each item is, and why it
+# is there, can be checked again without searching again; Notion's pages as
+# the agent records them, as only it reaches Notion. Once every source's is
+# in, work.json is built from them, with no network, and nowhere else: for
+# each source its items, each with its title, date and link, for the writing
+# step to cite, the facts worked out from them, once, and for Jira and GitHub
+# the address of each list's search, to see the same items live. Notion's
+# search filters by creation date but returns only the last edit's, so a
+# created page is dated by the range it was found in, `between`, and an
+# edited one by its last edit; `path` is where it sits.
 WORK = "work.json"
-WORK_LISTS = {"jira": ("resolved", "open"), "github": (
+WORK_LISTS = {"jira": ("resolved", "created"), "github": (
     "opened", "merged"), "notion": ("created", "edited")}
-FACTS = "facts"
-COMMENTARY = "commentary"
-MAIN_AREAS = 3
-COMMENTARY_WORDS = 80
-MAX_COMMENTARY_WORDS = 120
+# What a raw file holds beside its lists: the period and, for each list, the
+# search that found it, Jira's JQL or GitHub's query on github.com, whose
+# org: terms are alternatives.
+RAW_FIELDS = {"jira": ("start", "end", "base_url", "resolved_jql", "created_jql"),
+              "github": ("start", "end", "orgs", "opened_query", "merged_query"), "notion": ()}
+# The fields of a raw item work.json is built from, and those kept only to
+# check whose it is: Jira's assignee, reporter and updated, GitHub's author
+# and updatedAt. A parent, which Jira leaves out when an issue has none,
+# needs its own.
+RAW_ITEM_FIELDS = {"jira": ("key", "fields.summary", "fields.issuetype.name", "fields.status.name",
+                            "fields.created", "fields.resolutiondate", "fields.assignee",
+                            "fields.reporter", "fields.updated"),
+                   "github": ("number", "title", "repository.nameWithOwner", "url", "createdAt", "closedAt",
+                              "author", "updatedAt")}
+PARENT_FIELDS = ("key", "fields.summary", "fields.issuetype.name")
+# The facts of each source. The activity over time isn't one: each item
+# has its day, and grouping them, such as by week, is for whatever shows it.
+FACT_KEYS = {"jira": ("counts", "resolved_by_type", "created_by_type", "focus"),
+             "github": ("counts",), "notion": ("counts",)}
+SEARCHED = ("jira", "github")
+# The share of the resolved issues the main focus covers.
+FOCUS_SHARE = 0.8
 # What the person's Slack messages show, read by subagents a month each and
 # merged, every point with the days and links it rests on.
 SLACK = "slack.json"
-# What each reading by subagents gathered, the tasks they were given and what
-# they answered, a folder per source, kept so a summary can be traced back to
-# the notes and synopses it came from.
+# What each source gave: the readers' answers, a folder per source, kept so a
+# summary can be traced back to the notes and synopses it came from, and the
+# raw file of each source of the work.
 RAW_DIR = "_raw"
 
 
@@ -143,8 +164,64 @@ def expected_files():
     period and who they are in each source, the manager's view of them, their previous
     reviews, the period's feedback, the manager's notes on them, what their Slack
     messages show, their work in Jira, GitHub and Notion, and the _raw folder
-    of what the subagents were shown and wrote."""
+    of what each source gave."""
     return {PERSON, ORIENTATION, REVIEWS, FEEDBACK, NOTES, SLACK, WORK, RAW_DIR}
+
+
+def write_work(prep, source, raw, days):
+    """Writes `raw`, what `source` gave, such as {"created": [...], "edited":
+    [...]} for "notion", to its raw file in the prep `prep`, then, once every
+    source's is in and follows its rules, as one from an earlier version or
+    period doesn't, work.json, built from them; returns {raw, work}, the
+    files' paths, work null until it is built. Exits, writing nothing, when
+    `raw` breaks a rule, `days` the period's."""
+    if problems := raw_work_problems(source, raw, days):
+        raise SystemExit("; ".join(problems))
+    path = write_raw(prep, f"{source}.json", json.dumps(
+        raw, ensure_ascii=False, indent=1))
+    raws = read_raw_work(prep)
+    ready = raws is not None and not any(raw_work_problems(
+        source, other, days) for source, other in raws.items())
+    return {"raw": path, "work": write_prep_file(prep, WORK, build_work(raws, days)) if ready else None}
+
+
+def raw_work_problems(source, raw, days):
+    """Why `raw` isn't the raw file of `source`, empty when it is: its
+    RAW_FIELDS, for the period of `days`, and its lists, each item with its
+    RAW_ITEM_FIELDS, and following the rules of items_problems() once built."""
+    fields = (*RAW_FIELDS[source], *WORK_LISTS[source])
+    if not (isinstance(raw, dict) and sorted(raw) == sorted(fields)
+            and all(isinstance(raw[name], list) for name in WORK_LISTS[source])):
+        return [f"the {source} raw file must hold {', '.join(fields)}"]
+    if "start" in raw and (raw["start"], raw["end"]) != (days[0], days[-1]):
+        return [f"the {source} raw file is for {raw['start']} to {raw['end']}, not the period: run "
+                "fetch_work.py again"]
+    problems = [f"the {source} raw file's {name}: {item!r:.80} lacks {missing}"
+                for name in WORK_LISTS[source] for item in raw[name]
+                if (missing := _raw_missing(source, item))]
+    return problems or items_problems(source, work_items(source, raw), days)
+
+
+def _raw_missing(source, item):
+    """The first of the RAW_ITEM_FIELDS of `source` that `item` lacks, such as
+    "fields.status.name", a Jira issue's parent's included, or None."""
+    missing = _missing(item, RAW_ITEM_FIELDS.get(source, ()))
+    if missing or source != "jira" or not item["fields"].get("parent"):
+        return missing
+    parent = _missing(item["fields"]["parent"], PARENT_FIELDS)
+    return parent and f"fields.parent.{parent}"
+
+
+def _missing(item, paths):
+    """The first of `paths`, dotted keys such as "fields.status.name", that
+    `item` doesn't hold, a value of null included, or None."""
+    for path in paths:
+        value = item
+        for key in path.split("."):
+            if not (isinstance(value, dict) and key in value):
+                return path
+            value = value[key]
+    return None
 
 
 def write_raw(prep, relative, text):
@@ -155,19 +232,85 @@ def write_raw(prep, relative, text):
     return path
 
 
-def write_work(prep, sources, days):
-    """Writes the sources `sources`, such as {"notion": {...}}, to the prep
-    `prep`'s work.json, keeping the other sources there and dropping the
-    facts and commentary, which no longer match; returns the file's path.
-    Exits, writing nothing, when the work breaks a rule, `days` the
-    period's."""
-    path = os.path.join(prep_dir(prep), WORK)
-    work = read_json(path) if os.path.exists(path) else {}
-    work = {name: value for name, value in {
-        **work, **sources}.items() if name in WORK_LISTS}
-    if problems := work_problems(work, days, final=False):
-        raise SystemExit("; ".join(problems))
-    return write_prep_file(prep, WORK, work)
+def read_raw_work(prep):
+    """{source: raw}: every source's raw file of the prep `prep`, or None
+    while one is missing."""
+    paths = {source: os.path.join(
+        prep_dir(prep), RAW_DIR, f"{source}.json") for source in WORK_LISTS}
+    if not all(os.path.exists(path) for path in paths.values()):
+        return None
+    return {source: read_json(path) for source, path in paths.items()}
+
+
+def build_work(raws, days):
+    """work.json from `raws`, every source's raw file: for each source its
+    items, its facts over `days` and, for those SEARCHED, each list's search
+    address."""
+    work = {}
+    for source, raw in raws.items():
+        lists = work_items(source, raw)
+        work[source] = {
+            **lists, **source_facts(source, lists, days), **search_urls(source, raw)}
+    return work
+
+
+def work_items(source, raw):
+    """{list: items}: the items of `raw`, the raw file of `source`, as
+    work.json records them, without the fields kept only to check them."""
+    if source == "jira":
+        return {"resolved": [issue_item(raw["base_url"], issue, "resolutiondate") for issue in raw["resolved"]],
+                "created": [issue_item(raw["base_url"], issue, "created") for issue in raw["created"]]}
+    if source == "github":
+        return {name: sorted((pr_item(pr, pr[stamp]) for pr in raw[name]), key=lambda item: (item["date"], item["url"]))
+                for name, stamp in (("opened", "createdAt"), ("merged", "closedAt"))}
+    return {name: raw[name] for name in WORK_LISTS[source]}
+
+
+def issue_item(base_url, issue, dated_by):
+    """A Jira issue as work.json records it, its link on the site at
+    `base_url`, dated by the day of its field `dated_by`. Its parent is kept
+    with its type and title, as the main focus is worked out from the
+    parents."""
+    fields = issue["fields"]
+    parent = fields.get("parent")
+    return {"key": issue["key"], "title": fields.get("summary") or "", "type": fields["issuetype"]["name"],
+            "parent": {"key": parent["key"], "title": parent["fields"].get("summary") or "",
+                       "type": parent["fields"]["issuetype"]["name"]} if parent else None,
+            "status": fields["status"]["name"], "url": browse_url(base_url, issue["key"]),
+            "date": (fields[dated_by] or "")[:10]}
+
+
+def pr_item(pr, stamp):
+    """A pull request as work.json records it, dated by the day of `stamp`,
+    a merged one by when it was closed, as gh's search gives no merge time
+    and a merged search finds only merged ones."""
+    return {"repo": pr["repository"]["nameWithOwner"], "number": pr["number"], "title": pr["title"],
+            "url": pr["url"], "date": (stamp or "")[:10]}
+
+
+def search_urls(source, raw):
+    """{<list>_search_url: address}: for a SEARCHED source, the address of
+    each list's search, Jira's JQL on its site or GitHub's query on
+    github.com, which finds the same items live; {} for any other."""
+    if source == "jira":
+        return {f"{name}_search_url": f"{raw['base_url']}/issues/?jql={quote(raw[f'{name}_jql'])}"
+                for name in WORK_LISTS[source]}
+    if source == "github":
+        return {f"{name}_search_url": f"https://github.com/search?q={quote(raw[f'{name}_query'])}&type=pullrequests"
+                for name in WORK_LISTS[source]}
+    return {}
+
+
+def work_from_raw_problems(work, raws, days):
+    """Why `work` isn't work.json as build_work() makes it from `raws`, every
+    source's raw file, or None while one is missing, empty when it is."""
+    if raws is None:
+        return ["the work's raw files are missing: run fetch_work.py and set_notion.py again"]
+    if any(raw_work_problems(source, raw, days) for source, raw in raws.items()):
+        return ["the work's raw files break their rules: run fetch_work.py and set_notion.py again"]
+    if work != build_work(raws, days):
+        return ["work.json doesn't match the raw files it is built from: run fetch_work.py again"]
+    return []
 
 
 def prep_dir(prep):
@@ -260,7 +403,7 @@ def period_days(person):
 
 
 def days_between(start, end):
-    """Every day from `start` to `end`, both as YYYY-MM-DD, as YYYY-MM-DD."""
+    """Every day from `start` to `end`, both as YYYY-MM-DD, in the same form."""
     first, last = date.fromisoformat(start), date.fromisoformat(end)
     return [(first + timedelta(days=n)).isoformat() for n in range((last - first).days + 1)]
 
@@ -388,56 +531,61 @@ def slack_problems(slack, values, days):
     return summary_problems(slack, "the Slack summary", values, days)
 
 
-def work_problems(work, days, final=True):
+def work_problems(work, days):
     """Why `work` isn't the person's work, empty when it is: for each source
-    of WORK_LISTS, its lists, each item an object with a
-    title, a link and a date, one of `days`, but an open issue, undated, and
-    a created Notion page, `between`, two of them, a Notion page with its
-    path too, and listed once; then facts that match the items, and a
-    commentary. Unless `final`, a source not yet gathered, the facts and the
-    commentary may be missing."""
-    keys = [*WORK_LISTS, FACTS, COMMENTARY]
-    if not (isinstance(work, dict) and set(work) <= set(keys)):
-        return [f"the work may hold only {', '.join(keys)}"]
-    if final and (missing := [key for key in keys if key not in work]):
-        return [f"the work is missing {', '.join(missing)}"]
+    of WORK_LISTS, its lists, by items_problems(), its FACT_KEYS, matching the
+    items, and, for those SEARCHED, each list's search address."""
+    if not (isinstance(work, dict) and sorted(work) == sorted(WORK_LISTS)):
+        return [f"the work must hold {', '.join(WORK_LISTS)}"]
     problems = []
     for source, lists in WORK_LISTS.items():
-        if source not in work:
+        keys = work_keys(source)
+        if not (isinstance(work[source], dict) and sorted(work[source]) == sorted(keys)
+                and all(isinstance(work[source][name], list) for name in lists)):
+            problems.append(f"the work's {source} must hold {', '.join(keys)}")
             continue
-        found = work[source]
-        if not (isinstance(found, dict) and sorted(found) == sorted(lists)
-                and all(isinstance(found[name], list) for name in lists)):
-            problems.append(
-                f"the work's {source} must have the lists {', '.join(lists)}")
-            continue
-        for name in lists:
-            problems += [f"the work's {source} {name}: {item!r:.80} needs a title, a link"
-                         + (", its path" if source == "notion" else "")
-                         + (" and the range it was found in, within the period" if name == "created"
-                            else "" if name == "open" else " and a day in the period")
-                         for item in found[name] if not _is_work_item(source, name, item, days)]
-            urls = [item.get("url")
-                    for item in found[name] if isinstance(item, dict)]
-            problems += [f"the work's {source} {name} lists {url} more than once"
-                         for url in sorted(set(urls), key=str) if urls.count(url) > 1]
+        problems += items_problems(source,
+                                   {name: work[source][name] for name in lists}, days)
     if problems:
         return problems
-    if FACTS in work and work[FACTS] != work_facts(work, days):
-        problems.append(
-            "the work's facts don't match its items: run work_commentary.py start again")
-    if COMMENTARY in work:
-        problems += commentary_problems(work[COMMENTARY])
+    return [f"the work's {source} facts don't match its items: run fetch_work.py again, which builds it anew"
+            for source, lists in WORK_LISTS.items()
+            if any(work[source][key] != value for key, value in source_facts(
+                source, {name: work[source][name] for name in lists}, days).items())]
+
+
+def work_keys(source):
+    """What the work of `source` holds: its lists, its FACT_KEYS and, when it
+    is SEARCHED, each list's <list>_search_url."""
+    return (*WORK_LISTS[source], *FACT_KEYS[source],
+            *(f"{name}_search_url" for name in WORK_LISTS[source] if source in SEARCHED))
+
+
+def items_problems(source, lists, days):
+    """Why `lists`, {list: items} of `source`, don't follow their rules,
+    empty when they do: each item an object with a title, a link and a date,
+    one of `days`, but a created Notion page, `between`, two of them, a Notion
+    page with its path too, and listed once."""
+    problems = []
+    for name, items in lists.items():
+        problems += [f"the work's {source} {name}: {item!r:.80} needs a title, a link"
+                     + (", its path" if source == "notion" else "")
+                     + (" and the range it was found in, within the period" if (source, name) == ("notion", "created")
+                        else " and a day in the period")
+                     for item in items if not _is_work_item(source, name, item, days)]
+        urls = [item.get("url") for item in items if isinstance(item, dict)]
+        problems += [f"the work's {source} {name} lists {url} more than once"
+                     for url in sorted(set(urls), key=str) if urls.count(url) > 1]
     return problems
 
 
 def _is_work_item(source, name, item, days):
     """Whether `item` of the list `name` of `source` follows its rules."""
-    if name == "created":
+    if (source, name) == ("notion", "created"):
         return (_is_item(item, days, dated=False) and isinstance(item.get("path"), str)
                 and isinstance(item.get("between"), list) and len(item["between"]) == 2
                 and all(day in days for day in item["between"]))
-    return _is_item(item, days, dated=name != "open") and (source != "notion" or isinstance(item.get("path"), str))
+    return _is_item(item, days, dated=True) and (source != "notion" or isinstance(item.get("path"), str))
 
 
 def _is_item(item, days, dated):
@@ -450,75 +598,49 @@ def _is_item(item, days, dated):
             and (not dated or item.get("date") in days))
 
 
-def work_facts(work, days):
-    """The facts of the work `work` in the period of `days`, for each source:
-    by_month, each month's count of each list,
-    open issues aside as they have no date, of areas, how many it touched,
-    and main_areas, the MAIN_AREAS it touched most, each with its count of
-    items, so a shift in focus shows by month; and by_area, each area's count of each list, most first. An
-    issue's area is its parent, "no parent" when it has none; a pull
-    request's, its issue's, or its repository when no issue lists it; a
-    Notion page's, where it sits."""
-    months = sorted({day[:7] for day in days})
-    issues = {item["key"]: item for name in WORK_LISTS["jira"]
-              for item in work["jira"][name]}
-
-    def parent_area(issue):
-        parent = issue.get("parent")
-        return ("no parent", None, None) if not parent else (parent["type"], parent["key"], parent["title"])
-
-    def area(source, item):
-        if source == "jira":
-            return parent_area(item)
-        if source == "notion":
-            return ("location", None, item["path"] or None)
-        issue = issues.get(item.get("issue") or "")
-        return ("repository", None, item["repo"]) if issue is None else parent_area(issue)
-
-    def month(name, item):
-        return (item["between"][0] if name == "created" else item["date"])[:7]
-
-    facts = {}
-    for source, lists in WORK_LISTS.items():
-        dated = [name for name in lists if name != "open"]
-        by_month = []
-        for this in months:
-            items = [(name, item) for name in dated for item in work[source]
-                     [name] if month(name, item) == this]
-            touched = {}
-            for _, item in items:
-                touched[area(source, item)] = touched.get(
-                    area(source, item), 0) + 1
-            by_month.append({"month": this, **{name: sum(1 for n, _ in items if n == name) for name in dated},
-                             "areas": len(touched),
-                             "main_areas": [{"area": title or key or kind, "items": count}
-                                            for (kind, key, title), count in sorted(
-                                                touched.items(), key=lambda pair: (-pair[1], str(pair[0])))[:MAIN_AREAS]]})
-        counts = {}
-        for name in lists:
-            for item in work[source][name]:
-                counts.setdefault(area(source, item), dict.fromkeys(lists, 0))[
-                    name] += 1
-        by_area = [{"kind": kind, "key": key, "title": title, **numbers}
-                   for (kind, key, title), numbers in sorted(counts.items(),
-                                                             key=lambda pair: (-sum(pair[1].values()), str(pair[0])))]
-        facts[source] = {"by_month": by_month, "by_area": by_area}
+def source_facts(source, lists, days):
+    """The facts of `lists`, the items of `source`, in the period of `days`,
+    as FACT_KEYS names them: counts, how many items each list holds; for
+    Jira, resolved_by_type and created_by_type, the issues of each type, most
+    first, and focus, the main focus of the resolved issues."""
+    facts: dict = {"counts": {name: len(items)
+                              for name, items in lists.items()}}
+    if source == "jira":
+        facts |= {"resolved_by_type": by_type(lists["resolved"]), "created_by_type": by_type(lists["created"]),
+                  "focus": focus(lists["resolved"])}
     return facts
 
 
-def commentary_problems(commentary):
-    """Why `commentary` isn't the commentary on the work, empty when it is:
-    for each source of WORK_LISTS, a text of at most MAX_COMMENTARY_WORDS
-    words."""
-    if not (isinstance(commentary, dict) and sorted(commentary) == sorted(WORK_LISTS)):
-        return [f"the commentary must have {', '.join(WORK_LISTS)}"]
-    problems = []
-    for source in WORK_LISTS:
-        text = commentary[source]
-        if not _is_text(text) or word_count(text) > MAX_COMMENTARY_WORDS:
-            problems.append(f"the commentary's {source} must be a paragraph of about {COMMENTARY_WORDS} words, "
-                            f"at most {MAX_COMMENTARY_WORDS}")
-    return problems
+def by_type(issues):
+    """[{type, issues}]: how many of `issues` there are of each type, most
+    first, then by type."""
+    types = {}
+    for issue in issues:
+        types[issue["type"]] = types.get(issue["type"], 0) + 1
+    return [{"type": kind, "issues": count} for kind, count in sorted(types.items(), key=lambda pair: (-pair[1], pair[0]))]
+
+
+def focus(resolved):
+    """The main focus of the issues `resolved`: the fewest of their parents,
+    the most issues first, whose issues are at least FOCUS_SHARE of those
+    with a parent, with every parent tied with the last one, each {key,
+    title, issues}; or, when none has a parent, their projects the same way,
+    the title null. A fixed number of parents would give someone who works
+    on two as long a list as someone who works on eight."""
+    with_parent = [issue for issue in resolved if issue["parent"]]
+    counts = {}
+    for issue in with_parent or resolved:
+        key, title = ((issue["parent"]["key"], issue["parent"]["title"]) if with_parent
+                      else (issue["key"].rsplit("-", 1)[0], None))
+        counts[(key, title)] = counts.get((key, title), 0) + 1
+    ranked = sorted(counts.items(), key=lambda pair: (-pair[1], pair[0][0]))
+    total, covered, cutoff = sum(counts.values()), 0, 0
+    for _, count in ranked:
+        covered += count
+        if covered >= FOCUS_SHARE * total:
+            cutoff = count
+            break
+    return [{"key": key, "title": title, "issues": count} for (key, title), count in ranked if count >= cutoff]
 
 
 def summary_problems(summary, what, values, days=None, undated_context=False):
