@@ -173,5 +173,5 @@ def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
         for name in common.CHART_FILES:
             with open(os.path.join(folder, prep, common.CHARTS_DIR, name), "w", encoding="utf-8") as f:
                 f.write("<svg/>")
-        with open(os.path.join(folder, prep, common.REPORT), "w", encoding="utf-8") as f:
+        with open(os.path.join(folder, prep, common.report_name(prep)), "w", encoding="utf-8") as f:
             f.write(make_report.render(person, work))

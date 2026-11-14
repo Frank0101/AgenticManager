@@ -12,6 +12,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_prep  # noqa: E402
+import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from prep_fixture import (FEEDBACK, REVIEWS, NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP,
                           SLACK, WORK, temp_output, write_prep)  # noqa: E402
@@ -35,7 +36,7 @@ class CheckTest(unittest.TestCase):
         # each None when missing, extra file, expected in the errors)
         cases = [("a file more", {}, "notes.md", "move notes.md to your own scratch folder"),
                  ("no person", {"person": None},
-                  None, "missing charts, person.json, report.md"),
+                  None, "_charts, person.json"),
                  ("no orientation", {"orientation": None},
                   None, "missing orientation.json"),
                  ("no reviews", {"reviews": None},
@@ -64,7 +65,7 @@ class CheckTest(unittest.TestCase):
                   None, "notes.json: the notes summary's going_well: 'Presented the migration to the wider team'...'s "
                   "evidence must each be of a day"),
                  ("no work", {"work": None}, None,
-                  "missing charts, report.md, work.json"),
+                  "_charts, work.json"),
                  ("work dated outside the period", {"work": {**WORK, "jira": {**WORK["jira"], "resolved": [
                      {**WORK["jira"]["resolved"][0], "date": "2026-07-01"}]}}},
                   None, "work.json: the work's jira resolved"),
@@ -76,11 +77,11 @@ class CheckTest(unittest.TestCase):
                  ("no facts", {"work": {**WORK, "github": {k: v for k, v in WORK["github"].items() if k != "counts"}}},
                   None, "work.json: the work's github must hold"),
                  ("no report", {"report": False},
-                  None, "missing charts, report.md"),
-                 ("a chart more", {}, "charts/extra.svg",
-                  "report.md: the charts folder must hold only"),
-                 ("a figure changed by hand", {}, ("report.md", '">1</a>', '">2</a>'),
-                  "report.md: the report's Jira cell for created doesn't show work.json"),
+                  None, "_Review_Prep.md, _charts"),
+                 ("a chart more", {}, "_charts/extra.svg",
+                  "_Review_Prep.md: the charts folder must hold only"),
+                 ("a figure changed by hand", {}, ("{report}", '">1</a>', '">2</a>'),
+                  "_Review_Prep.md: the report's Jira cell for created doesn't show work.json"),
                  ("a Slack point with no evidence", {"slack": {**SLACK, "going_well": [
                      {**SLACK["going_well"][0], "evidence": []}]}},
                   None, "slack.json: the Slack summary's going_well must be a list of points")]
@@ -92,7 +93,8 @@ class CheckTest(unittest.TestCase):
                          **changes}
                 write_prep(self.folder, prep=prep, **files)
                 if isinstance(extra, tuple):
-                    path = os.path.join(self.folder, prep, extra[0])
+                    path = os.path.join(self.folder, prep, extra[0].format(
+                        report=common.report_name(prep)))
                     with open(path, encoding="utf-8") as f:
                         text = f.read()
                     with open(path, "w", encoding="utf-8") as f:

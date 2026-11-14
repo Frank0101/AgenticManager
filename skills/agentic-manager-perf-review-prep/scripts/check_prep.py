@@ -9,10 +9,10 @@ from datetime import date
 import json
 import os
 
-from common import (CHARTS_DIR, FEEDBACK, NOTES, ORIENTATION, PERSON, RATINGS, RAW_DIR, REPORT, REVIEWS, SLACK, SOURCES,
+from common import (CHARTS_DIR, FEEDBACK, NOTES, ORIENTATION, PERSON, RATINGS, RAW_DIR, REVIEWS, SLACK, SOURCES,
                     VALUES, WORK, company_names, expected_files, feedback_problems, notes_problems,
                     orientation_problems, period_days, person_problems, prep_dir, read_json, read_raw_work,
-                    report_problems, reviews_problems, slack_problems, sources_problems, work_from_raw_problems,
+                    report_name, report_problems, reviews_problems, slack_problems, sources_problems, work_from_raw_problems,
                     work_problems)
 
 
@@ -21,14 +21,14 @@ def check_prep(prep, today=None):
     folder = prep_dir(prep)
     errors = []
     files = {name for name in os.listdir(folder) if not name.startswith(".")}
-    wanted = expected_files()
+    wanted, report = expected_files(prep), report_name(prep)
     if files != wanted:
         extra, missing = sorted(files - wanted), sorted(wanted - files)
         errors.append("the folder must hold only " + ", ".join(sorted(wanted))
                       + (f"; move {', '.join(extra)} to your own scratch folder" if extra else "")
                       + (f"; missing {', '.join(missing)}" if missing else ""))
     read = {name: read_json(os.path.join(folder, name))
-            for name in (wanted & files) - {RAW_DIR, REPORT, CHARTS_DIR}}
+            for name in (wanted & files) - {RAW_DIR, report, CHARTS_DIR}}
     person = read.get(PERSON)
     person_errors = person_problems(
         person, today or date.today()) if PERSON in read else []
@@ -56,9 +56,9 @@ def check_prep(prep, today=None):
             errors += [
                 f"{name}: {problem}" for problem in problems(read[name])]
     # The report shows work.json, so it is checked once work.json passes.
-    if {REPORT, CHARTS_DIR} <= files and WORK in read and not any(error.startswith(WORK) for error in errors):
-        with open(os.path.join(folder, REPORT), encoding="utf-8") as f:
-            errors += [f"{REPORT}: {problem}" for problem in report_problems(
+    if {report, CHARTS_DIR} <= files and WORK in read and not any(error.startswith(WORK) for error in errors):
+        with open(os.path.join(folder, report), encoding="utf-8") as f:
+            errors += [f"{report}: {problem}" for problem in report_problems(
                 f.read(), read[WORK], os.listdir(os.path.join(folder, CHARTS_DIR)))]
     return {"ok": not errors, "errors": errors}
 

@@ -17,7 +17,7 @@ perf-review-preps/
     ├── _raw/             read_notes.py and read_slack.py write (each reader's answer, by source: a month's in
     │                     months/, the notes' pages in pages.json); fetch_work.py and set_notion.py write what
     │                     each source gave, with its searches, jira.json, github.json and notion.json
-    ├── charts/           make_report.py writes (the report's charts, one SVG each)
+    ├── _charts/          make_report.py writes (the report's charts, one SVG each)
     ├── person.json       init_prep.py and set_identities.py write (the person, the period and who they are in each
     │                     source, as the manager confirmed)
     ├── orientation.json  set_summary.py writes (the manager's overall view of the person, summarised)
@@ -31,7 +31,8 @@ perf-review-preps/
     │                     person's Jira issues, pull requests and Notion pages in the period, each with its day,
     │                     and their facts: the counts, the issues created and resolved by type, the main focus,
     │                     the resolved issues' story points and the link to each search)
-    └── report.md         make_report.py writes (the report for the manager, from the files above: for now, the
+    └── Jane-Doe_Review_Prep.md
+                          make_report.py writes (the report for the manager, from the files above: for now, the
                           person's Jira figures)
 ```
 
@@ -129,11 +130,11 @@ The person's work in Jira, GitHub and Notion, in the period. Like step 6, it is 
 
 ## 8. Write the report
 
-Once step 7 is done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/make_report.py --prep <prep>`: it writes `report.md` and its charts from `work.json`, with no judgment, and checks them. If its `problems` aren't empty, stop and tell the manager what they say.
+Once step 7 is done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/make_report.py --prep <prep>`: it writes the report, `<Person>_Review_Prep.md`, and its charts from `work.json`, with no judgment, and checks them. If its `problems` aren't empty, stop and tell the manager what they say.
 
 ## 9. Tell the manager
 
-First check the prep with `python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py --prep <prep>`. If it fails, fix what it names, by running again the step that writes that file, and check again. Once it passes, say the prep is ready, with a Markdown link to its `report.md`, and that the rest of the report, from what else was gathered, isn't built yet. If step 1's `temporary` is `true`, add that the folder is temporary and setting `output.root` in the config keeps preps.
+First check the prep with `python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py --prep <prep>`. If it fails, fix what it names, by running again the step that writes that file, and check again. Once it passes, say the prep is ready, with a Markdown link to its report, and that the rest of the report, from what else was gathered, isn't built yet. If step 1's `temporary` is `true`, add that the folder is temporary and setting `output.root` in the config keeps preps.
 
 ## Summaries
 

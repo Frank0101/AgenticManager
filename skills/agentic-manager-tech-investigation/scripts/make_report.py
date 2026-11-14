@@ -13,7 +13,7 @@ import os
 import re
 
 from common import (CONTENT, folder_day, display_date, FENCE, backtick_error, TABLE_HEADINGS, ledger_rows, FOLDER_NAME, HEADING, HEADINGS, LEDGER,
-                    REPORT_SUFFIX, anchor_tag, autolink, investigation_dir, link_definitions, markdown, read_json, table, topic_of, unlinked_backticks, unresolved_message, word_count, write_output_file)
+                    REPORT_KIND, document_name, anchor_tag, autolink, investigation_dir, link_definitions, markdown, read_json, table, topic_of, unlinked_backticks, unresolved_message, word_count, write_output_file)
 
 # Approximate prose lengths, in words: room to articulate, not quotas. Warn above
 # one and a half times, or far below, under a third, which is a stub.
@@ -41,7 +41,7 @@ def make_report(relative):
         raise SystemExit("content.json has problems, so nothing was written:\n  - "
                          + "\n  - ".join(content.errors))
     path, _ = write_output_file(
-        FOLDER_NAME, f"{relative}/{topic}{REPORT_SUFFIX}", text.encode("utf-8"))
+        FOLDER_NAME, f"{relative}/{document_name(topic, REPORT_KIND)}", text.encode("utf-8"))
     return {"path": path, "temporary": temporary, "warnings": content.warnings}
 
 

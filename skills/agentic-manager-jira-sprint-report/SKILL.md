@@ -17,9 +17,7 @@ jira-sprint-reports/
     ├── data.json                  prepare_report.py writes
     ├── brief.json                 prepare_report.py writes
     ├── content.json               you write (step 2)
-    ├── outcome-tickets.svg        finish_report.py writes
-    ├── outcome-pts.svg            finish_report.py writes
-    ├── burndown.svg               finish_report.py writes
+    ├── _charts/                   finish_report.py writes (outcome-tickets.svg, outcome-pts.svg, burndown.svg)
     └── PROJ_Sprint_3_Sprint_Report.md   finish_report.py writes
 ```
 

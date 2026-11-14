@@ -455,8 +455,8 @@ class OutcomeTotalTest(unittest.TestCase):
 class ExpectedFilesTest(unittest.TestCase):
     def test_expected_files(self):
         self.assertEqual(common.expected_files("PROJ_Sprint_3"),
-                         {"_raw", "data.json", "content.json", "brief.json", "outcome-tickets.svg",
-                          "outcome-pts.svg", "burndown.svg", "PROJ_Sprint_3_Sprint_Report.md"})
+                         {"_raw", "data.json", "content.json", "brief.json", "_charts",
+                          "PROJ_Sprint_3_Sprint_Report.md"})
 
 
 class VocabularyTest(unittest.TestCase):

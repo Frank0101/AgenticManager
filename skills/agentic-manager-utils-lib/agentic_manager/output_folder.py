@@ -29,6 +29,12 @@ TEMP_ROOT = os.path.join(tempfile.gettempdir(), "agentic-manager")
 DESCRIPTION = "description.md"
 # The folder beside a skill's runs that holds the examples the user kept.
 KEPT_EXAMPLES = "_examples"
+# Inside a run's folder, the folders that support its document: what the
+# sources gave, as they gave it, and the charts the document shows. Their _
+# sets them apart from the document and the files the run reads and writes;
+# unlike a _ folder beside the runs, they belong to the run.
+RAW_DIR = "_raw"
+CHARTS_DIR = "_charts"
 # A description's title, and its labelled lines, such as **Shows:** text.
 DESCRIPTION_TITLE = re.compile(r"# (.+)")
 LABELLED_LINE = re.compile(r"^\*\*([^*\n]+):\*\* (.+)$", re.M)
@@ -51,6 +57,14 @@ def output_folder(name):
     folder = os.path.abspath(os.path.join(folder, name))
     os.makedirs(folder, exist_ok=True)
     return folder, temporary
+
+
+def document_name(subject, kind):
+    """The file name of a run's document, <subject>_<kind>, such as
+    "Jane-Doe_Review_Prep.md" for "Jane-Doe" and "Review_Prep.md": the
+    subject its folder is named after, so every skill's documents read
+    alike."""
+    return f"{subject}_{kind}"
 
 
 def work_folder(name, *parts):

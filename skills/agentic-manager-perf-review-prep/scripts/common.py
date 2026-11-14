@@ -26,7 +26,7 @@ from agentic_manager.jira import JiraClient, browse_url, plain_text  # noqa: E40
 from agentic_manager.logseq import graph_path, links, notes, page_aliases  # noqa: E402,F401
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
-from agentic_manager.output_folder import DAY_FOLDER, clear_folder, day_folder, output_folder, work_folder  # noqa: E402,F401
+from agentic_manager.output_folder import CHARTS_DIR, DAY_FOLDER, RAW_DIR, clear_folder, day_folder, document_name, output_folder, work_folder  # noqa: E402,F401
 from agentic_manager.period import add_period_arguments, period_problem, shown  # noqa: E402,F401
 from agentic_manager.svg import GRID, INK, MUTED, esc, nice_step, svg, text  # noqa: E402,F401
 from agentic_manager.text import as_name, number, word_count  # noqa: E402,F401
@@ -167,14 +167,12 @@ FOCUS_SHARE = 0.8
 # What the person's Slack messages show, read by subagents a month each and
 # merged, every point with the days and links it rests on.
 SLACK = "slack.json"
-# What each source gave: the readers' answers, a folder per source, kept so a
-# summary can be traced back to the notes and synopses it came from, and the
-# raw file of each source of the work.
-RAW_DIR = "_raw"
-# The report the prep gives the manager, drawn from the files above, and the
-# charts it shows, each a view of work.json, drawn as SVG.
-REPORT = "report.md"
-CHARTS_DIR = "charts"
+# The library's RAW_DIR holds what each source gave: the readers' answers, a
+# folder per source, kept so a summary can be traced back to the notes and
+# synopses it came from, and the raw file of each source of the work. The
+# report, <Person>_Review_Prep.md, is drawn from the files above, and
+# CHARTS_DIR holds the charts it shows, each a view of work.json, as SVG.
+REPORT_KIND = "Review_Prep.md"
 # The Jira cells of the report, in order: each a fact's figure, linked to
 # its search, with what it is made of, and below it its chart.
 JIRA_CELLS = (("created", "jira_created_over_time.svg"), ("resolved", "jira_resolved_over_time.svg"),
@@ -182,16 +180,23 @@ JIRA_CELLS = (("created", "jira_created_over_time.svg"), ("resolved", "jira_reso
 CHART_FILES = tuple(chart for _, chart in JIRA_CELLS)
 JIRA_FIGURE = re.compile(
     r'<td>(?:<a href="([^"]+)">([\d.]+)</a>|([\d.]+)) \((.*?)\)</td>')
-JIRA_CHART = re.compile(r'<td><img src="charts/([^"]+)"')
+JIRA_CHART = re.compile(rf'<td><img src="{CHARTS_DIR}/([^"]+)"')
 
 
-def expected_files():
-    """Every file a prep folder holds, and nothing else: the person, the
-    period and who they are in each source, the manager's view of them, their previous
-    reviews, the period's feedback, the manager's notes on them, what their Slack
-    messages show, their work in Jira, GitHub and Notion, the _raw folder of
-    what each source gave, and the report with its charts."""
-    return {PERSON, ORIENTATION, REVIEWS, FEEDBACK, NOTES, SLACK, WORK, RAW_DIR, REPORT, CHARTS_DIR}
+def expected_files(prep):
+    """Every file the prep folder `prep` holds, and nothing else: the person,
+    the period and who they are in each source, the manager's view of them,
+    their previous reviews, the period's feedback, the manager's notes on
+    them, what their Slack messages show, their work in Jira, GitHub and
+    Notion, the _raw folder of what each source gave, and the report with its
+    _charts folder."""
+    return {PERSON, ORIENTATION, REVIEWS, FEEDBACK, NOTES, SLACK, WORK, RAW_DIR, report_name(prep), CHARTS_DIR}
+
+
+def report_name(prep):
+    """The file name of the prep `prep`'s report, <Person>_Review_Prep.md,
+    from its folder's name, <Person>_<YY-MM-DD>."""
+    return document_name(prep.rsplit("_", 1)[0], REPORT_KIND)
 
 
 def write_work(prep, source, raw, days):
@@ -755,7 +760,7 @@ def focus(resolved):
 
 
 def report_problems(report, work, charts):
-    """Why `report`, report.md's text, doesn't show `work`, work.json, or
+    """Why `report`, the report's text, doesn't show `work`, work.json, or
     `charts`, the files in the charts folder, those starting with a dot
     aside, aren't its charts, empty when they are. Its Jira figures are worked out again from the items, apart
     from work.json's facts and from make_report.py, with which it shares only

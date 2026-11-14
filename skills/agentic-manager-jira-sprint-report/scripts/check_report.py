@@ -14,7 +14,7 @@ import re
 import sys
 from datetime import date, timedelta
 
-from common import (HEADING, INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, FIELD_TABLE_HEAD, ISSUE_KEY,
+from common import (CHARTS_DIR, HEADING, INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, FIELD_TABLE_HEAD, ISSUE_KEY,
                     BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, JIRA_CELL, KEY_LIST, STATUS_HEADING,
                     TICKET_ESTIMATE,
                     TICKET_EVENT_TYPES,
@@ -600,6 +600,11 @@ def check_files(c, report_dir, data):
     c.check(not extra, "files",
             f"only the report's files are in the folder (unexpected: {extra or 'none'}; "
             "keep working files in your own scratch folder)")
+    charts = os.path.join(report_dir, CHARTS_DIR)
+    stray = sorted(f"{CHARTS_DIR}/{name}" for name in (os.listdir(charts) if os.path.isdir(charts) else [])
+                   if not name.startswith(".") and f"{CHARTS_DIR}/{name}" not in CHART_FILES.values())
+    c.check(not stray, "files",
+            f"only the charts are in {CHARTS_DIR} (unexpected: {stray or 'none'})")
 
 
 def check_timeline(c, table, data):

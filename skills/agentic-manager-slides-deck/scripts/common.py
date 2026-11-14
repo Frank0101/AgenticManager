@@ -16,7 +16,7 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
-from agentic_manager.output_folder import DAY_FOLDER, DESCRIPTION, KEPT_EXAMPLES, description, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
+from agentic_manager.output_folder import DAY_FOLDER, DESCRIPTION, KEPT_EXAMPLES, document_name, description, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.text import NAME, SLUG, free_name, slug  # noqa: E402,F401
 from agentic_manager.web import ssl_context  # noqa: E402,F401
 
@@ -24,7 +24,7 @@ from agentic_manager.web import ssl_context  # noqa: E402,F401
 # agent writes and the deck built from them, <Name>_Slides.html.
 FOLDER_NAME = "slides-decks"
 SLIDES = "slides.json"
-DECK_SUFFIX = "_Slides.html"
+DECK_KIND = "Slides.html"
 
 # Images (logos, screenshots, photos) live once in _assets, next to the decks,
 # and every deck links to them rather than holding a copy, so the HTML stays
@@ -98,7 +98,7 @@ def deck_file(deck):
     if not match:
         raise SystemExit(
             f"{deck!r} is not a deck folder, <Name>_<YY-MM-DD>")
-    return match["subject"] + DECK_SUFFIX
+    return document_name(match["subject"], DECK_KIND)
 
 
 def deck_dir(deck):

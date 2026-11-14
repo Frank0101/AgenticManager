@@ -16,7 +16,7 @@ import os
 import re
 import sys
 
-from common import (BLOCKED_BY, CONTENT, DESIGN_ORDER, FOLDER_NAME, LEDGER, REPORT_SUFFIX, SCOPE_QUESTION, TABLES,
+from common import (BLOCKED_BY, CONTENT, DESIGN_ORDER, FOLDER_NAME, LEDGER, REPORT_KIND, document_name, SCOPE_QUESTION, TABLES,
                     clear_folder, ids, investigation_dir, plain, read_json, stops_on_failure, strip_anchors,
                     topic_of, work_folder, write_output_file)
 from init_investigation import init, usable_sources
@@ -219,7 +219,7 @@ def render(relative, lines, task):
     else:
         folder, _, temporary = investigation_dir(relative)
         return "\n".join([*head, protocol.text("finished", **values), "",
-                          f"- The report: {os.path.join(folder, topic_of(folder) + REPORT_SUFFIX)}",
+                          f"- The report: {os.path.join(folder, document_name(topic_of(folder), REPORT_KIND))}",
                           f"- The ledger: {values['ledger']}",
                           f"- The folder is {'temporary' if temporary else 'kept'}"])
     # Where the task keeps its files: one rule for every task, written once.
@@ -369,7 +369,7 @@ def report_problems(relative):
     """What stops the report passing its final check: [] once it does, the
     problems of the text submitted while it doesn't, or None before any."""
     folder, _, _ = investigation_dir(relative)
-    report = os.path.join(folder, topic_of(folder) + REPORT_SUFFIX)
+    report = os.path.join(folder, document_name(topic_of(folder), REPORT_KIND))
     if os.path.isfile(report):
         checked = check_report.check_report(report, handover=True)
         return [] if checked["ok"] else checked["errors"]
@@ -386,7 +386,7 @@ def submit_report(relative, data):
             "the text is a JSON object, in the shape the write task shows")
     folder, _, _ = investigation_dir(relative)
     # A report left by an earlier submission is replaced, never checked again.
-    old = os.path.join(folder, topic_of(folder) + REPORT_SUFFIX)
+    old = os.path.join(folder, document_name(topic_of(folder), REPORT_KIND))
     if os.path.isfile(old):
         os.remove(old)
     write_output_file(FOLDER_NAME, f"{relative}/{CONTENT}",

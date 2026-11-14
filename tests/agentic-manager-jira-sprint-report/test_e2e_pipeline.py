@@ -30,7 +30,8 @@ sys.path.insert(0, TEST_DIR)
 import sprint_fixture as fixture  # noqa: E402
 
 REPORT = "PROJ_Sprint_7_Sprint_Report.md"
-CHARTS = ("outcome-tickets.svg", "outcome-pts.svg", "burndown.svg")
+CHARTS = ("_charts/outcome-tickets.svg",
+          "_charts/outcome-pts.svg", "_charts/burndown.svg")
 
 
 class ReportTest(unittest.TestCase):
@@ -486,7 +487,7 @@ class TimezoneTest(ReportTest):
                 self.assertEqual(today_row["date"], expected_day)
                 display_day = "/".join(reversed(expected_day.split("-")))
                 self.assertIn(f"snapshot as at {display_day}", md)
-                with open(os.path.join(self.dir, "burndown.svg"), encoding="utf-8") as f:
+                with open(os.path.join(self.dir, "_charts", "burndown.svg"), encoding="utf-8") as f:
                     self.assertIn(">today<", f.read())
 
     def test_timeline_and_burndown_agree_across_clock_changes(self):

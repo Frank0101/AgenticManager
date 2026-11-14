@@ -21,7 +21,7 @@ sys.path.insert(0, LIB_DIR)
 from agentic_manager.output_file import read_json, write_output_file  # noqa: E402,F401
 from agentic_manager.text import HEADING, INLINE_LINK, display_date, link_text, number, word_count  # noqa: E402,F401
 from agentic_manager.svg import GRID, INK, MUTED, SURFACE, nice_step, svg, text, text_width  # noqa: E402,F401
-from agentic_manager.output_folder import clear_folder, day_folder, output_folder  # noqa: E402,F401
+from agentic_manager.output_folder import CHARTS_DIR, RAW_DIR, clear_folder, day_folder, document_name, output_folder  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order,  # noqa: E402,F401
                                   parse_ts, plain_text, project_of)
@@ -33,9 +33,8 @@ from agentic_manager.ticket_pulls import pulls_by_ticket, read_events  # noqa: E
 # The skill's output folder, which holds the report folders (see output_folder.py).
 REPORTS_FOLDER = "jira-sprint-reports"
 
-# Files inside a report folder. fetch_sprint.py creates the folder; each later
-# step reads and writes here.
-RAW_DIR = "_raw"
+# Files inside a report folder, beside the library's RAW_DIR and CHARTS_DIR.
+# fetch_sprint.py creates the folder; each later step reads and writes here.
 # The raw files inside RAW_DIR, as Jira and GitHub returned them, and the
 # fetch's own facts (META_FILE). Changelogs and comments hold one <KEY>.json
 # per ticket, sub-tasks left out; PULL_REQUESTS_FILE every ticket's pull requests, how each was
@@ -56,9 +55,9 @@ DATA_FILE = "data.json"
 CONTENT_FILE = "content.json"
 BRIEF_FILE = "brief.json"
 CHART_FILES = {
-    "outcome_tickets": "outcome-tickets.svg",
-    "outcome_pts": "outcome-pts.svg",
-    "burndown": "burndown.svg",
+    "outcome_tickets": f"{CHARTS_DIR}/outcome-tickets.svg",
+    "outcome_pts": f"{CHARTS_DIR}/outcome-pts.svg",
+    "burndown": f"{CHARTS_DIR}/burndown.svg",
 }
 
 # data.json's key for the tickets without an epic.
@@ -175,14 +174,13 @@ def report_label(project_key, sprint_name):
 
 def expected_files(label):
     """Every file a report folder holds, and nothing else: the fetched _raw
-    folder, the three data files, the charts and the report."""
-    return {RAW_DIR, DATA_FILE, CONTENT_FILE, BRIEF_FILE,
-            *CHART_FILES.values(), report_file(label)}
+    folder, the three data files, the _charts folder and the report."""
+    return {RAW_DIR, DATA_FILE, CONTENT_FILE, BRIEF_FILE, CHARTS_DIR, report_file(label)}
 
 
 def report_file(label):
     """The report's file name for a label."""
-    return f"{label}_Sprint_Report.md"
+    return document_name(label, "Sprint_Report.md")
 
 
 def write_json(path, payload):

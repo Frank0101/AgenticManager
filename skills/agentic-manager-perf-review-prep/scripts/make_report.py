@@ -1,4 +1,4 @@
-"""Writes a prep's report, report.md, and its charts from work.json: for now, the person's Jira figures.
+"""Writes a prep's report, <Person>_Review_Prep.md, and its charts from work.json: for now, the person's Jira figures.
 
 Every figure is one of work.json's facts, and every link one of its search
 addresses, so the report can't count differently from the model. The charts
@@ -12,8 +12,8 @@ import json
 import os
 from datetime import date, timedelta
 
-from common import (CHARTS_DIR, JIRA_CELLS, FOLDER_NAME, GRID, INK, MUTED, PERSON, REPORT, WORK, number,
-                    average_text, esc, nice_step, prep_dir, read_json, report_problems, shown, stops_on_failure, svg, text,
+from common import (CHARTS_DIR, JIRA_CELLS, FOLDER_NAME, GRID, INK, MUTED, PERSON, WORK, number,
+                    average_text, esc, nice_step, prep_dir, read_json, report_name, report_problems, shown, stops_on_failure, svg, text,
                     types_text, write_output_file)
 
 EPOCH_MONDAY = date(2001, 1, 1)
@@ -42,14 +42,14 @@ def make_report(prep):
             FOLDER_NAME, f"{prep}/{CHARTS_DIR}/{name}", content.encode("utf-8"))
     report = render(person, work)
     path, _ = write_output_file(
-        FOLDER_NAME, f"{prep}/{REPORT}", report.encode("utf-8"))
+        FOLDER_NAME, f"{prep}/{report_name(prep)}", report.encode("utf-8"))
     return {"report": path, "problems": report_problems(report, work, os.listdir(os.path.join(folder, CHARTS_DIR)))}
 
 
 # The report.
 
 def render(person, work):
-    """report.md's text: the person and the period, then their Jira
+    """The report's text: the person and the period, then their Jira
     figures."""
     return "\n".join([f"# {person['person']}: performance review prep", "",
                       f"Period: {shown(person['start'], person['end'])}", "",
@@ -195,7 +195,7 @@ def axes():
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Write the prep's report, report.md, and its charts from work.json, then check them.",
+        description="Write the prep's report, <Person>_Review_Prep.md, and its charts from work.json, then check them.",
         epilog="Prints one line of JSON: report, the report's path, and problems, what the check found, "
         "empty when it passes. Exits 1 when it finds any.")
     parser.add_argument("--prep", required=True,

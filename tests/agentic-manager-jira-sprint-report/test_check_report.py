@@ -19,7 +19,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_report  # noqa: E402
-from common import CHART_FILES, ai, expected_files  # noqa: E402
+from common import CHART_FILES, CHARTS_DIR, ai, expected_files  # noqa: E402
 from make_report import Report, tag  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
@@ -98,6 +98,7 @@ class ChecksTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        os.makedirs(os.path.join(self.tmp.name, CHARTS_DIR))
         for name in CHART_FILES.values():
             open(os.path.join(self.tmp.name, name), "w").close()
         self.data = sprint_data()
@@ -263,11 +264,12 @@ class ChecksTest(unittest.TestCase):
     def test_only_the_reports_files_are_allowed(self):
         # Every file a report folder holds passes, and so does a hidden one; any other fails.
         expected = expected_files(self.data["label"])
-        for name in sorted(expected - set(CHART_FILES.values())):
+        for name in sorted(expected - {CHARTS_DIR}):
             open(os.path.join(self.tmp.name, name), "w").close()
         open(os.path.join(self.tmp.name, ".DS_Store"), "w").close()
+        open(os.path.join(self.tmp.name, CHARTS_DIR, ".DS_Store"), "w").close()
         self.assertEqual(self.failures(), [])
-        for stray in ("notes.md", "draft.json", "content.json.bak"):
+        for stray in ("notes.md", "draft.json", "content.json.bak", f"{CHARTS_DIR}/extra.svg"):
             with self.subTest(stray):
                 open(os.path.join(self.tmp.name, stray), "w").close()
                 self.assert_fails("files")
@@ -343,9 +345,9 @@ class ChecksTest(unittest.TestCase):
             ("header", "| Sprint target completion |", "| Target |"),
             ("header: Sprint target completion is a table of its own under Sprint Metrics",
              "## Sprint Metrics\n\n| Field", "## Sprint Metrics\n\nThe figures.\n\n| Field"),
-            ("images: outcome-pts.svg sits under the Sprint Metrics heading",
-             "![Sprint outcome in pts](outcome-pts.svg)\n\n## Scope Timeline",
-             "## Scope Timeline\n\n![Sprint outcome in pts](outcome-pts.svg)"),
+            ("images: _charts/outcome-pts.svg sits under the Sprint Metrics heading",
+             "![Sprint outcome in pts](_charts/outcome-pts.svg)\n\n## Scope Timeline",
+             "## Scope Timeline\n\n![Sprint outcome in pts](_charts/outcome-pts.svg)"),
             ("header", "3/5 tickets (6/10 pts) completed",
              "3/5 tickets (6/11 pts) completed"),
             ("header", "| 60%, 3/5 tickets", "| 3/5 tickets"),
@@ -353,7 +355,7 @@ class ChecksTest(unittest.TestCase):
             ("header", "3/5 tickets (6/10 pts) completed |",
              "3/5 tickets (6/10 pts) completed |\n| Carried over from Sprint 6 | 1 ticket |"),
             ("images",
-             "## Scope Timeline\n\n![Sprint burndown](burndown.svg)", "## Scope Timeline"),
+             "## Scope Timeline\n\n![Sprint burndown](_charts/burndown.svg)", "## Scope Timeline"),
             ("em dashes", "Partially met", "Partially met — mostly"),
             ("dates", "02/03/2026–", "2026-03-02–"),
             ("links", "Login shipped", "PROJ-9 and login shipped"),
