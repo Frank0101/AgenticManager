@@ -416,9 +416,10 @@ class CommonTest(unittest.TestCase):
         # focus expected as (key, issues)): the fewest parents covering 80%
         # of the issues with one, those tied with the last one too; with no
         # parent at all, the projects.
-        def issues(*parents):
-            return [{"key": f"PROJ-{n}", "parent": {"key": parent, "title": parent.title()} if parent else None}
-                    for n, parent in enumerate(parents)]
+        def issues(*epics):
+            return [{"key": f"PROJ-{n}", "epic": {"key": epic, "title": epic.title(), "url": f"https://acme.test/{epic}"}
+                     if epic else None}
+                    for n, epic in enumerate(epics)]
         cases = [("nothing", [], []),
                  ("one parent", issues("billing"), [("billing", 1)]),
                  ("80% covered", issues(
@@ -430,10 +431,13 @@ class CommonTest(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual([(entry["key"], entry["issues"])
                                  for entry in common.focus(resolved)], expected)
-        projects = [{"key": key, "parent": None}
+        projects = [{"key": key, "epic": None}
                     for key in ("PROJ-1", "PROJ-2", "OPS-3")]
-        self.assertEqual(common.focus(projects), [{"key": "PROJ", "title": None, "issues": 2},
-                                                  {"key": "OPS", "title": None, "issues": 1}])
+        self.assertEqual(common.focus(projects), [{"key": "PROJ", "title": None, "url": None, "issues": 2},
+                                                  {"key": "OPS", "title": None, "url": None, "issues": 1}])
+        self.assertEqual(common.by_epic(issues("a", None, "b", "a")), {
+            "epics": [{"key": "a", "title": "A", "url": "https://acme.test/a", "issues": 2},
+                      {"key": "b", "title": "B", "url": "https://acme.test/b", "issues": 1}], "no_epic": 1})
 
     def test_name_words(self):
         for name, words in [("Jane Doe", ["jane", "doe"]), ("José  Núñez-Ruiz", ["jose", "nunez", "ruiz"]),

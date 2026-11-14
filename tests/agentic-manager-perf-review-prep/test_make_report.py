@@ -67,6 +67,26 @@ class MakeReportTest(unittest.TestCase):
         self.assertEqual(common.report_problems(
             report, WORK, common.CHART_FILES), [])
 
+    def test_focus_section(self):
+        # Every epic of the main focus, each linked with its title and count,
+        # as the final check reads them back.
+        issue = WORK["jira"]["resolved"][0]
+        invoices = {"key": "PROJ-2", "title": "Invoices",
+                    "url": "https://acme.atlassian.net/browse/PROJ-2"}
+        resolved = [issue, {**issue, "key": "PROJ-14", "url": "https://acme.atlassian.net/browse/PROJ-14",
+                            "epic": invoices}]
+        jira = {**WORK["jira"], "resolved": resolved,
+                **common.source_facts("jira", {"created": WORK["jira"]["created"], "resolved": resolved},
+                                      common.period_days(PERSON))}
+        jira["epic_search_urls"] = {
+            **jira["epic_search_urls"], "PROJ-2": "https://acme.atlassian.net/issues/?jql=x"}
+        work = {**WORK, "jira": jira}
+        report = make_report.render(PERSON, work)
+        self.assertIn(
+            '<a href="https://acme.atlassian.net/issues/?jql=x">PROJ-2</a> Invoices (1)', report)
+        self.assertEqual(common.report_problems(
+            report, work, common.CHART_FILES), [])
+
     def test_make_report(self):
         # The report and every chart, checked once written.
         folder = temp_output(self)

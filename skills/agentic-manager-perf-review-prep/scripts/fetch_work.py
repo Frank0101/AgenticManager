@@ -19,6 +19,7 @@ from common import (JIRA_SOURCE, PERSON, JiraClient, gh_json, gh_orgs, period_da
 
 JIRA_FIELDS = ["summary", "issuetype", "parent", "resolutiondate", "created", "status", "assignee", "reporter",
                "updated"]
+PARENT_FIELDS = ["summary", "issuetype", "parent"]
 PR_FIELDS = "number,title,repository,url,createdAt,closedAt,author,updatedAt"
 SEARCH_LIMIT = 1000
 # Each list is one search over the whole period, so few searches run; one
@@ -34,7 +35,9 @@ every source's is in:
            points_fields, the ids of its story points fields; created,
            the issues the person created in the period, and resolved, those
            assigned to them and resolved in it, as Jira's search returns
-           them; and created_jql and resolved_jql, the searches that found them
+           them; created_jql and resolved_jql, the searches that found them;
+           and parents, the stories the sub-tasks among them belong to,
+           with their epics
   github   start and end; orgs, the organisations searched; opened and
            merged, the person's pull requests opened and merged in the
            period, as gh's search returns them; and opened_query and
@@ -60,7 +63,8 @@ def fetch(prep, client=None, run=subprocess.run):
 
 def jira_raw(client, account, person):
     """Jira's raw file: the issues the account `account` created and those
-    it resolved in the review's period in `person`, with the searches."""
+    it resolved in the review's period in `person`, with the searches, and
+    the stories their sub-tasks belong to, for their epics."""
     # Dates are written to the minute, as a literal with seconds silently
     # matches nothing.
     start, end = person["start"], f'{person["end"]} 23:59'
@@ -68,9 +72,16 @@ def jira_raw(client, account, person):
             "resolved": f'assignee = "{account}" AND statusCategory = Done '
             f'AND resolutiondate >= "{start}" AND resolutiondate <= "{end}"'}
     points_fields = client.points_fields()
+    lists = {name: client.search(jql, JIRA_FIELDS + points_fields)
+             for name, jql in jqls.items()}
+    # A sub-task's parent is a story: its epic is the story's parent.
+    stories = sorted({issue["fields"]["parent"]["key"] for issues in lists.values() for issue in issues
+                      if issue["fields"]["issuetype"].get("subtask") and issue["fields"].get("parent")})
+    parents = client.search(
+        f"key in ({', '.join(stories)})", PARENT_FIELDS) if stories else []
     return {"start": person["start"], "end": person["end"], "base_url": client.base_url,
             "points_fields": points_fields, **{f"{name}_jql": jql for name, jql in jqls.items()},
-            **{name: client.search(jql, JIRA_FIELDS + points_fields) for name, jql in jqls.items()}}
+            "parents": parents, **lists}
 
 
 # GitHub.

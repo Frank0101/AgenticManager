@@ -28,7 +28,7 @@ from agentic_manager.output_file import read_json, target, write_output_file  # 
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
 from agentic_manager.output_folder import CHARTS_DIR, DAY_FOLDER, RAW_DIR, clear_folder, day_folder, document_name, output_folder, work_folder  # noqa: E402,F401
 from agentic_manager.period import add_period_arguments, period_problem, shown  # noqa: E402,F401
-from agentic_manager.svg import GRID, INK, MUTED, esc, nice_step, svg, text  # noqa: E402,F401
+from agentic_manager.svg import GRID, INK, MUTED, esc, nice_step, svg, text, text_width  # noqa: E402,F401
 from agentic_manager.text import as_name, number, word_count  # noqa: E402,F401
 
 # How to write a point and pick its values, with their examples, lives in the
@@ -134,7 +134,7 @@ WORK_LISTS = {"jira": ("created", "resolved"), "github": (
 # org: terms are alternatives; and Jira's story points fields, every one the
 # site has, as projects may estimate in different ones, an issue's points the
 # first of them it has.
-RAW_FIELDS = {"jira": ("start", "end", "base_url", "points_fields", "created_jql", "resolved_jql"),
+RAW_FIELDS = {"jira": ("start", "end", "base_url", "points_fields", "created_jql", "resolved_jql", "parents"),
               "github": ("start", "end", "orgs", "opened_query", "merged_query"), "notion": ()}
 # The fields of a raw item work.json is built from, and those kept only to
 # check whose it is: Jira's assignee, reporter and updated, GitHub's author
@@ -156,7 +156,7 @@ PARENT_FIELDS = ("key", "fields.summary", "fields.issuetype.name")
 NOTION_LIMIT = 50
 # The facts of each source. The activity over time isn't one: each item
 # has its day, and grouping them, such as by week, is for whatever shows it.
-FACT_KEYS = {"jira": ("counts", "created_by_type", "resolved_by_type", "focus", "resolved_points"),
+FACT_KEYS = {"jira": ("counts", "created_by_type", "resolved_by_type", "resolved_by_epic", "focus", "resolved_points"),
              "github": ("counts",), "notion": ("counts",)}
 # The searches work.json links to, by what they find: each list's, and the
 # resolved issues that are estimated, whose points are summed.
@@ -177,7 +177,13 @@ REPORT_KIND = "Review_Prep.md"
 # its search, with what it is made of, and below it its chart.
 JIRA_CELLS = (("created", "jira_created_over_time.svg"), ("resolved", "jira_resolved_over_time.svg"),
               ("resolved_points", "jira_story_points.svg"))
-CHART_FILES = tuple(chart for _, chart in JIRA_CELLS)
+# The chart of the resolved issues by epic, beside the main focus.
+EPICS_CHART = "jira_epics.svg"
+CHART_FILES = (*(chart for _, chart in JIRA_CELLS), EPICS_CHART)
+# A main focus entry as the report writes it: its epic's link and key, its
+# title and how many resolved issues it holds.
+FOCUS_ENTRY = re.compile(
+    r'<li><a href="([^"]+)">([^<]+)</a> (.*?) \((\d+)\)</li>')
 JIRA_FIGURE = re.compile(
     r'<td>(?:<a href="([^"]+)">([\d.]+)</a>|([\d.]+)) \((.*?)\)</td>')
 JIRA_CHART = re.compile(rf'<td><img src="{CHARTS_DIR}/([^"]+)"')
@@ -339,7 +345,9 @@ def work_items(source, raw):
     work.json records them, without the fields kept only to check them, and
     of Notion's results only the pages of their own."""
     if source == "jira":
-        return {name: [issue_item(raw["base_url"], issue, dated_by, raw["points_fields"]) for issue in raw[name]]
+        parents = {parent["key"]: parent for parent in raw["parents"]}
+        return {name: [issue_item(raw["base_url"], issue, dated_by, raw["points_fields"], parents)
+                       for issue in raw[name]]
                 for name, dated_by in (("created", "created"), ("resolved", "resolutiondate"))}
     if source == "github":
         return {name: sorted((pr_item(pr, pr[stamp]) for pr in raw[name]), key=lambda item: (item["date"], item["url"]))
@@ -350,20 +358,31 @@ def work_items(source, raw):
                               key=lambda page: (page["between"][0], page["url"]))}
 
 
-def issue_item(base_url, issue, dated_by, points_fields):
+def issue_item(base_url, issue, dated_by, points_fields, parents):
     """A Jira issue as work.json records it, its link on the site at
     `base_url`, dated by the day of its field `dated_by`, its points the
-    first of `points_fields` it has, or null when it isn't estimated. Its
-    parent is kept with its type and title, as the main focus is worked out
-    from the parents."""
+    first of `points_fields` it has, or null when it isn't estimated, and its
+    epic, {key, title, url}, or null, by epic_of() from `parents`. Jira's
+    own sub-task flag says which issue is one, as type names differ from site
+    to site."""
     fields = issue["fields"]
-    parent = fields.get("parent")
+    epic = epic_of(fields, parents)
     return {"key": issue["key"], "title": fields.get("summary") or "", "type": fields["issuetype"]["name"],
-            "parent": {"key": parent["key"], "title": parent["fields"].get("summary") or "",
-                       "type": parent["fields"]["issuetype"]["name"]} if parent else None,
+            "epic": {"key": epic["key"], "title": epic["fields"].get("summary") or "",
+                     "url": browse_url(base_url, epic["key"])} if epic else None,
             "status": fields["status"]["name"], "url": browse_url(base_url, issue["key"]),
             "date": (fields[dated_by] or "")[:10],
             "points": next((fields[field] for field in points_fields if fields.get(field) is not None), None)}
+
+
+def epic_of(fields, parents):
+    """The epic of the Jira issue whose fields are `fields`, as Jira gives
+    it, or None: its parent, or for a sub-task, whose parent is a story, the
+    story's parent, from `parents`, {key: story}."""
+    parent = fields.get("parent")
+    if fields["issuetype"].get("subtask") and parent:
+        return ((parents.get(parent["key"]) or {}).get("fields") or {}).get("parent")
+    return parent
 
 
 def pr_item(pr, stamp):
@@ -378,17 +397,49 @@ def search_urls(source, raw):
     """{<search>_search_url: address}: the address of each of the SEARCH_URLS
     of `source`, Jira's JQL on its site or GitHub's query on github.com,
     which finds the same items live; the estimated resolved issues' null
-    when the site has no points field; {} for a source with none."""
+    when the site has no points field; for Jira also epic_search_urls, by
+    epic_search_urls(); {} for a source with none."""
     if source == "jira":
         estimated = " OR ".join(f"cf[{field.removeprefix('customfield_')}] is not EMPTY"
                                 for field in raw["points_fields"])
         jqls = {"created": raw["created_jql"], "resolved": raw["resolved_jql"],
                 "resolved_points": estimated and f"{raw['resolved_jql']} AND ({estimated})"}
-        return {f"{name}_search_url": jql and f"{raw['base_url']}/issues/?jql={quote(jql)}" for name, jql in jqls.items()}
+        return {**{f"{name}_search_url": jql and jira_search_url(raw["base_url"], jql) for name, jql in jqls.items()},
+                "epic_search_urls": epic_search_urls(raw)}
     if source == "github":
         return {f"{name}_search_url": f"https://github.com/search?q={quote(raw[f'{name}_query'])}&type=pullrequests"
                 for name in WORK_LISTS[source]}
     return {}
+
+
+def epic_search_urls(raw):
+    """{epic: address}: for each epic of the resolved issues in `raw`, Jira's
+    raw file, the search that finds the ones counted in it: the resolved
+    search, narrowed to the epic's children and to the sub-tasks of its
+    stories, as a sub-task counts in its story's epic."""
+    parents = {parent["key"]: parent for parent in raw["parents"]}
+    children, stories = set(), {}
+    for issue in raw["resolved"]:
+        fields = issue["fields"]
+        if not (epic := epic_of(fields, parents)):
+            continue
+        if fields["issuetype"].get("subtask"):
+            stories.setdefault(epic["key"], set()).add(fields["parent"]["key"])
+        else:
+            children.add(epic["key"])
+    urls = {}
+    for epic in sorted({*children, *stories}):
+        under = [f"parent = {epic}"] if epic in children else []
+        if epic in stories:
+            under.append(f"parent in ({', '.join(sorted(stories[epic]))})")
+        urls[epic] = jira_search_url(
+            raw["base_url"], f"{raw['resolved_jql']} AND ({' OR '.join(under)})")
+    return urls
+
+
+def jira_search_url(base_url, jql):
+    """The address of the Jira search `jql` on the site at `base_url`."""
+    return f"{base_url}/issues/?jql={quote(jql)}"
 
 
 def work_from_raw_problems(work, raws, days):
@@ -657,9 +708,11 @@ def work_problems(work, days):
 
 def work_keys(source):
     """What the work of `source` holds: its lists, its FACT_KEYS and each of
-    its SEARCH_URLS as <search>_search_url."""
+    its SEARCH_URLS as <search>_search_url, and for Jira the search of each
+    epic's resolved issues."""
     return (*WORK_LISTS[source], *FACT_KEYS[source],
-            *(f"{name}_search_url" for name in SEARCH_URLS.get(source, ())))
+            *(f"{name}_search_url" for name in SEARCH_URLS.get(source, ())),
+            *(("epic_search_urls",) if source == "jira" else ()))
 
 
 def items_problems(source, lists, days):
@@ -705,7 +758,8 @@ def source_facts(source, lists, days):
     """The facts of `lists`, the items of `source`, in the period of `days`,
     as FACT_KEYS names them: counts, how many items each list holds; for
     Jira, created_by_type and resolved_by_type, the issues of each type, most
-    first, focus, the main focus of the resolved issues, and resolved_points,
+    first, resolved_by_epic, the resolved issues by epic, focus, their main
+    focus, and resolved_points,
     the resolved issues' points: their total, how many are estimated and
     their average, null when none is, an unestimated issue counting toward
     neither."""
@@ -713,7 +767,8 @@ def source_facts(source, lists, days):
                               for name, items in lists.items()}}
     if source == "jira":
         facts |= {"created_by_type": by_type(lists["created"]), "resolved_by_type": by_type(lists["resolved"]),
-                  "focus": focus(lists["resolved"]), "resolved_points": points(lists["resolved"])}
+                  "resolved_by_epic": by_epic(lists["resolved"]), "focus": focus(lists["resolved"]),
+                  "resolved_points": points(lists["resolved"])}
     return facts
 
 
@@ -736,27 +791,42 @@ def by_type(issues):
     return [{"type": kind, "issues": count} for kind, count in sorted(types.items(), key=lambda pair: (-pair[1], pair[0]))]
 
 
-def focus(resolved):
-    """The main focus of the issues `resolved`: the fewest of their parents,
-    the most issues first, whose issues are at least FOCUS_SHARE of those
-    with a parent, with every parent tied with the last one, each {key,
-    title, issues}; or, when none has a parent, their projects the same way,
-    the title null. A fixed number of parents would give someone who works
-    on two as long a list as someone who works on eight."""
-    with_parent = [issue for issue in resolved if issue["parent"]]
+def by_epic(resolved):
+    """{epics, no_epic}: the issues `resolved` by their epic, each {key,
+    title, url, issues}, the most issues first, then by key; and how many
+    have none."""
     counts = {}
-    for issue in with_parent or resolved:
-        key, title = ((issue["parent"]["key"], issue["parent"]["title"]) if with_parent
-                      else (issue["key"].rsplit("-", 1)[0], None))
-        counts[(key, title)] = counts.get((key, title), 0) + 1
-    ranked = sorted(counts.items(), key=lambda pair: (-pair[1], pair[0][0]))
-    total, covered, cutoff = sum(counts.values()), 0, 0
-    for _, count in ranked:
-        covered += count
+    for issue in resolved:
+        if issue["epic"]:
+            entry = counts.setdefault(issue["epic"]["key"], {
+                                      **issue["epic"], "issues": 0})
+            entry["issues"] += 1
+    return {"epics": sorted(counts.values(), key=lambda entry: (-entry["issues"], entry["key"])),
+            "no_epic": sum(1 for issue in resolved if not issue["epic"])}
+
+
+def focus(resolved):
+    """The main focus of the issues `resolved`: the fewest of their epics,
+    as by_epic() ranks them, whose issues are at least FOCUS_SHARE of those
+    with an epic, with every epic tied with the last one, each {key, title,
+    url, issues}; or, when none has an epic, their projects the same way,
+    the title and url null. A fixed number of epics would give someone who
+    works on two as long a list as someone who works on eight."""
+    ranked = by_epic(resolved)["epics"]
+    if not ranked:
+        projects = {}
+        for issue in resolved:
+            project = issue["key"].rsplit("-", 1)[0]
+            projects[project] = projects.get(project, 0) + 1
+        ranked = [{"key": key, "title": None, "url": None, "issues": count}
+                  for key, count in sorted(projects.items(), key=lambda pair: (-pair[1], pair[0]))]
+    total, covered, cutoff = sum(entry["issues"] for entry in ranked), 0, 0
+    for entry in ranked:
+        covered += entry["issues"]
         if covered >= FOCUS_SHARE * total:
-            cutoff = count
+            cutoff = entry["issues"]
             break
-    return [{"key": key, "title": title, "issues": count} for (key, title), count in ranked if count >= cutoff]
+    return [entry for entry in ranked if entry["issues"] >= cutoff]
 
 
 def report_problems(report, work, charts):
@@ -787,7 +857,33 @@ def report_problems(report, work, charts):
                 expected[name][0], jira[f"{name}_search_url"], expected[name][1], chart):
             problems.append(
                 f"the report's Jira cell for {name} doesn't show work.json: run make_report.py again")
+    shown = [(html.unescape(url), html.unescape(key), html.unescape(title), int(n))
+             for url, key, title, n in FOCUS_ENTRY.findall(report)]
+    if shown != _focus(jira["resolved"], jira["epic_search_urls"]):
+        problems.append("the report's main focus doesn't show the epics of the resolved issues: run make_report.py "
+                        "again")
     return problems
+
+
+def _focus(resolved, urls):
+    """[(url, key, title, issues)]: the main focus of the issues `resolved`
+    as the report lists it, each linked to its search in `urls`, worked out
+    apart from focus(): the epics holding the most of those with one, until
+    FOCUS_SHARE of them, every epic tied with the last one too."""
+    counts, epics = {}, {}
+    for issue in resolved:
+        if issue["epic"]:
+            key = issue["epic"]["key"]
+            counts[key] = counts.get(key, 0) + 1
+            epics[key] = issue["epic"]
+    ranked = sorted(counts, key=lambda key: (-counts[key], key))
+    total, covered = sum(counts.values()), 0
+    for key in ranked:
+        covered += counts[key]
+        if covered >= FOCUS_SHARE * total:
+            ranked = [other for other in ranked if counts[other] >= counts[key]]
+            break
+    return [(urls.get(key), key, epics[key]["title"], counts[key]) for key in ranked]
 
 
 def _types(issues):

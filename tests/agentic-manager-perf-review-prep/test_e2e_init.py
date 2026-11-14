@@ -72,16 +72,16 @@ GH_ANSWERS = {"auth status": {}, "api": {"items": [{"author": {"login": "janedoe
               "api users/janedoe": {"name": "Jane Doe"}, "api user/orgs?per_page=100": [{"login": "acme"}],
               "search prs": [PR]}
 EPIC = {"key": "PROJ-1", "fields": {"summary": "Billing migration",
-                                    "issuetype": {"name": "Epic"}}}
+                                    "issuetype": {"name": "Epic", "subtask": False}}}
 # The person's issues: one they resolved in the period, under the epic, and
 # one they created in it.
 RESOLVED = {"key": "PROJ-12", "id": "10012", "fields": {
-    "summary": "Migrate invoices", "issuetype": {"name": "Story"}, "status": {"name": "Done"},
+    "summary": "Migrate invoices", "issuetype": {"name": "Story", "subtask": False}, "status": {"name": "Done"},
     "created": "2026-01-05T10:00:00.000+0000", "resolutiondate": f"{TODAY.isoformat()}T10:00:00.000+0000",
     "parent": EPIC, "assignee": {"accountId": JANE["accountId"]}, "reporter": None, "customfield_10016": 5,
     "updated": f"{TODAY.isoformat()}T10:00:00.000+0000"}}
 CREATED = {"key": "PROJ-13", "id": "10013", "fields": {
-    "summary": "Retire the old billing service", "issuetype": {"name": "Story"}, "status": {"name": "To Do"},
+    "summary": "Retire the old billing service", "issuetype": {"name": "Story", "subtask": False}, "status": {"name": "To Do"},
     "created": f"{TODAY.isoformat()}T09:00:00.000+0000", "resolutiondate": None, "parent": None,
     "assignee": None, "reporter": {"accountId": JANE["accountId"]}, "updated": f"{TODAY.isoformat()}T09:00:00.000+0000"}}
 # Who the person is in each source but Jira, as the manager confirmed.
@@ -268,10 +268,12 @@ class ScriptsTest(unittest.TestCase):
             work = json.load(f)
         self.assertEqual(work["jira"]["resolved"], [
             {"key": "PROJ-12", "title": "Migrate invoices", "type": "Story",
-             "parent": {"key": "PROJ-1", "title": "Billing migration", "type": "Epic"}, "status": "Done",
+             "epic": {"key": "PROJ-1", "title": "Billing migration", "url": f"{self.base_url}/browse/PROJ-1"},
+             "status": "Done",
              "url": f"{self.base_url}/browse/PROJ-12", "date": TODAY.isoformat(), "points": 5}])
         self.assertEqual((work["jira"]["focus"], work["github"]["opened"]), (
-            [{"key": "PROJ-1", "title": "Billing migration", "issues": 1}],
+            [{"key": "PROJ-1", "title": "Billing migration",
+                "url": f"{self.base_url}/browse/PROJ-1", "issues": 1}],
             [{"repo": "acme/billing", "number": 7, "title": PR["title"], "url": PR["url"], "date": TODAY.isoformat()}]))
         # The report, from work.json: one resolved issue of 5 points, one
         # created, each linked to its search.

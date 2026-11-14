@@ -41,11 +41,12 @@ NOTES = {"going_well": [{"point": "Presented the migration to the wider team", "
          "context": [{"point": "Moved to the payments team in the summer",
                       "evidence": [{"date": None, "link": "file:///vault/pages/Jane.md"}]}]}
 # The work's items, as work.json records them, in PERSON's period.
-WORK_ITEMS = {"jira": {"created": [{"key": "PROJ-13", "title": "Retire old billing", "type": "Task", "parent": None,
+WORK_ITEMS = {"jira": {"created": [{"key": "PROJ-13", "title": "Retire old billing", "type": "Task", "epic": None,
                                     "status": "In Progress", "url": "https://acme.atlassian.net/browse/PROJ-13",
                                     "date": "2026-08-20", "points": None}],
                        "resolved": [{"key": "PROJ-12", "title": "Migrate billing", "type": "Story",
-                                     "parent": {"key": "PROJ-1", "title": "Billing", "type": "Epic"}, "status": "Done",
+                                     "epic": {"key": "PROJ-1", "title": "Billing",
+                                              "url": "https://acme.atlassian.net/browse/PROJ-1"}, "status": "Done",
                                      "url": "https://acme.atlassian.net/browse/PROJ-12", "date": "2026-09-01",
                                      "points": 3}]},
               "github": {"opened": [{"repo": "acme/billing", "number": 1, "title": "Migrate billing",
@@ -80,15 +81,15 @@ PULL = {"number": 1, "title": "Migrate billing", "repository": {"nameWithOwner":
         "closedAt": "2026-09-01T10:00:00Z", "author": {"login": "janedoe"}, "updatedAt": "2026-09-01T10:00:00Z"}
 POINTS = "customfield_10016"
 WORK_RAW = {"jira": {"start": "2026-08-10", "end": "2026-11-10", "base_url": JIRA_BASE, "points_fields": [POINTS],
-                     "resolved_jql": JQL["resolved"], "created_jql": JQL["created"],
+                     "resolved_jql": JQL["resolved"], "created_jql": JQL["created"], "parents": [],
                      "resolved": [{"key": "PROJ-12", "fields": {
-                         "summary": "Migrate billing", "issuetype": {"name": "Story"}, "status": {"name": "Done"},
+                         "summary": "Migrate billing", "issuetype": {"name": "Story", "subtask": False}, "status": {"name": "Done"},
                          "created": "2026-08-12T10:00:00.000+0100", "resolutiondate": "2026-09-01T10:00:00.000+0100",
-                         "parent": {"key": "PROJ-1", "fields": {"summary": "Billing", "issuetype": {"name": "Epic"}}},
+                         "parent": {"key": "PROJ-1", "fields": {"summary": "Billing", "issuetype": {"name": "Epic", "subtask": False}}},
                          "assignee": {"accountId": JIRA_ID}, "reporter": {"accountId": "a2"}, POINTS: 3,
                          "updated": "2026-09-01T10:00:00.000+0100"}}],
                      "created": [{"key": "PROJ-13", "fields": {
-                         "summary": "Retire old billing", "issuetype": {"name": "Task"},
+                         "summary": "Retire old billing", "issuetype": {"name": "Task", "subtask": False},
                          "status": {"name": "In Progress"}, "created": "2026-08-20T10:00:00.000+0100",
                          "resolutiondate": None, "assignee": None, "reporter": {"accountId": JIRA_ID},
                          "updated": "2026-08-20T10:00:00.000+0100"}}]},
@@ -100,8 +101,11 @@ WORK_RAW = {"jira": {"start": "2026-08-10", "end": "2026-11-10", "base_url": JIR
 WORK = {"jira": {**WORK_ITEMS["jira"], "counts": {"created": 1, "resolved": 1},
                  "created_by_type": [{"type": "Task", "issues": 1}],
                  "resolved_by_type": [{"type": "Story", "issues": 1}],
-                 "focus": [{"key": "PROJ-1", "title": "Billing", "issues": 1}],
+                 "resolved_by_epic": {"epics": [{"key": "PROJ-1", "title": "Billing",
+                                                 "url": f"{JIRA_BASE}/browse/PROJ-1", "issues": 1}], "no_epic": 0},
+                 "focus": [{"key": "PROJ-1", "title": "Billing", "url": f"{JIRA_BASE}/browse/PROJ-1", "issues": 1}],
                  "resolved_points": {"total": 3, "estimated": 1, "average": 3.0},
+                 "epic_search_urls": {"PROJ-1": f"{JIRA_BASE}/issues/?jql={quote(JQL['resolved'] + ' AND (parent = PROJ-1)')}"},
                  "resolved_points_search_url":
                      f"{JIRA_BASE}/issues/?jql={quote(JQL['resolved'] + ' AND (cf[10016] is not EMPTY)')}",
                  **{f"{name}_search_url": f"{JIRA_BASE}/issues/?jql={quote(jql)}" for name, jql in JQL.items()}},

@@ -29,11 +29,12 @@ perf-review-preps/
     ├── slack.json        read_slack.py writes (what the person's Slack messages show, merged, with their links)
     ├── work.json         fetch_work.py or set_notion.py builds, once _raw holds every source (by source, the
     │                     person's Jira issues, pull requests and Notion pages in the period, each with its day,
-    │                     and their facts: the counts, the issues created and resolved by type, the main focus,
-    │                     the resolved issues' story points and the link to each search)
+    │                     and their facts: the counts, the issues created and resolved by type, the resolved
+    │                     ones by epic, the main focus, the resolved issues' story points and the link to each
+    │                     search)
     └── Jane-Doe_Review_Prep.md
                           make_report.py writes (the report for the manager, from the files above: for now, the
-                          person's Jira figures)
+                          person's Jira figures and main focus)
 ```
 
 ## Prerequisite
