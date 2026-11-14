@@ -14,6 +14,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
+import make_report  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from prep_fixture import (NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP, SLACK, NOTION_SEARCHES, PLAN_RESULT, WORK, WORK_ITEMS, WORK_RAW,  # noqa: E402
                            temp_output, write_prep)  # noqa: E402
@@ -371,6 +372,45 @@ class CommonTest(unittest.TestCase):
                 else:
                     self.assertIn(expected, problems)
 
+    def test_points(self):
+        # name: (the issues' points, {total, estimated, average}): an
+        # unestimated issue counts toward neither the total nor the average.
+        cases = [("none estimated", [None, None], {"total": 0, "estimated": 0, "average": None}),
+                 ("some estimated", [3, None, 5, 1], {
+                  "total": 9, "estimated": 3, "average": 3.0}),
+                 ("halves", [0.5, 2, 1], {"total": 3.5, "estimated": 3, "average": 1.2})]
+        for name, points, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(common.points(
+                    [{"points": value} for value in points]), expected)
+
+    def test_report_problems(self):
+        # name: (a change to the report's text, the charts, expected in the
+        # problems, or None for none): each Jira figure is read back from the
+        # table and worked out again from the items.
+        report = make_report.render(PERSON, WORK)
+        cases = [("as written", None, common.CHART_FILES, None),
+                 ("a count changed", ('">1</a>', '">2</a>'),
+                  common.CHART_FILES, "cell for created"),
+                 ("a breakdown changed", ("(1 Task)", "(1 Bug)"),
+                  common.CHART_FILES, "cell for created"),
+                 ("an average changed", ("avg=3", "avg=4"),
+                  common.CHART_FILES, "cell for resolved_points"),
+                 ("no charts", ("<td><img", "<td><image"),
+                  common.CHART_FILES, "a row of three figures and one of their charts"),
+                 ("a chart missing", None,
+                  common.CHART_FILES[1:], "the charts folder must hold only"),
+                 ("a .DS_Store beside the charts", None, [*common.CHART_FILES, ".DS_Store"], None)]
+        for name, change, charts, expected in cases:
+            with self.subTest(name):
+                text = report.replace(
+                    change[0], change[1], 1) if change else report
+                problems = " ".join(common.report_problems(text, WORK, charts))
+                if expected is None:
+                    self.assertEqual(problems, "")
+                else:
+                    self.assertIn(expected, problems)
+
     def test_focus(self):
         # name: (parents of the resolved issues, by key, None for none, the
         # focus expected as (key, issues)): the fewest parents covering 80%
@@ -431,6 +471,13 @@ class CommonTest(unittest.TestCase):
                 with self.subTest(name), mock.patch.object(sys, "argv", [ran]):
                     self.assertEqual(common.script_command("jira_ticket.py"),
                                      f"python3 {os.path.join(expected, 'jira_ticket.py')}")
+        # The library's module, beside the skill's folder, as the frontmatter
+        # names it: ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/...
+        with mock.patch.object(sys, "argv", [os.path.join(scripts, "read_notes.py")]):
+            command = common.library_command("extract_saved.py")
+        self.assertEqual(command, "python3 " + os.path.join(os.path.dirname(scripts), "..", "agentic-manager-utils-lib",
+                                                            "agentic_manager", "extract_saved.py"))
+        self.assertTrue(os.path.isfile(command.removeprefix("python3 ")))
 
 
 if __name__ == "__main__":

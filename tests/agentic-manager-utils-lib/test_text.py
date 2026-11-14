@@ -170,6 +170,13 @@ class TextTest(unittest.TestCase):
                 found = text.local_link("/docs/doc.md", target)
                 self.assertEqual(found and (str(found[0]), found[1]), expected)
 
+    def test_number(self):
+        # A whole number without a decimal point, a fraction to two decimals,
+        # never with floating-point noise.
+        for value, expected in [(3, "3"), (201.0, "201"), (3.3, "3.3"), (0.1 + 0.2, "0.3"), (2.345, "2.35")]:
+            with self.subTest(value):
+                self.assertEqual(text.number(value), expected)
+
 
 if __name__ == "__main__":
     unittest.main()

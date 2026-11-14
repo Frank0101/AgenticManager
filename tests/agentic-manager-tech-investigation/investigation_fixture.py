@@ -5,14 +5,13 @@ their rows and the problems the rules find in them."""
 import copy
 import json
 import os
-import re
 import tempfile
 from datetime import date
 from pathlib import Path
 from unittest import mock
 
 import common
-from common import (COMPONENT_HEADER, FINDING_HEADER, GAP_HEADER, ID_LETTERS, QUEUE_HEADER, SOURCE_HEADER, TABLES,
+from common import (COMPONENT_HEADER, FINDING_HEADER, GAP_HEADER, QUEUE_HEADER, SOURCE_HEADER, TABLES,
                     anchored, section_span, table)
 from agentic_manager import config, output_folder
 from init_investigation import init, ledger_skeleton
@@ -65,7 +64,7 @@ def source_row(ident="S01", kind="code", reference="[x](https://example.com/x)",
 def plain(text):
     """The ledger `text` without the anchors and ID links the script adds,
     for tests about something else."""
-    return re.sub(rf"\[([{ID_LETTERS}]\d+)\]\(#[a-z]+\d+\)", r"\1", re.sub(r'<a id="[^"]+"></a>', "", text))
+    return common.CITATION.sub(r"\1", common.strip_anchors(text))
 
 
 def assert_problem(test, problem, expected):

@@ -170,7 +170,7 @@ class DescriptionTest(unittest.TestCase):
                  ("# Title\n\nSome **bold** text.\n", ("Title", {}))]
         for text, expected in cases:
             with self.subTest(text), tempfile.TemporaryDirectory() as folder:
-                path = os.path.join(folder, output_folder.EXAMPLE_DESCRIPTION)
+                path = os.path.join(folder, output_folder.DESCRIPTION)
                 if text is not None:
                     with open(path, "w", encoding="utf-8") as f:
                         f.write(text)
@@ -183,7 +183,7 @@ class DescriptionTest(unittest.TestCase):
         self.assertEqual(text, "# A slide\n\n**Use for:** a cover\n\n**Why it's good:** clear\n\n"
                                "The slide: [slides.json](slides.json).\n")
         with tempfile.TemporaryDirectory() as folder:
-            path = os.path.join(folder, output_folder.EXAMPLE_DESCRIPTION)
+            path = os.path.join(folder, output_folder.DESCRIPTION)
             with open(path, "w", encoding="utf-8") as f:
                 f.write(text)
             self.assertEqual(output_folder.read_description(path),

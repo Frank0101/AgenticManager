@@ -19,11 +19,11 @@ from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.config import enabled_sources, is_enabled  # noqa: E402,F401
 from agentic_manager.github import NAME as GITHUB_CLI, GH_UNAVAILABLE, GhError, gh_available, gh_found, gh_hosts, gh_signed_in, pull_parts  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
-from agentic_manager.jira import BROWSE_URL as TICKET_URL, GROUP as JIRA_GROUP, NAME as JIRA_API, PROJECT_KEY, JiraClient, browse_url, plain_text, project_of  # noqa: E402,F401
+from agentic_manager.jira import BROWSE_URL as TICKET_URL, NAME as JIRA_API, PROJECT_KEY, JiraClient, browse_url, plain_text, project_of  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
-from agentic_manager.output_folder import DAY_FOLDER, clear_folder, day_folder, folder_day, output_folder  # noqa: E402,F401
+from agentic_manager.output_folder import DAY_FOLDER, clear_folder, day_folder, folder_day, output_folder, work_folder  # noqa: E402,F401
 from agentic_manager.text import DEFINITION, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, display_date, free_name, headings, inline_links, link_definitions, link_text, links, local_link, markdown, reference_key, same_document, slug, word_count  # noqa: E402,F401
 from agentic_manager.ticket_pulls import pulls_by_ticket  # noqa: E402,F401
 
@@ -121,7 +121,6 @@ READ_COVERAGE = ("full", "partial")
 # Every read but a full one leaves a part unread, so each finding citing it
 # says why the rest can't change its claim; can't access reads nothing.
 PART_COVERAGE = ("partial", "listing", "search hit")
-LINE_RANGE = re.compile(r"\blines? \d+\s*[-–]\s*\d+")
 # The lines a Coverage names, as coverage_text() writes them, and a range or
 # single line a finding cites, such as "120-160" or "95".
 COVERAGE_LINES = re.compile(r"lines (\d+-\d+(?:, \d+-\d+)*)(?: of (\d+))?")
@@ -141,8 +140,6 @@ PULL_LINK = re.compile(
 # A commit, as a pinned link names it: a branch can move, so what it shows
 # today may not be what was read.
 COMMIT = re.compile(r"[0-9a-f]{7,40}", re.I)
-# The files a Coverage names, as coverage_text() writes them.
-FILES_READ = re.compile(r"files: ([^;]*)")
 FINDING_HEADER = ["ID", "Claim", "Sources", "Limits"]
 # A decision's Position is the established one, or "Unresolved:" with the
 # candidates and their constraints, which is what an open position is; its
@@ -277,9 +274,10 @@ ID = re.compile(IDS_OF.format(ID_LETTERS))
 # as VS Code and GitHub render. A heading's anchor would change with its title;
 # these don't.
 ANCHOR_ID = r"[a-z]+\d+"
-ID_ANCHOR = re.compile(rf'<a id="{ANCHOR_ID}"></a>')
+ANCHOR_TAG = '<a id="{}"></a>'
+ID_ANCHOR = re.compile(ANCHOR_TAG.format(f"({ANCHOR_ID})"))
 # The start of a table row, before its ID and the anchor that may precede it.
-ROW_START = rf"^\|\s*(?:{ID_ANCHOR.pattern})?"
+ROW_START = rf"^\|\s*(?:{ANCHOR_TAG.format(ANCHOR_ID)})?"
 # Where an ID is recorded: the first cell of a table row, the one form
 # ledger.py writes a record in.
 RECORD_DEFINITION = re.compile(rf"{ROW_START}({ID.pattern})", re.M)
@@ -731,12 +729,12 @@ def anchored(ident):
 
 def anchor_tag(ident):
     """The HTML anchor of `ident`, which its citations link to."""
-    return f'<a id="{ident.lower()}"></a>'
+    return ANCHOR_TAG.format(ident.lower())
 
 
 def anchor_ids(text):
     """The IDs of the anchors in `text`, as they are linked: lower case."""
-    return set(re.findall(rf'<a id="({ANCHOR_ID})"></a>', text))
+    return set(ID_ANCHOR.findall(text))
 
 
 def records(body, table):
@@ -849,10 +847,11 @@ def coverage_problem(row):
                 "'partial: lines 1-80, 200-240 of 352'")
     if not row[4].strip().casefold().startswith("partial"):
         return None
-    if group_of(row) == "source_control" and not (LINE_RANGE.search(row[4]) or "files:" in row[4]):
+    fields = coverage_fields(row[4])
+    if group_of(row) == "source_control" and not (fields.get("lines") or fields.get("files")):
         return (f'{row[0]}: Coverage partial of code names the lines read, "lines": [[1, 80]], or for a '
                 'pull request or a folder the files read, "files": [...]')
-    if group_of(row) in ("documentation", JIRA_GROUP) and "sections:" not in row[4]:
+    if group_of(row) in ("documentation", "workflow") and not fields.get("sections"):
         return (f'{row[0]}: Coverage partial of a document or a ticket names the sections read, '
                 '"sections": ["Description", "Comments"]')
     return None
@@ -882,8 +881,8 @@ def finding_problem(row):
 
 
 def design_problem(name, row, scope):
-    """Why a components or system design row breaks a rule of the design, or
-    None: each row rests on findings, a gap, an open decision or a decision
+    """Why a system design row breaks a rule of its table, or None. Each row
+    rests on findings, a gap, an open decision or a decision
     leaving its topic mention only, an unverified one on the gap or the
     mention-only decision that explains it, a ruled-out one on the finding
     that shows it doesn't exist, and none draws what the user
@@ -1060,9 +1059,8 @@ def component_pin_problem(row, definitions):
     was read."""
     code = COMPONENT_HEADER.index("Repository, paths, revision")
     for url in link_urls(row[code], definitions):
-        if (match := CODE_LINK.fullmatch(url)) and not COMMIT.fullmatch(match[3]):
-            return (f"{row[0]}: Repository, paths, revision links code at {match[3]}: link it at the commit it was "
-                    "read at, 7 or more hex characters")
+        if branch := _branch_problem(row[0], "Repository, paths, revision", url):
+            return branch
     return None
 
 
@@ -1075,12 +1073,20 @@ def source_pin_problem(row, definitions):
         return None
     revision = source_revision(row)
     for url in link_urls(row[2], definitions):
-        if (match := CODE_LINK.fullmatch(url)) and not COMMIT.fullmatch(match[3]):
-            return (f"{row[0]}: Reference links code at {match[3]}: link it at the commit it was read at, 7 or more "
-                    "hex characters")
-        if match and not same_revision(match[3], revision):
+        if branch := _branch_problem(row[0], "Reference", url):
+            return branch
+        if (match := CODE_LINK.fullmatch(url)) and not same_revision(match[3], revision):
             return (f"{row[0]}: Reference links code at {match[3]}, Revision is {row[3].strip()}: link it at the "
                     "commit in Revision")
+    return None
+
+
+def _branch_problem(row_id, column, url):
+    """Why the link `url` in a row's `column` names code at a branch, not a
+    commit, or None."""
+    if (match := CODE_LINK.fullmatch(url)) and not COMMIT.fullmatch(match[3]):
+        return (f"{row_id}: {column} links code at {match[3]}: link it at the commit it was read at, 7 or more "
+                "hex characters")
     return None
 
 
@@ -1122,7 +1128,7 @@ def flow_states(flows, connections):
     the flow's order, so a step left unverified, such as one from a mention-only topic,
     doesn't hide how far along the rest is; ⬜ Unverified when none is."""
     ranks = connection_ranks(connections)
-    unverified = [label for label, _ in STATUSES].index(UNVERIFIED)
+    unverified = status_rank(UNVERIFIED)
     found = {}
     for row in flows:
         walked = [e for e in dict.fromkeys(ids(row[2], "E")) if e in ranks]
@@ -1131,7 +1137,7 @@ def flow_states(flows, connections):
         if not walked:
             continue
         if not verified:
-            found[row[0]] = STATUSES[unverified][0]
+            found[row[0]] = UNVERIFIED
             continue
         found[row[0]] = STATUSES[max(verified)][0] + \
             (f", unverified: {', '.join(unknown)}" if unknown else "")
@@ -1203,10 +1209,11 @@ def mention_only_ids(scope):
 
 
 def unread_components(components, findings, sources, definitions, mention_only=()):
-    """{component ID: the paths it links} of the components whose State
-    claims code (🟩, 🟦) without a code source among those its Evidence's
-    findings rest on that read, at READ_COVERAGE, one of those paths, a file
-    or folder under it, or, read in full, a folder above it; a README or other
+    """{component ID: the paths it links} of the components claiming code
+    whose code wasn't read. A component claims code when its State is 🟩 or
+    🟦, and its code is read when a code source among those its Evidence's
+    findings rest on read, at READ_COVERAGE, one of those paths, a file or
+    folder under it, or, read in full, a folder above it; a README or other
     DOC_FILE isn't code. An external part, a person or a role has no code
     the design reads, and a part of a mention-only topic, citing its scope
     decision, one of `mention_only`, has its code left unread: a finding
@@ -1240,9 +1247,8 @@ def code_read(row, definitions):
     if group_of(row) != "source_control" or not read_enough(row):
         return []
     full = row[4].strip().casefold().startswith("full")
-    match = FILES_READ.search(row[4])
-    files = [f.strip() for f in match[1].split(",")
-             if f.strip()] if match else []
+    files = [f.strip() for f in coverage_fields(row[4]).get("files", [])
+             if f.strip()]
     read = []
     for url in link_urls(row[2], definitions):
         if DOC_FILE.search(url):
@@ -1301,8 +1307,8 @@ def _shown_path(path):
 
 
 def unread_message(found):
-    """What to do about components claiming code with no code read, `found`
-    as unread_components returns it."""
+    """What to do about components claiming code with no code read. `found`
+    is as unread_components returns it."""
     return (f"a component marked {' or '.join(CODE_STATUSES)} needs its code read, with Coverage "
             f"{' or '.join(READ_COVERAGE)}, in a code source its Evidence's findings cite, at the commit it links, of the path it "
             "links, of a file under it or, read in full, of a folder above it: " + "; ".join(f"{ident} links {', '.join(paths) or 'no code'}"

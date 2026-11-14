@@ -40,6 +40,9 @@ class FakeJira:
     def __init__(self):
         self.queries = []
 
+    def points_fields(self):
+        return ["customfield_10016"]
+
     def search(self, jql, fields):
         self.queries.append(jql)
         if jql.startswith("assignee"):
@@ -91,6 +94,7 @@ class FetchWorkTest(unittest.TestCase):
             'assignee = "a1" AND statusCategory = Done AND resolutiondate >= "2026-08-10" '
             'AND resolutiondate <= "2026-11-10 23:59"'])
         self.assertEqual(raw, {"start": "2026-08-10", "end": "2026-11-10", "base_url": FakeJira.base_url,
+                               "points_fields": ["customfield_10016"],
                                "created_jql": client.queries[0], "resolved_jql": client.queries[1],
                                "resolved": client.search("assignee", []), "created": client.search("reporter", [])})
 

@@ -22,6 +22,7 @@ test gives their scripts what a search and a subagent would. HOME points at a te
 TMPDIR at the same folder, so nothing falls back to the system temp folder.
 """
 
+import html
 import json
 import os
 import subprocess
@@ -51,6 +52,7 @@ RULES_SCRIPT = os.path.join(SCRIPTS, "rules.py")
 NOTES_SCRIPT = os.path.join(SCRIPTS, "read_notes.py")
 WORK_SCRIPT = os.path.join(SCRIPTS, "fetch_work.py")
 NOTION_SCRIPT = os.path.join(SCRIPTS, "set_notion.py")
+REPORT_SCRIPT = os.path.join(SCRIPTS, "make_report.py")
 SLACK_SCRIPT = os.path.join(SCRIPTS, "read_slack.py")
 TOKEN = "s3cret-token"
 JANE = {"accountId": "5b10ac8d82e05b22cc7d4ef5", "accountType": "atlassian", "displayName": "Jane Doe",
@@ -76,7 +78,7 @@ EPIC = {"key": "PROJ-1", "fields": {"summary": "Billing migration",
 RESOLVED = {"key": "PROJ-12", "id": "10012", "fields": {
     "summary": "Migrate invoices", "issuetype": {"name": "Story"}, "status": {"name": "Done"},
     "created": "2026-01-05T10:00:00.000+0000", "resolutiondate": f"{TODAY.isoformat()}T10:00:00.000+0000",
-    "parent": EPIC, "assignee": {"accountId": JANE["accountId"]}, "reporter": None,
+    "parent": EPIC, "assignee": {"accountId": JANE["accountId"]}, "reporter": None, "customfield_10016": 5,
     "updated": f"{TODAY.isoformat()}T10:00:00.000+0000"}}
 CREATED = {"key": "PROJ-13", "id": "10013", "fields": {
     "summary": "Retire the old billing service", "issuetype": {"name": "Story"}, "status": {"name": "To Do"},
@@ -102,9 +104,11 @@ LINK = "https://acme.slack.com/archives/C1/p1"
 
 def jira_routes():
     """The fake Jira's answers: the person's account, found by their name
-    and read by its id; and their issues, resolved or created as the JQL
-    asks."""
+    and read by its id; the site's fields, one of story points; and their
+    issues, resolved or created as the JQL asks."""
     return {"/rest/api/3/user/search": [JANE],
+            "/rest/api/3/field": [{"id": "customfield_10016", "name": "Story point estimate"},
+                                  {"id": "summary", "name": "Summary"}],
             "/rest/api/3/user": lambda query: JANE if query["accountId"] == JANE["accountId"]
             else (404, {"errorMessages": ["not found"]}),
             "/rest/api/3/search/jql": lambda query: {
@@ -265,10 +269,21 @@ class ScriptsTest(unittest.TestCase):
         self.assertEqual(work["jira"]["resolved"], [
             {"key": "PROJ-12", "title": "Migrate invoices", "type": "Story",
              "parent": {"key": "PROJ-1", "title": "Billing migration", "type": "Epic"}, "status": "Done",
-             "url": f"{self.base_url}/browse/PROJ-12", "date": TODAY.isoformat()}])
+             "url": f"{self.base_url}/browse/PROJ-12", "date": TODAY.isoformat(), "points": 5}])
         self.assertEqual((work["jira"]["focus"], work["github"]["opened"]), (
             [{"key": "PROJ-1", "title": "Billing migration", "issues": 1}],
             [{"repo": "acme/billing", "number": 7, "title": PR["title"], "url": PR["url"], "date": TODAY.isoformat()}]))
+        # The report, from work.json: one resolved issue of 5 points, one
+        # created, each linked to its search.
+        made = self.run_ok(REPORT_SCRIPT, "--prep", prep)
+        with open(made["report"], encoding="utf-8") as f:
+            report = f.read()
+        self.assertEqual((made["problems"], [f"<a href=\"{html.escape(work['jira'][f'{name}_search_url'])}\">{n}</a> ({made_of})" in report
+                                             for n, name, made_of in ((1, "resolved", "1 Story"),
+                                                                      (5, "resolved_points",
+                                                                       "avg=5"),
+                                                                      (1, "created", "1 Story"))]),
+                         ([], [True, True, True]))
         self.assertEqual(self.run_ok(CHECK_SCRIPT, "--prep", prep), {
                          "ok": True, "errors": []})
         open(os.path.join(result["prep_dir"], "draft.md"), "w").close()

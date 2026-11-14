@@ -19,7 +19,6 @@ Judge a note by what it ends up saying, as its synopsis gives it.
 
 - A light-hearted remark, such as a joke about the person.
 - A reminder or a to-do for the manager.
-- A note where the person is only a reference for something else.
 - The status of the work, with no behaviour of the person in it.
 
 {{merge}}

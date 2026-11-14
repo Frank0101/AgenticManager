@@ -1,5 +1,4 @@
-"""Helpers for Markdown text, shared by every skill: word counts, names, links,
-the document a link reaches, headings, fenced code and the date reports show.
+"""Helpers for Markdown text, shared by every skill: word counts, names, links, the document a link reaches, headings, fenced code, and the dates and numbers reports show.
 
 A word count counts words as a reader would, the same in every skill: a link
 as its text, and only tokens with a letter or a digit ("don't" and "3.14" are
@@ -207,3 +206,14 @@ def markdown(text):
         _, language, start, body = opened
         fences.append((start, len(text), language, "".join(body)))
     return "".join(prose), fences, opened is not None
+
+
+def number(value):
+    """A number as text: a whole one without a decimal point, and a fraction
+    rounded to two decimals, so a sum of fractional estimates never shows
+    floating-point noise such as 0.30000000000000004."""
+    if isinstance(value, float):
+        value = round(value, 2)
+        if value.is_integer():
+            return str(int(value))
+    return str(value)

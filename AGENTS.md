@@ -30,6 +30,9 @@ For you, working in this repo, whatever the task. This file is for building the 
 skills/<skill>/          one folder per skill
   SKILL.md               instructions the agent follows
   scripts/               optional helper scripts
+  protocol/              optional: the instructions a script hands a subagent as its task, with
+                         shared parts filled in by the library's protocol.py
+  examples/              optional: the examples the skill ships with
 skills/agentic-manager-utils-lib/
   agentic_manager/       Python package with the helpers shared by all the skills:
                          their scripts import it

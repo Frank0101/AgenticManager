@@ -30,7 +30,8 @@ set_notion.py has recorded Notion too, else null, and how many items each list h
 
 It writes each source's raw file in the prep's _raw, and work.json once
 every source's is in:
-  jira     start and end, the period; base_url, the Jira site's; created,
+  jira     start and end, the period; base_url, the Jira site's;
+           points_fields, the ids of its story points fields; created,
            the issues the person created in the period, and resolved, those
            assigned to them and resolved in it, as Jira's search returns
            them; and created_jql and resolved_jql, the searches that found them
@@ -66,9 +67,10 @@ def jira_raw(client, account, person):
     jqls = {"created": f'reporter = "{account}" AND created >= "{start}" AND created <= "{end}"',
             "resolved": f'assignee = "{account}" AND statusCategory = Done '
             f'AND resolutiondate >= "{start}" AND resolutiondate <= "{end}"'}
+    points_fields = client.points_fields()
     return {"start": person["start"], "end": person["end"], "base_url": client.base_url,
-            **{f"{name}_jql": jql for name, jql in jqls.items()},
-            **{name: client.search(jql, JIRA_FIELDS) for name, jql in jqls.items()}}
+            "points_fields": points_fields, **{f"{name}_jql": jql for name, jql in jqls.items()},
+            **{name: client.search(jql, JIRA_FIELDS + points_fields) for name, jql in jqls.items()}}
 
 
 # GitHub.

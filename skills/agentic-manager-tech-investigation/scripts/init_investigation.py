@@ -11,7 +11,7 @@ from datetime import date
 import os
 import subprocess
 
-from common import (DESIGN, citation, DESIGN_SUBSECTIONS, GITHUB_CLI, GROUPS, JIRA_API, JIRA_GROUP, QUEUE,
+from common import (DESIGN, citation, DESIGN_SUBSECTIONS, GITHUB_CLI, GROUPS, JIRA_API, QUEUE,
                     FOLDER_NAME, LEDGER, LEDGER_SECTIONS, QUEUE_HEADER,
                     QUEUE_SUBSECTIONS, TOPIC, GhError, anchored, clear_folder, day_folder,
                     enabled_sources, gh_signed_in, output_folder, table, write_output_file)
@@ -28,7 +28,7 @@ SEED_QUESTIONS = [
     ("documentation", "What problem does X solve, for whom, and with what impact and success measures?"),
     ("documentation", "What design does X target: which components, connections, identities, boundaries and "
                       "flows will it add, change or remove compared with today?"),
-    (JIRA_GROUP, "What is done, in progress and planned for X, and what evidence backs each Done ticket?"),
+    ("workflow", "What is done, in progress and planned for X, and what evidence backs each Done ticket?"),
     ("source_control", "What code for X is merged or in an open pull request, and how does it work today: which "
                        "components run where, how they connect, with what data and which identities, what groups "
                        "them, and which flows the main entry points follow?"),
@@ -63,7 +63,7 @@ def usable_sources():
     """{group: its enabled sources this skill can use}, in GROUPS' order: any
     of the code and the documentation, and jira-api for the tracker, which
     tickets.py reads."""
-    return {group: [name for name in enabled_sources(group) if group != JIRA_GROUP or name == JIRA_API]
+    return {group: [name for name in enabled_sources(group) if group != "workflow" or name == JIRA_API]
             for group in GROUPS}
 
 

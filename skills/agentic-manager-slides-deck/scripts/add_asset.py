@@ -15,7 +15,7 @@ import re
 import urllib.request
 from urllib.parse import unquote, urlparse
 
-from common import (ASSETS, EXAMPLE_DESCRIPTION, FOLDER_NAME, SLUG, asset_image, assets_dir, clear_folder,
+from common import (ASSETS, DESCRIPTION, FOLDER_NAME, SLUG, asset_image, assets_dir, clear_folder,
                     describe_asset, read_asset, slug, ssl_context, write_output_file)
 
 # Image hosts often refuse requests without one.
@@ -106,7 +106,7 @@ def redescribe(name, title, shows):
 
 def write_description(name, text):
     write_output_file(
-        FOLDER_NAME, f"{ASSETS}/{name}/{EXAMPLE_DESCRIPTION}", text.encode("utf-8"))
+        FOLDER_NAME, f"{ASSETS}/{name}/{DESCRIPTION}", text.encode("utf-8"))
 
 
 def describe(title, shows, credit=None):

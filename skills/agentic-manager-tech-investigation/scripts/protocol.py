@@ -11,7 +11,7 @@ import json
 import os
 
 from common import (BLOCKERS, BOUNDARY_KINDS, COMPONENT_TYPES, CONNECTION_KINDS, COVERAGE, GROUPS, IDENTITY_KINDS,
-                    READ_COVERAGE, STATUS_MEANINGS, WAITS, fill_protocol)
+                    READ_COVERAGE, STATUS_MEANINGS, WAITS, fill_protocol, read_json)
 
 FOLDER = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "..", "protocol")
@@ -38,8 +38,7 @@ def text(name, **values):
 
 def example(name):
     """The worked answer of the task `name`, as data."""
-    with open(os.path.join(FOLDER, "examples", f"{name}.json"), encoding="utf-8") as f:
-        return json.load(f)
+    return read_json(os.path.join(FOLDER, "examples", f"{name}.json"))
 
 
 def compact(data):

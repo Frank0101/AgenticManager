@@ -85,11 +85,8 @@ class HelpersTest(unittest.TestCase):
     def test_helpers(self):
         days = list(charts.daterange(date(2026, 3, 6), date(2026, 3, 9)))
         cases = [
-            ("esc", charts.esc('<a "b">'), "&lt;a &quot;b&quot;&gt;"),
             ("amount_text", [charts.amount_text(n, p) for n, p in ((1, True), (2.5, True), (1, False), (2, False))],
              ["1 pt", "2.5 pts", "1 ticket", "2 tickets"]),
-            ("nice_step", [charts.nice_step(s)
-             for s in (5, 12, 30, 300, 20000)], [1, 2, 5, 50, 3000]),
             ("daterange, both ends included", [
              d.day for d in days], [6, 7, 8, 9]),
             ("is_weekday", [charts.is_weekday(d)
@@ -98,14 +95,6 @@ class HelpersTest(unittest.TestCase):
         for name, got, expected in cases:
             with self.subTest(name):
                 self.assertEqual(got, expected)
-
-    def test_text_width(self):
-        # Wide letters measure wider than narrow ones, and bold wider still:
-        # the label column and the fit-inside-a-bar decisions rely on it.
-        self.assertGreater(charts.text_width("WWW", 12),
-                           charts.text_width("iii", 12))
-        self.assertAlmostEqual(charts.text_width("Done", 12, bold=True),
-                               charts.text_width("Done", 12) * 1.08)
 
 
 class BuildSeriesTest(unittest.TestCase):

@@ -81,13 +81,30 @@ def shown(start, end):
     return f"{display_date(start)} to {display_date(end)}"
 
 
-def add_period_arguments(parser):
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Turn the period the user names into exact days, and check it: the last N months up to "
+        "today, or a first and last day they give.",
+        epilog=OUTPUT, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--last-months", type=int, metavar="N",
+                        help="the last N months, ending today, such as 3 for the last 3 months")
+    add_period_arguments(parser, required=False)
+    args = parser.parse_args(argv)
+    if args.last_months is not None and (args.start or args.end):
+        parser.error(
+            "give either --last-months or --start and --end, not both")
+    return args
+
+
+def add_period_arguments(parser, required=True):
     """Adds --start and --end, the period's first and last days, to the
-    command line `parser`, both required."""
-    parser.add_argument("--start", type=day_argument, required=True,
-                        help="the period's first day, as YYYY-MM-DD")
-    parser.add_argument("--end", type=day_argument, required=True,
-                        help="the period's last day, as YYYY-MM-DD, today at the latest")
+    command line `parser`, both `required`, or else given together."""
+    with_end, with_start = ("", "") if required else (
+        ", with --end", ", with --start")
+    parser.add_argument("--start", type=day_argument, required=required,
+                        help=f"the period's first day, as YYYY-MM-DD{with_end}")
+    parser.add_argument("--end", type=day_argument, required=required,
+                        help=f"the period's last day, as YYYY-MM-DD, today at the latest{with_start}")
 
 
 def day_argument(text):
@@ -98,24 +115,6 @@ def day_argument(text):
     except ValueError:
         raise argparse.ArgumentTypeError(
             f"{text!r} must be a date as YYYY-MM-DD, such as 2026-08-10")
-
-
-def parse_args(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Turn the period the user names into exact days, and check it: the last N months up to "
-        "today, or a first and last day they give.",
-        epilog=OUTPUT, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--last-months", type=int, metavar="N",
-                        help="the last N months, ending today, such as 3 for the last 3 months")
-    parser.add_argument("--start", type=day_argument,
-                        help="the period's first day, as YYYY-MM-DD, with --end")
-    parser.add_argument("--end", type=day_argument,
-                        help="the period's last day, as YYYY-MM-DD, today at the latest, with --start")
-    args = parser.parse_args(argv)
-    if args.last_months is not None and (args.start or args.end):
-        parser.error(
-            "give either --last-months or --start and --end, not both")
-    return args
 
 
 def main():

@@ -867,6 +867,15 @@ class ClientTest(unittest.TestCase):
                 self.assertEqual(
                     self.client.flagged_and_points_fields(42), expected)
 
+    def test_points_fields(self):
+        # Every field named as a points field, in the names' order, whatever
+        # the site's; none when it has none.
+        for names, expected in [(("Story point estimate", "Flagged", "Story Points"), ["customfield_2", "customfield_0"]),
+                                (("Flagged",), [])]:
+            with self.subTest(names):
+                self.fields(*names)
+                self.assertEqual(self.client.points_fields(), expected)
+
     # --- find_sprint
 
     def board_sprints(self, board_id, *sprints):

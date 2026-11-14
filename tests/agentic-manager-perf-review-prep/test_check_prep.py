@@ -35,7 +35,7 @@ class CheckTest(unittest.TestCase):
         # each None when missing, extra file, expected in the errors)
         cases = [("a file more", {}, "notes.md", "move notes.md to your own scratch folder"),
                  ("no person", {"person": None},
-                  None, "missing person.json"),
+                  None, "missing charts, person.json, report.md"),
                  ("no orientation", {"orientation": None},
                   None, "missing orientation.json"),
                  ("no reviews", {"reviews": None},
@@ -63,7 +63,8 @@ class CheckTest(unittest.TestCase):
                          {**NOTES["going_well"][0]["evidence"][0], "date": "2026-06-30"}]}]}},
                   None, "notes.json: the notes summary's going_well: 'Presented the migration to the wider team'...'s "
                   "evidence must each be of a day"),
-                 ("no work", {"work": None}, None, "missing work.json"),
+                 ("no work", {"work": None}, None,
+                  "missing charts, report.md, work.json"),
                  ("work dated outside the period", {"work": {**WORK, "jira": {**WORK["jira"], "resolved": [
                      {**WORK["jira"]["resolved"][0], "date": "2026-07-01"}]}}},
                   None, "work.json: the work's jira resolved"),
@@ -74,6 +75,12 @@ class CheckTest(unittest.TestCase):
                   None, "work.json: the work's jira facts don't match its items"),
                  ("no facts", {"work": {**WORK, "github": {k: v for k, v in WORK["github"].items() if k != "counts"}}},
                   None, "work.json: the work's github must hold"),
+                 ("no report", {"report": False},
+                  None, "missing charts, report.md"),
+                 ("a chart more", {}, "charts/extra.svg",
+                  "report.md: the charts folder must hold only"),
+                 ("a figure changed by hand", {}, ("report.md", '">1</a>', '">2</a>'),
+                  "report.md: the report's Jira cell for created doesn't show work.json"),
                  ("a Slack point with no evidence", {"slack": {**SLACK, "going_well": [
                      {**SLACK["going_well"][0], "evidence": []}]}},
                   None, "slack.json: the Slack summary's going_well must be a list of points")]
@@ -84,7 +91,13 @@ class CheckTest(unittest.TestCase):
                          "reviews": REVIEWS, "feedback": FEEDBACK, "notes": NOTES, "work": WORK, "slack": SLACK,
                          **changes}
                 write_prep(self.folder, prep=prep, **files)
-                if extra:
+                if isinstance(extra, tuple):
+                    path = os.path.join(self.folder, prep, extra[0])
+                    with open(path, encoding="utf-8") as f:
+                        text = f.read()
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(text.replace(extra[1], extra[2], 1))
+                elif extra:
                     open(os.path.join(self.folder, prep, extra), "w").close()
                 result = check_prep.check_prep(prep, today=TODAY)
                 self.assertFalse(result["ok"])

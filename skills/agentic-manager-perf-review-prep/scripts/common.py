@@ -2,14 +2,16 @@
 files it holds, how to find a prep's folder, the person a prep is for, the
 review's period and its days and months, who the person is in each source, the parts
 every summary has, the manager's view, previous reviews, the period's
-feedback, the manager's notes, the person's work in Jira, GitHub and Notion, and their Slack
-messages. The rules of each file are one function, applied when it is written
+feedback, the manager's notes, the person's work in Jira, GitHub and Notion, their Slack
+messages, and the report, with how it writes a figure. The rules of each file are one function, applied when it is written
 and by the final check, so the two can't differ. Scripts import the shared
 library's names from here, so they don't depend on the order of their imports.
 """
 from datetime import date, timedelta
+import html
 import json
 import os
+import re
 import sys
 from urllib.parse import quote
 
@@ -24,9 +26,10 @@ from agentic_manager.jira import JiraClient, browse_url, plain_text  # noqa: E40
 from agentic_manager.logseq import graph_path, links, notes, page_aliases  # noqa: E402,F401
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
-from agentic_manager.output_folder import DAY_FOLDER, clear_folder, day_folder, output_folder  # noqa: E402,F401
+from agentic_manager.output_folder import DAY_FOLDER, clear_folder, day_folder, output_folder, work_folder  # noqa: E402,F401
 from agentic_manager.period import add_period_arguments, period_problem, shown  # noqa: E402,F401
-from agentic_manager.text import as_name, word_count  # noqa: E402,F401
+from agentic_manager.svg import GRID, INK, MUTED, esc, nice_step, svg, text  # noqa: E402,F401
+from agentic_manager.text import as_name, number, word_count  # noqa: E402,F401
 
 # How to write a point and pick its values, with their examples, lives in the
 # protocol's shared part _point.md, the one place for them: the merges' tasks
@@ -128,8 +131,10 @@ WORK_LISTS = {"jira": ("created", "resolved"), "github": (
     "opened", "merged"), "notion": ("created",)}
 # What a raw file holds beside its lists: the period and, for each list, the
 # search that found it, Jira's JQL or GitHub's query on github.com, whose
-# org: terms are alternatives.
-RAW_FIELDS = {"jira": ("start", "end", "base_url", "created_jql", "resolved_jql"),
+# org: terms are alternatives; and Jira's story points fields, every one the
+# site has, as projects may estimate in different ones, an issue's points the
+# first of them it has.
+RAW_FIELDS = {"jira": ("start", "end", "base_url", "points_fields", "created_jql", "resolved_jql"),
               "github": ("start", "end", "orgs", "opened_query", "merged_query"), "notion": ()}
 # The fields of a raw item work.json is built from, and those kept only to
 # check whose it is: Jira's assignee, reporter and updated, GitHub's author
@@ -151,9 +156,12 @@ PARENT_FIELDS = ("key", "fields.summary", "fields.issuetype.name")
 NOTION_LIMIT = 50
 # The facts of each source. The activity over time isn't one: each item
 # has its day, and grouping them, such as by week, is for whatever shows it.
-FACT_KEYS = {"jira": ("counts", "created_by_type", "resolved_by_type", "focus"),
+FACT_KEYS = {"jira": ("counts", "created_by_type", "resolved_by_type", "focus", "resolved_points"),
              "github": ("counts",), "notion": ("counts",)}
-SEARCHED = ("jira", "github")
+# The searches work.json links to, by what they find: each list's, and the
+# resolved issues that are estimated, whose points are summed.
+SEARCH_URLS = {"jira": ("created", "resolved", "resolved_points"),
+               "github": ("opened", "merged")}
 # The share of the resolved issues the main focus covers.
 FOCUS_SHARE = 0.8
 # What the person's Slack messages show, read by subagents a month each and
@@ -163,15 +171,27 @@ SLACK = "slack.json"
 # summary can be traced back to the notes and synopses it came from, and the
 # raw file of each source of the work.
 RAW_DIR = "_raw"
+# The report the prep gives the manager, drawn from the files above, and the
+# charts it shows, each a view of work.json, drawn as SVG.
+REPORT = "report.md"
+CHARTS_DIR = "charts"
+# The Jira cells of the report, in order: each a fact's figure, linked to
+# its search, with what it is made of, and below it its chart.
+JIRA_CELLS = (("created", "jira_created_over_time.svg"), ("resolved", "jira_resolved_over_time.svg"),
+              ("resolved_points", "jira_story_points.svg"))
+CHART_FILES = tuple(chart for _, chart in JIRA_CELLS)
+JIRA_FIGURE = re.compile(
+    r'<td>(?:<a href="([^"]+)">([\d.]+)</a>|([\d.]+)) \((.*?)\)</td>')
+JIRA_CHART = re.compile(r'<td><img src="charts/([^"]+)"')
 
 
 def expected_files():
     """Every file a prep folder holds, and nothing else: the person, the
     period and who they are in each source, the manager's view of them, their previous
     reviews, the period's feedback, the manager's notes on them, what their Slack
-    messages show, their work in Jira, GitHub and Notion, and the _raw folder
-    of what each source gave."""
-    return {PERSON, ORIENTATION, REVIEWS, FEEDBACK, NOTES, SLACK, WORK, RAW_DIR}
+    messages show, their work in Jira, GitHub and Notion, the _raw folder of
+    what each source gave, and the report with its charts."""
+    return {PERSON, ORIENTATION, REVIEWS, FEEDBACK, NOTES, SLACK, WORK, RAW_DIR, REPORT, CHARTS_DIR}
 
 
 def write_work(prep, source, raw, days):
@@ -299,8 +319,8 @@ def read_raw_work(prep):
 
 def build_work(raws, days):
     """work.json from `raws`, every source's raw file: for each source its
-    items, its facts over `days` and, for those SEARCHED, each list's search
-    address."""
+    items, its facts over `days` and the address of each of its
+    SEARCH_URLS."""
     work = {}
     for source, raw in raws.items():
         lists = work_items(source, raw)
@@ -314,8 +334,8 @@ def work_items(source, raw):
     work.json records them, without the fields kept only to check them, and
     of Notion's results only the pages of their own."""
     if source == "jira":
-        return {"created": [issue_item(raw["base_url"], issue, "created") for issue in raw["created"]],
-                "resolved": [issue_item(raw["base_url"], issue, "resolutiondate") for issue in raw["resolved"]]}
+        return {name: [issue_item(raw["base_url"], issue, dated_by, raw["points_fields"]) for issue in raw[name]]
+                for name, dated_by in (("created", "created"), ("resolved", "resolutiondate"))}
     if source == "github":
         return {name: sorted((pr_item(pr, pr[stamp]) for pr in raw[name]), key=lambda item: (item["date"], item["url"]))
                 for name, stamp in (("opened", "createdAt"), ("merged", "closedAt"))}
@@ -325,18 +345,20 @@ def work_items(source, raw):
                               key=lambda page: (page["between"][0], page["url"]))}
 
 
-def issue_item(base_url, issue, dated_by):
+def issue_item(base_url, issue, dated_by, points_fields):
     """A Jira issue as work.json records it, its link on the site at
-    `base_url`, dated by the day of its field `dated_by`. Its parent is kept
-    with its type and title, as the main focus is worked out from the
-    parents."""
+    `base_url`, dated by the day of its field `dated_by`, its points the
+    first of `points_fields` it has, or null when it isn't estimated. Its
+    parent is kept with its type and title, as the main focus is worked out
+    from the parents."""
     fields = issue["fields"]
     parent = fields.get("parent")
     return {"key": issue["key"], "title": fields.get("summary") or "", "type": fields["issuetype"]["name"],
             "parent": {"key": parent["key"], "title": parent["fields"].get("summary") or "",
                        "type": parent["fields"]["issuetype"]["name"]} if parent else None,
             "status": fields["status"]["name"], "url": browse_url(base_url, issue["key"]),
-            "date": (fields[dated_by] or "")[:10]}
+            "date": (fields[dated_by] or "")[:10],
+            "points": next((fields[field] for field in points_fields if fields.get(field) is not None), None)}
 
 
 def pr_item(pr, stamp):
@@ -348,12 +370,16 @@ def pr_item(pr, stamp):
 
 
 def search_urls(source, raw):
-    """{<list>_search_url: address}: for a SEARCHED source, the address of
-    each list's search, Jira's JQL on its site or GitHub's query on
-    github.com, which finds the same items live; {} for any other."""
+    """{<search>_search_url: address}: the address of each of the SEARCH_URLS
+    of `source`, Jira's JQL on its site or GitHub's query on github.com,
+    which finds the same items live; the estimated resolved issues' null
+    when the site has no points field; {} for a source with none."""
     if source == "jira":
-        return {f"{name}_search_url": f"{raw['base_url']}/issues/?jql={quote(raw[f'{name}_jql'])}"
-                for name in WORK_LISTS[source]}
+        estimated = " OR ".join(f"cf[{field.removeprefix('customfield_')}] is not EMPTY"
+                                for field in raw["points_fields"])
+        jqls = {"created": raw["created_jql"], "resolved": raw["resolved_jql"],
+                "resolved_points": estimated and f"{raw['resolved_jql']} AND ({estimated})"}
+        return {f"{name}_search_url": jql and f"{raw['base_url']}/issues/?jql={quote(jql)}" for name, jql in jqls.items()}
     if source == "github":
         return {f"{name}_search_url": f"https://github.com/search?q={quote(raw[f'{name}_query'])}&type=pullrequests"
                 for name in WORK_LISTS[source]}
@@ -398,12 +424,23 @@ def script_command(script):
     """The command that runs the skill's script `script`, by the folder the
     agent ran one of the skill's scripts from, so every command a task names
     matches the one the skill pre-approves."""
+    return f"python3 {os.path.join(_scripts_folder(), script)}"
+
+
+def library_command(module):
+    """The command that runs the library's module `module`, such as
+    "extract_saved.py", by the path the skill pre-approves, beside the skill's
+    folder as script_command() finds it."""
+    return f"python3 {os.path.join(os.path.dirname(_scripts_folder()), '..', 'agentic-manager-utils-lib', 'agentic_manager', module)}"
+
+
+def _scripts_folder():
+    """The skill's scripts folder as the agent ran one of its scripts."""
     # abspath, not realpath: the agent runs a script by the path the skill
     # pre-approves, which can be a symlink to the installed skill.
     ran = os.path.dirname(os.path.abspath(sys.argv[0]))
     here = os.path.dirname(os.path.realpath(__file__))
-    folder = ran if os.path.realpath(ran) == here else here
-    return f"python3 {os.path.join(folder, script)}"
+    return ran if os.path.realpath(ran) == here else here
 
 
 def require_gh(run, what):
@@ -593,7 +630,7 @@ def slack_problems(slack, values, days):
 def work_problems(work, days):
     """Why `work` isn't the person's work, empty when it is: for each source
     of WORK_LISTS, its lists, by items_problems(), its FACT_KEYS, matching the
-    items, and, for those SEARCHED, each list's search address."""
+    items, and each of its SEARCH_URLS' address."""
     if not (isinstance(work, dict) and sorted(work) == sorted(WORK_LISTS)):
         return [f"the work must hold {', '.join(WORK_LISTS)}"]
     problems = []
@@ -614,23 +651,23 @@ def work_problems(work, days):
 
 
 def work_keys(source):
-    """What the work of `source` holds: its lists, its FACT_KEYS and, when it
-    is SEARCHED, each list's <list>_search_url."""
+    """What the work of `source` holds: its lists, its FACT_KEYS and each of
+    its SEARCH_URLS as <search>_search_url."""
     return (*WORK_LISTS[source], *FACT_KEYS[source],
-            *(f"{name}_search_url" for name in WORK_LISTS[source] if source in SEARCHED))
+            *(f"{name}_search_url" for name in SEARCH_URLS.get(source, ())))
 
 
 def items_problems(source, lists, days):
     """Why `lists`, {list: items} of `source`, don't follow their rules,
     empty when they do: each item an object with a title, a link and a date,
-    one of `days`, but a created Notion page, `between`, two of them, a Notion
-    page with its path too, and listed once."""
+    one of `days`, but a Notion page its path and `between`, two of them, a
+    Jira issue its points too, a number or null, and listed once."""
     problems = []
     for name, items in lists.items():
         problems += [f"the work's {source} {name}: {item!r:.80} needs a title, a link"
-                     + (", its path" if source == "notion" else "")
-                     + (" and the range it was found in, within the period" if (source, name) == ("notion", "created")
+                     + (", its path and the range it was found in, within the period" if source == "notion"
                         else " and a day in the period")
+                     + (", and points, a number or null" if source == "jira" else "")
                      for item in items if not _is_work_item(source, name, item, days)]
         urls = [item.get("url") for item in items if isinstance(item, dict)]
         problems += [f"the work's {source} {name} lists {url} more than once"
@@ -640,11 +677,13 @@ def items_problems(source, lists, days):
 
 def _is_work_item(source, name, item, days):
     """Whether `item` of the list `name` of `source` follows its rules."""
-    if (source, name) == ("notion", "created"):
+    if source == "notion":
         return (_is_item(item, days, dated=False) and isinstance(item.get("path"), str)
                 and isinstance(item.get("between"), list) and len(item["between"]) == 2
                 and all(day in days for day in item["between"]))
-    return _is_item(item, days, dated=True) and (source != "notion" or isinstance(item.get("path"), str))
+    points = item.get("points") if isinstance(item, dict) else None
+    return _is_item(item, days, dated=True) and (source != "jira" or points is None or (
+        isinstance(points, (int, float)) and not isinstance(points, bool)))
 
 
 def _is_item(item, days, dated):
@@ -661,13 +700,26 @@ def source_facts(source, lists, days):
     """The facts of `lists`, the items of `source`, in the period of `days`,
     as FACT_KEYS names them: counts, how many items each list holds; for
     Jira, created_by_type and resolved_by_type, the issues of each type, most
-    first, and focus, the main focus of the resolved issues."""
+    first, focus, the main focus of the resolved issues, and resolved_points,
+    the resolved issues' points: their total, how many are estimated and
+    their average, null when none is, an unestimated issue counting toward
+    neither."""
     facts: dict = {"counts": {name: len(items)
                               for name, items in lists.items()}}
     if source == "jira":
         facts |= {"created_by_type": by_type(lists["created"]), "resolved_by_type": by_type(lists["resolved"]),
-                  "focus": focus(lists["resolved"])}
+                  "focus": focus(lists["resolved"]), "resolved_points": points(lists["resolved"])}
     return facts
+
+
+def points(issues):
+    """{total, estimated, average}: the points of the estimated `issues`,
+    summed, how many they are and their average, null when there are none,
+    to one decimal."""
+    estimated = [issue["points"]
+                 for issue in issues if issue["points"] is not None]
+    return {"total": round(sum(estimated), 1), "estimated": len(estimated),
+            "average": round(sum(estimated) / len(estimated), 1) if estimated else None}
 
 
 def by_type(issues):
@@ -700,6 +752,59 @@ def focus(resolved):
             cutoff = count
             break
     return [{"key": key, "title": title, "issues": count} for (key, title), count in ranked if count >= cutoff]
+
+
+def report_problems(report, work, charts):
+    """Why `report`, report.md's text, doesn't show `work`, work.json, or
+    `charts`, the files in the charts folder, those starting with a dot
+    aside, aren't its charts, empty when they are. Its Jira figures are worked out again from the items, apart
+    from work.json's facts and from make_report.py, with which it shares only
+    how a figure is written, and read back from the report's table: each
+    count, the story points' total and average, each breakdown by type and
+    each link to its search."""
+    charts = [name for name in charts if not name.startswith(".")]
+    problems = [] if sorted(charts) == sorted(CHART_FILES) else [
+        f"the charts folder must hold only {', '.join(CHART_FILES)}: run make_report.py again"]
+    jira = work["jira"]
+    estimated = [issue["points"]
+                 for issue in jira["resolved"] if issue["points"] is not None]
+    total = round(sum(estimated), 1)
+    expected = {"resolved": (len(jira["resolved"]), types_text(_types(jira["resolved"]))),
+                "resolved_points": (total, average_text(round(total / len(estimated), 1) if estimated else None)),
+                "created": (len(jira["created"]), types_text(_types(jira["created"])))}
+    figures, charts_shown = JIRA_FIGURE.findall(
+        report), JIRA_CHART.findall(report)
+    if (len(figures), len(charts_shown)) != (len(JIRA_CELLS), len(JIRA_CELLS)):
+        return problems + ["the report's Jira table must have a row of three figures and one of their charts: "
+                           "run make_report.py again"]
+    for (name, chart), (url, linked, plain, made_of), shown in zip(JIRA_CELLS, figures, charts_shown):
+        if (float(linked or plain), html.unescape(url) or None, html.unescape(made_of), shown) != (
+                expected[name][0], jira[f"{name}_search_url"], expected[name][1], chart):
+            problems.append(
+                f"the report's Jira cell for {name} doesn't show work.json: run make_report.py again")
+    return problems
+
+
+def _types(issues):
+    """[{type, issues}]: how many of `issues` there are of each type, most
+    first, then by type, worked out apart from by_type()."""
+    types = {}
+    for issue in issues:
+        types[issue["type"]] = types.get(issue["type"], 0) + 1
+    return [{"type": kind, "issues": n} for kind, n in sorted(types.items(), key=lambda pair: (-pair[1], pair[0]))]
+
+
+def types_text(by_type):
+    """A breakdown by type, [{type, issues}], as the report writes it, such
+    as "2 Task, 1 Bug": how the report and its check write it, so they
+    agree."""
+    return ", ".join(f"{entry['issues']} {entry['type']}" for entry in by_type)
+
+
+def average_text(average):
+    """The story points' `average` as the report writes it, such as
+    "avg=3.3", or "none estimated" when it is null."""
+    return "none estimated" if average is None else f"avg={number(average)}"
 
 
 def summary_problems(summary, what, values, days=None, undated_context=False):

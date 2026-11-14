@@ -10,13 +10,12 @@ merge is built from: the rest lasts only a run, so it sits in work_dir().
 """
 import json
 import os
-import tempfile
 from dataclasses import dataclass, field
 from typing import Callable
 
 from common import (FOLDER_NAME, PERSON, PROTOCOL, RAW_DIR, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
-                    fill_protocol, is_point, point_fields, point_shape, prep_dir, script_command, read_json, stdin_json,
-                    summary_problems, word_count, write_raw,
+                    fill_protocol, is_point, library_command, point_fields, point_shape, prep_dir, script_command, read_json, stdin_json,
+                    summary_problems, word_count, work_folder, write_raw,
                     write_prep_file)
 
 MATERIAL = "material.json"
@@ -348,7 +347,7 @@ def work_dir(source, prep):
     lasts. start empties it, never finding what an earlier run left. Exits
     when the prep isn't there."""
     prep_dir(prep)
-    return os.path.join(tempfile.gettempdir(), FOLDER_NAME, prep, source.name)
+    return work_folder(FOLDER_NAME, prep, source.name)
 
 
 def raw_dir(source, prep):
@@ -409,7 +408,8 @@ def read_protocol(name):
     command that reads a Jira ticket by the path the skill pre-approves."""
     return fill_protocol(PROTOCOL, name, {"synopsis_words": SYNOPSIS_WORDS,
                                           "max_synopsis_words": MAX_SYNOPSIS_WORDS,
-                                          "jira_ticket": f"{script_command('jira_ticket.py')} --key <key>"})
+                                          "jira_ticket": f"{script_command('jira_ticket.py')} --key <key>",
+                                          "extract_saved": library_command("extract_saved.py")})
 
 
 def call(source):

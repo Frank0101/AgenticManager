@@ -187,8 +187,8 @@ class RowsTest(LedgerCase):
         self.records("S01", "S02")
         self.write(("sources", "S03", source("[t](https://example.com/t)", kind="tracker")),
                    ("findings", "F01", ["Planned.", "S03", "None"]))
-        self.write(("components", "C01", ["n", "service", "None", "r", "p", "🟨 Planned", "Unchanged", "F01"]),
-                   ("queue-ready", "Q01", ["C01", "Is it live?", "None", ""]))
+        self.write(("components", "C01", ["n", "service", "None", "r", "p", "🟨 Planned", "Unchanged", c("F01")]),
+                   ("queue-ready", "Q01", [c("C01"), "Is it live?", "None", ""]))
         cases = [("a row", "F01", "F01 is still cited by C01"),
                  ("a question's trigger", "C01", "C01 is still cited by Q01")]
         for name, ident, expected in cases:

@@ -19,7 +19,8 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.output_file import read_json, write_output_file  # noqa: E402,F401
-from agentic_manager.text import HEADING, INLINE_LINK, display_date, link_text, word_count  # noqa: E402,F401
+from agentic_manager.text import HEADING, INLINE_LINK, display_date, link_text, number, word_count  # noqa: E402,F401
+from agentic_manager.svg import GRID, INK, MUTED, SURFACE, nice_step, svg, text, text_width  # noqa: E402,F401
 from agentic_manager.output_folder import clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order,  # noqa: E402,F401
@@ -122,8 +123,8 @@ OUTCOME_ROWS = ("original", "carried_in", "new", "extra")
 
 # Each outcome's (background, text) colours, shared by the outcome charts and
 # the timeline's tags, so an outcome looks the same wherever it shows.
-OUTCOME_COLOURS = {"completed": ("#0ca30c", "#ffffff"), "not_completed": ("#fab219", "#1a1a1a"),
-                   "descoped": ("#b5b2aa", "#1a1a1a")}
+OUTCOME_COLOURS = {"completed": ("#0ca30c", "#ffffff"), "not_completed": ("#fab219", INK),
+                   "descoped": ("#b5b2aa", INK)}
 
 # The groups of an epic's commentary, in the order it shows them (see
 # build_sprint_data.py's scope_group).
@@ -584,17 +585,6 @@ def pts(points):
     if points is None:
         return "– pts"
     return f"{number(points)} {plural(points, 'pt', 'pts')}"
-
-
-def number(value):
-    """A number as text: a whole one without a decimal point, and a fraction
-    rounded to two decimals, so a sum of fractional estimates never shows
-    floating-point noise such as 0.30000000000000004."""
-    if isinstance(value, float):
-        value = round(value, 2)
-        if value.is_integer():
-            return str(int(value))
-    return str(value)
 
 
 def ratio(done, total, done_points, total_points):

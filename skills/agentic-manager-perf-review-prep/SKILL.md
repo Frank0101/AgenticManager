@@ -2,7 +2,7 @@
 name: agentic-manager-perf-review-prep
 disable-model-invocation: true
 description: Helps a manager prepare a performance review of one person over a review period, from the evidence of their work in Jira, GitHub, the documentation, the team's messages and the manager's own notes. In development; not ready to use.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py *)
 ---
 
 # Performance Review Prep
@@ -17,6 +17,7 @@ perf-review-preps/
     ├── _raw/             read_notes.py and read_slack.py write (each reader's answer, by source: a month's in
     │                     months/, the notes' pages in pages.json); fetch_work.py and set_notion.py write what
     │                     each source gave, with its searches, jira.json, github.json and notion.json
+    ├── charts/           make_report.py writes (the report's charts, one SVG each)
     ├── person.json       init_prep.py and set_identities.py write (the person, the period and who they are in each
     │                     source, as the manager confirmed)
     ├── orientation.json  set_summary.py writes (the manager's overall view of the person, summarised)
@@ -26,10 +27,12 @@ perf-review-preps/
     ├── notes.json        read_notes.py writes (what the manager's own notes say about the person, merged, with
     │                     their links)
     ├── slack.json        read_slack.py writes (what the person's Slack messages show, merged, with their links)
-    └── work.json         fetch_work.py or set_notion.py builds, once _raw holds every source (by source, the
-                          person's Jira issues, pull requests and Notion pages in the period, each with its day,
-                          and their facts: the counts, the issues created and resolved by type, the main focus
-                          and the link to each search)
+    ├── work.json         fetch_work.py or set_notion.py builds, once _raw holds every source (by source, the
+    │                     person's Jira issues, pull requests and Notion pages in the period, each with its day,
+    │                     and their facts: the counts, the issues created and resolved by type, the main focus,
+    │                     the resolved issues' story points and the link to each search)
+    └── report.md         make_report.py writes (the report for the manager, from the files above: for now, the
+                          person's Jira figures)
 ```
 
 ## Prerequisite
@@ -113,7 +116,7 @@ The manager's own notes on the person, in their vault, and the person's Slack me
 
 1. **Start.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py start --prep <prep>` and `python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py start --prep <prep>`: each prints `tasks`, a line `Task <name>: <path>` for each of its tasks, and `merge`, its merge task's line. When there is nothing to read, a script records an empty summary and prints what `finished` would.
 2. **Hand out the tasks.** Give each of both scripts' `tasks` to a fresh subagent, all at once, only its path, with: "Do the task in <path> exactly as written there, then reply in one line." Give a reading task a smaller model than your own, as it only reads and summarises, and a merge your own, as it judges. Once all of a source's tasks have replied, give its `merge` to one more fresh subagent the same way, and once that one has replied, run its script's `finished`. After a break, run `start` again: step 6 starts over.
-3. **Finish** as steps 3 to 5 do, once both are finished: your one question is about what the merges left out in doubt, each `finished`'s `in_doubt`. List only those you think may belong in a summary, each with why, and ask whether to add them; when there are none, ask nothing. To add one, read its summary and submit it again, with the point added and its `finished`'s `in_doubt`, with its `correct` command. Then tell the manager, in one line, that what their notes say and what the person's Slack shows are recorded, with a Markdown link to each, the path its `finished` printed, and go on.
+3. **Finish** once both are finished: your one question is about what the merges left out in doubt, each `finished`'s `in_doubt`. List only those you think may belong in a summary, each with why, and ask whether to add them; when there are none, ask nothing. To add one, read its summary and submit it again, with the point added and its `finished`'s `in_doubt`, with its `correct` command. Then tell the manager, in one line, that what their notes say and what the person's Slack shows are recorded, with a Markdown link to each, the path its `finished` printed, and go on.
 
 ## 7. Gather the data points
 
@@ -124,9 +127,13 @@ The person's work in Jira, GitHub and Notion, in the period. Like step 6, it is 
 
    When a search returns 50 results, rows included, search its range again in shorter ranges, and record those instead; a single day that still returns 50 is recorded as full, as `set_notion.py`'s `--help` says. Record every search with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py --prep <prep>`, its results as the search returned them, unchanged: the script keeps the pages of their own, leaving out databases and their rows.
 
-## 8. Tell the user
+## 8. Write the report
 
-First check the prep with `python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py --prep <prep>`. If it fails, fix what it names, by running again the step that writes that file, and check again. Once it passes, say the prep is ready, with a Markdown link to its `prep_dir`, and that the next step, writing the review from what was gathered, isn't built yet. If step 1's `temporary` is `true`, add that the folder is temporary and setting `output.root` in the config keeps preps.
+Once step 7 is done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/make_report.py --prep <prep>`: it writes `report.md` and its charts from `work.json`, with no judgment, and checks them. If its `problems` aren't empty, stop and tell the manager what they say.
+
+## 9. Tell the manager
+
+First check the prep with `python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py --prep <prep>`. If it fails, fix what it names, by running again the step that writes that file, and check again. Once it passes, say the prep is ready, with a Markdown link to its `report.md`, and that the rest of the report, from what else was gathered, isn't built yet. If step 1's `temporary` is `true`, add that the folder is temporary and setting `output.root` in the config keeps preps.
 
 ## Summaries
 

@@ -25,8 +25,8 @@ from agentic_manager.config import is_filled, load_config  # noqa: E402
 
 # Where skills write their files when the config sets no output root.
 TEMP_ROOT = os.path.join(tempfile.gettempdir(), "agentic-manager")
-# The file that says what a _ folder holds.
-EXAMPLE_DESCRIPTION = "description.md"
+# The file that says what a _ folder holds, such as an example or an asset.
+DESCRIPTION = "description.md"
 # The folder beside a skill's runs that holds the examples the user kept.
 KEPT_EXAMPLES = "_examples"
 # A description's title, and its labelled lines, such as **Shows:** text.
@@ -51,6 +51,14 @@ def output_folder(name):
     folder = os.path.abspath(os.path.join(folder, name))
     os.makedirs(folder, exist_ok=True)
     return folder, temporary
+
+
+def work_folder(name, *parts):
+    """The folder `parts` of the working files of the skill whose output
+    folder is `name`, in the system's temporary folder: files only a run
+    needs, such as subagents' tasks, kept out of the output folder so it
+    holds only the skill's own files."""
+    return os.path.join(tempfile.gettempdir(), name, *parts)
 
 
 def output_root():

@@ -15,13 +15,12 @@ import json
 import os
 import re
 import sys
-import tempfile
 
-from common import (BLOCKED_BY, CONTENT, DESIGN_ORDER, FOLDER_NAME, LEDGER, REPORT_SUFFIX, SCOPE_QUESTION,
+from common import (BLOCKED_BY, CONTENT, DESIGN_ORDER, FOLDER_NAME, LEDGER, REPORT_SUFFIX, SCOPE_QUESTION, TABLES,
                     clear_folder, ids, investigation_dir, plain, read_json, stops_on_failure, strip_anchors,
-                    topic_of, write_output_file)
+                    topic_of, work_folder, write_output_file)
 from init_investigation import init, usable_sources
-from ledger import (TABLES, as_written, basis, brief, design_basis, depends_on, load, move_row, save, scope_decisions,
+from ledger import (as_written, basis, brief, design_basis, depends_on, load, move_row, save, scope_decisions,
                     table_rows)
 from submissions import design_rows, submit_research, submit_scope, submit_design
 import check_report
@@ -244,7 +243,7 @@ def work_dir(relative):
     the investigation, so the output folder holds only its own files, a run is
     cleaned up by deleting one folder, and a new run of the same topic and day
     empties it, never finding what an earlier run left."""
-    return os.path.join(tempfile.gettempdir(), FOLDER_NAME, relative)
+    return work_folder(FOLDER_NAME, relative)
 
 
 def task_folder(relative, task):

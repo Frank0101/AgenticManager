@@ -106,13 +106,14 @@ def check_report(report, handover=False):
 
 
 def check_ledger(path, handover=False):
-    """(errors, warnings) of the ledger's structure: its sections and the
-    queue's in order, findings written once and every one cited written, every
-    ticket and pull request linked, and, at handover, a queue with nothing left
-    ready or in progress, completed questions answered,
-    blocked ones naming what blocks them, the rows of scope boundaries,
-    sources, findings, gaps, decisions, components and the system design within their rules, code read for every
-    component claiming it, and linked sources."""
+    """(errors, warnings) of the ledger's structure, and at handover of its
+    rows. It checks its sections and the queue's in order, findings written
+    once and every one cited written, every ticket and pull request linked,
+    and, at handover, a queue with nothing left ready or in progress,
+    completed questions answered, blocked ones naming what blocks them, the
+    rows of scope boundaries, sources, findings, gaps, decisions, components
+    and the system design within their rules, code read for every component
+    claiming it, and linked sources."""
     errors, warnings = [], []
     try:
         text = path.read_text(encoding="utf-8")
@@ -271,11 +272,11 @@ def reference_error(where, found):
 
 
 def closing_problems(body):
-    """The rows of the ledger `body` that break a rule of their table, as
-    row_problem() finds them, the rules ledger.py applies on write: completed
-    questions with no answer, blocked questions that don't say what blocks
-    them, and system design rows, sources, findings, gaps, decisions and scope
-    boundaries."""
+    """The rows of the ledger `body` that break a rule of their table, at
+    handover. They are found as row_problem() finds them, the rules ledger.py
+    applies on write: completed questions with no answer, blocked questions
+    that don't say what blocks them, and system design rows, sources,
+    findings, gaps, decisions and scope boundaries."""
     evidence = design_evidence(body)
     blocked = {row[0] for row in records(body, "queue-blocked")}
     # Sources and findings are read once per ID, as the rules look them up.

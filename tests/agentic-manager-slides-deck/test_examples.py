@@ -41,8 +41,8 @@ class ExamplesTest(unittest.TestCase):
             with self.subTest(name):
                 folder = os.path.join(EXAMPLES, name)
                 self.assertEqual(sorted(os.listdir(folder)), [
-                                 common.EXAMPLE_DESCRIPTION, common.WIREFRAME])
-                with open(os.path.join(folder, common.EXAMPLE_DESCRIPTION), encoding="utf-8") as f:
+                                 common.DESCRIPTION, common.WIREFRAME])
+                with open(os.path.join(folder, common.DESCRIPTION), encoding="utf-8") as f:
                     text = f.read()
                 self.assertRegex(text, r"\A# \S")
                 positions = [text.find(part) for part in PARTS]

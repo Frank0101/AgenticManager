@@ -1,5 +1,4 @@
-"""Draw the report's three charts as SVG from <report_dir>/data.json, using only
-the standard library.
+"""Draw the report's three charts as SVG from <report_dir>/data.json.
 
 The charts are views of data.json: the outcome charts draw its breakdown of the
 counted spells, and the burndown its daily readings, which replay the same
@@ -7,20 +6,14 @@ events as every other part of the report, so no chart can contradict the
 timeline.
 """
 import argparse
-import html
 import math
 import os
 from datetime import date, timedelta
 
-from common import (number, CHART_FILES, DATA_FILE, OUTCOME_COLOURS, OUTCOME_ROWS, OUTCOMES, display_date, known_sum,
-                    read_json, outcome_total,
-                    pts, scope_group_label, unit, whole_percentage, write_report_file)
+from common import (CHART_FILES, DATA_FILE, OUTCOME_COLOURS, OUTCOME_ROWS, OUTCOMES, display_date, known_sum, number,
+                    outcome_total, pts, read_json, scope_group_label, unit, whole_percentage, write_report_file)
+from common import GRID, INK, MUTED, SURFACE, nice_step, svg, text, text_width
 
-FONT = "-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
-SURFACE = "#fcfcfb"
-INK = "#1a1a1a"
-MUTED = "#6b6b6b"
-GRID = "#e8e7e4"
 WEEKEND = "#e7e4dc"
 
 # The burndown's series. Commitment is the open pts of the original commitment;
@@ -45,13 +38,6 @@ OUTCOME_MIN_BAR_SHARE = 0.5
 OUTCOME_MARGIN = 20
 OUTCOME_SEGMENTS = [(outcome, *OUTCOME_COLOURS[outcome])
                     for outcome in OUTCOMES]
-# Character widths in em, after Helvetica and Arial; anything else counts as a
-# lower-case letter.
-CHAR_WIDTHS = {**dict.fromkeys("ijl|", 0.23), **dict.fromkeys(" ftI.,:;'!/", 0.28),
-               **dict.fromkeys("r()-", 0.34), **dict.fromkeys("cksvxyz", 0.5),
-               **dict.fromkeys("FTZ", 0.61), **dict.fromkeys("ABEKPSVXY", 0.67),
-               **dict.fromkeys("CDHNRUw", 0.72), **dict.fromkeys("GOQ", 0.78),
-               **dict.fromkeys("mM", 0.84), "%": 0.89, "W": 0.95, "→": 1.0}
 
 
 # --- outcome charts
@@ -226,28 +212,6 @@ def outcome_segments(data):
             for seg, color, ink in OUTCOME_SEGMENTS]
 
 
-def svg(width, height, body):
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0f}" height="{height:.0f}" '
-            f'viewBox="0 0 {width:.0f} {height:.0f}" font-family="{FONT}">\n'
-            f'<rect width="100%" height="100%" fill="{SURFACE}"/>\n' + "\n".join(body) + "\n</svg>\n")
-
-
-def text(x, y, content, size=12, color=INK, anchor="start", bold=False, extra=""):
-    weight = ' font-weight="bold"' if bold else ""
-    return (f'<text x="{x:.1f}" y="{y:.1f}" font-size="{size}" fill="{color}" '
-            f'text-anchor="{anchor}"{weight}{extra}>{esc(content)}</text>')
-
-
-def esc(text):
-    return html.escape(str(text), quote=True)
-
-
-def text_width(text, size, bold=False):
-    """Estimated rendered width, close enough to size the label column and to
-    decide whether a label fits a bar."""
-    return sum(CHAR_WIDTHS.get(c, 0.56) for c in str(text)) * size * (1.08 if bold else 1)
-
-
 # --- burndown
 
 def build_series(data):
@@ -407,13 +371,6 @@ def value_text(row, key):
     """A burndown row's value of a series as its label: "–" for unestimated
     pts."""
     return "–" if key in row["unestimated"] else number(row[key])
-
-
-def nice_step(span):
-    for step in (1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000):
-        if span / step <= 8:
-            return step
-    return 1000 * (int(span / 8000) + 1)
 
 
 def print_series(series):

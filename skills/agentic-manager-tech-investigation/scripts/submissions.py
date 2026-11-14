@@ -9,9 +9,9 @@ only when there is none.
 """
 import re
 
-from common import (DESIGN_ORDER, COVERAGE, coverage_fields, OUTSIDE_SCOPE, SCOPE_ANSWERS, SCOPE_QUESTION, USER_DECIDED, citation, ids,
-                    read_in_part, recorded_ids)
-from ledger import (TABLES, as_written, input_columns, basis, duplicate_of, finish_write, find_row,
+from common import (DESIGN_ORDER, COVERAGE, coverage_fields, OUTSIDE_SCOPE, SCOPE_ANSWERS, SCOPE_QUESTION, TABLES, USER_DECIDED,
+                    citation, ids, read_in_part, recorded_ids)
+from ledger import (as_written, input_columns, basis, duplicate_of, finish_write, find_row,
                     header_of, move_row, next_id, put_row, refuse_cited, search_reference, set_design_basis,
                     table_rows, write_rows)
 

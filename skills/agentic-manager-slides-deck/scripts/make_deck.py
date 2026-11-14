@@ -565,12 +565,12 @@ def ring_svg(ident, ring):
         paths.append(
             f'<path d="{path}" fill="{html.escape(segment["color"].strip())}"/>')
         cursor += span
-    side = number(size)
+    side = coordinate(size)
     return (f'<svg class="ring" id="ring-{ident}" viewBox="0 0 {side} {side}" width="{side}" '
             f'height="{side}">{"".join(paths)}</svg>')
 
 
-def number(value):
+def coordinate(value):
     """A coordinate for SVG: at most 2 decimals, no trailing zeros."""
     text = f"{value:.2f}".rstrip("0").rstrip(".")
     return "0" if text == "-0" else text
@@ -581,11 +581,11 @@ def segment_path(cx, cy, outer, inner, start, end):
     clockwise from 12 o'clock, between the radii `inner` and `outer`."""
     def point(radius, degrees):
         angle = math.radians(degrees - 90)
-        return number(cx + radius * math.cos(angle)), number(cy + radius * math.sin(angle))
+        return coordinate(cx + radius * math.cos(angle)), coordinate(cy + radius * math.sin(angle))
     (ox1, oy1), (ox2, oy2) = point(outer, start), point(outer, end)
     (ix2, iy2), (ix1, iy1) = point(inner, end), point(inner, start)
     large = 1 if end - start > 180 else 0
-    R, r = number(outer), number(inner)
+    R, r = coordinate(outer), coordinate(inner)
     return (f"M{ox1},{oy1} A{R},{R},0,{large},1,{ox2},{oy2} "
             f"L{ix2},{iy2} A{r},{r},0,{large},0,{ix1},{iy1} Z")
 

@@ -10,6 +10,7 @@ from urllib.parse import quote
 from unittest import mock
 
 import common  # noqa: F401  (puts the library on the path)
+import make_report
 from agentic_manager import config, output_folder
 
 PREP = "Jane-Doe_26-11-10"
@@ -40,12 +41,13 @@ NOTES = {"going_well": [{"point": "Presented the migration to the wider team", "
          "context": [{"point": "Moved to the payments team in the summer",
                       "evidence": [{"date": None, "link": "file:///vault/pages/Jane.md"}]}]}
 # The work's items, as work.json records them, in PERSON's period.
-WORK_ITEMS = {"jira": {"resolved": [{"key": "PROJ-12", "title": "Migrate billing", "type": "Story",
-                                     "parent": {"key": "PROJ-1", "title": "Billing", "type": "Epic"}, "status": "Done",
-                                     "url": "https://acme.atlassian.net/browse/PROJ-12", "date": "2026-09-01"}],
-                       "created": [{"key": "PROJ-13", "title": "Retire old billing", "type": "Task", "parent": None,
+WORK_ITEMS = {"jira": {"created": [{"key": "PROJ-13", "title": "Retire old billing", "type": "Task", "parent": None,
                                     "status": "In Progress", "url": "https://acme.atlassian.net/browse/PROJ-13",
-                                    "date": "2026-08-20"}]},
+                                    "date": "2026-08-20", "points": None}],
+                       "resolved": [{"key": "PROJ-12", "title": "Migrate billing", "type": "Story",
+                                     "parent": {"key": "PROJ-1", "title": "Billing", "type": "Epic"}, "status": "Done",
+                                     "url": "https://acme.atlassian.net/browse/PROJ-12", "date": "2026-09-01",
+                                     "points": 3}]},
               "github": {"opened": [{"repo": "acme/billing", "number": 1, "title": "Migrate billing",
                                      "url": "https://github.com/acme/billing/pull/1", "date": "2026-08-28"}],
                          "merged": [{"repo": "acme/billing", "number": 1, "title": "Migrate billing",
@@ -76,13 +78,14 @@ QUERY = {"opened": "is:pr author:janedoe created:2026-08-10..2026-11-10 org:acme
 PULL = {"number": 1, "title": "Migrate billing", "repository": {"nameWithOwner": "acme/billing"},
         "url": "https://github.com/acme/billing/pull/1", "createdAt": "2026-08-28T10:00:00Z",
         "closedAt": "2026-09-01T10:00:00Z", "author": {"login": "janedoe"}, "updatedAt": "2026-09-01T10:00:00Z"}
-WORK_RAW = {"jira": {"start": "2026-08-10", "end": "2026-11-10", "base_url": JIRA_BASE,
+POINTS = "customfield_10016"
+WORK_RAW = {"jira": {"start": "2026-08-10", "end": "2026-11-10", "base_url": JIRA_BASE, "points_fields": [POINTS],
                      "resolved_jql": JQL["resolved"], "created_jql": JQL["created"],
                      "resolved": [{"key": "PROJ-12", "fields": {
                          "summary": "Migrate billing", "issuetype": {"name": "Story"}, "status": {"name": "Done"},
                          "created": "2026-08-12T10:00:00.000+0100", "resolutiondate": "2026-09-01T10:00:00.000+0100",
                          "parent": {"key": "PROJ-1", "fields": {"summary": "Billing", "issuetype": {"name": "Epic"}}},
-                         "assignee": {"accountId": JIRA_ID}, "reporter": {"accountId": "a2"},
+                         "assignee": {"accountId": JIRA_ID}, "reporter": {"accountId": "a2"}, POINTS: 3,
                          "updated": "2026-09-01T10:00:00.000+0100"}}],
                      "created": [{"key": "PROJ-13", "fields": {
                          "summary": "Retire old billing", "issuetype": {"name": "Task"},
@@ -98,6 +101,9 @@ WORK = {"jira": {**WORK_ITEMS["jira"], "counts": {"created": 1, "resolved": 1},
                  "created_by_type": [{"type": "Task", "issues": 1}],
                  "resolved_by_type": [{"type": "Story", "issues": 1}],
                  "focus": [{"key": "PROJ-1", "title": "Billing", "issues": 1}],
+                 "resolved_points": {"total": 3, "estimated": 1, "average": 3.0},
+                 "resolved_points_search_url":
+                     f"{JIRA_BASE}/issues/?jql={quote(JQL['resolved'] + ' AND (cf[10016] is not EMPTY)')}",
                  **{f"{name}_search_url": f"{JIRA_BASE}/issues/?jql={quote(jql)}" for name, jql in JQL.items()}},
         "github": {**WORK_ITEMS["github"], "counts": {"opened": 1, "merged": 1},
                    **{f"{name}_search_url": f"https://github.com/search?q={quote(query)}&type=pullrequests"
@@ -143,11 +149,13 @@ def temp_output(test):
 
 
 def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
-               reviews=REVIEWS, feedback=FEEDBACK, notes=NOTES, work=WORK, slack=SLACK, raw_work=WORK_RAW):
+               reviews=REVIEWS, feedback=FEEDBACK, notes=NOTES, work=WORK, slack=SLACK, raw_work=WORK_RAW, report=True):
     """Writes the prep `prep` in the output folder `folder`, holding `person`,
     `orientation`, `reviews`, `feedback`, `notes`, `work`,
-    and `slack`, each left out when None, and the _raw folder, with
-    `raw_work`, each source's raw file, unless None."""
+    and `slack`, each left out when None, the _raw folder, with
+    `raw_work`, each source's raw file, unless None, and, with `report` and
+    both a person and work, the report as make_report.py writes it, with its
+    charts, each an empty drawing."""
     os.makedirs(os.path.join(folder, prep, "_raw"), exist_ok=True)
     for source, lists in (raw_work or {}).items():
         with open(os.path.join(folder, prep, "_raw", f"{source}.json"), "w", encoding="utf-8") as f:
@@ -159,3 +167,11 @@ def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
         if value is not None:
             with open(os.path.join(folder, prep, name), "w", encoding="utf-8") as f:
                 json.dump(value, f)
+    if report and person is not None and work is not None:
+        os.makedirs(os.path.join(
+            folder, prep, common.CHARTS_DIR), exist_ok=True)
+        for name in common.CHART_FILES:
+            with open(os.path.join(folder, prep, common.CHARTS_DIR, name), "w", encoding="utf-8") as f:
+                f.write("<svg/>")
+        with open(os.path.join(folder, prep, common.REPORT), "w", encoding="utf-8") as f:
+            f.write(make_report.render(person, work))

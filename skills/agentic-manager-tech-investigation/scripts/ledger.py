@@ -9,7 +9,7 @@ check_report.py applies to the whole ledger at handover.
 import os
 import re
 
-from common import (CITATION, DESIGN, DESIGN_ORDER, FOLDER_NAME, INLINE_LINK, JIRA_API, JIRA_GROUP, LEDGER, LINKS,
+from common import (CITATION, DESIGN, DESIGN_ORDER, FOLDER_NAME, INLINE_LINK, JIRA_API, LEDGER, LINKS,
                     QUERY, QUEUE_HEADER, QUEUE_TABLES, ROW_START, RULED_OUT, SOURCE_FINDINGS_COLUMN, SOURCE_HEADER,
                     TABLES, UNUSED, anchored, autolink, backtick_error, citation, cited_sources, claim_length_problem,
                     design_evidence, finding_problem, flow_states, free_name, id_order, identity_states, ids,
@@ -224,7 +224,7 @@ def jira_site(project):
     write: a key Jira couldn't be asked about isn't taken for no ticket."""
     if project not in SITES:
         SITES[project] = None
-        if is_enabled(JIRA_GROUP, JIRA_API):
+        if is_enabled("workflow", JIRA_API):
             try:
                 client = JiraClient()
             except SystemExit:
@@ -463,12 +463,12 @@ def refuse_cited(lines, ident):
 
 
 def mentions(lines, ident):
-    """The records, other than `ident`'s own, whose text names `ident`: while
+    """The records, other than `ident`'s own, whose text cites `ident`: while
     any does, `ident`, such as a design row left out of a design submitted
     again, can't be removed."""
     found = [table_row_id for table in TABLES
              for table_row_id in (row[0] for row in table_rows(lines, table)
-                                  if row[0] != ident and re.search(rf"\b{ident}\b", " | ".join(row[1:])))]
+                                  if row[0] != ident and ident in (m[1] for m in CITATION.finditer(" | ".join(row[1:]))))]
     return sorted(set(found), key=id_order)
 
 

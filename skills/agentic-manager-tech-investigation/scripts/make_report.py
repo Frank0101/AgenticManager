@@ -36,9 +36,7 @@ def make_report(relative):
     is invalid."""
     folder, _, temporary = investigation_dir(relative)
     topic = topic_of(folder)
-    content = Content(read_json(os.path.join(folder, CONTENT)),
-                      Ledger(os.path.join(folder, LEDGER)), folder)
-    text = build(content)
+    content, text = _built(folder)
     if content.errors:
         raise SystemExit("content.json has problems, so nothing was written:\n  - "
                          + "\n  - ".join(content.errors))
@@ -51,10 +49,15 @@ def content_problems(relative):
     """The problems of the investigation's content.json, as make_report would
     list them, without writing anything."""
     folder, _, _ = investigation_dir(relative)
+    return _built(folder)[0].errors
+
+
+def _built(folder):
+    """(the investigation's content.json in `folder`, read against its
+    ledger, the report built from it)."""
     content = Content(read_json(os.path.join(folder, CONTENT)),
                       Ledger(os.path.join(folder, LEDGER)), folder)
-    build(content)
-    return content.errors
+    return content, build(content)
 
 
 class Content:

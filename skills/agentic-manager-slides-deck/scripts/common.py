@@ -16,7 +16,7 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
-from agentic_manager.output_folder import DAY_FOLDER, EXAMPLE_DESCRIPTION, KEPT_EXAMPLES, description, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
+from agentic_manager.output_folder import DAY_FOLDER, DESCRIPTION, KEPT_EXAMPLES, description, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.text import NAME, SLUG, free_name, slug  # noqa: E402,F401
 from agentic_manager.web import ssl_context  # noqa: E402,F401
 
@@ -122,7 +122,7 @@ def examples():
     folders = (("built-in", EXAMPLES_DIR),
                ("yours", user_examples_dir()))
     for source, folder in folders:
-        for path in sorted(glob.glob(os.path.join(folder, "*", EXAMPLE_DESCRIPTION))):
+        for path in sorted(glob.glob(os.path.join(folder, "*", DESCRIPTION))):
             example = os.path.dirname(path)
             if os.path.basename(example).startswith("_"):
                 continue
@@ -182,7 +182,7 @@ def read_asset(name):
     its description: empty text if it has none, and credit None unless it was
     downloaded."""
     title, fields = read_description(
-        os.path.join(assets_dir(), name, EXAMPLE_DESCRIPTION))
+        os.path.join(assets_dir(), name, DESCRIPTION))
     credit = {key: fields.get(label, "")
               for key, label in CREDIT_FIELDS.items()}
     return {"name": name, "title": title, "shows": fields.get(SHOWS, ""),
@@ -207,9 +207,9 @@ def credit_line(entry):
 
 
 def link_kind(value):
-    """What a file-loading attribute's value links to: "remote" for a URL
-    leading off the page, "file" for a local path, None for nothing or inline
-    data."""
+    """What a link that loads a file, an attribute's value or a CSS url()
+    target, leads to: "remote" for a URL leading off the page, "file" for a
+    local path, None for nothing or inline data."""
     value = (value or "").strip()
     if REMOTE.match(value):
         return "remote"

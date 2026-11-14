@@ -30,8 +30,9 @@ SOURCE = f"sources.{GROUP}.{NAME}"
 SETTINGS = ("base-url", "email", "api-token")
 EXCLUDED = "excluded-projects"
 
-# Field names that hold story points, tried in order when the board's own
-# estimation setting can't be read. Sites differ: company-managed projects
+# Field names that hold story points, in order: the fallback when a board's
+# own estimation setting can't be read, and every field a search across
+# boards reads, by points_fields(). Sites differ: company-managed projects
 # usually use "Story Points", team-managed ones "Story point estimate".
 STORY_POINT_FIELD_NAMES = ("Story Points", "Story point estimate")
 
@@ -300,11 +301,17 @@ class JiraClient:
         points field is the board's own estimation setting, else the first
         field named as in STORY_POINT_FIELD_NAMES."""
         by_name = self.field_ids()
-        points = self.board_estimation_field(board_id)
-        if not points:
-            points = next(
-                (by_name[n] for n in STORY_POINT_FIELD_NAMES if n in by_name), None)
+        points = self.board_estimation_field(
+            board_id) or next(iter(self.points_fields(by_name)), None)
         return by_name.get("Flagged"), points
+
+    def points_fields(self, by_name=None):
+        """The ids of the site's story points fields, those named as in
+        STORY_POINT_FIELD_NAMES, in that order, for a search across boards,
+        where projects may estimate in different ones; `by_name` is
+        field_ids(), when already read."""
+        by_name = self.field_ids() if by_name is None else by_name
+        return [by_name[name] for name in STORY_POINT_FIELD_NAMES if name in by_name]
 
     def board_estimation_field(self, board_id):
         """The field the board sums as story points (Board settings >
