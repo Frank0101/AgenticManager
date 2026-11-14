@@ -70,8 +70,8 @@ LIST_FIELDS = {"links"}
 # gathered; a context point is neither, so it names none.
 SUMMARY_PARTS = {"going_well": "what is going well or exceeding",
                  "to_improve": "what are improvement or stretch areas, including what they should achieve next",
-                 "context": "facts that are neither good nor bad, such as a long absence, a change of role "
-                 "or support they need"}
+                 "context": "facts the review must take into account, such as a long absence, a change of "
+                 "role or support they need"}
 VALUED_PARTS = ("going_well", "to_improve")
 POINT_WORDS = 25
 MAX_POINT_WORDS = 40

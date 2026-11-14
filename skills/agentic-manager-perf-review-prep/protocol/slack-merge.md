@@ -12,12 +12,13 @@ Where it matters most:
 - contributions in channels about incidents, alerts, on-call, security or reliability: engagement shows in what was said, such as a diagnosis, a fix or a clear answer;
 - anywhere else, only what stands out, such as help others thank the person for, or a disagreement that mattered.
 
-Put a point in `going_well` only when the messages themselves show it: someone thanks or praises the person, or what they did visibly unblocked or helped others; in `to_improve` only when someone raises a problem with the person's work or behaviour; and in `context` the rest worth keeping, such as what the person shared, led, explained or answered, with no judgment of it. Never judge tone or quality yourself: a message read out of its conversation is easy to misread, and the manager judges.
+Put a point in `going_well` when someone thanks or praises the person, when what they did visibly unblocked or helped others, or when the messages show a behaviour of theirs that is significant or repeats, such as those above, even with no one thanking them. Put one in `to_improve` only when someone raises a problem with the person's work or behaviour: a message read out of its conversation is easy to misread. Never judge tone or quality yourself; the manager judges.
 
 ## What to leave out
 
 - A small thing seen once, with no clear impact.
 - Routine chatter, scheduling and status with nothing of the person's in it.
+- The work itself, such as what the person built or the pull requests they posted: the prep gathers it from their tools. Someone's thanks or praise for it is kept.
 - A conversation where the person is only a name in passing.
 
 {{merge}}
@@ -26,8 +27,8 @@ Put a point in `going_well` only when the messages themselves show it: someone t
 
 | Synopses                                                                                          | Decision                                                                               | Why                                                                                            |
 | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| In a cross-team channel, Jane posted the rollout plan, and three people asked follow-ups          | Keep, context                                                                          | Communication to a wide audience; no one judged it                                             |
-| In the cross-team channel, Jane posted the monthly rollout update (Jul); again (Aug, Sep)         | One point, context                                                                     | A pattern of stakeholder communication                                                         |
+| In a cross-team channel, Jane posted the rollout plan, and three people asked follow-ups          | Keep, going well                                                                       | Communication to a wide audience, which the messages show on their own                         |
+| In the cross-team channel, Jane posted the monthly rollout update (Jul); again (Aug, Sep)         | One point, going well, every day                                                       | A pattern of stakeholder communication                                                         |
 | In the incident channel, Jane explained the root cause, and Sam replied that it fixed the problem | Keep, going well                                                                       | The reply shows it helped                                                                      |
 | In the release channel, Sam thanked Jane, Alex and Kim by name for the launch; 30 people reacted  | Keep, going well                                                                       | A direct recognition, for something many people noticed                                        |
 | In the squad channel, Sam thanked Jane by name for a quick answer; one reaction                   | Leave out                                                                              | A one-off thanks for a small thing                                                             |
@@ -36,3 +37,5 @@ Put a point in `going_well` only when the messages themselves show it: someone t
 | Jane posted the release update (Jul), again (Aug, Sep), and each time people thanked the squad    | One point, going well: Jane often shares the team's results, keeping others up to date | The results are the team's, but sharing them is Jane's, and the replies show it reaches people |
 | In a squad channel, Sam wrote that Jane's estimate was far off, again                             | Keep, to improve                                                                       | Someone raises a problem with Jane's work                                                      |
 | Jane said they'd be late for standup                                                              | Leave out                                                                              | Scheduling                                                                                     |
+| Jane posted review requests for their pull requests (Jul); again, most days (Aug, Sep)            | Leave out                                                                              | The work itself, which the prep gathers from their tools                                       |
+| Jane took the new service's design to the security team for review (Sep)                          | Keep, going well                                                                       | Initiative across teams, on security                                                           |
