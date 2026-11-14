@@ -30,10 +30,10 @@ set_notion.py has recorded Notion too, else null, and how many items each list h
 
 It writes each source's raw file in the prep's _raw, and work.json once
 every source's is in:
-  jira     start and end, the period; base_url, the Jira site's; resolved,
-           the issues assigned to the person and resolved in the period, and
-           created, those they created in it, as Jira's search returns them;
-           and resolved_jql and created_jql, the searches that found them
+  jira     start and end, the period; base_url, the Jira site's; created,
+           the issues the person created in the period, and resolved, those
+           assigned to them and resolved in it, as Jira's search returns
+           them; and created_jql and resolved_jql, the searches that found them
   github   start and end; orgs, the organisations searched; opened and
            merged, the person's pull requests opened and merged in the
            period, as gh's search returns them; and opened_query and
@@ -58,14 +58,14 @@ def fetch(prep, client=None, run=subprocess.run):
 # Jira.
 
 def jira_raw(client, account, person):
-    """Jira's raw file: the issues the account `account` resolved and those
-    it created in the review's period in `person`, with the searches."""
+    """Jira's raw file: the issues the account `account` created and those
+    it resolved in the review's period in `person`, with the searches."""
     # Dates are written to the minute, as a literal with seconds silently
     # matches nothing.
     start, end = person["start"], f'{person["end"]} 23:59'
-    jqls = {"resolved": f'assignee = "{account}" AND statusCategory = Done '
-            f'AND resolutiondate >= "{start}" AND resolutiondate <= "{end}"',
-            "created": f'reporter = "{account}" AND created >= "{start}" AND created <= "{end}"'}
+    jqls = {"created": f'reporter = "{account}" AND created >= "{start}" AND created <= "{end}"',
+            "resolved": f'assignee = "{account}" AND statusCategory = Done '
+            f'AND resolutiondate >= "{start}" AND resolutiondate <= "{end}"'}
     return {"start": person["start"], "end": person["end"], "base_url": client.base_url,
             **{f"{name}_jql": jql for name, jql in jqls.items()},
             **{name: client.search(jql, JIRA_FIELDS) for name, jql in jqls.items()}}

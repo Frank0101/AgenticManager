@@ -50,9 +50,7 @@ WORK_ITEMS = {"jira": {"resolved": [{"key": "PROJ-12", "title": "Migrate billing
                          "merged": [{"repo": "acme/billing", "number": 1, "title": "Migrate billing",
                                      "url": "https://github.com/acme/billing/pull/1", "date": "2026-09-01"}]},
               "notion": {"created": [{"title": "Billing plan", "url": "https://www.notion.so/billing-plan",
-                                      "path": "Engineering / Billing", "between": ["2026-08-10", "2026-08-31"]}],
-                         "edited": [{"title": "Billing plan", "url": "https://www.notion.so/billing-plan",
-                                     "path": "Engineering / Billing", "date": "2026-09-02"}]}}
+                                      "path": "Engineering / Billing", "between": ["2026-08-10", "2026-08-16"]}]}}
 # The raw files work.json is built from: what Jira and gh return, with the
 # period and the searches, and Notion's pages as recorded.
 JIRA_ID = PERSON["sources"]["jira-api"]["id"]
@@ -83,15 +81,15 @@ WORK_RAW = {"jira": {"start": "2026-08-10", "end": "2026-11-10", "base_url": JIR
                        "opened": [PULL], "merged": [PULL]},
             "notion": WORK_ITEMS["notion"]}
 # work.json as built from them, its facts worked out by hand.
-WORK = {"jira": {**WORK_ITEMS["jira"], "counts": {"resolved": 1, "created": 1},
-                 "resolved_by_type": [{"type": "Story", "issues": 1}],
+WORK = {"jira": {**WORK_ITEMS["jira"], "counts": {"created": 1, "resolved": 1},
                  "created_by_type": [{"type": "Task", "issues": 1}],
+                 "resolved_by_type": [{"type": "Story", "issues": 1}],
                  "focus": [{"key": "PROJ-1", "title": "Billing", "issues": 1}],
                  **{f"{name}_search_url": f"{JIRA_BASE}/issues/?jql={quote(jql)}" for name, jql in JQL.items()}},
         "github": {**WORK_ITEMS["github"], "counts": {"opened": 1, "merged": 1},
                    **{f"{name}_search_url": f"https://github.com/search?q={quote(query)}&type=pullrequests"
                       for name, query in QUERY.items()}},
-        "notion": {**WORK_ITEMS["notion"], "counts": {"created": 1, "edited": 1}}}
+        "notion": {**WORK_ITEMS["notion"], "counts": {"created": 1}}}
 SLACK = {"going_well": [{"point": "Explained the outage's cause in the incident channel, and colleagues thanked them",
                          "values": ["Teamwork"],
                          "evidence": [{"date": "2026-09-03", "link": "https://acme.slack.com/archives/C1/p1"}]}],

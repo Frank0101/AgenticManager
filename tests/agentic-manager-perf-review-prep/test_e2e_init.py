@@ -249,14 +249,14 @@ class ScriptsTest(unittest.TestCase):
             jira = json.load(f)
         self.assertEqual(([issue["key"] for issue in jira["resolved"]], [issue["key"] for issue in jira["created"]],
                           jira["resolved_jql"], jira["base_url"]),
-                         (["PROJ-12"], ["PROJ-13"], searches[0], self.base_url))
+                         (["PROJ-12"], ["PROJ-13"], searches[1], self.base_url))
         with open(fetched["raw"][1], encoding="utf-8") as f:
             github = json.load(f)
         self.assertEqual(
             (github["opened"], github["merged"], github["orgs"]), ([PR], [PR], ["acme"]))
         day = {"start": TODAY.isoformat(), "end": TODAY.isoformat()}
         recorded = self.run_ok(NOTION_SCRIPT, "--prep", prep, stdin=json.dumps(
-            {"created": [{**day, "pages": [PAGE]}], "edited": [{**day, "pages": [{**PAGE, "date": TODAY.isoformat()}]}]}))
+            {"created": [{**day, "pages": [PAGE]}]}))
         self.read_slack(prep)
         with open(recorded["work"], encoding="utf-8") as f:
             work = json.load(f)

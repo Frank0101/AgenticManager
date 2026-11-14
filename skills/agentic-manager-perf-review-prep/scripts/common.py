@@ -123,15 +123,15 @@ NOTES = "notes.json"
 # step to cite, the facts worked out from them, once, and for Jira and GitHub
 # the address of each list's search, to see the same items live. Notion's
 # search filters by creation date but returns only the last edit's, so a
-# created page is dated by the range it was found in, `between`, and an
-# edited one by its last edit; `path` is where it sits.
+# created page is dated by the range it was found in, `between`; `path` is
+# where it sits.
 WORK = "work.json"
-WORK_LISTS = {"jira": ("resolved", "created"), "github": (
-    "opened", "merged"), "notion": ("created", "edited")}
+WORK_LISTS = {"jira": ("created", "resolved"), "github": (
+    "opened", "merged"), "notion": ("created",)}
 # What a raw file holds beside its lists: the period and, for each list, the
 # search that found it, Jira's JQL or GitHub's query on github.com, whose
 # org: terms are alternatives.
-RAW_FIELDS = {"jira": ("start", "end", "base_url", "resolved_jql", "created_jql"),
+RAW_FIELDS = {"jira": ("start", "end", "base_url", "created_jql", "resolved_jql"),
               "github": ("start", "end", "orgs", "opened_query", "merged_query"), "notion": ()}
 # The fields of a raw item work.json is built from, and those kept only to
 # check whose it is: Jira's assignee, reporter and updated, GitHub's author
@@ -145,7 +145,7 @@ RAW_ITEM_FIELDS = {"jira": ("key", "fields.summary", "fields.issuetype.name", "f
 PARENT_FIELDS = ("key", "fields.summary", "fields.issuetype.name")
 # The facts of each source. The activity over time isn't one: each item
 # has its day, and grouping them, such as by week, is for whatever shows it.
-FACT_KEYS = {"jira": ("counts", "resolved_by_type", "created_by_type", "focus"),
+FACT_KEYS = {"jira": ("counts", "created_by_type", "resolved_by_type", "focus"),
              "github": ("counts",), "notion": ("counts",)}
 SEARCHED = ("jira", "github")
 # The share of the resolved issues the main focus covers.
@@ -169,8 +169,8 @@ def expected_files():
 
 
 def write_work(prep, source, raw, days):
-    """Writes `raw`, what `source` gave, such as {"created": [...], "edited":
-    [...]} for "notion", to its raw file in the prep `prep`, then, once every
+    """Writes `raw`, what `source` gave, such as {"created": [...]} for
+    "notion", to its raw file in the prep `prep`, then, once every
     source's is in and follows its rules, as one from an earlier version or
     period doesn't, work.json, built from them; returns {raw, work}, the
     files' paths, work null until it is built. Exits, writing nothing, when
@@ -258,8 +258,8 @@ def work_items(source, raw):
     """{list: items}: the items of `raw`, the raw file of `source`, as
     work.json records them, without the fields kept only to check them."""
     if source == "jira":
-        return {"resolved": [issue_item(raw["base_url"], issue, "resolutiondate") for issue in raw["resolved"]],
-                "created": [issue_item(raw["base_url"], issue, "created") for issue in raw["created"]]}
+        return {"created": [issue_item(raw["base_url"], issue, "created") for issue in raw["created"]],
+                "resolved": [issue_item(raw["base_url"], issue, "resolutiondate") for issue in raw["resolved"]]}
     if source == "github":
         return {name: sorted((pr_item(pr, pr[stamp]) for pr in raw[name]), key=lambda item: (item["date"], item["url"]))
                 for name, stamp in (("opened", "createdAt"), ("merged", "closedAt"))}
@@ -601,12 +601,12 @@ def _is_item(item, days, dated):
 def source_facts(source, lists, days):
     """The facts of `lists`, the items of `source`, in the period of `days`,
     as FACT_KEYS names them: counts, how many items each list holds; for
-    Jira, resolved_by_type and created_by_type, the issues of each type, most
+    Jira, created_by_type and resolved_by_type, the issues of each type, most
     first, and focus, the main focus of the resolved issues."""
     facts: dict = {"counts": {name: len(items)
                               for name, items in lists.items()}}
     if source == "jira":
-        facts |= {"resolved_by_type": by_type(lists["resolved"]), "created_by_type": by_type(lists["created"]),
+        facts |= {"created_by_type": by_type(lists["created"]), "resolved_by_type": by_type(lists["resolved"]),
                   "focus": focus(lists["resolved"])}
     return facts
 

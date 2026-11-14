@@ -81,17 +81,17 @@ def pr(number, created="2026-09-01T10:00:00Z", closed=None):
 
 class FetchWorkTest(unittest.TestCase):
     def test_jira_raw(self):
-        # Those the person resolved in the period and those they created in
-        # it, whatever their status, as Jira returns them, with the searches;
+        # Those the person created in the period, whatever their status, and
+        # those they resolved in it, as Jira returns them, with the searches;
         # JQL dates to the minute.
         client = FakeJira()
         raw = fetch_work.jira_raw(client, "a1", PERSON)
         self.assertEqual(client.queries, [
+            'reporter = "a1" AND created >= "2026-08-10" AND created <= "2026-11-10 23:59"',
             'assignee = "a1" AND statusCategory = Done AND resolutiondate >= "2026-08-10" '
-            'AND resolutiondate <= "2026-11-10 23:59"',
-            'reporter = "a1" AND created >= "2026-08-10" AND created <= "2026-11-10 23:59"'])
+            'AND resolutiondate <= "2026-11-10 23:59"'])
         self.assertEqual(raw, {"start": "2026-08-10", "end": "2026-11-10", "base_url": FakeJira.base_url,
-                               "resolved_jql": client.queries[0], "created_jql": client.queries[1],
+                               "created_jql": client.queries[0], "resolved_jql": client.queries[1],
                                "resolved": client.search("assignee", []), "created": client.search("reporter", [])})
 
     def test_github_raw(self):

@@ -28,7 +28,7 @@ perf-review-preps/
     ├── slack.json        read_slack.py writes (what the person's Slack messages show, merged, with their links)
     └── work.json         fetch_work.py or set_notion.py builds, once _raw holds every source (by source, the
                           person's Jira issues, pull requests and Notion pages in the period, each with its day,
-                          and their facts: the counts, the issues resolved and created by type, the main focus
+                          and their facts: the counts, the issues created and resolved by type, the main focus
                           and the link to each search)
 ```
 
@@ -117,14 +117,12 @@ The manager's own notes on the person, in their vault, and the person's Slack me
 
 ## 7. Gather the data points
 
-The person's work in Jira, GitHub and Notion, in the period. Like step 6, it is read without the manager's view, and neither needs the other, so start it as soon as step 6's subagents are handed their tasks, without waiting for them. Say nothing to the manager about it while it runs, unless 2 stops; step 6's message is sent as soon as its merges are done, without waiting for this step.
+The person's work in Jira, GitHub and Notion, in the period. Like step 6, it is read without the manager's view, and neither needs the other, so start it as soon as step 6's subagents are handed their tasks, without waiting for them. Say nothing to the manager about it while it runs, unless a script stops; step 6's message is sent as soon as its merges are done, without waiting for this step.
 
 1. **Jira and GitHub.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py --prep <prep>`: it fetches the issues and pull requests, with no judgment, into their raw files, and builds `work.json` once Notion's pages are recorded, in 2.
-2. **Notion.** Search with the Notion MCP's search, with an empty `query` and only filters, as any query text silently drops pages, and `page_size` 50, keeping only results of type page that aren't a database's row, those with no `parent_data_source_url`, each with its title, url and path:
-   - pages the person created: one search per calendar month of the period, clipped to it, with `created_by_user_ids` set to their Notion id and `created_date_range` set to the month. A result's date is its last edit, not its creation, so each page is dated by the month it was found in;
-   - pages the person last edited: one search for the whole period, with `edited_by_user_ids` and `last_edited_date_range`, each page dated as the result gives it.
+2. **Notion.** Find the pages the person created: one search per calendar week of the period, Monday to Sunday, the first and last clipped to it, all at once, with the Notion MCP's search, an empty `query` and only filters, as any query text silently drops pages, `created_by_user_ids` set to their Notion id, `created_date_range` set to the week, `page_size` 50 and `max_highlight_length` 0. Keep only results of type page that aren't a database's row, those with no `parent_data_source_url`, each with its title, url and path. A result's date is its last edit, not its creation, so each page is dated by the week it was found in. Pages the person edited aren't gathered: Notion knows only a page's last editor, so they would be undercounted.
 
-   When a search returns 50 results, rows included, search its range again in shorter ranges, and record those instead; a single day that still returns 50 is recorded as full, as `set_notion.py`'s `--help` says. If a result says the edited filters were dropped, as they need a Business plan, stop and tell the manager: their pages can't be gathered without them. Record what you found with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py --prep <prep>`.
+   When a search returns 50 results, rows included, search its range again in shorter ranges, and record those instead; a single day that still returns 50 is recorded as full, as `set_notion.py`'s `--help` says. Record what you found with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py --prep <prep>`.
 
 ## 8. Tell the user
 
