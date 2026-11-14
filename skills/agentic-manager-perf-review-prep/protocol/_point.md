@@ -1,4 +1,4 @@
-Make the person the subject of a point: what they did, or what happened because of them, such as "Jane adds scope nobody asked for", not "The manager praised Jane". What it comes from is the evidence, not the point.
+Make the person the subject of a point: what they did, or what happened because of them. When it is someone's judgement, say whose, such as "Jane's review saved the release, as Sam put it", not "Sam praised Jane's review".
 
 A point is one sentence in your words, about 25 words at most, never copied, that stands on its own: say what it is about, such as a promotion, so it reads without its source.
 
