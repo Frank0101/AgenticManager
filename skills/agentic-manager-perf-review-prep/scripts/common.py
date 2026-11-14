@@ -117,11 +117,12 @@ NOTES = "notes.json"
 # issues and GitHub's pull requests as their APIs return them, with the
 # period and the searches that found them, so whose each item is, and why it
 # is there, can be checked again without searching again; Notion's searches,
-# which only the agent reaches, with their results as returned. Once every source's is
-# in, work.json is built from them, with no network, and nowhere else: for
-# each source its items, each with its title, date and link, for the writing
-# step to cite, the facts worked out from them, once, and for Jira and GitHub
-# the address of each list's search, to see the same items live.
+# which only the agent reaches, with their results as returned. Once every
+# source's is in, work.json is built from them, with no network, and nowhere
+# else: for each source its items, each with its title, date and link, for
+# the writing step to cite, the facts worked out from them, once, and for
+# Jira and GitHub the address of each list's search, to see the same items
+# live.
 WORK = "work.json"
 WORK_LISTS = {"jira": ("created", "resolved"), "github": (
     "opened", "merged"), "notion": ("created",)}
@@ -193,7 +194,8 @@ def write_work(prep, source, raw, days):
 def raw_work_problems(source, raw, days):
     """Why `raw` isn't the raw file of `source`, empty when it is: its
     RAW_FIELDS, for the period of `days`, and its lists, each item with its
-    RAW_ITEM_FIELDS, and following the rules of items_problems() once built."""
+    RAW_ITEM_FIELDS, or for Notion its searches by notion_searches_problems(),
+    and following the rules of items_problems() once built."""
     fields = (*RAW_FIELDS[source], *WORK_LISTS[source])
     if not (isinstance(raw, dict) and sorted(raw) == sorted(fields)
             and all(isinstance(raw[name], list) for name in WORK_LISTS[source])):
@@ -258,7 +260,7 @@ def is_notion_page(result):
 def _raw_missing(source, item):
     """The first of the RAW_ITEM_FIELDS of `source` that `item` lacks, such as
     "fields.status.name", a Jira issue's parent's included, or None."""
-    missing = _missing(item, RAW_ITEM_FIELDS.get(source, ()))
+    missing = _missing(item, RAW_ITEM_FIELDS[source])
     if missing or source != "jira" or not item["fields"].get("parent"):
         return missing
     parent = _missing(item["fields"]["parent"], PARENT_FIELDS)
@@ -309,7 +311,8 @@ def build_work(raws, days):
 
 def work_items(source, raw):
     """{list: items}: the items of `raw`, the raw file of `source`, as
-    work.json records them, without the fields kept only to check them."""
+    work.json records them, without the fields kept only to check them, and
+    of Notion's results only the pages of their own."""
     if source == "jira":
         return {"created": [issue_item(raw["base_url"], issue, "created") for issue in raw["created"]],
                 "resolved": [issue_item(raw["base_url"], issue, "resolutiondate") for issue in raw["resolved"]]}
