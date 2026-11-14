@@ -25,9 +25,9 @@ the manager's view, summarised in its parts, such as:
 
   python3 set_summary.py --prep Jane-Doe_26-11-10 --of orientation <<'END_OF_INPUT'
   {
-    "going_well": [{"point": "Has led the billing migration well since May", "values": ["Ownership"]}],
-    "to_improve": [{"point": "Could share progress with the wider team more often", "values": ["Teamwork"]}],
-    "context": ["Came back from a long leave in May"]
+    "going_well": [{"point": "Jane has led the billing migration well since May", "values": ["Ownership"]}],
+    "to_improve": [{"point": "Jane could share progress with the wider team more often", "values": ["Teamwork"]}],
+    "context": ["Jane came back from a long leave in May"]
   }
   END_OF_INPUT
 
@@ -40,11 +40,11 @@ every previous review, such as:
   python3 set_summary.py --prep Jane-Doe_26-11-10 --of reviews <<'END_OF_INPUT'
   {"pieces": [
     {"period": "Mid Year Review 2026", "rating": "Meets",
-     "going_well": [{"point": "Delivered the billing migration on time", "values": ["Ownership"]}],
-     "to_improve": [{"point": "Could lead a design review alone", "values": []}],
-     "context": ["Moved to the payments team in March"]},
+     "going_well": [{"point": "Jane delivered the billing migration on time", "values": ["Ownership"]}],
+     "to_improve": [{"point": "Jane could lead a design review alone", "values": []}],
+     "context": ["Jane moved to the payments team in March"]},
     {"period": null, "rating": null,
-     "going_well": [{"point": "Built a community of practice that reaches other teams",
+     "going_well": [{"point": "Jane built a community of practice that reaches other teams",
                      "values": ["Teamwork", "Ownership"]}],
      "to_improve": [], "context": []}
   ]}
@@ -61,13 +61,13 @@ every piece of the period's feedback, such as:
   python3 set_summary.py --prep Jane-Doe_26-11-10 --of feedback <<'END_OF_INPUT'
   {"pieces": [
     {"period": "Q3 2026",
-     "going_well": [{"point": "Agreed to own the billing migration and has kept to its plan",
+     "going_well": [{"point": "Jane agreed to own the billing migration and has kept to its plan",
                      "values": ["Ownership"]}],
-     "to_improve": [{"point": "Agreed to share progress with the wider team every week",
+     "to_improve": [{"point": "Jane agreed to share progress with the wider team every week",
                      "values": ["Teamwork"]}],
      "context": []},
     {"period": null,
-     "going_well": [{"point": "Was thanked by the support team for fixing a billing bug the same day",
+     "going_well": [{"point": "Jane fixed a billing bug the same day, as the support team thanked them for",
                      "values": ["Ownership"]}],
      "to_improve": [], "context": []}
   ]}
