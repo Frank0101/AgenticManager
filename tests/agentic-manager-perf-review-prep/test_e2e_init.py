@@ -256,7 +256,9 @@ class ScriptsTest(unittest.TestCase):
             (github["opened"], github["merged"], github["orgs"]), ([PR], [PR], ["acme"]))
         day = {"start": TODAY.isoformat(), "end": TODAY.isoformat()}
         recorded = self.run_ok(NOTION_SCRIPT, "--prep", prep, stdin=json.dumps(
-            {"created": [{**day, "pages": [PAGE]}]}))
+            {"created": [{**day, "results": [{**PAGE, "type": "page"}, {**PAGE, "type": "page", "url": PAGE["url"] + "-2"},
+                                             {**PAGE, "type": "database", "url": PAGE["url"] + "-db"}]}]}))
+        self.assertEqual(recorded["pages"], 2)
         self.read_slack(prep)
         with open(recorded["work"], encoding="utf-8") as f:
             work = json.load(f)

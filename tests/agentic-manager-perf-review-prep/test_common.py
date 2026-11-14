@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import (NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP, SLACK, WORK, WORK_ITEMS, WORK_RAW,  # noqa: E402
+from prep_fixture import (NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP, SLACK, NOTION_SEARCHES, PLAN_RESULT, WORK, WORK_ITEMS, WORK_RAW,  # noqa: E402
                            temp_output, write_prep)  # noqa: E402
 
 TODAY = date(2026, 11, 10)
@@ -330,6 +330,42 @@ class CommonTest(unittest.TestCase):
             with self.subTest(name):
                 problems = " ".join(common.raw_work_problems(
                     source, {**WORK_RAW[source], **change}, days))
+                if expected is None:
+                    self.assertEqual(problems, "")
+                else:
+                    self.assertIn(expected, problems)
+
+    def test_notion_searches_problems(self):
+        # name: (the searches, expected in their problems, or None for none).
+        S = NOTION_SEARCHES
+        full = [{**PLAN_RESULT, "url": f"https://www.notion.so/{n}"}
+                for n in range(common.NOTION_LIMIT)]
+        cases = [("valid", S, None),
+                 ("a gap", S[:2] + S[3:],
+                  "the Notion searches must cover 2026-08-10 to 2026-11-10 day by day"),
+                 ("an overlap", S + [{**S[1], "results": []}], "must cover"),
+                 ("a full search", [{**S[0], "results": full}, *S[1:]],
+                  "search that range again in shorter ranges"),
+                 ("a page found twice", [S[0], {**S[1], "results": [PLAN_RESULT]}, *S[2:]],
+                  "found by two Notion searches, so the creation filter can't be trusted"),
+                 ("a row found twice", [
+                  S[0], {**S[1], "results": S[0]["results"][2:]}, *S[2:]], None),
+                 ("a page without its url", [{**S[0], "results": [
+                     {k: v for k, v in PLAN_RESULT.items() if k != "url"}]}, *S[1:]], "its title and url"),
+                 ("pages instead of results", [{**S[0], "pages": [], "results": None}, *S[1:]],
+                  "its results as it returned them"),
+                 ("a month at once", [{**S[0], "end": "2026-09-06"}, *S[4:]],
+                  "spans more than a calendar week"),
+                 ("a single day still full", [{"start": "2026-08-10", "end": "2026-08-10", "results": S[0]["results"],
+                                               "full": True}, {**S[0], "start": "2026-08-11", "results": []}, *S[1:]], None),
+                 ("full over more than a day", [{**S[0], "full": True}, *S[1:]],
+                  "only a search of a single day may be"),
+                 ("not a day", [{**S[0], "start": "10/08/2026"}, *S[1:]], "must be days")]
+        days = common.period_days(PERSON)
+        for name, searches, expected in cases:
+            with self.subTest(name):
+                problems = " ".join(
+                    common.notion_searches_problems(searches, days))
                 if expected is None:
                     self.assertEqual(problems, "")
                 else:

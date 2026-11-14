@@ -5,6 +5,7 @@ output folder of the test's own."""
 import json
 import os
 import tempfile
+from datetime import date, timedelta
 from urllib.parse import quote
 from unittest import mock
 
@@ -51,6 +52,18 @@ WORK_ITEMS = {"jira": {"resolved": [{"key": "PROJ-12", "title": "Migrate billing
                                      "url": "https://github.com/acme/billing/pull/1", "date": "2026-09-01"}]},
               "notion": {"created": [{"title": "Billing plan", "url": "https://www.notion.so/billing-plan",
                                       "path": "Engineering / Billing", "between": ["2026-08-10", "2026-08-16"]}]}}
+# Notion's searches for PERSON's period, 10/08/2026, a Monday, to
+# 10/11/2026, a week at a time, the last of two days: the first finds the
+# billing plan, a database and a database's row, as the search returns them.
+PLAN_RESULT = {"id": "1a2b", "title": "Billing plan", "url": "https://www.notion.so/billing-plan", "type": "page",
+               "timestamp": "2026-09-02T10:00:00.000Z", "path": "Engineering / Billing"}
+NOTION_SEARCHES = [{"start": (monday := date(2026, 8, 10) + timedelta(weeks=n)).isoformat(),
+                    "end": min(monday + timedelta(days=6), date(2026, 11, 10)).isoformat(),
+                    "results": [PLAN_RESULT, {**PLAN_RESULT, "id": "3c4d", "title": "Tasks", "type": "database",
+                                              "url": "https://www.notion.so/tasks"},
+                                {**PLAN_RESULT, "id": "5e6f", "title": "Fix the build", "url": "https://www.notion.so/fix",
+                                 "parent_data_source_url": "collection://7a8b"}] if n == 0 else []}
+                   for n in range(14)]
 # The raw files work.json is built from: what Jira and gh return, with the
 # period and the searches, and Notion's pages as recorded.
 JIRA_ID = PERSON["sources"]["jira-api"]["id"]
@@ -79,7 +92,7 @@ WORK_RAW = {"jira": {"start": "2026-08-10", "end": "2026-11-10", "base_url": JIR
             "github": {"start": "2026-08-10", "end": "2026-11-10", "orgs": ["acme"],
                        "opened_query": QUERY["opened"], "merged_query": QUERY["merged"],
                        "opened": [PULL], "merged": [PULL]},
-            "notion": WORK_ITEMS["notion"]}
+            "notion": {"created": NOTION_SEARCHES}}
 # work.json as built from them, its facts worked out by hand.
 WORK = {"jira": {**WORK_ITEMS["jira"], "counts": {"created": 1, "resolved": 1},
                  "created_by_type": [{"type": "Task", "issues": 1}],

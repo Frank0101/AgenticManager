@@ -116,15 +116,12 @@ NOTES = "notes.json"
 # script writes what it gathered to its raw file, _raw/<source>.json: Jira's
 # issues and GitHub's pull requests as their APIs return them, with the
 # period and the searches that found them, so whose each item is, and why it
-# is there, can be checked again without searching again; Notion's pages as
-# the agent records them, as only it reaches Notion. Once every source's is
+# is there, can be checked again without searching again; Notion's searches,
+# which only the agent reaches, with their results as returned. Once every source's is
 # in, work.json is built from them, with no network, and nowhere else: for
 # each source its items, each with its title, date and link, for the writing
 # step to cite, the facts worked out from them, once, and for Jira and GitHub
-# the address of each list's search, to see the same items live. Notion's
-# search filters by creation date but returns only the last edit's, so a
-# created page is dated by the range it was found in, `between`; `path` is
-# where it sits.
+# the address of each list's search, to see the same items live.
 WORK = "work.json"
 WORK_LISTS = {"jira": ("created", "resolved"), "github": (
     "opened", "merged"), "notion": ("created",)}
@@ -143,6 +140,14 @@ RAW_ITEM_FIELDS = {"jira": ("key", "fields.summary", "fields.issuetype.name", "f
                    "github": ("number", "title", "repository.nameWithOwner", "url", "createdAt", "closedAt",
                               "author", "updatedAt")}
 PARENT_FIELDS = ("key", "fields.summary", "fields.issuetype.name")
+# Notion's search filters by creation date but returns only the last edit's,
+# so a created page is dated by the range of the search that found it,
+# `between`, a calendar week at most; `path` is where it sits. A search
+# returns at most NOTION_LIMIT results, rows included, and no next page, so
+# a full one is searched again in shorter ranges; a single day can't be
+# split, so one still full keeps what it found. A database's rows aren't
+# pages of their own.
+NOTION_LIMIT = 50
 # The facts of each source. The activity over time isn't one: each item
 # has its day, and grouping them, such as by week, is for whatever shows it.
 FACT_KEYS = {"jira": ("counts", "created_by_type", "resolved_by_type", "focus"),
@@ -196,10 +201,58 @@ def raw_work_problems(source, raw, days):
     if "start" in raw and (raw["start"], raw["end"]) != (days[0], days[-1]):
         return [f"the {source} raw file is for {raw['start']} to {raw['end']}, not the period: run "
                 "fetch_work.py again"]
-    problems = [f"the {source} raw file's {name}: {item!r:.80} lacks {missing}"
-                for name in WORK_LISTS[source] for item in raw[name]
-                if (missing := _raw_missing(source, item))]
+    if source == "notion":
+        problems = notion_searches_problems(raw["created"], days)
+    else:
+        problems = [f"the {source} raw file's {name}: {item!r:.80} lacks {missing}"
+                    for name in WORK_LISTS[source] for item in raw[name]
+                    if (missing := _raw_missing(source, item))]
     return problems or items_problems(source, work_items(source, raw), days)
+
+
+def notion_searches_problems(searches, days):
+    """Why `searches`, Notion's searches for created pages, aren't those of
+    the period of `days`, empty when they are: each {start, end, results}, its
+    results as the search returned them, a page with its title and url; their
+    ranges covering the period day by day, with no gap or overlap, each within
+    a calendar week; none full but a single day, marked "full": true; and no
+    page found by two of them."""
+    if not all(isinstance(search, dict) and set(search) - {"full"} == {"start", "end", "results"}
+               and search.get("full", True) is True and isinstance(search["results"], list)
+               and all(isinstance(result, dict) for result in search["results"]) for search in searches):
+        return ['each Notion search must be {"start", "end", "results": [...]}, its results as it returned them']
+    searches = sorted(searches, key=lambda search: str(search["start"]))
+    pages = [result for search in searches for result in search["results"]
+             if is_notion_page(result)]
+    if not all(isinstance(page.get(key), str) for page in pages for key in ("title", "url")):
+        return ["each page a Notion search returned must have its title and url, as the search gave them"]
+    try:
+        covered = [day for search in searches for day in days_between(
+            search["start"], search["end"])]
+    except (TypeError, ValueError):
+        return ["each Notion search's start and end must be days as YYYY-MM-DD"]
+    problems = [] if covered == days else [
+        f"the Notion searches must cover {days[0]} to {days[-1]} day by day, with no gap or overlap"]
+    for search in searches:
+        span = f"the Notion search of {search['start']} to {search['end']}"
+        if date.fromisoformat(search["start"]).isocalendar()[:2] != date.fromisoformat(search["end"]).isocalendar()[:2]:
+            problems.append(
+                f"{span} spans more than a calendar week: search week by week, Monday to Sunday")
+        if "full" in search and search["start"] != search["end"]:
+            problems.append(f"{span} is full, which only a search of a single day may be: search that range "
+                            "again in shorter ranges")
+        elif "full" not in search and len(search["results"]) >= NOTION_LIMIT:
+            problems.append(f"{span} returned {NOTION_LIMIT} results, the most it returns, so some may be "
+                            "missing: search that range again in shorter ranges")
+    urls = [page["url"] for page in pages]
+    return problems + [f"{url} was found by two Notion searches, so the creation filter can't be trusted: "
+                       "search again" for url in sorted(set(urls)) if urls.count(url) > 1]
+
+
+def is_notion_page(result):
+    """Whether `result`, as Notion's search returned it, is a page of its own:
+    not a database, nor a database's row, which has a parent data source."""
+    return result.get("type") == "page" and not result.get("parent_data_source_url")
 
 
 def _raw_missing(source, item):
@@ -263,7 +316,10 @@ def work_items(source, raw):
     if source == "github":
         return {name: sorted((pr_item(pr, pr[stamp]) for pr in raw[name]), key=lambda item: (item["date"], item["url"]))
                 for name, stamp in (("opened", "createdAt"), ("merged", "closedAt"))}
-    return {name: raw[name] for name in WORK_LISTS[source]}
+    return {"created": sorted(({"title": result["title"], "url": result["url"], "path": result.get("path") or "",
+                                "between": [search["start"], search["end"]]}
+                               for search in raw["created"] for result in search["results"] if is_notion_page(result)),
+                              key=lambda page: (page["between"][0], page["url"]))}
 
 
 def issue_item(base_url, issue, dated_by):
