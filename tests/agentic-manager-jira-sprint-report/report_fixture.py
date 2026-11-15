@@ -162,7 +162,7 @@ def caveat_data(kind, keys):
 
 def sprint_data(**changes):
     data = {
-        "report_timezone": "Europe/London", "base_url": BASE, "label": "PROJ_Sprint_7", "sprint_id": 7,
+        "report_timezone": "Europe/London", "base_url": BASE, "label": "PROJ-Sprint-7", "sprint_id": 7,
         "sprint_name": "Sprint 7",
         "sprint_status": "closed", "sprint_goal": "Ship login", "sprint_start": "2026-03-02",
         "sprint_end": "2026-03-13", "sprint_complete_date": "2026-03-13", "today": "2026-03-16",

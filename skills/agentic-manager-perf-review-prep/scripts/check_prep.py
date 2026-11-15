@@ -1,12 +1,10 @@
-"""Checks a prep folder, read-only: that it holds only the prep's files, and that each follows the rules it was written by.
+"""Checks a prep folder, read-only: that it holds only the prep's files, and that each follows the rules it was written by, the report included.
 
 It reads each file back, as a later step does, and applies its rules through
 the same function the script that writes it checks it with first, so the two
 can't differ and a file written any other way is still caught.
 """
-import argparse
 from datetime import date
-import json
 import os
 
 from build_data import data_problems
@@ -59,18 +57,3 @@ def check_prep(prep, today=None):
             errors += [f"{report}: {problem}" for problem in report_problems(
                 f.read(), read[DATA], os.listdir(os.path.join(folder, CHARTS_DIR)))]
     return {"ok": not errors, "errors": errors}
-
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Check a prep folder: that it holds only the prep's files, that its person.json names the "
-        "person, a period that can be reported on and who the person is in each source, that its orientation summarises the manager's view, that its reviews hold the person's previous reviews, that its feedback holds what the person heard during the period, that its notes summarise the manager's notes, that its Slack summary holds what the person's messages show, that its data.json is what the raw files give, and that its report shows it. Prints one line of JSON: ok and errors. Exits 1 if any check fails.")
-    parser.add_argument("--prep", required=True,
-                        help="the prep's folder, <Person>_<YY-MM-DD>, inside perf-review-preps")
-    result = check_prep(parser.parse_args(argv).prep)
-    print(json.dumps(result, ensure_ascii=False))
-    return 0 if result["ok"] else 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

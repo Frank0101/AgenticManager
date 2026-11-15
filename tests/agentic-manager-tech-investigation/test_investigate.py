@@ -375,8 +375,10 @@ class InvestigateTest(unittest.TestCase):
                 self.assertEqual(investigate.call(),
                                  f"python3 {os.path.join(link, 'investigate.py')}")
                 values = investigate.fills(INVESTIGATION)
-                self.assertEqual((values["scripts"], values["lib"]),
-                                 (link, os.path.join(folder, "..", "agentic-manager-utils-lib", "agentic_manager")))
+                self.assertEqual((values["tickets"], values["extract_saved"]),
+                                 (f"python3 {os.path.join(link, 'tickets.py')}",
+                                  "python3 " + os.path.join(folder, "..", "agentic-manager-utils-lib", "agentic_manager",
+                                                            "extract_saved.py")))
 
 
 if __name__ == "__main__":

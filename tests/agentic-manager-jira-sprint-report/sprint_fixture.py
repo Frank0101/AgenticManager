@@ -247,7 +247,7 @@ def raw_files():
         "_meta.json": {
             "report_timezone": "Europe/London",
             "fetched_at": "2026-03-16T09:00:00+00:00", "base_url": "https://acme.atlassian.net",
-            "label": "PROJ_Sprint_7", "flagged_field": FLAGGED_FIELD, "story_points_field": POINTS_FIELD,
+            "label": "PROJ-Sprint-7", "flagged_field": FLAGGED_FIELD, "story_points_field": POINTS_FIELD,
         },
         "sprint.json": SPRINT,
         "previous_sprint.json": PREVIOUS_SPRINT,

@@ -42,6 +42,7 @@ class CheckReportTest(unittest.TestCase):
         self.folder = Path(self.temp.name)
         self.report = self.folder / "Acme_Report.md"
         (self.folder / "ledger.md").write_text(LEDGER, encoding="utf-8")
+        (self.folder / "content.json").write_text("{}", encoding="utf-8")
         parts = [
             "# Acme\n\nEvidence snapshot: today. [Research ledger](ledger.md).\n"]
         for level, title, ident in HEADINGS:
@@ -225,7 +226,7 @@ class CheckReportTest(unittest.TestCase):
                 self.assertTrue(check_report.check_report(self.report)["ok"])
                 result = check_report.check_report(self.report, handover=True)
                 self.assertFalse(result["ok"])
-                self.assertIn(f"Unexpected files in the investigation folder: {stray}", " ".join(
+                self.assertIn(f"move {stray} to your own scratch folder", " ".join(
                     result["errors"]))
                 (self.folder / stray).unlink()
 

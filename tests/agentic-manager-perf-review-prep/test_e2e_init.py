@@ -1,8 +1,7 @@
 """End-to-end tests for skills/agentic-manager-perf-review-prep/scripts/find_jira_account.py,
 init_prep.py, find_person.py, set_identities.py, rules.py, set_summary.py,
-read_notes.py, fetch_work.py, set_notion.py, read_slack.py, build_data.py,
-finish_report.py and check_prep.py: they run
-each as a script, as the agent does, from looking the person up in Jira and
+read_notes.py, fetch_work.py, set_notion.py, read_slack.py, build_data.py
+and finish_report.py: they run each as a script, as the agent does, from looking the person up in Jira and
 starting the prep on the account the manager confirmed, through who the
 person is in each other source, their view, the person's previous reviews
 and the period's feedback, the manager's notes, the person's work and their Slack
@@ -45,7 +44,6 @@ from jira_fake import FakeJira  # noqa: E402
 ACCOUNT_SCRIPT = os.path.join(SCRIPTS, "find_jira_account.py")
 INIT_SCRIPT = os.path.join(SCRIPTS, "init_prep.py")
 FIND_SCRIPT = os.path.join(SCRIPTS, "find_person.py")
-CHECK_SCRIPT = os.path.join(SCRIPTS, "check_prep.py")
 IDENTITIES_SCRIPT = os.path.join(SCRIPTS, "set_identities.py")
 SUMMARY_SCRIPT = os.path.join(SCRIPTS, "set_summary.py")
 RULES_SCRIPT = os.path.join(SCRIPTS, "rules.py")
@@ -195,8 +193,8 @@ class ScriptsTest(unittest.TestCase):
         # tasks and takes their answers, fetch_work.py and set_notion.py
         # record the work, read_slack.py the Slack messages, build_data.py
         # builds data.json from the raw files and finish_report.py the report
-        # from it; check_prep.py passes the prep, and fails it once the folder
-        # holds a file of the agent's.
+        # from it, checking the whole prep, which fails once the folder holds
+        # a file of the agent's.
         found = self.run_ok(ACCOUNT_SCRIPT, "--person", "Jane Doe")
         self.assertEqual([account["accountId"] for account in found["accounts"]], [
                          JANE["accountId"]])
@@ -288,10 +286,8 @@ class ScriptsTest(unittest.TestCase):
                                                                        "avg=5"),
                                                                       (1, "created", "1 Story"))]),
                          ([], [True, True, True]))
-        self.assertEqual(self.run_ok(CHECK_SCRIPT, "--prep", prep), {
-                         "ok": True, "errors": []})
         open(os.path.join(result["prep_dir"], "draft.md"), "w").close()
-        code, out, err = self.run_script(CHECK_SCRIPT, "--prep", prep)
+        code, out, err = self.run_script(REPORT_SCRIPT, "--prep", prep)
         self.assertEqual(code, 1)
         self.assertIn("draft.md", out)
 
@@ -309,7 +305,7 @@ class ScriptsTest(unittest.TestCase):
                   1, "Jira has no person's account a9"),
                  ("no person to look up", ACCOUNT_SCRIPT,
                   [], 2, "--person"),
-                 ("no such prep", CHECK_SCRIPT, [
+                 ("no such prep", REPORT_SCRIPT, [
                   "--prep", "Jane-Doe_26-01-01"], 1, "run init_prep.py first"),
                  ("find for no prep", FIND_SCRIPT, [
                   "--prep", "Jane-Doe_26-01-01"], 1, "run init_prep.py first"),

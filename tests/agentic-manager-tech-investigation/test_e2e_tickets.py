@@ -20,9 +20,12 @@ SCRIPT = os.path.join(REPO_ROOT, "skills", os.path.basename(
     TEST_DIR), "scripts", "tickets.py")
 
 PR = "https://github.com/acme/api/pull/41"
-# A fake gh that fails every command with FAKE_GH_ERROR on stderr.
+# A fake gh, signed in, that fails every other command with FAKE_GH_ERROR on
+# stderr.
 FAKE_GH = """#!/usr/bin/env python3
 import os, sys
+if sys.argv[1:3] == ["auth", "status"]:
+    sys.exit(0)
 sys.stderr.write(os.environ["FAKE_GH_ERROR"] + "\\n")
 sys.exit(1)
 """

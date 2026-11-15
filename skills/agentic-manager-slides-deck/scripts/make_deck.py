@@ -1,5 +1,5 @@
-"""Writes the deck's <Name>_Slides.html from <deck>/slides.json, the view
-finish_deck.py runs once slides.json has no problem.
+"""Writes the deck's <Name>_Slides.html from <deck>/slides.json, once its
+`problems` finds none.
 
 The page around the slides is fixed, and this module owns it: the slide's
 size, the grey page behind the slides, the toolbar with zoom and PDF export,

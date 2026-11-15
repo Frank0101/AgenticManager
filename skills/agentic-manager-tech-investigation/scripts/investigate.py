@@ -16,7 +16,7 @@ import os
 import re
 
 from common import (BLOCKED_BY, CONTENT, json_text, DESIGN_ORDER, FOLDER_NAME, LEDGER, SCOPE_QUESTION, TABLES,
-                    clear_folder, ids, investigation_dir, plain, report_path, read_json, script_command, scripts_folder,
+                    clear_folder, ids, investigation_dir, plain, report_path, read_json, library_command, script_command,
                     stdin_json, stops_on_failure, strip_anchors,
                     topic_of, work_folder, write_output_file)
 from init_investigation import init, usable_sources
@@ -257,20 +257,20 @@ def task_folder(relative, task):
 
 
 def fills(relative):
-    """The values the protocol names for this investigation: the scripts' and
-    the library's folders, written as the commands the skill pre-approves need
-    them, the investigation, its topic and its ledger, the sources the
-    config enables for the documentation and the code, and the folder of the
-    shared clones."""
-    scripts = scripts_folder(__file__)
+    """The values the protocol names for this investigation: the commands
+    that run the skill's tickets.py and the library's extract_saved.py, by
+    the paths the skill pre-approves, the investigation, its topic and its
+    ledger, the sources the config enables for the documentation and the
+    code, and the folder of the shared clones."""
     folder, _, _ = investigation_dir(relative)
     sources = usable_sources()
-    return {"scripts": scripts, "investigation": relative, "ledger": os.path.join(folder, LEDGER),
+    return {"tickets": script_command(__file__, "tickets.py"),
+            "extract_saved": library_command(__file__, "extract_saved.py"),
+            "investigation": relative, "ledger": os.path.join(folder, LEDGER),
             "topic": topic_of(folder).replace("-", " "),
             "documentation": " or ".join(f"the {name} source" for name in sources["documentation"]),
             "code": " or ".join(f"the {name} source" for name in sources["source_control"]),
-            "repos": repos_dir(relative),
-            "lib": os.path.join(os.path.dirname(scripts), "..", "agentic-manager-utils-lib", "agentic_manager")}
+            "repos": repos_dir(relative)}
 
 
 def repos_dir(relative):

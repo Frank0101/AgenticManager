@@ -16,7 +16,7 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.batch import gather  # noqa: E402,F401
-from agentic_manager.commands import script_command, scripts_folder, stdin_json  # noqa: E402,F401
+from agentic_manager.commands import library_command, script_command, stdin_json  # noqa: E402,F401
 from agentic_manager.config import enabled_sources, is_enabled  # noqa: E402,F401
 from agentic_manager.github import NAME as GITHUB_CLI, GH_UNAVAILABLE, GhError, gh_available, require_gh, gh_found, gh_hosts, pull_parts  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
@@ -24,7 +24,7 @@ from agentic_manager.jira import BROWSE_URL as TICKET_URL, NAME as JIRA_API, PRO
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.output_file import json_text, read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
-from agentic_manager.output_folder import clear_folder, day_folder, document_name, folder_day, folder_subject, output_folder, work_folder  # noqa: E402,F401
+from agentic_manager.output_folder import clear_folder, folder_problem, day_folder, document_name, folder_day, folder_subject, output_folder, work_folder  # noqa: E402,F401
 from agentic_manager.text import DEFINITION, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, display_date, free_name, headings, inline_links, link_definitions, link_text, links, local_link, markdown, reference_key, same_document, slug, word_count  # noqa: E402,F401
 from agentic_manager.ticket_pulls import pulls_by_ticket  # noqa: E402,F401
 

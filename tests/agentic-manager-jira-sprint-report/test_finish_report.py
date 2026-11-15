@@ -38,8 +38,8 @@ class FinishReportTest(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.dir = tmp.name
         with open(os.path.join(self.dir, "data.json"), "w", encoding="utf-8") as f:
-            json.dump({"label": "PROJ_Sprint_7"}, f)
-        self.report = os.path.join(self.dir, "PROJ_Sprint_7_Sprint_Report.md")
+            json.dump({"label": "PROJ-Sprint-7"}, f)
+        self.report = os.path.join(self.dir, "PROJ-Sprint-7_Sprint_Report.md")
 
     def finish(self, steps):
         """(exit code, stdout, the steps run), each step doing what `steps`

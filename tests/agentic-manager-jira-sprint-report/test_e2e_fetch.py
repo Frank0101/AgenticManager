@@ -197,7 +197,8 @@ class FetchTest(unittest.TestCase):
         self.out_root = os.path.join(self.root, "jira-sprint-reports")
         self.reset_jira()
         self.write_config()
-        # The fake gh, answering nothing until a test gives it answers.
+        # The fake gh, signed in and answering nothing else until a test
+        # gives it answers.
         self.bin_dir = os.path.join(self.tmp.name, "bin")
         os.makedirs(self.bin_dir)
         with open(os.path.join(self.bin_dir, "gh"), "w", encoding="utf-8") as f:
@@ -207,10 +208,11 @@ class FetchTest(unittest.TestCase):
         self.gh_log = os.path.join(self.tmp.name, "gh.log")
         self.answer_gh({})
 
-    # Gives the fake gh its answers, by the words of each call, and clears its log.
+    # Gives the fake gh its answers, by the words of each call, signed in
+    # unless they say otherwise, and clears its log.
     def answer_gh(self, answers):
         with open(self.gh_answers, "w", encoding="utf-8") as f:
-            json.dump(answers, f)
+            json.dump({"auth status": "", **answers}, f)
         with open(self.gh_log, "w", encoding="utf-8"):
             pass
 
@@ -323,7 +325,7 @@ class FetchTest(unittest.TestCase):
                     change()
                 out = self.assert_fetches(*args)
                 self.assertEqual((out["sprint_id"], out["label"], out["sprint_state"]),
-                                 (sprint_id, f"PROJ_Sprint_{sprint_id}", state))
+                                 (sprint_id, f"PROJ-Sprint-{sprint_id}", state))
                 self.assertNotIn(
                     "/rest/agile/1.0/board/43/sprint", requested())
 
@@ -421,7 +423,7 @@ class FetchTest(unittest.TestCase):
     def test_raw_files(self):
         out = self.assert_fetches("--project", "PROJ")
         self.assertTrue(os.path.basename(
-            out["report_dir"]).startswith("PROJ_Sprint_7_"))
+            out["report_dir"]).startswith("PROJ-Sprint-7_"))
         meta = self.raw(out, "_meta.json")
         self.assertEqual(meta["base_url"], self.base_url)
         self.assertEqual(meta["report_timezone"], "Europe/London")
@@ -550,7 +552,10 @@ class FetchTest(unittest.TestCase):
         # requests, GitHub's times, the skipped), or for a failure, what
         # stderr says
         cases = [("without gh", False, answered,
-                  ["gh isn't available or github-cli isn't enabled, and the report needs GitHub"], None, None),
+                  ["gh isn't available or github-cli isn't enabled, and the tickets' pull requests are read with it",
+                   "then run prepare_report.py again"], None, None),
+                 ("gh not signed in", True, {**answered, "auth status": {"fails": "not logged in"}},
+                  ["gh isn't signed in: run gh auth login, then run prepare_report.py again"], None, None),
                  ("with gh", True, answered, [(fixture.PR.format(41), "PROJ-1"), (fixture.PR.format(43), "PROJ-9")],
                   {fixture.PR.format(n): times[n] for n in (41, 43)}, []),
                  ("a pull request GitHub can't find", True, {f"pr view {fixture.PR.format(41)}": times[41]},
@@ -572,19 +577,18 @@ class FetchTest(unittest.TestCase):
                 self.assertNotIn("repository", data_types())
                 with open(self.gh_log, encoding="utf-8") as f:
                     gh_calls = [json.loads(line) for line in f]
-                self.assertTrue(all(is_graphql(call)
+                self.assertTrue(all(is_graphql(call) or call[:2] == ["auth", "status"]
                                 for call in gh_calls), gh_calls)
                 if events is None:
                     self.assertEqual(proc.returncode, 1, proc.stderr)
                     for wanted in expected:
                         self.assertIn(wanted, proc.stderr)
                     # Stopped before the report folder was touched; without
-                    # gh, before anything was read.
+                    # gh, or signed out, before anything was read.
                     self.assertEqual(proc.stdout, "")
                     self.assertEqual(self.reports(), before)
-                    if not github:
-                        self.assertEqual(
-                            (requested(), gh_calls), ([], []))
+                    if name in ("without gh", "gh not signed in"):
+                        self.assertEqual(requested(), [])
                     continue
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 pulls = self.raw(json.loads(proc.stdout), "pull_requests.json")
@@ -713,9 +717,9 @@ class FetchTest(unittest.TestCase):
 
     def test_only_the_report_of_the_same_sprint_and_day_is_replaced(self):
         fixture.report_folder(os.path.join(
-            self.out_root, "PROJ_Sprint_7_26-01-01"), {"id": 7})
+            self.out_root, "PROJ-Sprint-7_26-01-01"), {"id": 7})
         fixture.report_folder(os.path.join(
-            self.out_root, "PROJ_Sprint_6_26-01-01"), {"id": 6})
+            self.out_root, "PROJ-Sprint-6_26-01-01"), {"id": 6})
         first = self.assert_fetches("--project", "PROJ")
         stale = os.path.join(first["report_dir"], "content.json")
         with open(stale, "w", encoding="utf-8") as f:
@@ -723,7 +727,7 @@ class FetchTest(unittest.TestCase):
         out = self.assert_fetches("--project", "PROJ")
         self.assertFalse(os.path.exists(stale))
         self.assertEqual(sorted(os.listdir(self.out_root)),
-                         sorted(["PROJ_Sprint_7_26-01-01", "PROJ_Sprint_6_26-01-01",
+                         sorted(["PROJ-Sprint-7_26-01-01", "PROJ-Sprint-6_26-01-01",
                                  os.path.basename(out["report_dir"])]))
 
 

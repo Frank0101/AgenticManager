@@ -209,8 +209,8 @@ def submit_design(lines, data):
             problems.guard(f"{table} {ident}, left out",
                            lambda i=ident: refuse_cited(lines, i))
     problems.stop()
-    # Recorded after its own findings are in, so a design never looks out of
-    # date for what it read itself.
+    # What the design was built from, as basis() counts the ledger now, so it
+    # stays current until research adds to it.
     set_design_basis(lines, basis(lines))
     problems.guard("the design", lambda: finish_write(lines, written))
     problems.stop()

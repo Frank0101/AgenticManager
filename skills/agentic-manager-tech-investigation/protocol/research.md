@@ -24,7 +24,7 @@ Read it through {{documentation}}: search for what the question needs, and read 
 
 ### Reading the tracker
 
-Read tickets only with `python3 {{scripts}}/tickets.py` (its --help gives its commands). Read what the question needs of a ticket: its description, status, acceptance criteria, links and comments, and say which you read. Use --prs when its code matters, to list the pull requests linked to it. An epic tends to hold the scope; a story, what is being delivered; a spike, a decision or an investigation's outcome; a bug, what is broken today. Two traps:
+Read tickets only with `{{tickets}}` (its --help gives its commands). Read what the question needs of a ticket: its description, status, acceptance criteria, links and comments, and say which you read. Use --prs when its code matters, to list the pull requests linked to it. An epic tends to hold the scope; a story, what is being delivered; a spike, a decision or an investigation's outcome; a bug, what is broken today. Two traps:
 
 - Open sub-tasks under a closed story: a story's status stands over its sub-tasks', which are often left open after it closes, so don't read them as unfinished work.
 - A renamed project: tickets move, and a search on an old project key returns nothing, without an error. tickets.py says when a ticket or a project has moved: use its current key from then on.
@@ -35,7 +35,7 @@ A ticket that a document names but that doesn't exist is a finding: the document
 
 Read the code pinned to a commit on the main branch, so every claim names the revision it holds for. For a repository you read beyond a few files, use the run's shared clone of it, {{repos}}/<owner>-<repo>; if there is none, clone it there without file contents (git clone --filter=blob:none), into a new folder you then rename to that name, and if another task's clone got there first, use that one. Never check out a commit in it, since other tasks read it at once: read at the commit, with git show <commit>:<path>, git grep <commit> and git ls-tree, which download only the files you read. If a git fetch, for a commit or branch the clone lacks, fails on a lock, run it again. For a few files, or for pull requests, use {{code}}. Before concluding something doesn't exist, look where it could be hiding: active branches, open pull requests, and the history, for something merged and later removed; submit where you looked as sources. A clone without file contents makes a search of file contents across the history (git log -S) download every version of every file: limit it to the paths that matter, or clone with the contents when you need it.
 
-When a tool's result is too large and saved to a file, list what you need from it with `python3 {{lib}}/extract_saved.py`, rather than reading it whole.
+When a tool's result is too large and saved to a file, list what you need from it with `{{extract_saved}}`, rather than reading it whole.
 
 ### What you submit
 

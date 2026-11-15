@@ -36,7 +36,7 @@ def find(prep, run=subprocess.run):
     """{person, email, github, vault}: who the person of the prep `prep`
     could be in GitHub and the vault."""
     person = read_json(os.path.join(prep_dir(prep), PERSON))
-    require_gh(run, "the person's GitHub account is found")
+    require_gh(run, "the person's GitHub account is found", "find_person.py")
     email, name = person["sources"][JIRA_SOURCE]["email"], person["person"]
     return {"person": name, "email": email, "github": github_candidates(email, run),
             "vault": vault_candidates(graph_path(), name)}

@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import protocol  # noqa: E402
 
 # What investigate.py fills for every task.
-FILLS = {"topic": "Acme Search", "documentation": "the notion-mcp source", "code": "the gitlab-cli source", "scripts": "/s", "lib": "/l",
+FILLS = {"topic": "Acme Search", "documentation": "the notion-mcp source", "code": "the gitlab-cli source", "tickets": "python3 /s/tickets.py", "extract_saved": "python3 /l/extract_saved.py",
          "investigation": "Acme_26-10-05", "ledger": "/x/ledger.md", "task_work": "/w", "repos": "/r"}
 
 

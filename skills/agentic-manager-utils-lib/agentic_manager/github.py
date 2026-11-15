@@ -73,21 +73,22 @@ GH_UNAVAILABLE = "gh isn't available or github-cli isn't enabled"
 PAGE_SIZE = 100
 
 
-def require_gh(run, what):
+def require_gh(run, what, again):
     """Exits, saying what to do, unless gh can be used and is signed in, as
     `run` runs it; `what` says what is done with it, such as "the person's
-    pull requests are fetched"."""
+    pull requests are fetched", and `again` the command to run once it is
+    fixed, such as "fetch_work.py"."""
     if not gh_available():
-        raise SystemExit(
-            f"gh isn't installed or the github-cli source isn't enabled: {what} with it")
+        raise SystemExit(f"{GH_UNAVAILABLE}, and {what} with it: install gh and enable the github-cli source, "
+                         f"then run {again} again")
     try:
         signed_in = gh_signed_in(run)
     except GhError:
         raise SystemExit(
-            f"gh can't be run: install it, then run this again, as {what} with it")
+            f"gh can't be run, and {what} with it: install it, then run {again} again")
     if not signed_in:
         raise SystemExit(
-            "gh isn't signed in: run gh auth login, then run this again")
+            f"gh isn't signed in: run gh auth login, then run {again} again")
 
 
 def gh_available():

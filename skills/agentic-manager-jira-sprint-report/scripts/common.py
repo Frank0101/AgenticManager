@@ -18,7 +18,7 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.output_file import json_text, read_json, write_output_file  # noqa: E402,F401
-from agentic_manager.text import HEADING, INLINE_LINK, display_date, link_text, number, plural, word_count  # noqa: E402,F401
+from agentic_manager.text import HEADING, INLINE_LINK, as_name, display_date, link_text, number, plural, word_count  # noqa: E402,F401
 from agentic_manager.svg import GRID, INK, MUTED, SURFACE, legend, nice_step, svg, text, text_width  # noqa: E402,F401
 from agentic_manager.output_folder import CHARTS_DIR, RAW_DIR, clear_folder, day_folder, document_name, output_folder  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
@@ -27,7 +27,7 @@ from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order, 
 from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.period import days  # noqa: E402,F401
 from agentic_manager.failures import GITHUB_FAILED, stops_on_failure  # noqa: E402,F401
-from agentic_manager.github import GH_UNAVAILABLE, gh_available  # noqa: E402,F401
+from agentic_manager.github import require_gh  # noqa: E402,F401
 from agentic_manager.ticket_pulls import pulls_by_ticket, read_events  # noqa: E402,F401
 
 # The skill's output folder, which holds the report folders (see output_folder.py).
@@ -164,12 +164,13 @@ FIELD_TABLE_HEAD = "| Field | Detail |\n|---|---|\n"
 
 
 def report_label(project_key, sprint_name):
-    """File-safe label such as PROJ_Sprint_3. The project key is prefixed
-    because Jira sprint names ("Sprint 3") often don't carry it."""
+    """File-safe label such as PROJ-Sprint-3, as the library's as_name()
+    writes every subject. The project key is prefixed because Jira sprint
+    names ("Sprint 3") often don't carry it."""
     name = sprint_name or "Sprint"
     if project_key and not name.upper().startswith(project_key.upper()):
         name = f"{project_key} {name}"
-    return re.sub(r"[^A-Za-z0-9.-]+", "_", name).strip("_")
+    return as_name(name)
 
 
 def expected_files(label):

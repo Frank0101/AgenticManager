@@ -859,7 +859,7 @@ class MainTest(unittest.TestCase):
             json.dump(payload, f)
 
     def run_main(self):
-        self.write(common.META_FILE, {"label": "PROJ_Sprint_7", "fetched_at": self.fetched_at,
+        self.write(common.META_FILE, {"label": "PROJ-Sprint-7", "fetched_at": self.fetched_at,
                    "report_timezone": "Europe/Paris",
                                       "story_points_field": "customfield_points"})
         self.write(common.STATUSES_FILE, [{"id": i, "statusCategory": {

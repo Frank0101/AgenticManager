@@ -341,7 +341,7 @@ class FilesTest(unittest.TestCase):
             self.addCleanup(patcher.stop)
 
     def test_write_json(self):
-        path = os.path.join(self.folder, "PROJ_Sprint_7", "_raw", "data.json")
+        path = os.path.join(self.folder, "PROJ-Sprint-7", "_raw", "data.json")
         common.write_json(path, {"x": [1]})
         with open(path, encoding="utf-8") as f:
             self.assertEqual(f.read(), common.json_text({"x": [1]}))
@@ -363,10 +363,12 @@ class FilesTest(unittest.TestCase):
                 self.assertFalse(os.path.exists(path))
 
     def test_report_label(self):
-        # The key is prefixed unless the name starts with it, in any case; each
-        # run of characters unsafe in a file name becomes one underscore.
-        cases = [("PROJ", "Sprint 3", "PROJ_Sprint_3"), ("PROJ", "proj sprint 3", "proj_sprint_3"),
-                 ("PROJ", "Q1: Login / Search!", "PROJ_Q1_Login_Search"), (None, None, "Sprint")]
+        # The key is prefixed unless the name starts with it, in any case;
+        # each run of characters but letters and digits becomes one hyphen,
+        # and accents are dropped, not the letters they're on.
+        cases = [("PROJ", "Sprint 3", "PROJ-Sprint-3"), ("PROJ", "proj sprint 3", "proj-sprint-3"),
+                 ("PROJ", "Q1: Login / Search!", "PROJ-Q1-Login-Search"),
+                 ("PROJ", "Ventes Été", "PROJ-Ventes-Ete"), (None, None, "Sprint")]
         for project, name, expected in cases:
             with self.subTest(name=name):
                 self.assertEqual(common.report_label(project, name), expected)
@@ -450,9 +452,9 @@ class OutcomeTotalTest(unittest.TestCase):
 
 class ExpectedFilesTest(unittest.TestCase):
     def test_expected_files(self):
-        self.assertEqual(common.expected_files("PROJ_Sprint_3"),
+        self.assertEqual(common.expected_files("PROJ-Sprint-3"),
                          {"_raw", "data.json", "content.json", "brief.json", "_charts",
-                          "PROJ_Sprint_3_Sprint_Report.md"})
+                          "PROJ-Sprint-3_Sprint_Report.md"})
 
 
 class VocabularyTest(unittest.TestCase):

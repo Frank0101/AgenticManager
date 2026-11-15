@@ -108,24 +108,24 @@ class OutputFolderTest(unittest.TestCase):
 class DayFolderTest(unittest.TestCase):
     def test_day_folder(self):
         # A datetime's own day is used, as its time zone gives it.
-        cases = [("a date", date(2026, 3, 6), "PROJ_Sprint_3_26-03-06"),
+        cases = [("a date", date(2026, 3, 6), "PROJ-Sprint-3_26-03-06"),
                  ("a datetime", datetime(2026, 12, 31, 23, 59),
-                  "PROJ_Sprint_3_26-12-31"),
+                  "PROJ-Sprint-3_26-12-31"),
                  ("a datetime in a time zone",
-                  datetime(2026, 1, 1, 0, 30, tzinfo=timezone(timedelta(hours=1))), "PROJ_Sprint_3_26-01-01")]
+                  datetime(2026, 1, 1, 0, 30, tzinfo=timezone(timedelta(hours=1))), "PROJ-Sprint-3_26-01-01")]
         for name, day, expected in cases:
             with self.subTest(name):
                 self.assertEqual(output_folder.day_folder(
-                    "PROJ_Sprint_3", day), expected)
+                    "PROJ-Sprint-3", day), expected)
                 # folder_day() and DAY_FOLDER read the name back.
                 self.assertEqual(output_folder.folder_day(expected), datetime.strptime(
                     expected[-8:], "%y-%m-%d").date())
                 match = output_folder.DAY_FOLDER.fullmatch(expected)
                 assert match
                 self.assertEqual((match["subject"], match["date"]),
-                                 ("PROJ_Sprint_3", expected[-8:]))
+                                 ("PROJ-Sprint-3", expected[-8:]))
                 self.assertEqual(output_folder.folder_subject(
-                    expected), "PROJ_Sprint_3")
+                    expected), "PROJ-Sprint-3")
         self.assertIsNone(output_folder.folder_day("_examples"))
         self.assertIsNone(output_folder.folder_subject("_examples"))
 

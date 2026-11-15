@@ -12,13 +12,13 @@ The report's files go to the `jira-sprint-reports` folder of the user's configur
 
 ```text
 jira-sprint-reports/
-└── PROJ_Sprint_3_26-10-05/
+└── PROJ-Sprint-3_26-10-05/
     ├── _raw/                      prepare_report.py writes (the fetched Jira and GitHub data)
     ├── data.json                  prepare_report.py writes
     ├── brief.json                 prepare_report.py writes
     ├── content.json               you write (step 2)
     ├── _charts/                   finish_report.py writes (outcome-tickets.svg, outcome-pts.svg, burndown.svg)
-    └── PROJ_Sprint_3_Sprint_Report.md   finish_report.py writes
+    └── PROJ-Sprint-3_Sprint_Report.md   finish_report.py writes
 ```
 
 ## Prerequisite

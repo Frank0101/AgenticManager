@@ -1,9 +1,8 @@
 """Finishes the investigation's report: writes it from content.json and the
 ledger with make_report.py, then runs its final check with check_report.py.
 
-The task script runs it when the write task's text is submitted. make_report.py
-checks content.json field by field before writing anything, and a report left
-by an earlier submission is replaced, never checked again.
+make_report.py checks content.json field by field before writing anything,
+and a report left by an earlier run is replaced, never checked again.
 """
 import os
 

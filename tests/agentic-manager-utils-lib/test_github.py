@@ -6,6 +6,7 @@ shutil.which are patched, so no config is read.
 """
 
 import json
+import re
 import os
 import subprocess
 import sys
@@ -56,6 +57,25 @@ class GithubTest(unittest.TestCase):
         # setUpModule: tests/run.py loads modules in a way unittest runs no
         # module fixtures for.
         self.enterContext(mock.patch.object(retry.time, "sleep"))
+
+    def test_require_gh(self):
+        # name: (gh usable, how gh auth status answers, expected, or None)
+        signed_in = mock.Mock(return_value=mock.Mock(returncode=0))
+        cases = [("usable", True, signed_in, None),
+                 ("not enabled", False, signed_in,
+                  f"{github.GH_UNAVAILABLE}, and the code is read with it: install gh and enable the github-cli "
+                  "source, then run fetch.py again"),
+                 ("can't run", True, mock.Mock(side_effect=FileNotFoundError),
+                  "gh can't be run, and the code is read with it: install it, then run fetch.py again"),
+                 ("not signed in", True, mock.Mock(return_value=mock.Mock(returncode=1)),
+                  "gh isn't signed in: run gh auth login, then run fetch.py again")]
+        for name, usable, run, expected in cases:
+            with self.subTest(name), mock.patch.object(github, "gh_available", return_value=usable):
+                if expected is None:
+                    github.require_gh(run, "the code is read", "fetch.py")
+                else:
+                    with self.assertRaisesRegex(SystemExit, re.escape(expected)):
+                        github.require_gh(run, "the code is read", "fetch.py")
 
     def test_pull_search_url(self):
         self.assertEqual(github.pull_search_url("is:pr author:janedoe org:acme"),

@@ -5,11 +5,10 @@ the form of the evidence, not whether it is true.
 It recognizes the skill's ordinary Markdown output, not every Markdown
 extension.
 """
-import os
 from pathlib import Path
 import re
 
-from common import (CELL_PIPE, CITATION, DEFINITION, DESIGN_ORDER, FLOW_HEADER, HEADING, IDENTITY_HEADER, LEDGER,
+from common import (folder_problem, CELL_PIPE, CITATION, DEFINITION, DESIGN_ORDER, FLOW_HEADER, HEADING, IDENTITY_HEADER, LEDGER,
                     LEDGER_SECTIONS, LINKS, QUERY, QUEUE, QUEUE_SUBSECTIONS, REFERENCE_LINK, SOURCE_FINDINGS_COLUMN,
                     TABLE_HEADINGS, UNUSED, anchor_ids, backtick_error, cited_sources, claim_length_problem,
                     design_evidence, expected_files, flow_states, headings, id_order, identity_states, ids,
@@ -85,11 +84,8 @@ def check_report(report, handover=False):
             errors.append(
                 f"Line {line}: table row needs a point-of-use source link or a ledger link.")
     if handover:
-        extra = sorted(name for name in os.listdir(report.parent)
-                       if not name.startswith(".") and name not in expected_files(report.name))
-        if extra:
-            errors.append("Unexpected files in the investigation folder: " + ", ".join(extra)
-                          + ". It holds only the skill's files; keep working files in the working folder the task names.")
+        if problem := folder_problem(str(report.parent), expected_files(report.name)):
+            errors.append(problem)
         try:
             ledger_text = (report.parent / LEDGER).read_text(encoding="utf-8")
         except (OSError, UnicodeError):

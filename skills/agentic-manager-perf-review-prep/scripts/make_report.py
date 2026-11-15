@@ -10,11 +10,10 @@ from common import (CHARTS_DIR, EPICS_CHART, FOCUS_SHARE, FOLDER_NAME, JIRA_CELL
 
 def write_report(prep, person, data):
     """Write the prep `prep`'s report from `person`, its person.json, and
-    `data`, its data.json; returns (path, text)."""
-    report = render(person, data)
+    `data`, its data.json; returns its path."""
     path, _ = write_output_file(
-        FOLDER_NAME, f"{prep}/{report_name(prep)}", report.encode("utf-8"))
-    return path, report
+        FOLDER_NAME, f"{prep}/{report_name(prep)}", render(person, data).encode("utf-8"))
+    return path
 
 
 # The report.

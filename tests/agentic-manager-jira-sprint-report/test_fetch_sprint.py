@@ -124,24 +124,24 @@ class ReportDirTest(unittest.TestCase):
                     fetch_sprint.stored_sprint_id(folder), expected)
 
     def test_new_folder(self):
-        raw, said = self.prepare("PROJ_Sprint_7_26-03-16", 7)
+        raw, said = self.prepare("PROJ-Sprint-7_26-03-16", 7)
         self.assertEqual(raw, os.path.join(
-            self.root, "PROJ_Sprint_7_26-03-16", "_raw"))
+            self.root, "PROJ-Sprint-7_26-03-16", "_raw"))
         self.assertEqual(os.listdir(raw), [])
         self.assertEqual(said, "")
 
     def test_only_the_report_of_the_same_sprint_and_day_is_deleted(self):
         # Earlier days' reports of the sprint stay, as does every other
         # sprint's report, and a report elsewhere that a link points to.
-        earlier_day = self.report("PROJ_Sprint_7_26-03-13", 7)
-        other = self.report("PROJ_Sprint_6_26-03-16", 6)
-        same_day = self.report("PROJ_Sprint_7_26-03-16", 7)
+        earlier_day = self.report("PROJ-Sprint-7_26-03-13", 7)
+        other = self.report("PROJ-Sprint-6_26-03-16", 6)
+        same_day = self.report("PROJ-Sprint-7_26-03-16", 7)
         outside = tempfile.TemporaryDirectory()
         self.addCleanup(outside.cleanup)
         linked = report_folder(os.path.join(
-            outside.name, "PROJ_Sprint_7_26-03-01"), {"id": 7})
+            outside.name, "PROJ-Sprint-7_26-03-01"), {"id": 7})
         os.symlink(linked, os.path.join(self.root, "link"))
-        _, said = self.prepare("PROJ_Sprint_7_26-03-16", 7)
+        _, said = self.prepare("PROJ-Sprint-7_26-03-16", 7)
         self.assertTrue(os.path.exists(earlier_day))
         self.assertTrue(os.path.exists(other))
         self.assertTrue(os.path.islink(os.path.join(self.root, "link")))
@@ -152,9 +152,9 @@ class ReportDirTest(unittest.TestCase):
             said, f"replacing the report of the same sprint and day: {same_day}\n")
 
     def test_refuses_to_delete_another_sprints_report(self):
-        self.report("PROJ_Sprint_7_26-03-16", 6)
+        self.report("PROJ-Sprint-7_26-03-16", 6)
         with self.assertRaisesRegex(SystemExit, "it holds the report of sprint 6"):
-            self.prepare("PROJ_Sprint_7_26-03-16", 7)
+            self.prepare("PROJ-Sprint-7_26-03-16", 7)
 
     def test_replaces_a_file_or_link_in_the_way(self):
         # Whatever holds the destination's name is removed, but a link is
@@ -166,9 +166,9 @@ class ReportDirTest(unittest.TestCase):
                  ("a broken link", lambda path: os.symlink(os.path.join(self.root, "gone"), path))]
         for sprint_id, (name, make) in enumerate(cases, start=7):
             with self.subTest(name):
-                target = os.path.join(self.root, f"PROJ_Sprint_{sprint_id}")
+                target = os.path.join(self.root, f"PROJ-Sprint-{sprint_id}")
                 make(target)
-                self.prepare(f"PROJ_Sprint_{sprint_id}", sprint_id)
+                self.prepare(f"PROJ-Sprint-{sprint_id}", sprint_id)
                 self.assertFalse(os.path.islink(target))
                 self.assertTrue(os.path.isdir(os.path.join(target, "_raw")))
         self.assertTrue(os.path.isdir(elsewhere))

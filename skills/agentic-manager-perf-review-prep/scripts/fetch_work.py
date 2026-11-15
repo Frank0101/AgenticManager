@@ -87,7 +87,7 @@ def github_raw(login, person, run=subprocess.run):
     """GitHub's raw file: the pull requests the account `login` opened and
     merged in the review's period in `person`, in the organisations gh
     belongs to, with the same searches on github.com."""
-    require_gh(run, "the person's pull requests are fetched")
+    require_gh(run, "the person's pull requests are fetched", "fetch_work.py")
     period, window = (person["start"], person["end"]
                       ), f'{person["start"]}..{person["end"]}'
     orgs = gh_orgs(run)

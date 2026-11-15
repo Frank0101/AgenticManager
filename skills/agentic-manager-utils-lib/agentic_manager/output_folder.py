@@ -29,8 +29,9 @@ TEMP_ROOT = os.path.join(tempfile.gettempdir(), "agentic-manager")
 DESCRIPTION = "description.md"
 # The folder beside a skill's runs that holds the examples the user kept.
 KEPT_EXAMPLES = "_examples"
-# Inside a run's folder, the folders that support its document: what the
-# sources gave, as they gave it, and the charts the document shows. Their _
+# Inside a run's folder, the folders that support its document: what it is
+# built from but doesn't read directly, such as what the sources gave and a
+# subagent's synopsis of a source, and the charts the document shows. Their _
 # sets them apart from the document and the files the run reads and writes;
 # unlike a _ folder beside the runs, they belong to the run.
 RAW_DIR = "_raw"
@@ -97,7 +98,7 @@ def folder_name(value):
 
 def day_folder(subject, day):
     """The name of a subject's folder for a day, <subject>_<YY-MM-DD>, such as
-    PROJ_Sprint_3_26-03-16; `day` is a date or a datetime."""
+    PROJ-Sprint-3_26-03-16; `day` is a date or a datetime."""
     return f"{subject}_{day.strftime(DAY_FORMAT)}"
 
 

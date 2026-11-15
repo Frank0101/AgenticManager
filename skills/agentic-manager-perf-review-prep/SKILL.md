@@ -2,7 +2,7 @@
 name: agentic-manager-perf-review-prep
 disable-model-invocation: true
 description: Helps a manager prepare a performance review of one person over a review period, from the evidence of their work in Jira, GitHub, the documentation, the team's messages and the manager's own notes. In development; not ready to use.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/build_data.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/build_data.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *)
 ---
 
 # Performance Review Prep
@@ -133,11 +133,11 @@ The person's work in Jira, GitHub and Notion, in the period. Like step 6, it is 
 
 ## 8. Finish
 
-Once step 7 is done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py --prep <prep>`: it writes the report, `<Person>_Review_Prep.md`, and its charts from `data.json`, with no judgment, and checks them. If its `problems` aren't empty, stop and tell the manager what they say.
+Once steps 6 and 7 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py --prep <prep>`: it writes the report, `<Person>_Review_Prep.md`, and its charts from `data.json`, with no judgment, and checks the whole prep. If its `problems` aren't empty, fix what each names by running again the step that writes that file, then run it again; if you can't, stop and tell the manager what they say.
 
 ## 9. Tell the manager
 
-First check the prep with `python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py --prep <prep>`. If it fails, fix what it names, by running again the step that writes that file, and check again. Once it passes, say the prep is ready, with a Markdown link to its report, and that the rest of the report, from what else was gathered, isn't built yet. If step 1's `temporary` is `true`, add that the folder is temporary and setting `output.root` in the config keeps preps.
+Say the prep is ready, with a Markdown link to its report, and that the rest of the report, from what else was gathered, isn't built yet. If step 1's `temporary` is `true`, add that the folder is temporary and setting `output.root` in the config keeps preps.
 
 ## Summaries
 

@@ -17,8 +17,8 @@ from datetime import datetime, timezone
 
 from common import (CHANGELOGS_DIR, COMMENTS_DIR, META_FILE, PARENTS_FILE, PREVIOUS_SPRINT_FILE, PULL_REQUESTS_FILE,
                     PUNTED_ISSUES_FILE, RAW_DIR, REPORTS_FOLDER, SPRINT_FILE, SPRINT_ISSUES_FILE,
-                    SPRINT_REPORT_FILE, STATUSES_FILE, GH_UNAVAILABLE, GITHUB_FAILED, Context, JiraClient, as_of,
-                    blocker_candidates, clear_folder, day_folder, gather, gh_available, history_fields, nested, output_folder, parse_ts,
+                    SPRINT_REPORT_FILE, STATUSES_FILE, GITHUB_FAILED, Context, JiraClient, as_of,
+                    blocker_candidates, clear_folder, day_folder, gather, require_gh, history_fields, nested, output_folder, parse_ts,
                     project_of, pulls_by_ticket, read_events, report_label, report_timezone,
                     standard_issues, status_categories, stops_on_failure, ticket_events, write_json)
 
@@ -182,9 +182,8 @@ def main():
     args = parse_args()
     # GitHub is required: without it every ticket would seem to have no pull
     # requests, and the report's status checks would pass by finding none.
-    if not gh_available():
-        raise SystemExit(f"{GH_UNAVAILABLE}, and the report needs GitHub: install gh and enable the "
-                         "github-cli source, then run it again")
+    require_gh(subprocess.run, "the tickets' pull requests are read",
+               "prepare_report.py")
     with stops_on_failure(NO_REPORT):
         client = JiraClient()
         profile = client.whoami()

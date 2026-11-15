@@ -13,7 +13,7 @@ import re
 import subprocess
 import sys
 
-from common import (GH_UNAVAILABLE, PROJECT_KEY, PULLS_UNREAD, JiraClient, pull_parts, browse_url, gather, gh_available, gh_found, nested, plain_text,
+from common import (PROJECT_KEY, require_gh, PULLS_UNREAD, JiraClient, pull_parts, browse_url, gather, gh_available, gh_found, nested, plain_text,
                     pulls_by_ticket, stops_on_failure)
 
 FIELDS = ["summary", "status", "issuetype", "parent", "created", "updated", "resolutiondate",
@@ -299,9 +299,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     with stops_on_failure():
         if args.command == "pr":
-            if not gh_available():
-                raise SystemExit(
-                    f"{GH_UNAVAILABLE}: a pull request's discussion is read with it")
+            require_gh(subprocess.run,
+                       "a pull request's discussion is read", "tickets.py pr")
             print("\n\n".join(gather(args.urls, pr_discussion)))
             return
         client = JiraClient()

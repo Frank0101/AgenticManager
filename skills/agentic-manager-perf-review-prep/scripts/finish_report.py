@@ -1,7 +1,8 @@
-"""Finishes a prep's report from data.json: writes the report and draws its charts, then checks them.
+"""Finishes a prep's report from data.json: writes the report and draws its charts, then checks the whole prep.
 
 The one command of the step: each part is a module of its own, the report
-make_report.py's, the charts make_charts.py's and the check check_report.py's,
+make_report.py's, the charts make_charts.py's and the check check_prep.py's,
+which reads back every file of the prep, the report as check_report.py does,
 and this script runs them in order, so each does one thing. It prints only
 what needs attention.
 """
@@ -9,27 +10,29 @@ import argparse
 import json
 import os
 
-from check_report import report_problems
-from common import CHARTS_DIR, DATA, PERSON, prep_dir, read_json, stops_on_failure
+from check_prep import check_prep
+from common import DATA, PERSON, prep_dir, read_json, stops_on_failure
 from make_charts import write_charts
 from make_report import write_report
 
 
 def finish(prep):
     """Write the prep `prep`'s report and charts from data.json, then check
-    them; returns {report, problems}, the report's path and what the check
-    found."""
+    the whole prep; returns {report, problems}, the report's path and what
+    the check found."""
     folder = prep_dir(prep)
     person, data = read_json(os.path.join(folder, PERSON)), read_json(
         os.path.join(folder, DATA))
     write_charts(prep, data)
-    path, report = write_report(prep, person, data)
-    return {"report": path, "problems": report_problems(report, data, os.listdir(os.path.join(folder, CHARTS_DIR)))}
+    path = write_report(prep, person, data)
+    return {"report": path, "problems": check_prep(prep)["errors"]}
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Write the prep's report, <Person>_Review_Prep.md, and its charts from data.json, then check them.",
+        description="Write the prep's report, <Person>_Review_Prep.md, and its charts from data.json, then check "
+        "the whole prep: that its folder holds only the prep's files, each following the rules it was written by, "
+        "and that the report shows data.json.",
         epilog="Prints one line of JSON: report, the report's path, and problems, what the check found, "
         "empty when it passes. Exits 1 when it finds any.")
     parser.add_argument("--prep", required=True,

@@ -48,7 +48,7 @@ def init(topic, today=None, run=subprocess.run):
                          "tracker and the documentation: enable a source for each in the config, as "
                          "check_config.py shows, then run investigate.py start again")
     if GITHUB_CLI in sources["source_control"]:
-        require_gh(run, "the code is read")
+        require_gh(run, "the code is read", "investigate.py start")
     folder, temporary = output_folder(FOLDER_NAME)
     relative = day_folder(topic, today or date.today())
     path = os.path.join(folder, relative)

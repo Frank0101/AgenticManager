@@ -22,8 +22,8 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import common  # noqa: E402
 import prepare_report  # noqa: E402
 
-REPORT_DIR = "/out/jira-sprint-reports/PROJ_Sprint_7_26-03-16"
-FETCHED = {"sprint_id": 7, "label": "PROJ_Sprint_7",
+REPORT_DIR = "/out/jira-sprint-reports/PROJ-Sprint-7_26-03-16"
+FETCHED = {"sprint_id": 7, "label": "PROJ-Sprint-7",
            "report_dir": REPORT_DIR, "temporary": False}
 
 
@@ -79,7 +79,7 @@ class MainTest(unittest.TestCase):
         # path for output_file.py; the build's summary goes to stderr.
         self.assertEqual(len(out.splitlines()), 1)
         self.assertEqual(json.loads(out), {**FETCHED, "brief": os.path.join(REPORT_DIR, "brief.json"),
-                                           "content_path": "PROJ_Sprint_7_26-03-16/content.json"})
+                                           "content_path": "PROJ-Sprint-7_26-03-16/content.json"})
         self.assertEqual(err, "wrote data.json\n")
 
 

@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from check_deck import read_page
-from common import SLIDE_HEIGHT, SLIDE_WIDTH, deck_dir, deck_file
+from common import FOLDER_NAME, SLIDE_HEIGHT, SLIDE_WIDTH, clear_folder, deck_dir, deck_file, work_folder
 
 # Where Chrome is installed by default on macOS and Windows; on Linux, and
 # anywhere it is on the PATH, it is found by name.
@@ -42,7 +42,8 @@ PAGE_TIME_MS = 5000
 
 def snap(deck):
     """(sheet, pictures): the sheet of the deck `deck` and the picture of every
-    slide, in order, in a new temporary folder; exits if Chrome isn't
+    slide, in order, in the deck's working folder, replaced on every run;
+    exits if Chrome isn't
     installed or a picture fails."""
     chrome = find_chrome()
     if not chrome:
@@ -53,7 +54,9 @@ def snap(deck):
     # markup can't add one.
     reader, page = read_page(os.path.join(folder, deck_file(deck)))
     count = reader.slides
-    out = tempfile.mkdtemp(prefix="slide-pictures-")
+    out = work_folder(FOLDER_NAME, deck, "pictures")
+    clear_folder(out)
+    os.makedirs(out)
 
     def shoot(name, text, size=(SLIDE_WIDTH, SLIDE_HEIGHT)):
         source, picture = os.path.join(
@@ -138,7 +141,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Picture each slide of the deck with headless Chrome. Prints one line of JSON: the "
         "`sheet`, every slide numbered at a third of its size, then `slides`, the picture of each slide in "
-        "order, all in a new temporary folder. Exits 1 if Chrome makes no picture, saying to skip the check "
+        "order, all in the deck's working folder in the system temp folder, replaced on every run. Exits 1 if Chrome makes no picture, saying to skip the check "
         "when it isn't installed or takes over 60 seconds on a picture.")
     parser.add_argument("--deck", required=True,
                         help="the deck's folder, <Name>_<YY-MM-DD>, inside slides-decks")

@@ -29,7 +29,7 @@ SCRIPTS = os.path.join(REPO_ROOT, "skills",
 sys.path.insert(0, TEST_DIR)
 import sprint_fixture as fixture  # noqa: E402
 
-REPORT = "PROJ_Sprint_7_Sprint_Report.md"
+REPORT = "PROJ-Sprint-7_Sprint_Report.md"
 CHARTS = ("_charts/outcome-tickets.svg",
           "_charts/outcome-pts.svg", "_charts/burndown.svg")
 
@@ -40,7 +40,7 @@ class ReportTest(unittest.TestCase):
         self.home = os.path.join(self.tmp.name, "home")
         root = os.path.join(self.tmp.name, "output")
         self.dir = os.path.join(root, "jira-sprint-reports",
-                                "PROJ_Sprint_7_26-03-16")
+                                "PROJ-Sprint-7_26-03-16")
         config = os.path.join(self.home, ".config",
                               "agentic-manager", "config.json")
         os.makedirs(os.path.dirname(config))
