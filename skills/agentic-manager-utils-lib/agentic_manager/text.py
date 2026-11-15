@@ -1,4 +1,4 @@
-"""Helpers for Markdown text, shared by every skill: word counts, names, links, the document a link reaches, headings, fenced code, and the dates, numbers and plural words reports show.
+"""Helpers for Markdown text, shared by every skill: word counts, names, links, the document a link reaches, headings, fenced code, tables, and the dates, numbers and plural words reports show.
 
 A word count counts words as a reader would, the same in every skill: a link
 as its text, and only tokens with a letter or a digit ("don't" and "3.14" are
@@ -44,6 +44,9 @@ HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$", re.M)
 # A line that opens or closes fenced code: its marker, three or more backticks
 # or tildes, and what follows it, such as the language.
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)", re.M)
+# A pipe that separates table cells: one escaped as \| stays inside its cell,
+# so a table cell's text, kept on one line, never splits its row.
+CELL_PIPE = re.compile(r"(?<!\\)\|")
 
 
 def word_count(text):
@@ -223,3 +226,24 @@ def number(value):
 def plural(count, one, many):
     """The word for `count` things: `one` for exactly 1, else `many`."""
     return one if count == 1 else many
+
+
+def table(header, rows):
+    """A Markdown table of `header` and `rows`, each cell on one line, its
+    runs of whitespace as one space, and its pipes escaped."""
+    lines = [table_row(header), table_row(["---"] * len(header))]
+    lines += [table_row([" ".join(str(cell).split()) for cell in row])
+              for row in rows]
+    return "\n".join(lines)
+
+
+def table_row(cells):
+    """A Markdown table row from its cells, each pipe in one escaped as \\|
+    unless it already is."""
+    return "| " + " | ".join(CELL_PIPE.sub(r"\\|", str(cell)) for cell in cells) + " |"
+
+
+def table_cells(line):
+    """The cells of the Markdown table row `line`, trimmed; a pipe escaped
+    as \\| stays inside its cell, read as |."""
+    return [cell.strip().replace("\\|", "|") for cell in CELL_PIPE.split(line.strip().strip("|"))]

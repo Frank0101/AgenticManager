@@ -50,9 +50,11 @@ WORK_ITEMS = {"jira": {"created": [{"key": "PROJ-13", "title": "Retire old billi
                                      "url": "https://acme.atlassian.net/browse/PROJ-12", "date": "2026-09-01",
                                      "points": 3}]},
               "github": {"opened": [{"repo": "acme/billing", "number": 1, "title": "Migrate billing",
-                                     "url": "https://github.com/acme/billing/pull/1", "date": "2026-08-28"}],
+                                     "url": "https://github.com/acme/billing/pull/1", "date": "2026-08-28",
+                                     "lines": 150, "files": 4}],
                          "merged": [{"repo": "acme/billing", "number": 1, "title": "Migrate billing",
-                                     "url": "https://github.com/acme/billing/pull/1", "date": "2026-09-01"}]},
+                                     "url": "https://github.com/acme/billing/pull/1", "date": "2026-09-01",
+                                     "lines": 150, "files": 4}]},
               "notion": {"created": [{"title": "Billing plan", "url": "https://www.notion.so/billing-plan",
                                       "path": "Engineering / Billing", "between": ["2026-08-10", "2026-08-16"]}]}}
 # Notion's searches for PERSON's period, 10/08/2026, a Monday, to
@@ -78,7 +80,8 @@ QUERY = {"opened": "is:pr author:janedoe created:2026-08-10..2026-11-10 org:acme
          "merged": "is:pr is:merged author:janedoe merged:2026-08-10..2026-11-10 org:acme"}
 PULL = {"number": 1, "title": "Migrate billing", "repository": {"nameWithOwner": "acme/billing"},
         "url": "https://github.com/acme/billing/pull/1", "createdAt": "2026-08-28T10:00:00Z",
-        "closedAt": "2026-09-01T10:00:00Z", "author": {"login": "janedoe"}, "updatedAt": "2026-09-01T10:00:00Z"}
+        "mergedAt": "2026-09-01T10:00:00Z", "additions": 120, "deletions": 30, "changedFiles": 4,
+        "author": {"login": "janedoe"}, "updatedAt": "2026-09-01T10:00:00Z"}
 POINTS = "customfield_10016"
 WORK_RAW = {"jira": {"start": "2026-08-10", "end": "2026-11-10", "base_url": JIRA_BASE, "points_fields": [POINTS],
                      "resolved_jql": JQL["resolved"], "created_jql": JQL["created"], "parents": [],
@@ -104,30 +107,76 @@ WEEKS = [[(monday := date(2026, 8, 10) + timedelta(weeks=n)).isoformat(),
 
 
 def weekly(*indexes):
-    """A week-by-week series over WEEKS, one item in each week of `indexes`."""
-    return [int(n in indexes) for n in range(len(WEEKS))]
+    """A week-by-week series over WEEKS, one item for each time a week's
+    index is in `indexes`."""
+    return [indexes.count(n) for n in range(len(WEEKS))]
 
 
 DATA = {"weeks": WEEKS,
         "jira": {**WORK_ITEMS["jira"], "counts": {"created": 1, "resolved": 1},
                  "epic_order": ["PROJ-1"],
-                 "created_by_week": {"total": weekly(1), "epics": {}, "no_epic": weekly(1)},
-                 "resolved_by_week": {"total": weekly(3), "epics": {"PROJ-1": weekly(3)}, "no_epic": weekly()},
-                 "points_by_epic": [{"points": 3, "issues": 1, "epics": {"PROJ-1": 1}, "no_epic": 0}],
+                 "created_by_week": {"total": weekly(1), "epics": {}, "other": weekly(), "no_epic": weekly(1)},
+                 "resolved_by_week": {"total": weekly(3), "epics": {"PROJ-1": weekly(3)}, "other": weekly(),
+                                      "no_epic": weekly()},
+                 "points_by_epic": [{"points": 3, "issues": 1, "epics": {"PROJ-1": 1}, "other": 0, "no_epic": 0}],
                  "created_by_type": [{"type": "Task", "issues": 1}],
                  "resolved_by_type": [{"type": "Story", "issues": 1}],
                  "resolved_by_epic": {"epics": [{"key": "PROJ-1", "title": "Billing",
-                                                 "url": f"{JIRA_BASE}/browse/PROJ-1", "issues": 1}], "no_epic": 0},
+                                                 "url": f"{JIRA_BASE}/browse/PROJ-1", "issues": 1}], "other": 0},
                  "focus": [{"key": "PROJ-1", "title": "Billing", "url": f"{JIRA_BASE}/browse/PROJ-1", "issues": 1}],
                  "resolved_points": {"total": 3, "estimated": 1, "average": 3.0},
                  "epic_search_urls": {"PROJ-1": f"{JIRA_BASE}/issues/?jql={quote(JQL['resolved'] + ' AND (parent = PROJ-1)')}"},
+                 "no_epic_search_url": None,
                  "resolved_points_search_url":
                      f"{JIRA_BASE}/issues/?jql={quote(JQL['resolved'] + ' AND (cf[10016] is not EMPTY)')}",
                  **{f"{name}_search_url": f"{JIRA_BASE}/issues/?jql={quote(jql)}" for name, jql in JQL.items()}},
         "github": {**WORK_ITEMS["github"], "counts": {"opened": 1, "merged": 1},
+                   "merged_by_repo": {"repos": [{"repo": "acme/billing", "prs": 1}], "other": 0},
+                   "focus": [{"repo": "acme/billing", "prs": 1}], "repo_order": ["acme/billing"],
+                   "repo_counts": {"opened": 1, "merged": 1},
+                   "opened_by_week": {"total": weekly(2), "repos": {"acme/billing": weekly(2)}, "other": weekly()},
+                   "merged_by_week": {"total": weekly(3), "repos": {"acme/billing": weekly(3)}, "other": weekly()},
+                   "merged_lines": {"median": 150},
+                   # 150 lines: 10 ** 2.17, in the ninth of twelve bins, four
+                   # to each power of ten up to 1,000.
+                   "lines_distribution": {"total": [int(n == 8) for n in range(12)],
+                                          "repos": {"acme/billing": [int(n == 8) for n in range(12)]},
+                                          "other": [0] * 12},
                    **{f"{name}_search_url": f"https://github.com/search?q={quote(query)}&type=pullrequests"
-                      for name, query in QUERY.items()}},
+                      for name, query in QUERY.items()}, "merged_lines_search_url": None,
+                   "repo_search_urls": {"acme/billing": "https://github.com/search?q="
+                                        f"{quote(QUERY['merged'].replace(' org:acme', '') + ' repo:acme/billing')}"
+                                        "&type=pullrequests"}},
         "notion": {**WORK_ITEMS["notion"], "counts": {"created": 1}}}
+# Two more Jira models, worked out by hand, each changing DATA's resolved
+# issues and the facts they give. In the first, the issues with no epic hold
+# the most, so the main focus lists them before the epic: PROJ-12 and PROJ-14
+# in PROJ-1, PROJ-15 to PROJ-17 in none, all resolved in the fourth week, and
+# 80% of the five is four, which takes both.
+BILLING = WORK_ITEMS["jira"]["resolved"][0]
+NO_EPIC_FIRST = [BILLING, {**BILLING, "key": "PROJ-14", "url": f"{JIRA_BASE}/browse/PROJ-14", "points": None},
+                 *({**BILLING, "key": f"PROJ-{n}", "type": "Task", "epic": None, "url": f"{JIRA_BASE}/browse/PROJ-{n}",
+                    "points": None} for n in (15, 16, 17))]
+DATA_NO_EPIC_FIRST = {**DATA, "jira": {
+    **DATA["jira"], "resolved": NO_EPIC_FIRST, "counts": {"created": 1, "resolved": 5},
+    "resolved_by_week": {"total": weekly(3, 3, 3, 3, 3), "epics": {"PROJ-1": weekly(3, 3)}, "other": weekly(),
+                         "no_epic": weekly(3, 3, 3)},
+    "resolved_by_type": [{"type": "Task", "issues": 3}, {"type": "Story", "issues": 2}],
+    "resolved_by_epic": {"epics": [{"key": None, "title": None, "url": None, "issues": 3},
+                                   {"key": "PROJ-1", "title": "Billing", "url": f"{JIRA_BASE}/browse/PROJ-1",
+                                    "issues": 2}], "other": 0},
+    "focus": [{"key": None, "title": None, "url": None, "issues": 3},
+              {"key": "PROJ-1", "title": "Billing", "url": f"{JIRA_BASE}/browse/PROJ-1", "issues": 2}],
+    "no_epic_search_url": f"{JIRA_BASE}/issues/?jql={quote(JQL['resolved'] + ' AND key in (PROJ-15, PROJ-16, PROJ-17)')}"}}
+# In the second, no resolved issue has an epic, so the main focus lists their
+# project, and no epic is coloured.
+DATA_BY_PROJECT = {**DATA, "jira": {
+    **DATA["jira"], "resolved": [{**BILLING, "epic": None}], "epic_order": [],
+    "resolved_by_week": {"total": weekly(3), "epics": {}, "other": weekly(), "no_epic": weekly(3)},
+    "points_by_epic": [{"points": 3, "issues": 1, "epics": {}, "other": 0, "no_epic": 1}],
+    "resolved_by_epic": {"epics": [{"key": None, "title": None, "url": None, "issues": 1}], "other": 0},
+    "focus": [{"key": "PROJ", "title": None, "url": None, "issues": 1}], "epic_search_urls": {},
+    "no_epic_search_url": f"{JIRA_BASE}/issues/?jql={quote(JQL['resolved'] + ' AND key in (PROJ-12)')}"}}
 SLACK = {"going_well": [{"point": "Explained the outage's cause in the incident channel, and colleagues thanked them",
                          "values": ["Teamwork"],
                          "evidence": [{"date": "2026-09-03", "link": "https://acme.slack.com/archives/C1/p1"}]}],

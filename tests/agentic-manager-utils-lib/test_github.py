@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.join(
     REPO_ROOT, "skills", os.path.basename(TEST_DIR)))
 from agentic_manager import batch, github, retry  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from gh_fake import graphql_answer, is_graphql  # noqa: E402
+from gh_fake import graphql_answer, is_graphql, search_answer  # noqa: E402
 
 PR = "https://github.com/acme/api/pull/{}"
 
@@ -76,6 +76,50 @@ class GithubTest(unittest.TestCase):
                 else:
                     with self.assertRaisesRegex(SystemExit, re.escape(expected)):
                         github.require_gh(run, "the code is read", "fetch.py")
+
+    def test_search_pulls(self):
+        # Every page of a window's pull requests, by the date asked for; a
+        # window holding more than a search returns split in halves until
+        # none does.
+        pulls = [{"url": PR.format(n), "createdAt": f"2026-09-0{1 + n % 2}T10:00:00Z", "mergedAt": None}
+                 for n in range(github.SEARCH_LIMIT + 50)]
+        calls = []
+
+        def run(command, **kwargs):
+            calls.append(command)
+            return subprocess.CompletedProcess(command, *search_answer(command[1:], pulls))
+        found = github.search_pulls("is:pr author:janedoe org:acme", "created", ("2026-09-01", "2026-09-30"),
+                                    "url createdAt", run)
+        self.assertEqual(sorted(pull["url"] for pull in found), sorted(
+            pull["url"] for pull in pulls))
+        windows = [next(arg for arg in call if arg.startswith(
+            "q=")).split("created:")[1] for call in calls]
+        self.assertEqual((windows[0], "2026-09-01..2026-09-01" in windows),
+                         ("2026-09-01..2026-09-30", True))
+        self.assertEqual(github.dated_query("is:pr author:janedoe", "merged", ("2026-09-01", "2026-09-30")),
+                         "is:pr author:janedoe merged:2026-09-01..2026-09-30")
+        # A single day holding more stops, as some would be missing; so does
+        # a page GitHub could give only part of, such as one holding a pull
+        # request in an organisation that wants a sign-in gh lacks.
+        crowded = [{**pull, "createdAt": "2026-09-01T10:00:00Z"}
+                   for pull in pulls]
+        partial = {"data": {"search": {"issueCount": 2, "pageInfo": {"hasNextPage": False, "endCursor": "2"},
+                                       "nodes": [{"url": PR.format(1)}, None]}},
+                   "errors": [{"type": "FORBIDDEN", "path": ["search", "nodes", 1],
+                               "message": "Resource protected by organization SAML enforcement."}]}
+        cases = [("a day over the limit", lambda command, **kwargs: subprocess.CompletedProcess(
+            command, *search_answer(command[1:], crowded)), "more than the 1000 it returns"),
+            ("a partial page", lambda command, **kwargs: subprocess.CompletedProcess(
+                command, 1, json.dumps(partial), "gh: Resource protected"), "SAML enforcement"),
+            ("no search", answering({"data": {}}), "got no answer")]
+        for name, runner, expected in cases:
+            with self.subTest(name), self.assertRaisesRegex(github.GhError, expected):
+                github.search_pulls(
+                    "is:pr", "created", ("2026-09-01", "2026-09-01"), "url", runner)
+
+    def test_selection(self):
+        self.assertEqual(github.selection(["url", "repository.nameWithOwner", "author.login", "repository.url"]),
+                         "url repository { nameWithOwner url } author { login }")
 
     def test_pull_search_url(self):
         self.assertEqual(github.pull_search_url("is:pr author:janedoe org:acme"),
@@ -212,14 +256,17 @@ class GithubTest(unittest.TestCase):
     def test_rate_limits(self):
         # GitHub's secondary rate limit is waited out, 60, 120 then 240 s,
         # then raised; its primary one, hourly, is raised at once, with the
-        # advice to run again later. Both gh_json() and the GraphQL call.
+        # advice to run again later. gh_json() and both GraphQL calls.
         # name: (gh's message, the waits)
         secondary = "HTTP 403: You have exceeded a secondary rate limit. Please wait a few minutes."
         primary = "HTTP 403: API rate limit exceeded for user ID 1."
         cases = [("secondary", secondary, [60, 120, 240]),
                  ("primary", primary, [])]
         calls = [("gh_json", lambda run: github.gh_json(["search", "prs"], run)),
-                 ("graphql", lambda run: github.pull_events([PR.format(1)], run))]
+                 ("graphql", lambda run: github.pull_events(
+                     [PR.format(1)], run)),
+                 ("search", lambda run: github.search_pulls("is:pr", "created", ("2026-09-01", "2026-09-01"),
+                                                            "url", run))]
         for (name, message, waits), (call, make) in [(case, c) for case in cases for c in calls]:
             with self.subTest(name, call=call), mock.patch.object(retry.time, "sleep") as sleep:
                 run = Runner(code=1, stderr=message)
@@ -428,11 +475,12 @@ class GithubTest(unittest.TestCase):
                                  (["api", "graphql"], f"{unsafe}: not a pull request's address gh can be asked about"))
                 self.assertEqual(run.calls, [])
 
-    def test_events_query(self):
+    def test_pulls_query(self):
         # Aliases r<i> for each repository and p<j> for each pull request;
-        # owner, name and number only as variables, never in the query.
-        query, fields, aliases = github._events_query(
-            [PR.format(41), "https://github.com/acme/web/pull/7", PR.format(42)])
+        # owner, name and number only as variables, never in the query,
+        # which reads the fields asked for.
+        query, fields, aliases = github._pulls_query(
+            [PR.format(41), "https://github.com/acme/web/pull/7", PR.format(42)], github.EVENT_FIELDS)
         self.assertEqual(query, "\n".join([
             "query($o0: String!, $n0: String!, $p0: Int!, $p1: Int!, $o1: String!, $n1: String!, $p2: Int!) {",
             "r0: repository(owner: $o0, name: $n0) { p0: pullRequest(number: $p0) { ...pull } "

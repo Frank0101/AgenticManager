@@ -1,6 +1,6 @@
 """GitHub through its CLI, gh, shared by every skill: whether it can be used,
-its JSON answers, when pull requests were opened, merged and closed, and what to do
-when gh fails.
+its JSON answers, the search of pull requests and the fields of each, such as
+when it was opened, merged and closed, and what to do when gh fails.
 
 gh is the user's `github-cli` source, used only when enabled, and signs in
 itself: no setting is read here. Every call takes `run`, which runs the
@@ -8,6 +8,7 @@ command, so a test answers for gh and nothing reaches GitHub. As failures.py
 sets out, GitHub saying a thing isn't there is an answer, and gh giving none
 a failure, tried again as retry.py sets out and then raised as GhError.
 """
+from datetime import date, timedelta
 import json
 import re
 import shutil
@@ -67,10 +68,17 @@ GH_BROKEN = ("Check that gh works (gh auth status) and run it again, or disable 
              "without GitHub.")
 # Why gh_available() is false, for a skill's message about what it skipped.
 GH_UNAVAILABLE = "gh isn't available or github-cli isn't enabled"
-# The most organisations and commits one call reads: a person is found among
-# the authors of the first page of a commit search, so how many commits each
-# wrote isn't known, and isn't given.
+# The most organisations, commits or pull requests one call reads: a person
+# is found among the authors of the first page of a commit search, so how
+# many commits each wrote isn't known, and isn't given; the pull request
+# search reads a page at a time.
 PAGE_SIZE = 100
+# The most pull requests GitHub's search returns for one query, however many
+# it finds; issueCount says how many it found.
+SEARCH_LIMIT = 1000
+SEARCH_QUERY = ("query($q: String!, $after: String) {{ search(query: $q, type: ISSUE, first: %d, after: $after) "
+                "{{ issueCount pageInfo {{ hasNextPage endCursor }} nodes {{ ... on PullRequest {{ {fields} }} }} }} }}"
+                % PAGE_SIZE)
 
 
 def require_gh(run, what, again):
@@ -144,18 +152,93 @@ def profile_name(login, run=subprocess.run):
     return gh_json(["api", f"users/{login}"], run).get("name") or None
 
 
+def search_pulls(terms, date_field, window, fields, run=subprocess.run):
+    """The pull requests GitHub's search finds for `terms`, such as "is:pr
+    author:janedoe org:acme", dated by `date_field`, created or merged,
+    within `window`, (first, last) as YYYY-MM-DD, each with its `fields`, as
+    selection() writes them. Read through GraphQL, a page of PAGE_SIZE a
+    call, which brings each one's fields with it and meets none of the REST
+    search's waits. The search returns at most SEARCH_LIMIT, so a window
+    holding more is split in halves, each searched the same way; raises
+    GhError when a single day holds more, as some would be missing."""
+    first, last = window
+    query, found, after = dated_query(terms, date_field, window), [], None
+    while True:
+        page = _search_page(query, fields, after, run)
+        if page["issueCount"] > SEARCH_LIMIT:
+            break
+        found += page["nodes"]
+        if not page["pageInfo"]["hasNextPage"]:
+            return found
+        after = page["pageInfo"]["endCursor"]
+    if first == last:
+        raise GhError(GRAPHQL, f"the search {query!r} finds {page['issueCount']} pull requests on {first}, more "
+                      f"than the {SEARCH_LIMIT} it returns, so some would be missing")
+    start = date.fromisoformat(first)
+    middle = start + (date.fromisoformat(last) - start) // 2
+    halves = [search_pulls(terms, date_field, (first, middle.isoformat()), fields, run),
+              search_pulls(terms, date_field, ((middle + timedelta(days=1)).isoformat(), last), fields, run)]
+    return halves[0] + halves[1]
+
+
+def dated_query(terms, date_field, window):
+    """GitHub's search query of `terms` dated by `date_field` within
+    `window`, (first, last) as YYYY-MM-DD, such as "is:pr author:janedoe
+    created:2026-07-01..2026-09-30": the one search_pulls() runs, which a
+    skill links to for the same results."""
+    return f"{terms} {date_field}:{window[0]}..{window[1]}"
+
+
+def selection(paths):
+    """The GraphQL selection of the fields at `paths`, dotted names such as
+    "repository.nameWithOwner": "url repository { nameWithOwner }"."""
+    groups = {}
+    for path in paths:
+        head, _, rest = path.partition(".")
+        groups.setdefault(head, [])
+        if rest:
+            groups[head].append(rest)
+    return " ".join(f"{head} {{ {selection(rest)} }}" if rest else head for head, rest in groups.items())
+
+
+def _search_page(query, fields, after, run):
+    """One page of GitHub's search of pull requests for `query`, after the
+    cursor `after`: {issueCount, pageInfo, nodes}; raises GhError when gh
+    answers no search, or GitHub couldn't give some of it, such as a pull
+    request in an organisation that wants a sign-in gh lacks: a page
+    missing some would pass for a whole one."""
+    args = [*GRAPHQL, "-f", f"query={SEARCH_QUERY.format(fields=fields)}", "-f", f"q={query}",
+            *(["-f", f"after={after}"] if after else [])]
+    answer = _graphql(args, run)
+    if errors := [error for error in answer.get("errors") or [] if isinstance(error, dict)]:
+        raise GhError(
+            GRAPHQL, f"the search {query!r}: {errors[0].get('message') or 'GitHub gave no reason'}")
+    page = nested(answer, ["data", "search"])
+    if not isinstance(page, dict):
+        raise GhError(GRAPHQL, f"the search {query!r} got no answer")
+    return page
+
+
 def pull_events(urls, run=subprocess.run):
     """(events, gone) of the pull requests at `urls`: events as {url: {url,
     state, createdAt, mergedAt, closedAt}}, when each was opened and, if it
     was, merged and closed (else None), with state OPEN, CLOSED or MERGED;
-    and gone as {url: GitHub's words} of those GitHub says don't exist, in the order of
-    `urls`. Raises GhError for any other that gh couldn't read, such as one
-    in a repository GitHub can't find (see _batch_events()) or a URL whose
-    parts aren't safe to ask about. Read in a GraphQL call for each batch
-    (batch.py) of one host's pull requests, as a call per pull request spent
-    hundreds of requests of a sprint's hourly limit: each is a single object,
-    not a connection, so a call costs one point of GraphQL's hourly 5,000 and
-    stays far below its node limit."""
+    and gone as pull_fields() gives it."""
+    return pull_fields(urls, EVENT_FIELDS, run)
+
+
+def pull_fields(urls, fields, run=subprocess.run):
+    """(found, gone) of the pull requests at `urls`: found as {url: its
+    `fields`}, GraphQL's names of a pull request's fields, such as "url
+    additions deletions"; and gone as {url: GitHub's words} of those GitHub
+    says don't exist, in the order of `urls`. Raises GhError for any other
+    that gh couldn't read, such as one in a repository GitHub can't find
+    (see _batch_pulls()) or a URL whose parts aren't safe to ask about. Read
+    in a GraphQL call for each batch (batch.py) of one host's pull requests,
+    as a call per pull request spent hundreds of requests of a sprint's
+    hourly limit: each is a single object, not a connection, so a call costs
+    one point of GraphQL's hourly 5,000 and stays far below its node
+    limit."""
     urls = list(dict.fromkeys(urls))
     hosts = {}
     for url in urls:
@@ -165,9 +248,9 @@ def pull_events(urls, run=subprocess.run):
         hosts.setdefault(parts["host"], []).append(url)
     calls = [(host, chunk) for host, found in hosts.items()
              for chunk in batches(found)]
-    events, missing = {}, {}
-    for answered, unread in gather(calls, lambda call: _batch_events(call[0], call[1], run)):
-        events.update(answered)
+    found, missing = {}, {}
+    for answered, unread in gather(calls, lambda call: _batch_pulls(call[0], call[1], fields, run)):
+        found.update(answered)
         missing.update(unread)
     gone = {}
     for url in urls:
@@ -175,7 +258,7 @@ def pull_events(urls, run=subprocess.run):
             if not failed.not_found:
                 raise failed
             gone[url] = failed.message
-    return events, gone
+    return found, gone
 
 
 def pull_parts(url):
@@ -184,8 +267,8 @@ def pull_parts(url):
     return PULL_URL.fullmatch(url or "")
 
 
-def _batch_events(host, urls, run=subprocess.run):
-    """({url: its events}, {url: GhError}) of the pull requests at `urls`, all
+def _batch_pulls(host, urls, fields, run=subprocess.run):
+    """({url: its `fields`}, {url: GhError}) of the pull requests at `urls`, all
     on `host`, read in one GraphQL call: a repository by alias r<i>, its pull
     requests by p<j>, each one's owner, name and number a variable, never in
     the query's text. Raises GhError when gh answers nothing for the call as
@@ -195,31 +278,30 @@ def _batch_events(host, urls, run=subprocess.run):
     it can't find isn't an answer: it is also what an account without access
     gets, and gh signed in to the wrong account would then drop every pull
     request of the repository."""
-    query, fields, aliases = _events_query(urls)
+    query, variables, aliases = _pulls_query(urls, fields)
     args = [*GRAPHQL, *(["--hostname", host] if host !=
-                        DEFAULT_HOST else []), "-f", f"query={query}", *fields]
-    answer = retried(lambda: _graphql_once(
-        args, run), passing, note, rate_wait)
+                        DEFAULT_HOST else []), "-f", f"query={query}", *variables]
+    answer = _graphql(args, run)
     errors: dict[tuple, dict] = {tuple(error.get("path") or ())[:2]: error
                                  for error in answer.get("errors") or [] if isinstance(error, dict)}
-    events, missing = {}, {}
+    found, missing = {}, {}
     for (repository, pull), url in aliases.items():
         node = nested(answer, ["data", repository, pull])
         if isinstance(node, dict):
-            events[url] = node
+            found[url] = node
         else:
             own = errors.get((repository, pull))
             message = ((own or errors.get((repository,)) or {}).get("message")
                        or "GitHub gave no answer for it")
             missing[url] = GhError(GRAPHQL, f"{url}: {message}",
                                    not_found=bool(own) and own.get("type") == NOT_FOUND)
-    return events, missing
+    return found, missing
 
 
-def _events_query(urls):
+def _pulls_query(urls, read):
     """(query, gh's field arguments, {(repository alias, pull alias): url})
-    that read the events of the pull requests at `urls`, grouped by
-    repository; pull_events() has checked every URL."""
+    that read the fields `read` of the pull requests at `urls`, grouped by
+    repository; pull_fields() has checked every URL."""
     repositories = {}
     for url in urls:
         parts = pull_parts(url)
@@ -240,7 +322,7 @@ def _events_query(urls):
         lines.append(
             f"r{i}: repository(owner: $o{i}, name: $n{i}) {{ {' '.join(reads)} }}")
     query = "\n".join([f"query({', '.join(declared)}) {{", *lines, "}",
-                       f"fragment pull on PullRequest {{ {EVENT_FIELDS} }}"])
+                       f"fragment pull on PullRequest {{ {read} }}"])
     return query, fields, aliases
 
 
@@ -279,6 +361,12 @@ def _gh_once(args, run):
         return json.loads(done.stdout)
     except ValueError:
         raise GhError(args, "answered something other than JSON")
+
+
+def _graphql(args, run):
+    """GitHub's answer to the GraphQL call `args`, tried again as gh_json()
+    tries a call: {data, errors}, as _graphql_once() gives it."""
+    return retried(lambda: _graphql_once(args, run), passing, note, rate_wait)
 
 
 def _graphql_once(args, run):

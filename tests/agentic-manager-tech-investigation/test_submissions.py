@@ -392,7 +392,7 @@ class SubmissionTest(unittest.TestCase):
         self.assertEqual(result["ids"], {"[[b1]]": "B01", "[[i1]]": "I01", "[[c1]]": "C01", "[[c2]]": "C02",
                                          "[[e1]]": "E01", "[[p1]]": "P01"})
         self.assertEqual(ledger.design_basis(
-            self.text().split("\n")), (1, 1, 0, 0))
+            self.text().split("\n")), (1, 1, 0, 0, 2))
         # Submitted again with its own IDs, a row is kept; one left out is removed,
         # and a new one takes a number never used.
         current = submissions.design_rows(self.text().split("\n"))

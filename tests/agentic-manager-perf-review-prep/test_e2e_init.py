@@ -61,15 +61,15 @@ TODAY = date.today()
 STAMP = f"{TODAY.isoformat()}T10:00:00Z"
 # The person's pull request, opened and merged in the period.
 PR = {"number": 7, "title": "Move invoices to the new billing service", "repository": {"nameWithOwner": "acme/billing"},
-      "url": "https://github.com/acme/billing/pull/7", "createdAt": STAMP, "closedAt": STAMP,
-      "author": {"login": "janedoe"}, "updatedAt": STAMP}
+      "url": "https://github.com/acme/billing/pull/7", "createdAt": STAMP, "mergedAt": STAMP,
+      "additions": 40, "deletions": 8, "changedFiles": 3, "author": {"login": "janedoe"}, "updatedAt": STAMP}
 # What the fake gh answers, by the words of each command: signed in, the
 # commit search by the Jira email, the login's profile, one organisation,
 # and the pull request to both of fetch_work.py's searches, those opened and
 # those merged in the period.
 GH_ANSWERS = {"auth status": {}, "api": {"items": [{"author": {"login": "janedoe"}}]},
               "api users/janedoe": {"name": "Jane Doe"}, "api user/orgs?per_page=100": [{"login": "acme"}],
-              "search prs": [PR]}
+              "search pulls": [PR]}
 EPIC = {"key": "PROJ-1", "fields": {"summary": "Billing migration",
                                     "issuetype": {"name": "Epic", "subtask": False}}}
 # The person's issues: one they resolved in the period, under the epic, and
@@ -274,7 +274,8 @@ class ScriptsTest(unittest.TestCase):
         self.assertEqual((work["jira"]["focus"], work["github"]["opened"]), (
             [{"key": "PROJ-1", "title": "Billing migration",
                 "url": f"{self.base_url}/browse/PROJ-1", "issues": 1}],
-            [{"repo": "acme/billing", "number": 7, "title": PR["title"], "url": PR["url"], "date": TODAY.isoformat()}]))
+            [{"repo": "acme/billing", "number": 7, "title": PR["title"], "url": PR["url"], "date": TODAY.isoformat(),
+              "lines": 48, "files": 3}]))
         # The report, from data.json: one resolved issue of 5 points, one
         # created, each linked to its search.
         made = self.run_ok(REPORT_SCRIPT, "--prep", prep)

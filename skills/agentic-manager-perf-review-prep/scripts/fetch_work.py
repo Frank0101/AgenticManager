@@ -12,21 +12,16 @@ import argparse
 import json
 import os
 import subprocess
-from datetime import date, timedelta
 
-from common import (JIRA_SOURCE, PARENT_FIELDS, PERSON, RAW_ITEM_FIELDS, fetched, JiraClient, gh_json, gh_orgs, period_days, prep_dir, read_json, require_gh,
-                    stops_on_failure, WORK_LISTS, write_raw_work)
+from common import (JIRA_SOURCE, PARENT_FIELDS, PERSON, RAW_ITEM_FIELDS, dated_query, fetched, JiraClient, gh_orgs, period_days,
+                    prep_dir, read_json, require_gh, search_pulls, selection, stops_on_failure, WORK_LISTS,
+                    write_raw_work)
 
 # What is fetched is what the raw files must hold, and each issue's or story's
 # parent, which gives its epic.
 JIRA_FIELDS = fetched(RAW_ITEM_FIELDS["jira"], "fields.") + ["parent"]
 STORY_FIELDS = fetched(PARENT_FIELDS, "fields.") + ["parent"]
-PR_FIELDS = ",".join(fetched(RAW_ITEM_FIELDS["github"]))
-SEARCH_LIMIT = 1000
-# Each list is one search over the whole period, so few searches run; one
-# that comes back full, at SEARCH_LIMIT, may be cut short, so its window is
-# split in halves and each searched again. GitHub's secondary rate limit,
-# which searches in quick succession meet, is the library's to wait out.
+PR_FIELDS = selection(RAW_ITEM_FIELDS["github"])
 OUTPUT = """Prints one line of JSON: raw, the raw files written, and how many items each
 list holds.
 
@@ -40,16 +35,19 @@ It writes each source's raw file in the prep's _raw:
            with their epics
   github   start and end; orgs, the organisations searched; opened and
            merged, the person's pull requests opened and merged in the
-           period, as gh's search returns them; and opened_query and
+           period, each with its size, as GitHub's search returns them; and opened_query and
            merged_query, the same searches on github.com
 """
 
 
 def fetch(prep, client=None, run=subprocess.run):
     """Fetch the work of the prep `prep`'s person and write it to its raw
-    files; returns where they are and how many items each list holds."""
+    files; returns where they are and how many items each list holds. Exits
+    before reading anything when gh can't be used, so Jira isn't read for
+    nothing."""
     folder = prep_dir(prep)
     person = read_json(os.path.join(folder, PERSON))
+    require_gh(run, "the person's pull requests are fetched", "fetch_work.py")
     raws = {"jira": jira_raw(client or JiraClient(), person["sources"][JIRA_SOURCE]["id"], person),
             "github": github_raw(person["sources"]["github-cli"]["id"], person, run)}
     return {"raw": [write_raw_work(prep, source, raw, period_days(person)) for source, raw in raws.items()],
@@ -86,43 +84,21 @@ def jira_raw(client, account, person):
 def github_raw(login, person, run=subprocess.run):
     """GitHub's raw file: the pull requests the account `login` opened and
     merged in the review's period in `person`, in the organisations gh
-    belongs to, with the same searches on github.com."""
-    require_gh(run, "the person's pull requests are fetched", "fetch_work.py")
-    period, window = (person["start"], person["end"]
-                      ), f'{person["start"]}..{person["end"]}'
+    belongs to, each with its size, with the same searches on github.com.
+    Each list is one search over the whole period, in every organisation at
+    once, through GraphQL, which brings each pull request's size with it;
+    the library splits a window holding more than a search returns."""
+    period = (person["start"], person["end"])
     orgs = gh_orgs(run)
-    in_orgs = [f"org:{org}" for org in orgs]
+    terms = {"opened": ["is:pr", f"author:{login}", *(f"org:{org}" for org in orgs)],
+             "merged": ["is:pr", "is:merged", f"author:{login}", *(f"org:{org}" for org in orgs)]}
     raw = {"start": person["start"], "end": person["end"], "orgs": orgs,
-           "opened_query": " ".join(["is:pr", f"author:{login}", f"created:{window}", *in_orgs]),
-           "merged_query": " ".join(["is:pr", "is:merged", f"author:{login}", f"merged:{window}", *in_orgs]),
-           "opened": [], "merged": []}
-    for org in orgs:
-        raw["opened"] += search(["--author", login],
-                                "--created", period, org, run)
-        raw["merged"] += search(["--author", login, "--merged"],
-                                "--merged-at", period, org, run)
+           "opened_query": dated_query(" ".join(terms["opened"]), "created", period),
+           "merged_query": dated_query(" ".join(terms["merged"]), "merged", period)}
+    for name, dated_by in (("opened", "created"), ("merged", "merged")):
+        raw[name] = search_pulls(
+            " ".join(terms[name]), dated_by, period, PR_FIELDS, run) if orgs else []
     return raw
-
-
-def search(flags, date_flag, window, org, run=subprocess.run):
-    """The pull requests `gh search prs` finds with `flags` in the
-    organisation `org`, dated by
-    `date_flag` within `window`, (first, last) as YYYY-MM-DD: a search that
-    comes back full is split in halves, each searched the same way, and
-    exits when a single day comes back full, as some would be missing."""
-    first, last = window
-    found = gh_json(["search", "prs", *flags, date_flag, f"{first}..{last}", "--owner", org,
-                     "--limit", str(SEARCH_LIMIT), "--json", PR_FIELDS], run)
-    if len(found) < SEARCH_LIMIT:
-        return found
-    if first == last:
-        raise SystemExit(f"gh search prs {' '.join(flags)} --owner {org} found {SEARCH_LIMIT} pull requests on "
-                         f"{first}, the most it returns, so some may be missing")
-    start = date.fromisoformat(first)
-    middle = start + (date.fromisoformat(last) - start) // 2
-    halves = [search(flags, date_flag, (first, middle.isoformat()), org, run),
-              search(flags, date_flag, ((middle + timedelta(days=1)).isoformat(), last), org, run)]
-    return list({pr["url"]: pr for half in halves for pr in half}.values())
 
 
 def main(argv=None):

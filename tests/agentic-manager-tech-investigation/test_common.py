@@ -64,13 +64,6 @@ class FoldersTest(unittest.TestCase):
                 common.topic_of(folder)
 
 
-class MarkdownTest(unittest.TestCase):
-    def test_table(self):
-        # Cells stay on one line, and a pipe in one is escaped once.
-        self.assertEqual(common.table(["A", "B"], [["x | y", "a\nb"], ["already \\| escaped", 3]]),
-                         "| A | B |\n| --- | --- |\n| x \\| y | a b |\n| already \\| escaped | 3 |")
-
-
 class ReferencesTest(unittest.TestCase):
     DEFINED = {"proj-1": "https://acme.example/browse/PROJ-1"}
 
@@ -567,6 +560,11 @@ class DesignTest(unittest.TestCase):
 
 
 class LedgerRulesTest(unittest.TestCase):
+    def test_table_cells_drop_id_anchors(self):
+        # A row's ID is read without the anchor citations link to.
+        row = common.table_row([common.anchored("F01"), "A claim, x \\| y."])
+        self.assertEqual(common.table_cells(row), ["F01", "A claim, x | y."])
+
     def test_id_order_and_cited_sources(self):
         # IDs sort by number; a source is cited by the findings whose Sources name it.
         self.assertEqual(sorted(["S10", "S2", "F01", "Q3"], key=common.id_order), [

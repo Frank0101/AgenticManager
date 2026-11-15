@@ -592,11 +592,11 @@ class DesignTest(LedgerCase):
     def test_the_design_records_what_it_was_built_from(self):
         self.assertIsNone(ledger.design_basis(self.lines()))
         self.records("F01", "F02", "G01")
-        self.assertEqual(ledger.basis(self.lines()), (2, 1, 0, 0))
+        self.assertEqual(ledger.basis(self.lines()), (2, 1, 0, 0, 0))
         self.change(lambda lines: ledger.set_design_basis(
             lines, ledger.basis(lines)))
-        self.assertEqual(ledger.design_basis(self.lines()), (2, 1, 0, 0))
-        self.assertIn("## System design\n\nBuilt from 2 findings, 1 gaps, 0 decisions and 0 scope boundaries.\n\n### Boundaries",
+        self.assertEqual(ledger.design_basis(self.lines()), (2, 1, 0, 0, 0))
+        self.assertIn("## System design\n\nBuilt from 2 findings, 1 gaps, 0 decisions, 0 scope boundaries and 0 closed questions.\n\n### Boundaries",
                       self.text())
         # Written again, the line is replaced, not added.
         self.records("F03")

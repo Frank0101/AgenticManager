@@ -33,10 +33,14 @@ LINKS_NOTE = "Link definitions: {} (Markdown previews hide them; open the file a
 SITES = {}
 # The line under the System design heading saying what the design was built
 # from: research and the user's scope decisions only ever add findings, gaps,
-# decisions and scope boundaries, so when their counts no longer match, the
-# design is out of date and is built again.
+# decisions and scope boundaries, and close questions, so when their counts no
+# longer match, the design is out of date and is built again. Closed questions
+# count because research can close one the design raised without adding a
+# record, blocked on a gap already held, answered by findings already there or
+# outside the scope, and the row waiting on it is drawn once it is closed.
 BASIS = re.compile(
-    r"^Built from (\d+) findings, (\d+) gaps, (\d+) decisions and (\d+) scope boundaries\.$")
+    r"^Built from (\d+) findings, (\d+) gaps, (\d+) decisions, (\d+) scope boundaries "
+    r"and (\d+) closed questions\.$")
 
 
 def brief(lines):
@@ -478,10 +482,15 @@ def scope_decisions(lines):
 
 
 def basis(lines):
-    """(findings, gaps, decisions, scope boundaries): how many the ledger
-    holds, what a design built now would be built from, as a scope decision
-    changes what it draws."""
-    return tuple(len(table_rows(lines, name)) for name in ("findings", "gaps", "decisions", "scope"))
+    """(findings, gaps, decisions, scope boundaries, closed questions): how
+    many the ledger holds, what a design built now would be built from, as a
+    scope decision changes what it draws and a closed question lets it draw
+    the row that waited on it. A closed question is completed or blocked."""
+    counts = [len(table_rows(lines, name))
+              for name in ("findings", "gaps", "decisions", "scope")]
+    closed = sum(len(table_rows(lines, name))
+                 for name in ("queue-completed", "queue-blocked"))
+    return (*counts, closed)
 
 
 def design_basis(lines):
@@ -496,9 +505,9 @@ def design_basis(lines):
 def set_design_basis(lines, counts):
     """Record under the System design heading what the design was built from."""
     start, end = section(lines, f"## {DESIGN}")
-    findings, gaps, decisions, scope = counts
-    lines[start + 1:end] = ["", f"Built from {findings} findings, {gaps} gaps, {decisions} decisions and {scope} "
-                            "scope boundaries.", ""]
+    findings, gaps, decisions, scope, closed = counts
+    lines[start + 1:end] = ["", f"Built from {findings} findings, {gaps} gaps, {decisions} decisions, {scope} "
+                            f"scope boundaries and {closed} closed questions.", ""]
 
 
 def load(relative):

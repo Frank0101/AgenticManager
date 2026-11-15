@@ -298,6 +298,8 @@ class CommonTest(unittest.TestCase):
                   "lacks fields.parent.fields.summary"),
                  ("a pull request without its author", "github", {"opened": [
                      {k: v for k, v in WORK_RAW["github"]["opened"][0].items() if k != "author"}]}, "lacks author"),
+                 ("a pull request without its size", "github", {"merged": [
+                     {k: v for k, v in WORK_RAW["github"]["merged"][0].items() if k != "deletions"}]}, "lacks deletions"),
                  ("another period", "github", {"start": "2026-08-01"},
                   "is for 2026-08-01 to 2026-11-10, not the period"),
                  ("no search", "jira", {
@@ -369,6 +371,14 @@ class CommonTest(unittest.TestCase):
         for name, prep, expected in cases:
             with self.subTest(name), self.assertRaisesRegex(SystemExit, expected):
                 common.prep_dir(prep)
+
+
+class RepoCodeTest(unittest.TestCase):
+    def test_repo_code(self):
+        # A letter by the repository's place in the order, none beyond it.
+        order = ["acme/api", "acme/web"]
+        self.assertEqual([common.repo_code(repo, order) for repo in ("acme/api", "acme/web", "acme/docs")],
+                         ["A", "B", None])
 
 
 if __name__ == "__main__":

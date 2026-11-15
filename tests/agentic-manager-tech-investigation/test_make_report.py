@@ -135,6 +135,10 @@ class MakeReportTest(unittest.TestCase):
              "architecture: needs today and target"),
             ("unknown section", lambda d: d["architecture"].update(next=stage(d)),
              "architecture.next: the report doesn't show this section"),
+            ("unknown top-level field", lambda d: d.update(summary=["A claim [F01](ledger:F01)."]),
+             "summary: the report doesn't show this section"),
+            ("unknown field in a stage", lambda d: stage(d, "target").update(risks=["A risk."]),
+             "architecture.target.risks: the report doesn't show this section"),
         ]
         for name, edit, expected in cases:
             with self.subTest(name):

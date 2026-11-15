@@ -19,7 +19,7 @@ sys.path.insert(0, LIB_DIR)
 from agentic_manager.commands import library_command, script_command, stdin_json  # noqa: E402,F401
 from agentic_manager.config import company_setting  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
-from agentic_manager.github import commit_authors, gh_json, gh_orgs, profile_name, pull_search_url, require_gh  # noqa: E402,F401
+from agentic_manager.github import commit_authors, gh_json, gh_orgs, profile_name, dated_query, pull_search_url, require_gh, search_pulls, selection  # noqa: E402,F401
 from agentic_manager.jira import JiraClient, browse_url, plain_text, project_of, search_url as jira_search_url  # noqa: E402,F401
 from agentic_manager.logseq import graph_path, links, notes, page_aliases  # noqa: E402,F401
 from agentic_manager.output_file import json_text, read_json, target, write_output_file  # noqa: E402,F401
@@ -27,7 +27,7 @@ from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
 from agentic_manager.output_folder import CHARTS_DIR, DAY_FOLDER, RAW_DIR, clear_folder, day_folder, document_name, folder_problem, folder_subject, output_folder, work_folder  # noqa: E402,F401
 from agentic_manager.period import add_period_arguments, days, period_problem, shown  # noqa: E402,F401
 from agentic_manager.svg import GRID, INK, MUTED, arc_segment, esc, legend, nice_step, svg, text, text_width  # noqa: E402,F401
-from agentic_manager.text import as_name, number, word_count  # noqa: E402,F401
+from agentic_manager.text import as_name, number, plural, word_count  # noqa: E402,F401
 
 # How to write a point and pick its values, with their examples, lives in the
 # protocol's shared part _point.md, the one place for them: the merges' tasks
@@ -131,15 +131,15 @@ WORK_LISTS = {"jira": ("created", "resolved"), "github": (
 # first of them it has.
 RAW_FIELDS = {"jira": ("start", "end", "base_url", "points_fields", "created_jql", "resolved_jql", "parents"),
               "github": ("start", "end", "orgs", "opened_query", "merged_query"), "notion": ()}
-# The fields of a raw item data.json is built from, and those kept only to
-# check whose it is: Jira's assignee, reporter and updated, GitHub's author
-# and updatedAt. A parent, which Jira leaves out when an issue has none,
+# The fields of a raw item data.json is built from, a pull request's size
+# included, and those kept only to check whose it is: Jira's assignee,
+# reporter and updated, GitHub's author and updatedAt. A parent, which Jira leaves out when an issue has none,
 # needs its own.
 RAW_ITEM_FIELDS = {"jira": ("key", "fields.summary", "fields.issuetype.name", "fields.status.name",
                             "fields.created", "fields.resolutiondate", "fields.assignee",
                             "fields.reporter", "fields.updated"),
-                   "github": ("number", "title", "repository.nameWithOwner", "url", "createdAt", "closedAt",
-                              "author", "updatedAt")}
+                   "github": ("number", "title", "repository.nameWithOwner", "url", "createdAt", "mergedAt",
+                              "additions", "deletions", "changedFiles", "author.login", "updatedAt")}
 PARENT_FIELDS = ("key", "fields.summary", "fields.issuetype.name")
 # Notion's search filters by creation date but returns only the last edit's,
 # so a created page is dated by the range of the search that found it,
@@ -151,6 +151,16 @@ PARENT_FIELDS = ("key", "fields.summary", "fields.issuetype.name")
 NOTION_LIMIT = 50
 # The share of the resolved issues the main focus covers.
 FOCUS_SHARE = 0.8
+# The most epics, or repositories, the charts give a colour of their own:
+# those holding the most work, the rest drawn together as others, so a
+# legend stays readable and no two share a colour.
+MAX_GROUPS = 9
+# A merged pull request's size is the lines it changed, which tell a large
+# change from a small one better than files, which a rename moves by the
+# hundred; their distribution is counted on a log scale, as sizes run from a
+# few lines to many thousands, in BINS_PER_DECADE bins for each power of
+# ten: fewer would blur its shape, more make it ragged.
+BINS_PER_DECADE = 4
 # What the person's Slack messages show, read by subagents a month each and
 # merged, every point with the days and links it rests on.
 SLACK = "slack.json"
@@ -164,9 +174,18 @@ REPORT_KIND = "Review_Prep.md"
 # its search, with what it is made of, and below it its chart.
 JIRA_CELLS = (("created", "jira_created_over_time.svg"), ("resolved", "jira_resolved_over_time.svg"),
               ("resolved_points", "jira_story_points.svg"))
+# Each cell's heading, which its chart's axis repeats.
+HEADINGS = {"created": "Issues created", "resolved": "Issues resolved", "resolved_points": "SP resolved",
+            "opened": "PRs created", "merged": "PRs merged", "merged_lines": "PRs size"}
 # The chart of the resolved issues by epic, beside the main focus.
 EPICS_CHART = "jira_epics.svg"
-CHART_FILES = (*(chart for _, chart in JIRA_CELLS), EPICS_CHART)
+# The GitHub cells of the report, in order, as the Jira ones, and the chart
+# of the merged pull requests by repository, beside their main focus.
+GITHUB_CELLS = (("opened", "github_opened_over_time.svg"), ("merged", "github_merged_over_time.svg"),
+                ("merged_lines", "github_pr_size.svg"))
+REPOS_CHART = "github_repos.svg"
+CHART_FILES = (*(chart for _, chart in JIRA_CELLS), EPICS_CHART, *(chart for _, chart in GITHUB_CELLS),
+               REPOS_CHART)
 
 
 def expected_files(prep):
@@ -320,7 +339,7 @@ def work_items(source, raw):
                 for name, dated_by in (("created", "created"), ("resolved", "resolutiondate"))}
     if source == "github":
         return {name: sorted((pr_item(pr, pr[stamp]) for pr in raw[name]), key=lambda item: (item["date"], item["url"]))
-                for name, stamp in (("opened", "createdAt"), ("merged", "closedAt"))}
+                for name, stamp in (("opened", "createdAt"), ("merged", "mergedAt"))}
     return {"created": sorted(({"title": result["title"], "url": result["url"], "path": result.get("path") or "",
                                 "between": [search["start"], search["end"]]}
                                for search in raw["created"] for result in search["results"] if is_notion_page(result)),
@@ -356,10 +375,11 @@ def epic_of(fields, parents):
 
 def pr_item(pr, stamp):
     """A pull request as data.json records it, dated by the day of `stamp`,
-    a merged one by when it was closed, as gh's search gives no merge time
-    and a merged search finds only merged ones."""
+    when it was opened or merged, with its size: the lines it added and
+    removed, and the files it changed."""
     return {"repo": pr["repository"]["nameWithOwner"], "number": pr["number"], "title": pr["title"],
-            "url": pr["url"], "date": (stamp or "")[:10]}
+            "url": pr["url"], "date": (stamp or "")[:10], "lines": pr["additions"] + pr["deletions"],
+            "files": pr["changedFiles"]}
 
 
 def items_problems(source, lists, days):
@@ -689,3 +709,26 @@ def average_text(average):
     """The story points' `average` as the report writes it, such as
     "avg=3.3", or "none estimated" when it is null."""
     return "none estimated" if average is None else f"avg={number(average)}"
+
+
+def repos_text(count):
+    """How many repositories pull requests are in, as the report writes it,
+    such as "in 3 repositories"."""
+    return f"in {count} {plural(count, 'repository', 'repositories')}"
+
+
+def repo_code(repo, order):
+    """The repository `repo`'s code in the report, a letter by its place in
+    `order`, data.json's repo_order, A for the first, as an epic's key names
+    it in the charts; None for one beyond it."""
+    return chr(ord("A") + order.index(repo)) if repo in order else None
+
+
+def size_text(median, merged):
+    """What the PRs size's figure, the `median` lines changed of the `merged`
+    pull requests, how many they are, is, as the report writes it, such as
+    "median, in 696 merged PRs", or "none merged" when there is none, the
+    figure then 0."""
+    if median is None:
+        return "none merged"
+    return f"median, in {merged} merged {plural(merged, 'PR', 'PRs')}"

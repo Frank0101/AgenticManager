@@ -3,8 +3,8 @@
 The tasks are worked out from the ledger every time, never stored, so they can't
 drift from it: the research questions, those for the user asked first, all
 together, while research that doesn't wait on their answers goes on; then the
-system design once none is open, built again whenever research has added to
-what it rests on; then the report and the handover.
+system design once none is open, built again whenever research or the user adds
+to what it rests on or closes a question; then the report and the handover.
 A task holds everything needed to do it, in a file of its own, so a subagent is
 handed it by its path.
 """

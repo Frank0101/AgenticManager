@@ -20,6 +20,10 @@ import common  # noqa: E402
 import fetch_work  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from prep_fixture import PERSON, PREP, WORK_RAW, temp_output, write_prep  # noqa: E402
+# The fake gh's GraphQL answers follow the library's query.
+sys.path.insert(0, os.path.join(os.path.dirname(
+    TEST_DIR), "agentic-manager-utils-lib"))
+from gh_fake import is_search, search_answer  # noqa: E402
 
 
 def issue(key, summary, created, resolved=None, parent=None):
@@ -53,34 +57,27 @@ class FakeJira:
 
 
 class FakeGh:
-    """A gh runner, signed in to one organisation: each search's PRs by its
-    first flag, those dated within the search's window."""
+    """A gh runner, signed in to one organisation, whose GraphQL search finds
+    `pulls`, those its window dates, by when they were opened or merged."""
 
-    def __init__(self, searches):
-        self.searches, self.calls = searches, []
+    def __init__(self, pulls):
+        self.pulls, self.calls = pulls, []
 
     def __call__(self, command, **kwargs):
         self.calls.append(command)
         args = command[1:]
-        if args[:2] == ["auth", "status"]:
-            answer = ""
-        elif args[1].startswith("user/orgs"):
-            answer = json.dumps([{"login": "acme"}])
-        else:
-            # The PRs of the search's first flag dated within its window: by
-            # when they were merged for --merged-at, else opened.
-            flag = next(f for f in ("--created", "--merged-at") if f in args)
-            start, end = args[args.index(flag) + 1].split("..")
-            stamp = "closedAt" if flag == "--merged-at" else "createdAt"
-            answer = json.dumps([pr for pr in self.searches.get(args[2], [])
-                                 if start <= (pr[stamp] or "")[:10] <= end])
+        if is_search(args):
+            return subprocess.CompletedProcess(command, *search_answer(args, self.pulls))
+        answer = json.dumps([{"login": "acme"}]) if args[1].startswith(
+            "user/orgs") else ""
         return subprocess.CompletedProcess(command, 0, answer, "")
 
 
-def pr(number, created="2026-09-01T10:00:00Z", closed=None):
-    """A pull request as gh search prs returns it."""
+def pr(number, created="2026-09-01T10:00:00Z", merged=None):
+    """A pull request as GitHub's search returns it."""
     return {"number": number, "title": f"PR {number}", "repository": {"nameWithOwner": "acme/billing"},
-            "url": f"https://github.com/acme/billing/pull/{number}", "createdAt": created, "closedAt": closed}
+            "url": f"https://github.com/acme/billing/pull/{number}", "createdAt": created, "mergedAt": merged,
+            "additions": 10, "deletions": 2, "changedFiles": 1}
 
 
 class FetchWorkTest(unittest.TestCase):
@@ -129,42 +126,22 @@ class FetchWorkTest(unittest.TestCase):
                       build_data.epic_search_urls(raw)["PROJ-2"])
 
     def test_github_raw(self):
-        # Opened and merged as gh returns them, only in the organisations gh
-        # belongs to, with the same searches on github.com.
-        run = FakeGh({"--author": [pr(1, closed="2026-09-03T10:00:00Z")]})
+        # Opened and merged, each with its size, as GitHub's search returns
+        # them, only in the organisations gh belongs to, with the same
+        # searches on github.com.
+        merged, opened = pr(1, merged="2026-09-03T10:00:00Z"), pr(
+            2, created="2026-08-01T10:00:00Z")
+        run = FakeGh([merged, opened])
         with mock.patch("agentic_manager.github.gh_available", return_value=True):
             raw = fetch_work.github_raw("janedoe", PERSON, run)
-        self.assertEqual({key: value for key, value in raw.items() if key not in ("opened", "merged")},
-                         {"start": "2026-08-10", "end": "2026-11-10", "orgs": ["acme"],
-                          "opened_query": "is:pr author:janedoe created:2026-08-10..2026-11-10 org:acme",
-                          "merged_query": "is:pr is:merged author:janedoe merged:2026-08-10..2026-11-10 org:acme"})
-        self.assertEqual((raw["opened"], raw["merged"]),
-                         ([pr(1, closed="2026-09-03T10:00:00Z")], [pr(1, closed="2026-09-03T10:00:00Z")]))
-        self.assertTrue(all(
-            "--owner" in call and "acme" in call for call in run.calls if call[1] == "search"))
-
-    def test_a_full_search_is_split(self):
-        # A search that comes back full may be cut short: its window is
-        # split in halves, each searched again, until none is full; a single
-        # day that comes back full stops.
-        two_days = [pr(n, created=f"2026-09-0{1 + n % 2}T10:00:00Z")
-                    for n in range(fetch_work.SEARCH_LIMIT)]
-        run = FakeGh({"--author": two_days})
-        found = fetch_work.search(
-            ["--author", "janedoe"], "--created", ("2026-09-01", "2026-09-30"), "acme", run)
-        self.assertEqual(sorted(item["number"] for item in found), list(
-            range(fetch_work.SEARCH_LIMIT)))
-        windows = [call[call.index("--created") + 1] for call in run.calls]
-        self.assertEqual((windows[0], len(windows) > 1),
-                         ("2026-09-01..2026-09-30", True))
-        one_day = [pr(n) for n in range(fetch_work.SEARCH_LIMIT)]
-        with self.assertRaisesRegex(SystemExit, "on 2026-09-01, the most it returns"):
-            fetch_work.search(["--author", "janedoe"], "--created", ("2026-09-01", "2026-09-30"),
-                              "acme", FakeGh({"--author": one_day}))
+        self.assertEqual(raw, {"start": "2026-08-10", "end": "2026-11-10", "orgs": ["acme"],
+                               "opened_query": "is:pr author:janedoe org:acme created:2026-08-10..2026-11-10",
+                               "merged_query": "is:pr is:merged author:janedoe org:acme merged:2026-08-10..2026-11-10",
+                               "opened": [merged], "merged": [merged]})
 
     def test_fetch(self):
-        # Jira by the person's account there, GitHub by their login, each
-        # to its raw file, nothing else.
+        # gh checked first; then Jira by the person's account there, GitHub
+        # by their login, each to its raw file, nothing else.
         folder = temp_output(self)
         write_prep(folder, data=None, raw_work={"notion": WORK_RAW["notion"]})
         logins = []
@@ -173,8 +150,10 @@ class FetchWorkTest(unittest.TestCase):
             logins.append(login)
             return WORK_RAW["github"]
         client = FakeJira()
-        with mock.patch.object(fetch_work, "github_raw", github_raw):
+        with mock.patch.object(fetch_work, "github_raw", github_raw), \
+                mock.patch.object(fetch_work, "require_gh") as require_gh:
             result = fetch_work.fetch(PREP, client=client)
+        require_gh.assert_called_once()
         with open(result["raw"][1], encoding="utf-8") as f:
             self.assertEqual(json.load(f), WORK_RAW["github"])
         self.assertFalse(os.path.exists(

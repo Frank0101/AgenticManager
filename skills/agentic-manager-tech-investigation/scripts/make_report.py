@@ -20,6 +20,11 @@ from common import (CONTENT, folder_day, display_date, FENCE, backtick_error, TA
 TARGETS = {"purpose": 150, "current_status": 200,
            "direction": 200, "summary": 300}
 
+# content.json's fields, and those of each architecture stage: any other is an
+# error naming it, as a field the report doesn't show would be dropped silently.
+FIELDS = ("purpose", "current_status", "direction", "key_decisions",
+          "architecture", "open_choices_and_gaps")
+STAGE_FIELDS = ("summary",)
 LEDGER_LINK = re.compile(r"\]\(ledger:([A-Za-z]+\d+)?\)")
 # A decisions table's fields in content.json, and its columns after the first,
 # which names the decision.
@@ -70,6 +75,14 @@ class Content:
         self.errors, self.warnings = [], []
         if not isinstance(data, dict):
             self.errors.append("content.json must be a JSON object")
+
+    def unknown(self, given, known, prefix=""):
+        """Record an error for each key of `given` not in `known`, named with
+        `prefix`, such as architecture."""
+        for key in given:
+            if key not in known:
+                self.errors.append(
+                    f"{prefix}{key}: the report doesn't show this section")
 
     def text(self, value, where, inline=False, trace=False):
         if not isinstance(value, str) or not value.strip():
@@ -151,6 +164,7 @@ class Ledger:
 def build(content):
     """The report's text."""
     data = content.data
+    content.unknown(data, FIELDS)
     purpose = content.paragraphs(data.get("purpose"), "purpose")
     content.length(purpose, TARGETS["purpose"], "purpose")
     current_status = content.paragraphs(
@@ -170,10 +184,7 @@ def build(content):
     architecture = architecture if isinstance(architecture, dict) else {}
     if not architecture:
         content.errors.append("architecture: needs today and target")
-    for key in architecture:
-        if key not in shown:
-            content.errors.append(
-                f"architecture.{key}: the report doesn't show this section")
+    content.unknown(architecture, shown, "architecture.")
     for key in shown:
         stage = architecture.get(key)
         if not isinstance(stage, dict):
@@ -216,6 +227,7 @@ def decision_rows(content, key, items):
 def architect_section(content, key, stage):
     """The lines under one Architect summary heading: its text."""
     where = f"architecture.{key}"
+    content.unknown(stage, STAGE_FIELDS, f"{where}.")
     summary = content.paragraphs(stage.get("summary"), f"{where}.summary")
     content.length(summary, TARGETS["summary"], f"{where}.summary")
     return summary

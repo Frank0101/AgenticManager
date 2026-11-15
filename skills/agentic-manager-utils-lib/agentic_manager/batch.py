@@ -1,6 +1,7 @@
 """How much a client asks a service at once, the sizes every client of the
 library shares: how many things in one call, and how many calls at a time,
-and gather(), which makes many calls that way.
+and gather(), which makes many calls that way, or runs any slow tasks
+side by side.
 
 A batch keeps each call light and limits what one failed call takes down. A
 call that still fails once retry.py gives up stops gather(), and the skill

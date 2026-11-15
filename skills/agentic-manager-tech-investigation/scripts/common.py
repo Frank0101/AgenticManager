@@ -25,7 +25,8 @@ from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.output_file import json_text, read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
 from agentic_manager.output_folder import clear_folder, folder_problem, day_folder, document_name, folder_day, folder_subject, output_folder, work_folder  # noqa: E402,F401
-from agentic_manager.text import DEFINITION, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, display_date, free_name, headings, inline_links, link_definitions, link_text, links, local_link, markdown, reference_key, same_document, slug, word_count  # noqa: E402,F401
+from agentic_manager.text import CELL_PIPE, DEFINITION, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, display_date, free_name, headings, inline_links, link_definitions, link_text, links, local_link, markdown, reference_key, same_document, slug, table, table_row, word_count  # noqa: E402,F401
+from agentic_manager.text import table_cells as row_cells  # noqa: E402
 from agentic_manager.ticket_pulls import pulls_by_ticket  # noqa: E402,F401
 
 FOLDER_NAME = "tech-investigations"
@@ -231,8 +232,6 @@ STATUS_MEANINGS = "; ".join(
 # It is refused when the finding is written, so it is split before other rows
 # cite it, and the final check refuses it too.
 CLAIM_WORDS_MAX = 150
-# A pipe that separates table cells: one escaped as \| stays inside its cell.
-CELL_PIPE = re.compile(r"(?<!\\)\|")
 # Ticket keys and pull requests, written as links. A ticket key is linked to
 # the Jira site of its project: the one the ledger's links give, else the one
 # that has the project, looked up on the Jira site. Any other key-shaped text,
@@ -321,19 +320,6 @@ def topic_of(folder):
         raise SystemExit(
             f"{folder!r} is not an investigation folder, <Topic>_<YY-MM-DD>")
     return topic
-
-
-def table(header, rows):
-    """A Markdown table, each cell on one line with its pipes escaped."""
-    lines = [table_row(header), table_row(["---"] * len(header))]
-    lines += [table_row([" ".join(str(cell).split()) for cell in row])
-              for row in rows]
-    return "\n".join(lines)
-
-
-def table_row(cells):
-    """A Markdown table row from its cells, each pipe in one escaped as \\|."""
-    return "| " + " | ".join(CELL_PIPE.sub(r"\\|", str(cell)) for cell in cells) + " |"
 
 
 def unlinked_references(text):
@@ -777,12 +763,10 @@ def section_span(lines, heading):
     return start, next((i for i in range(start + 1, len(lines)) if lines[i].startswith("#")), len(lines))
 
 
-def table_cells(line, keep_anchors=False):
-    """A Markdown table row's cells, trimmed; an ID without its anchor unless
-    `keep_anchors`. A pipe escaped as \\| stays inside its cell, read as |."""
-    cells = [c.strip().replace("\\|", "|")
-             for c in CELL_PIPE.split(line.strip().strip("|"))]
-    return cells if keep_anchors else [strip_anchors(c) for c in cells]
+def table_cells(line):
+    """A ledger table row's cells, as the library reads a Markdown row's,
+    each ID without its anchor."""
+    return [strip_anchors(cell) for cell in row_cells(line)]
 
 
 def strip_anchors(text):

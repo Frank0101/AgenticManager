@@ -184,6 +184,21 @@ class TextTest(unittest.TestCase):
             with self.subTest(count):
                 self.assertEqual(text.plural(count, "it", "they"), expected)
 
+    def test_table(self):
+        # Cells stay on one line, and a pipe in one is escaped once.
+        self.assertEqual(text.table(["A", "B"], [["x | y", "a\nb"], ["already \\| escaped", 3]]),
+                         "| A | B |\n| --- | --- |\n| x \\| y | a b |\n| already \\| escaped | 3 |")
+
+    def test_table_cells_read_back_what_table_row_writes(self):
+        # A row's cells come back trimmed, an escaped pipe inside its cell.
+        cases = [(["a", "b"], "| a | b |"),
+                 (["x | y", "z"], "| x \\| y | z |"),
+                 (["", "3"], "|  | 3 |")]
+        for cells, row in cases:
+            with self.subTest(row):
+                self.assertEqual(text.table_row(cells), row)
+                self.assertEqual(text.table_cells(row), cells)
+
 
 if __name__ == "__main__":
     unittest.main()

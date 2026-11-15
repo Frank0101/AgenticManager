@@ -11,12 +11,11 @@ TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
-import build_data  # noqa: E402
 import check_report  # noqa: E402
 import common  # noqa: E402
 import make_report  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import PERSON, DATA  # noqa: E402
+from prep_fixture import DATA, DATA_BY_PROJECT, DATA_NO_EPIC_FIRST, PERSON  # noqa: E402
 
 
 class CheckReportTest(unittest.TestCase):
@@ -33,8 +32,18 @@ class CheckReportTest(unittest.TestCase):
                  ("an average changed", ("avg=3", "avg=4"),
                   common.CHART_FILES, "cell for resolved_points"),
                  ("a focus count changed", ("Billing (1)", "Billing (2)"),
-                  common.CHART_FILES, "main focus"),
-                 ("no charts", ("<td><img", "<td><image"),
+                  common.CHART_FILES, "Jira main focus"),
+                 ("a GitHub count changed", ('">1</a> (in 1 repository)', '">2</a> (in 1 repository)'),
+                  common.CHART_FILES, "GitHub cell for opened"),
+                 ("a median changed", ("<td>150 (median", "<td>151 (median"),
+                  common.CHART_FILES, "GitHub cell for merged_lines"),
+                 ("a repository's count changed", ("acme/billing</a> (1)", "acme/billing</a> (2)"),
+                  common.CHART_FILES, "GitHub main focus"),
+                 ("a repository's code changed", ("<li>A <a", "<li>B <a"),
+                  common.CHART_FILES, "GitHub main focus"),
+                 ("no GitHub section", ("## GitHub", "## Code"),
+                  common.CHART_FILES, "then its GitHub one"),
+                 ("no charts", ('<td><a href="_charts', '<td><a href="charts'),
                   common.CHART_FILES, "a row of three figures and one of their charts"),
                  ("a chart missing", None,
                   common.CHART_FILES[1:], "the charts folder must hold only"),
@@ -51,38 +60,48 @@ class CheckReportTest(unittest.TestCase):
                     self.assertIn(expected, problems)
 
     def test_model_problems(self):
-        # name: (a change to data.json's Jira facts, expected in the
-        # problems): each series a chart draws is counted again from the
-        # issues, so a model that disagrees with them fails.
-        cases = [("the pie's epics", lambda jira: jira["resolved_by_epic"].update(epics=[], no_epic=1),
+        # name: (a change to data.json's Jira, or GitHub, facts, expected in
+        # the problems): each series a chart draws is counted again from the
+        # items, so a model that disagrees with them fails.
+        cases = [("the pie's epics", lambda jira: jira["resolved_by_epic"].update(epics=[]),
                   "resolved issues by epic"),
                  ("a week's count", lambda jira: jira["created_by_week"]["total"].reverse(),
                   "issues created"),
                  ("the story points' stacks", lambda jira: jira["points_by_epic"].clear(),
-                  "story points")]
-        for name, change, expected in cases:
+                  "story points"),
+                 ("the epics coloured", lambda jira: jira["epic_order"].append("PROJ-9"),
+                  "epics the charts colour")]
+        github = [("the repositories' pie", lambda github: github["merged_by_repo"].update(other=1),
+                   "merged pull requests by repository"),
+                  ("a week's merged", lambda github: github["merged_by_week"]["total"].reverse(),
+                   "pull requests merged"),
+                  ("the sizes", lambda github: github["lines_distribution"]["total"].reverse(),
+                   "merged pull requests' size"),
+                  ("the repositories coloured", lambda github: github["repo_order"].clear(),
+                   "repositories the charts colour")]
+        for name, change, source, expected in [*((name, change, "jira", expected) for name, change, expected in cases),
+                                               *((name, change, "github", expected) for name, change, expected in github)]:
             with self.subTest(name):
                 data = copy.deepcopy(DATA)
-                change(data["jira"])
+                change(data[source])
                 self.assertIn(expected, " ".join(check_report.report_problems(
                     make_report.render(PERSON, data), data, common.CHART_FILES)))
 
-    def test_focus_by_project(self):
-        # When no resolved issue has an epic, the main focus lists their
-        # projects, unlinked, and the check reads them back.
-        data = copy.deepcopy(DATA)
-        jira = data["jira"]
-        jira["resolved"] = [{**issue, "epic": None}
-                            for issue in jira["resolved"]]
-        jira.update(build_data.source_facts(
-            "jira", {"created": jira["created"], "resolved": jira["resolved"]}, data["weeks"]))
-        report = make_report.render(PERSON, data)
-        self.assertIn("<li>PROJ (1)</li>", report)
-        self.assertIn("the projects with the most of them", report)
-        self.assertEqual(check_report.report_problems(
-            report, data, common.CHART_FILES), [])
-        self.assertIn("main focus", " ".join(check_report.report_problems(
-            report.replace("PROJ (1)", "PROJ (7)"), data, common.CHART_FILES)))
+    def test_focus(self):
+        # name: (data.json, an entry of its Jira main focus as the report
+        # writes it, the same with a wrong count): the check reads every
+        # entry back, those with no epic wherever they rank, and a project's
+        # unlinked when no resolved issue has an epic.
+        cases = [("no epic before an epic", DATA_NO_EPIC_FIRST, "no epic</a> (3)</li>"),
+                 ("by project", DATA_BY_PROJECT, "<li>PROJ (1)</li>")]
+        for name, data, entry in cases:
+            with self.subTest(name):
+                report = make_report.render(PERSON, data)
+                self.assertIn(entry, report)
+                self.assertEqual(check_report.report_problems(
+                    report, data, common.CHART_FILES), [])
+                self.assertIn("main focus", " ".join(check_report.report_problems(
+                    report.replace(entry, entry.replace("(", "(7"), 1), data, common.CHART_FILES)))
 
 
 if __name__ == "__main__":

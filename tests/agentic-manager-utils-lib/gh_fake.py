@@ -1,11 +1,12 @@
-"""A fake gh, run as a program from a test's PATH, and its answer to the
-GraphQL call that github.pull_events() makes, built from each pull request's
-own answer, so a test's fake gh answers it from answers by URL; shared by the
-tests of every skill whose scripts run gh.
+"""A fake gh, run as a program from a test's PATH, and its answers to the
+GraphQL calls of github.py: pull_fields()'s, built from each pull request's
+own answer, so a test's fake gh answers it from answers by URL, and
+search_pulls()'s, from the pull requests it finds; shared by the tests of
+every skill whose scripts run gh.
 
 The program answers by the words of a command, so a test gives one answer
 per kind of call. The GraphQL answer reads the query as
-github._events_query() writes it, one repository a line, and answers as
+github._pulls_query() writes it, one repository a line, and answers as
 GitHub does: the data of every alias, null for a pull request it can't
 resolve with an error naming its path, and then, as gh does, the answer on
 stdout, the first error on stderr and exit code 1.
@@ -15,18 +16,24 @@ import re
 
 # A fake gh: prints the answer FAKE_GH_ANSWERS holds for the words of its
 # command up to the first option; for none, or for {"fails": message}, it
-# fails as gh does, its message on stderr. A GraphQL call, unless "api
-# graphql" is answered as a whole, is answered from each pull request's "pr
-# view <url>", as graphql_answer() builds it, imported from this folder,
-# FAKE_GH_LIB. Each command's words go to FAKE_GH_LOG, one line each.
+# fails as gh does, its message on stderr. A GraphQL search is answered from
+# the pull requests "search pulls" holds, as search_answer() pages them; any
+# other GraphQL call, unless "api graphql" is answered as a whole, from each
+# pull request's "pr view <url>", as graphql_answer() builds it; both
+# imported from this folder, FAKE_GH_LIB. Each command's words go to
+# FAKE_GH_LOG, one line each.
 FAKE_GH = """#!/usr/bin/env python3
 import json, os, sys
 with open(os.environ["FAKE_GH_LOG"], "a", encoding="utf-8") as f:
     f.write(json.dumps(sys.argv[1:]) + "\\n")
 sys.path.insert(0, os.environ["FAKE_GH_LIB"])
-from gh_fake import graphql_answer, is_graphql
+from gh_fake import graphql_answer, is_graphql, is_search, search_answer
 with open(os.environ["FAKE_GH_ANSWERS"], encoding="utf-8") as f:
     answers = json.load(f)
+if is_search(sys.argv[1:]) and "search pulls" in answers:
+    code, out, err = search_answer(sys.argv[1:], answers["search pulls"])
+    sys.stdout.write(out)
+    sys.exit(code)
 if is_graphql(sys.argv[1:]) and "api graphql" not in answers:
     code, out, err = graphql_answer(sys.argv[1:], lambda url: answers.get(f"pr view {url}"))
     sys.stdout.write(out)
@@ -78,3 +85,34 @@ def graphql_answer(command, answer_of):
     if errors:
         return 1, json.dumps({"data": data, "errors": errors}), f"gh: {errors[0]['message']}\n"
     return 0, json.dumps({"data": data}), ""
+
+
+# A search's date term, such as merged:2026-09-01..2026-09-30.
+DATE_TERM = re.compile(
+    r"\b(created|merged):(\d{4}-\d\d-\d\d)\.\.(\d{4}-\d\d-\d\d)")
+
+
+def search_answer(command, pulls, page_size=100):
+    """(exit code, stdout, stderr) of gh for the GraphQL search `command`,
+    its arguments after "gh", as github.search_pulls() makes it: of `pulls`,
+    those its date term finds, by createdAt or mergedAt, a page of
+    `page_size` at a time, its cursor the index of the next."""
+    fields = {}
+    for flag, value in zip(command, command[1:]):
+        if flag in ("-f", "-F"):
+            key, _, text = value.partition("=")
+            fields[key] = text
+    term = DATE_TERM.search(fields["q"])
+    assert term, fields["q"]
+    stamp = "mergedAt" if term[1] == "merged" else "createdAt"
+    found = [pull for pull in pulls if pull.get(
+        stamp) and term[2] <= pull[stamp][:10] <= term[3]]
+    after = int(fields.get("after") or 0)
+    return 0, json.dumps({"data": {"search": {
+        "issueCount": len(found), "nodes": found[after:after + page_size],
+        "pageInfo": {"hasNextPage": after + page_size < len(found), "endCursor": str(after + page_size)}}}}), ""
+
+
+def is_search(command):
+    """Whether `command`, gh's arguments after "gh", is a GraphQL search."""
+    return is_graphql(command) and any("search(query:" in arg for arg in command)

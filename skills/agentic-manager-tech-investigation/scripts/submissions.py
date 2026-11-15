@@ -209,11 +209,13 @@ def submit_design(lines, data):
             problems.guard(f"{table} {ident}, left out",
                            lambda i=ident: refuse_cited(lines, i))
     problems.stop()
-    # What the design was built from, as basis() counts the ledger now, so it
-    # stays current until research adds to it.
-    set_design_basis(lines, basis(lines))
     problems.guard("the design", lambda: finish_write(lines, written))
     problems.stop()
+    # What the design was built from, as basis() counts the ledger now, so it
+    # stays current until research adds to it or closes a question. Counted
+    # once the write is finished, as a new question waiting on a blocked one
+    # is blocked by then.
+    set_design_basis(lines, basis(lines))
     return {"ids": written_keys(keys)}
 
 

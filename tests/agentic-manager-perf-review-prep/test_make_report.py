@@ -11,12 +11,11 @@ TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
-import build_data  # noqa: E402
 import check_report  # noqa: E402
 import common  # noqa: E402
 import make_report  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import DATA, PERSON  # noqa: E402
+from prep_fixture import DATA, DATA_NO_EPIC_FIRST, PERSON  # noqa: E402
 
 
 class MakeReportTest(unittest.TestCase):
@@ -32,24 +31,16 @@ class MakeReportTest(unittest.TestCase):
             report, DATA, common.CHART_FILES), [])
 
     def test_focus_section(self):
-        # Every epic of the main focus, each linked with its title and count,
-        # as the final check reads them back.
-        issue = DATA["jira"]["resolved"][0]
-        invoices = {"key": "PROJ-2", "title": "Invoices",
-                    "url": "https://acme.atlassian.net/browse/PROJ-2"}
-        resolved = [issue, {**issue, "key": "PROJ-14", "url": "https://acme.atlassian.net/browse/PROJ-14",
-                            "epic": invoices}]
-        jira = {**DATA["jira"], "resolved": resolved,
-                **build_data.source_facts("jira", {"created": DATA["jira"]["created"], "resolved": resolved},
-                                          DATA["weeks"])}
-        jira["epic_search_urls"] = {
-            **jira["epic_search_urls"], "PROJ-2": "https://acme.atlassian.net/issues/?jql=x"}
-        work = {**DATA, "jira": jira}
-        report = make_report.render(PERSON, work)
-        self.assertIn(
-            '<a href="https://acme.atlassian.net/issues/?jql=x">PROJ-2</a> Invoices (1)', report)
+        # Every entry of the main focus, in its order, an epic linked with its
+        # title and count, the issues with no epic linked to their search, as
+        # the final check reads them back.
+        report = make_report.render(PERSON, DATA_NO_EPIC_FIRST)
+        jira = DATA_NO_EPIC_FIRST["jira"]
+        self.assertIn(f'<ol><li><a href="{html.escape(jira["no_epic_search_url"])}">no epic</a> (3)</li>'
+                      f'<li><a href="{html.escape(jira["epic_search_urls"]["PROJ-1"])}">PROJ-1</a> Billing (2)</li>'
+                      '</ol>', report)
         self.assertEqual(check_report.report_problems(
-            report, work, common.CHART_FILES), [])
+            report, DATA_NO_EPIC_FIRST, common.CHART_FILES), [])
 
 
 if __name__ == "__main__":

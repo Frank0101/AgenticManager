@@ -15,6 +15,7 @@ import sys
 LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
+from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.output_file import json_text, read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.svg import arc_segment, coordinate  # noqa: E402,F401
 from agentic_manager.output_folder import DESCRIPTION, folder_problem, folder_subject, KEPT_EXAMPLES, document_name, description, read_description, clear_folder, day_folder, output_folder, work_folder  # noqa: E402,F401

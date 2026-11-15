@@ -13,7 +13,8 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import build_data  # noqa: E402
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import DATA, PERSON, PREP, WEEKS, WORK_RAW, temp_output, write_prep  # noqa: E402
+from prep_fixture import (DATA, DATA_BY_PROJECT, DATA_NO_EPIC_FIRST, PERSON, PREP, WEEKS, WORK_RAW,  # noqa: E402
+                          temp_output, write_prep)
 
 
 class BuildDataTest(unittest.TestCase):
@@ -53,20 +54,93 @@ class BuildDataTest(unittest.TestCase):
                          ("2026-01-01", "2026-12-31"))
 
     def test_series(self):
-        # Each week's issues in all, by epic in the epics' order and with
-        # none; the resolved issues by points and epic; and the epics'
-        # order, the resolved ones' first.
+        # Each week's issues in all, by epic in the epics' order, of any
+        # other epic and with none; the resolved issues by points and epic;
+        # and the epics' order, the resolved ones' first, at most MAX_GROUPS.
         weeks = [["2026-07-01", "2026-07-05"], ["2026-07-06", "2026-07-12"]]
-        a, b = {"key": "PROJ-1"}, {"key": "PROJ-2"}
+        a, b, c = {"key": "PROJ-1"}, {"key": "PROJ-2"}, {"key": "PROJ-3"}
         items = [{"date": "2026-07-02", "epic": a, "points": 3}, {"date": "2026-07-07", "epic": b, "points": 3},
-                 {"date": "2026-07-08", "epic": None, "points": None}]
-        self.assertEqual(build_data.by_week(items, weeks, ["PROJ-2", "PROJ-1", "PROJ-9"]),
-                         {"total": [1, 2], "epics": {"PROJ-2": [0, 1], "PROJ-1": [1, 0]}, "no_epic": [0, 1]})
+                 {"date": "2026-07-08", "epic": None, "points": None}, {"date": "2026-07-09", "epic": c, "points": 3}]
+        self.assertEqual(build_data.grouped(items, ["PROJ-2", "PROJ-1", "PROJ-9"], build_data.epic_key,
+                                            lambda found: build_data.weekly(found, weeks), "epics", "no_epic"),
+                         {"total": [1, 3], "epics": {"PROJ-2": [0, 1], "PROJ-1": [1, 0]}, "other": [0, 1],
+                          "no_epic": [0, 1]})
         self.assertEqual(build_data.points_by_epic(items, ["PROJ-1", "PROJ-2"]),
-                         [{"points": 3, "issues": 2, "epics": {"PROJ-1": 1, "PROJ-2": 1}, "no_epic": 0}])
-        self.assertEqual(build_data.epic_order({"epics": [{"key": "PROJ-2"}], "no_epic": 0},
-                                               [{"epic": {"key": "PROJ-9"}}, {"epic": b}, {"epic": None}]),
+                         [{"points": 3, "issues": 3, "epics": {"PROJ-1": 1, "PROJ-2": 1}, "other": 1, "no_epic": 0}])
+        self.assertEqual(build_data.chart_order(["PROJ-2"], {"PROJ-9", "PROJ-2"}),
                          ["PROJ-2", "PROJ-9"])
+        self.assertEqual(build_data.chart_order([f"PROJ-{n}" for n in range(12)], set()), [
+                         f"PROJ-{n}" for n in range(common.MAX_GROUPS)])
+
+    def test_github_facts(self):
+        # The merged pull requests by repository, the most first, those
+        # beyond the coloured ones counted as other; the main focus; how
+        # many repositories each list is in; the median of the lines
+        # changed; and the merged ones by size, on a log scale, and
+        # repository.
+        def pull(repo, lines, day="2026-07-02"):
+            return {"repo": repo, "lines": lines, "date": day}
+        merged = [pull("acme/api", 5), pull("acme/api", 150),
+                  pull("acme/api", 2000), pull("acme/web", 80)]
+        merged += [pull(f"acme/r{n}", 600) for n in range(10)]
+        opened = merged + [pull("acme/docs", 3)]
+        facts = build_data.source_facts("github", {"opened": opened, "merged": merged},
+                                        [["2026-07-01", "2026-07-05"]])
+        self.assertEqual(facts["merged_by_repo"]["repos"][:2],
+                         [{"repo": "acme/api", "prs": 3}, {"repo": "acme/r0", "prs": 1}])
+        self.assertEqual(
+            (len(facts["repo_order"]), facts["merged_by_repo"]["other"]), (common.MAX_GROUPS, 3))
+        self.assertEqual(facts["repo_counts"], {"opened": 13, "merged": 12})
+        self.assertEqual(facts["merged_lines"], {"median": 600})
+        # On a log scale, four bins to each power of ten up to 10,000, above
+        # the largest, 2,000: 5 in the third, 10 ** 0.70, 80 in the eighth,
+        # 150 in the ninth, 600 in the twelfth and 2,000 in the fourteenth.
+        distribution = facts["lines_distribution"]
+        self.assertEqual([(index, n) for index, n in enumerate(distribution["total"]) if n],
+                         [(2, 1), (7, 1), (8, 1), (11, 10), (13, 1)])
+        self.assertEqual(
+            (len(distribution["total"]), sum(distribution["other"])), (16, 3))
+        self.assertEqual(facts["merged_by_week"]["total"], [14])
+        self.assertEqual(build_data.lines(
+            [pull("a", 1), pull("a", 4)]), {"median": 2.5})
+        self.assertEqual(build_data.lines([]), {"median": None})
+        # A pull request of no lines, a rename, in the first bin; a power of
+        # ten opens its decade.
+        self.assertEqual(build_data.lines_distribution([pull("a", 0), pull("a", 10)], ["a"])["total"],
+                         [1, 0, 0, 0, 1, 0, 0, 0])
+
+    def test_pie(self):
+        # name: (the resolved issues' epics, None for none, the pie's slices
+        # as (key, issues), its other): the issues with no epic are one slice,
+        # ranked by how many it holds, after the epics it ties with; the
+        # epics beyond the MAX_GROUPS coloured are counted together as other.
+        def issues(*epics):
+            return [{"key": f"PROJ-{100 + n}", "type": "Task", "date": "2026-07-02", "points": None,
+                     "epic": {"key": epic, "title": epic, "url": f"https://acme.test/{epic}"} if epic else None}
+                    for n, epic in enumerate(epics)]
+        many = [f"PROJ-{n}" for n in range(11, 22)]
+        cases = [("no epic ranked first", issues("PROJ-1", None, None), [(None, 2), ("PROJ-1", 1)], 0),
+                 ("no epic after a tie", issues("PROJ-1", None),
+                  [("PROJ-1", 1), (None, 1)], 0),
+                 ("epics beyond the coloured", issues(*many, *many[:3], None),
+                  [*((key, 2) for key in many[:3]), *((key, 1) for key in [*many[3:9], None])], 2)]
+        for name, resolved, slices, other in cases:
+            with self.subTest(name):
+                pie = build_data.source_facts("jira", {"created": [], "resolved": resolved},
+                                              [["2026-07-01", "2026-07-05"]])["resolved_by_epic"]
+                self.assertEqual(([(entry["key"], entry["issues"]) for entry in pie["epics"]], pie["other"]),
+                                 (slices, other))
+
+    def test_model_fixtures(self):
+        # name: (a model the report's tests use, worked out by hand): its
+        # Jira facts are those its items give.
+        for name, data in (("no epic first", DATA_NO_EPIC_FIRST), ("by project", DATA_BY_PROJECT)):
+            with self.subTest(name):
+                jira = data["jira"]
+                facts = build_data.source_facts("jira", {"created": jira["created"], "resolved": jira["resolved"]},
+                                                WEEKS)
+                self.assertEqual(
+                    facts, {key: jira[key] for key in facts})
 
     def test_points(self):
         # name: (the issues' points, {total, estimated, average}): an
@@ -83,8 +157,9 @@ class BuildDataTest(unittest.TestCase):
     def test_focus(self):
         # name: (parents of the resolved issues, by key, None for none, the
         # focus expected as (key, issues)): the fewest parents covering 80%
-        # of the issues with one, those tied with the last one too; with no
-        # parent at all, the projects.
+        # of the issues, those with none counted as one more, of key None,
+        # those tied with the last one too; with no parent at all, the
+        # projects.
         def issues(*epics):
             return [{"key": f"PROJ-{n}", "epic": {"key": epic, "title": epic.title(), "url": f"https://acme.test/{epic}"}
                      if epic else None}
@@ -95,7 +170,9 @@ class BuildDataTest(unittest.TestCase):
                      *["a"] * 5, *["b"] * 3, "c", "d"), [("a", 5), ("b", 3)]),
                  ("tied at the cutoff", issues(*["a"] * 4, *["b"] * 2, *["c"] * 2, *["d"] * 2),
                   [("a", 4), ("b", 2), ("c", 2), ("d", 2)]),
-                 ("no parent left out", issues("a", "a", None, None, None), [("a", 2)])]
+                 ("no parent counted as one", issues(
+                     "a", "a", None, None, None), [(None, 3), ("a", 2)]),
+                 ("no parent after the epics it ties with", issues("a", "a", None, None), [("a", 2), (None, 2)])]
         for name, resolved, expected in cases:
             with self.subTest(name):
                 self.assertEqual([(entry["key"], entry["issues"])
@@ -104,6 +181,11 @@ class BuildDataTest(unittest.TestCase):
                     for key in ("PROJ-1", "PROJ-2", "OPS-3")]
         self.assertEqual(build_data.focus(projects), [{"key": "PROJ", "title": None, "url": None, "issues": 2},
                                                       {"key": "OPS", "title": None, "url": None, "issues": 1}])
+        # The pie ranks the issues with no epic as the focus does.
+        self.assertEqual([entry["key"] for entry in build_data.with_no_epic([{"key": "a", "issues": 1}], 3)],
+                         [None, "a"])
+        self.assertEqual(build_data.with_no_epic(
+            [{"key": "a", "issues": 1}], 0), [{"key": "a", "issues": 1}])
         self.assertEqual(build_data.by_epic(issues("a", None, "b", "a")), {
             "epics": [{"key": "a", "title": "A", "url": "https://acme.test/a", "issues": 2},
                       {"key": "b", "title": "B", "url": "https://acme.test/b", "issues": 1}], "no_epic": 1})

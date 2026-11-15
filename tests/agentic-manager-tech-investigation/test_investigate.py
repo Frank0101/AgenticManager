@@ -125,6 +125,22 @@ class InvestigateTest(unittest.TestCase):
         self.submit("write", content())
         self.assertEqual(self.phase(), "finished")
 
+    def test_a_question_the_design_raised_closed_without_a_record_rebuilds_it(self):
+        # The row waiting on the question is drawn once research answers it,
+        # even when the answer adds no finding, gap, decision or boundary.
+        cases = [("blocked on a gap the ledger holds", {"outcome": {"blocked": "[[G01]]"}}),
+                 ("answered by a finding the ledger holds",
+                  {"outcome": {"answered": "[[F01]]"}}),
+                 ("outside a scope boundary the user decided", {"outcome": {"outside_scope": "[[U01]]"}})]
+        self.research()
+        self.submit("design", protocol.example("design"))
+        designed = self.path.read_text(encoding="utf-8")
+        for name, data in cases:
+            with self.subTest(name):
+                self.path.write_text(designed, encoding="utf-8")
+                self.submit("research:Q08", data)
+                self.assertEqual(self.phase(), "design")
+
     def test_a_scope_decision_makes_the_design_out_of_date(self):
         # A topic decided after the design is built changes what it draws,
         # such as a mention-only black box, so the design is built again.

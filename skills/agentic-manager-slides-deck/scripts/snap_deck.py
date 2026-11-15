@@ -16,11 +16,10 @@ import os
 import shutil
 import subprocess
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from check_deck import read_page
-from common import FOLDER_NAME, SLIDE_HEIGHT, SLIDE_WIDTH, clear_folder, deck_dir, deck_file, work_folder
+from common import FOLDER_NAME, SLIDE_HEIGHT, SLIDE_WIDTH, clear_folder, deck_dir, deck_file, gather, work_folder
 
 # Where Chrome is installed by default on macOS and Windows; on Linux, and
 # anywhere it is on the PATH, it is found by name.
@@ -78,9 +77,8 @@ def snap(deck):
 
     # Each copy is shot in its own Chrome, with its own throwaway profile, so
     # they can run in parallel.
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        pictures = list(pool.map(lambda number: shoot(f"slide-{number}", one_slide_page(page, folder, number)),
-                                 range(1, count + 1)))
+    pictures = gather(range(1, count + 1),
+                      lambda number: shoot(f"slide-{number}", one_slide_page(page, folder, number)), workers=4)
     text, size = sheet_page([os.path.basename(picture)
                             for picture in pictures])
     return shoot("sheet", text, size), pictures
