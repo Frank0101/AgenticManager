@@ -47,6 +47,12 @@ class FoldersTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "without .."):
             common.investigation_dir("../elsewhere")
 
+    def test_report_path(self):
+        self.assertEqual(common.report_path("/out/Acme-Search_26-10-05"),
+                         "/out/Acme-Search_26-10-05/Acme-Search_Report.md")
+        with self.assertRaisesRegex(SystemExit, "not an investigation folder"):
+            common.report_path("/out/Acme-Search")
+
     def test_topic_of(self):
         cases = [("/out/Acme-Search_26-10-05", "Acme-Search"), ("/out/Acme-Search_26-10-05/", "Acme-Search"),
                  ("QA-Tools_26-01-31", "QA-Tools")]

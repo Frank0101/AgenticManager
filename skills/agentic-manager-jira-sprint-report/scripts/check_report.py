@@ -12,9 +12,9 @@ import html
 import os
 import re
 import sys
-from datetime import date, timedelta
+from datetime import date
 
-from common import (CHARTS_DIR, HEADING, INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, FIELD_TABLE_HEAD, ISSUE_KEY,
+from common import (days, BLOCKED_STATUSES, GOAL_VERDICTS, HIGH_PRIORITIES, CHARTS_DIR, HEADING, INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, FIELD_TABLE_HEAD, ISSUE_KEY,
                     BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, JIRA_CELL, KEY_LIST, STATUS_HEADING,
                     TICKET_ESTIMATE,
                     TICKET_EVENT_TYPES,
@@ -49,7 +49,18 @@ CAVEATS = ("resolved as Duplicate or Won't Do",
            "is reconstructed from changelogs")
 
 
+def check_report(report_dir):
+    """Every check of the report in `report_dir`, against its data.json: the
+    Checker holding what passed and what failed."""
+    data = read_json(os.path.join(report_dir, DATA_FILE))
+    with open(os.path.join(report_dir, report_file(data["label"])), encoding="utf-8") as f:
+        md = f.read()
+    return run_checks(md, data, report_dir)
+
+
 def run_checks(md, data, report_dir):
+    """Every check of the report `md`, built from `data`, in `report_dir`:
+    the Checker holding what passed and what failed."""
     tables = {table_kind(t): t for t in html_tables(md)}
     c = Checker()
     check_model(c, data)
@@ -67,6 +78,8 @@ def run_checks(md, data, report_dir):
 
 
 class Checker:
+    """The checks' results: what passed and what failed, each named."""
+
     def __init__(self):
         self.failures, self.passes = [], []
 
@@ -75,16 +88,21 @@ class Checker:
         return ok
 
     def report(self):
+        """Print every check, then the summary; returns the exit code, 1 if
+        any failed."""
         for line in self.passes:
             print(f"  ok    {line}")
         for line in self.failures:
             print(f"  FAIL  {line}")
         print()
+        print(self.summary())
+        return 1 if self.failures else 0
+
+    def summary(self):
+        """How many checks failed, or that all passed."""
         if self.failures:
-            print(f"{len(self.failures)} check(s) failed")
-            return 1
-        print(f"all {len(self.passes)} checks passed")
-        return 0
+            return f"{len(self.failures)} check(s) failed"
+        return f"all {len(self.passes)} checks passed"
 
 
 def html_tables(md):
@@ -186,8 +204,7 @@ def check_model(c, data):
     first = date.fromisoformat(data["sprint_start"])
     last = parse_ts(data["as_of_instant"]).astimezone(
         report_timezone(data["report_timezone"])).date()
-    expected_dates = [(first + timedelta(days=offset)).isoformat()
-                      for offset in range((last - first).days + 1)]
+    expected_dates = [day.isoformat() for day in days(first, last)]
     c.check([row["date"] for row in data["burndown"]] == expected_dates, "model",
             "the burndown covers every day from the sprint start through the report cutoff, in order")
     for row in data["burndown"]:
@@ -212,6 +229,10 @@ def check_model(c, data):
     check_epic_points(c, data)
     check_ticket_events(c, data)
     check_pull_requests(c, data)
+    check_burndown_ideal(c, data)
+    check_goal_facts(c, data)
+    check_carried_in(c, data)
+    check_blocker_candidates(c, data)
 
 
 def check_epic_points(c, data):
@@ -421,6 +442,116 @@ def check_pull_requests(c, data):
         "model", "the Status to Verify rows are in the epics' order, then by key")
 
 
+def check_burndown_ideal(c, data):
+    """The burndown's ideal runs from the start through the planned end or
+    the last reading, whichever is later, holding on the start day and at
+    weekends and burning the baseline evenly over the later weekdays to the
+    planned end; each reading's spread is the commitment open minus it."""
+    first, end = date.fromisoformat(
+        data["sprint_start"]), date.fromisoformat(data["sprint_end"])
+    last = max(end, date.fromisoformat(data["burndown"][-1]["date"]))
+    every = days(first, last)
+    pace = [day for day in every if first < day <= end and day.weekday() < 5]
+    level = data["burndown_baseline"] or 0
+    expected = [(day.isoformat(), day.weekday() >= 5,
+                 level * (len(pace) - sum(1 for p in pace if p <= day)) / len(pace) if pace else level)
+                for day in every]
+    stored = [(row["date"], row["weekend"], row["ideal"])
+              for row in data["burndown_ideal"]]
+    c.check(data["burndown_weekdays"] == len(pace) and len(stored) == len(expected)
+            and all(s[:2] == e[:2] and abs(s[2] - e[2]) <= 0.01 for s, e in zip(stored, expected)), "model",
+            f"the burndown's ideal burns {estimate(data['burndown_baseline'])} over {len(pace)} later weekdays")
+    ideal = {day: value for day, _, value in expected}
+    wrong = [row["date"] for row in data["burndown"]
+             if abs(row["spread"] - ((row["committed"] or 0) - ideal.get(row["date"], 0))) > 0.01]
+    c.check(not wrong, "model",
+            f"each burndown reading's spread is its open commitment minus the ideal {wrong[:2] or ''}".strip())
+
+
+def check_goal_facts(c, data):
+    """The goal verdicts offered are the sprint's: none to choose without a
+    goal, the closed ones at the close, and while it runs, only too early to
+    tell before its halfway day; and a running sprint's days left are to its
+    planned end."""
+    start, end, today = (date.fromisoformat(data[k])
+                         for k in ("sprint_start", "sprint_end", "today"))
+    running = data["sprint_status"] == "active"
+    if not data["sprint_goal"].strip():
+        kind = "no_goal"
+    elif not running:
+        kind = "closed"
+    else:
+        kind = "early" if (
+            today - start).days < (end - start).days // 2 else "active"
+    c.check(data["goal_verdicts"] == list(GOAL_VERDICTS[kind]), "model",
+            f"the goal verdicts offered are {GOAL_VERDICTS[kind]}")
+    left = (end - today).days if running else None
+    c.check(data["days_left"] == left, "model",
+            f"the days left are {left}, to the planned end" if running else "a closed sprint has no days left")
+
+
+def check_carried_in(c, data):
+    """A spell of the commitment is carried over exactly when its ticket was
+    in the previous sprint at the instant that sprint closed, by its events."""
+    previous, sound = data["previous_sprint"], sound_events(data)
+    wrong = []
+    for spell in data["spells"]:
+        events = sound.get(spell["key"])
+        if events is None:
+            continue
+        carried = bool(previous) and spell["scope"] == "original" and in_sprint(
+            events, str(previous["id"]), parse_ts(previous["complete_instant"]))
+        if spell["carriedIn"] != carried:
+            wrong.append(spell["key"])
+    c.check(not wrong, "model",
+            f"the carried-over tickets are those in the previous sprint when it closed {wrong[:3] or ''}".strip())
+
+
+def check_blocker_candidates(c, data):
+    """The blocker candidates are the tickets in the sprint at the end that
+    were then flagged, in a blocked status, or high priority and not Done,
+    by their events; a ticket whose events are malformed is
+    check_ticket_events' failure, so it is left out here."""
+    sprint_id, cutoff = str(data["sprint_id"]), parse_ts(data["as_of_instant"])
+    sound, expected = sound_events(data), []
+    for key, events in sound.items():
+        if not in_sprint(events, sprint_id, cutoff):
+            continue
+        fields = ticket_fields(events, cutoff)
+        if (fields["flagged"] or (fields["status"] or "").lower() in BLOCKED_STATUSES
+                or (fields["statusCategory"] != "done" and (fields["priority"] or "").lower() in HIGH_PRIORITIES)):
+            expected.append(key)
+    stored = [key for key in data["blocker_candidate_keys"]
+              if key in sound or key not in data["ticket_events"]]
+    c.check(sorted(stored, key=key_order) == sorted(expected, key=key_order), "model",
+            f"the blocker candidates are the tickets flagged, blocked or high priority at the end "
+            f"{sorted(expected, key=key_order)}")
+
+
+def sound_events(data):
+    """{key: its events} of each ticket whose events are well formed, which
+    the checks replaying them can read."""
+    zone, cutoff = report_timezone(
+        data["report_timezone"]), parse_ts(data["as_of_instant"])
+    return {key: events for key, events in data["ticket_events"].items()
+            if not ticket_event_problems(events, zone, cutoff)}
+
+
+def ticket_fields(events, instant):
+    """The ticket's tracked fields at `instant`: its creation's values, then
+    each change's new value up to the instant, the status's with its
+    category."""
+    values = dict(next(e for e in events if e["type"] == "created")["values"])
+    for e in events:
+        field = e["type"].removesuffix("_changed")
+        if e["type"] == "created" or field == "sprint" or parse_ts(e["at"]) > instant:
+            continue
+        values[field] = e["to"]
+        if field == "status":
+            values["statusCategory"] = e["toCategory"]
+    return values
+
+
 def check_header(c, md, data):
     rows = header_rows(md)
     if not c.check(rows is not None, "header", "table at the top found") or rows is None:
@@ -613,13 +744,13 @@ def check_timeline(c, table, data):
     the burndown's; and the days are the timeline's."""
     if not c.check(table is not None, "timeline", "table found") or table is None:
         return
-    days = timeline_days(table)
+    shown = timeline_days(table)
     expected_dates = [display_date(row["date"]) for row in data["timeline"]]
-    c.check([d["date"][:10] for d in days] == expected_dates, "timeline",
+    c.check([d["date"][:10] for d in shown] == expected_dates, "timeline",
             f"the days are the timeline's, in order ({len(expected_dates)})")
     readings = {row["date"]: row for row in data["burndown"]}
     original = [t for t in data["spells"] if t["scope"] == "original"]
-    for row, day in zip(data["timeline"], days):
+    for row, day in zip(data["timeline"], shown):
         label = display_date(row["date"])
         by_key = {}
         for t in data["spells"]:
@@ -901,11 +1032,7 @@ def main():
     parser.add_argument("--report-dir", required=True,
                         help="report folder holding data.json and the report")
     args = parser.parse_args()
-
-    data = read_json(os.path.join(args.report_dir, DATA_FILE))
-    with open(os.path.join(args.report_dir, report_file(data["label"])), encoding="utf-8") as f:
-        md = f.read()
-    sys.exit(run_checks(md, data, args.report_dir).report())
+    sys.exit(check_report(args.report_dir).report())
 
 
 if __name__ == "__main__":

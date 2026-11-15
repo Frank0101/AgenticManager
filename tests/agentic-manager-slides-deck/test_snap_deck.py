@@ -22,7 +22,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
-import make_deck  # noqa: E402
+import finish_deck  # noqa: E402
 import snap_deck  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from deck_fixture import DECK, content, temp_output, write_slides  # noqa: E402
@@ -53,7 +53,7 @@ class FindChromeTest(unittest.TestCase):
 
     def test_a_chrome_that_hangs_says_to_skip_the_check(self):
         write_slides(temp_output(self), content())
-        make_deck.make_deck(DECK)
+        finish_deck.finish(DECK)
         hang = subprocess.TimeoutExpired("chrome", 60)
         with mock.patch.object(snap_deck, "find_chrome", return_value="/chrome"), \
                 mock.patch.object(snap_deck.subprocess, "run", side_effect=hang), \
@@ -122,7 +122,7 @@ class SnapTest(unittest.TestCase):
     def test_pictures_every_slide_at_its_size_and_the_sheet(self):
         folder = temp_output(self)
         write_slides(folder, content())
-        make_deck.make_deck(DECK)
+        finish_deck.finish(DECK)
         sheet, pictures = snap_deck.snap(DECK)
         self.addCleanup(shutil.rmtree, os.path.dirname(sheet))
         self.assertEqual([Path(p).name for p in pictures],

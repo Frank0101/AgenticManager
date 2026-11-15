@@ -15,7 +15,7 @@ import socket
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from agentic_manager.batch import batches
@@ -519,6 +519,9 @@ class JiraClient:
         except (URLError, TimeoutError, ConnectionError):
             raise JiraError(f"could not reach Jira, after trying {len(RETRY_WAITS) + 1} times.",
                             f"Check your `base-url` setting in {SOURCE} and the connection.")
+        except ValueError:
+            raise JiraError(f"Jira answered something other than JSON for {path}.",
+                            f"Check your `base-url` setting in {SOURCE}.")
 
     def _paginate(self, path, params, items):
         """Every item of a paged list, under the page's `items` key. Paging ends
@@ -642,6 +645,11 @@ class JiraError(Exception):
 def browse_url(base, key):
     """The page of issue `key` on the Jira site at `base`."""
     return f"{base}{BROWSE}{key}"
+
+
+def search_url(base, jql):
+    """The page of the Jira search `jql` on the Jira site at `base`."""
+    return f"{base}/issues/?jql={quote(jql)}"
 
 
 def key_order(key):

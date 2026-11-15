@@ -1,6 +1,6 @@
 """End-to-end test of the skill's scripts in the order the skill runs them:
 init_deck.py, the agent's slides.json written and patched through the
-library's output_file.py, and make_deck.py, whose check check_deck.py agrees
+library's output_file.py, and finish_deck.py, whose check check_deck.py agrees
 with when run on its own.
 Run with: python3 tests/run.py agentic-manager-slides-deck
 
@@ -61,14 +61,14 @@ class PipelineTest(unittest.TestCase):
         data["slides"][0]["html"].append("<div>")
         self.write(started["slides_path"], json.dumps(data, indent=2))
         failed = self.run_script(os.path.join(
-            SCRIPTS, "make_deck.py"), "--deck", deck, code=1)
+            SCRIPTS, "finish_deck.py"), "--deck", deck, code=1)
         self.assertIn("slides[0].html: <div> opened on line 3 is never closed",
                       failed.stderr.decode())
         self.assertEqual(os.listdir(started["deck_dir"]), ["slides.json"])
         # Fixed, it builds and passes.
         self.write(started["slides_path"], json.dumps(content(), indent=2))
         built = json.loads(self.run_script(
-            os.path.join(SCRIPTS, "make_deck.py"), "--deck", deck).stdout)
+            os.path.join(SCRIPTS, "finish_deck.py"), "--deck", deck).stdout)
         self.assertEqual({k: built[k] for k in ("ok", "errors", "placeholders", "temporary")},
                          {"ok": True, "errors": [], "placeholders": ["[IMAGE: team photo]"],
                           "temporary": False})
@@ -76,7 +76,7 @@ class PipelineTest(unittest.TestCase):
         self.write(started["slides_path"], json.dumps(
             [{"old": "[IMAGE: team photo]", "new": "Team of 6"}]), "--patch")
         revised = json.loads(self.run_script(
-            os.path.join(SCRIPTS, "make_deck.py"), "--deck", deck).stdout)
+            os.path.join(SCRIPTS, "finish_deck.py"), "--deck", deck).stdout)
         self.assertEqual(revised["placeholders"], [])
         with open(revised["path"], encoding="utf-8") as f:
             self.assertIn("Team of 6", f.read())

@@ -60,6 +60,10 @@ class HelpersTest(unittest.TestCase):
                 self.assertEqual(match and match.groups(),
                                  (base, key.split("-")[0]))
 
+    def test_search_url(self):
+        self.assertEqual(jira.search_url("https://acme.example", 'project = PROJ AND summary ~ "a&b"'),
+                         "https://acme.example/issues/?jql=project%20%3D%20PROJ%20AND%20summary%20~%20%22a%26b%22")
+
     def test_key_order(self):
         keys = ["PROJ-10", "ABC-3", "PROJ-2", "PROJ-x"]
         self.assertEqual(sorted(keys, key=jira.key_order),
@@ -230,6 +234,10 @@ class ClientTest(unittest.TestCase):
             # A missing resource says so, so the client can answer None for it.
             ("404", None, None,
              "Jira returned 404 Not Found for /rest/api/3/myself.", True),
+            # Such as a login page a proxy puts in front of the site.
+            ("not JSON", (200, b"<html>Sign in</html>"), None,
+             "Jira answered something other than JSON for /rest/api/3/myself. Check your `base-url` setting in "
+             "sources.workflow.jira-api.", False),
             ("unreachable site", None, "http://127.0.0.1:9",
              "could not reach Jira, after trying 4 times. Check your `base-url` setting in "
              "sources.workflow.jira-api and the connection.", False),

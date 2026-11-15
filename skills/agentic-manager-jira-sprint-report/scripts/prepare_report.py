@@ -34,7 +34,7 @@ def main():
         return
     fetched = json.loads(run("fetch_sprint.py", *sys.argv[1:]))
     report_dir = fetched["report_dir"]
-    sys.stderr.write(run("build_sprint_data.py", "--report-dir", report_dir))
+    sys.stderr.write(run("build_data.py", "--report-dir", report_dir))
     run("make_brief.py", "--report-dir", report_dir)
     print(json.dumps({**fetched, "brief": os.path.join(report_dir, BRIEF_FILE),
                       "content_path": f"{os.path.basename(report_dir)}/{CONTENT_FILE}"}))

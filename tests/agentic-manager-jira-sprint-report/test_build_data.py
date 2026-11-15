@@ -1,4 +1,4 @@
-"""Unit tests for skills/agentic-manager-jira-sprint-report/scripts/build_sprint_data.py.
+"""Unit tests for skills/agentic-manager-jira-sprint-report/scripts/build_data.py.
 Run with: python3 tests/run.py agentic-manager-jira-sprint-report
 
 They call the script's functions directly with a few hand-made issues.
@@ -18,7 +18,7 @@ TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
-import build_sprint_data as build  # noqa: E402
+import build_data as build  # noqa: E402
 import common  # noqa: E402
 from agentic_manager import output_file  # noqa: E402
 from common import NO_EPIC, parse_ts  # noqa: E402
@@ -564,6 +564,102 @@ class BurndownTest(unittest.TestCase):
                          for r in rows], [(6, 6), (3, 7), (6, 6), (11, 11)])
 
 
+class BurndownIdealTest(unittest.TestCase):
+    """A two-week sprint, Monday 02/03/2026 to Friday 13/03/2026, with a
+    commitment of 7 pts: 9 weekdays after the start to burn it over."""
+
+    def ideal(self, start="2026-03-02", end="2026-03-13", last="2026-03-13", baseline: int | None = 7):
+        """{ISO date: (weekend, ideal)} of the burndown's ideal."""
+        return {row["date"]: (row["weekend"], row["ideal"])
+                for row in build.burndown_ideal(start, end, last, baseline)}
+
+    def test_ideal_holds_the_start_day_and_weekends_then_reaches_zero(self):
+        rows = self.ideal()
+        cases = [
+            ("the start day holds the baseline",
+             rows["2026-03-02"], (False, 7)),
+            ("the next weekday burns a ninth", rows["2026-03-03"],
+             (False, round(7 * 8 / 9, 2))),
+            ("a weekend holds", (rows["2026-03-07"], rows["2026-03-08"]),
+             ((True, rows["2026-03-06"][1]), (True, rows["2026-03-06"][1]))),
+            ("the planned end reaches zero", rows["2026-03-13"], (False, 0)),
+            ("weekdays after the start", build.burndown_weekdays(
+                "2026-03-02", "2026-03-13"), 9),
+            # No weekday after the start: no pace to divide by, so the ideal
+            # stays at the baseline instead of failing.
+            ("a one-day sprint holds", (self.ideal(start="2026-03-13"),
+                                        build.burndown_weekdays("2026-03-13", "2026-03-13")),
+             ({"2026-03-13": (False, 7)}, 0)),
+            # Unestimated, it is drawn at 0.
+            ("unestimated", self.ideal(baseline=None)
+             ["2026-03-02"], (False, 0)),
+        ]
+        for name, got, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(got, expected)
+
+    def test_where_the_ideal_ends(self):
+        # It runs at least to the planned end, and to later actuals with an
+        # ideal of zero.
+        cases = [("on its end date", "2026-03-13", "2026-03-13"),
+                 ("running", "2026-03-05", "2026-03-13"),
+                 ("past its end", "2026-03-18", "2026-03-18")]
+        for name, last, last_day in cases:
+            with self.subTest(name):
+                rows = self.ideal(last=last)
+                self.assertEqual((max(rows), rows[max(rows)][1], min(rows)),
+                                 (last_day, 0, "2026-03-02"))
+
+    def test_with_spread(self):
+        # The open commitment minus the ideal, positive when behind;
+        # unestimated pts count as 0, as drawn.
+        ideal = build.burndown_ideal(
+            "2026-03-02", "2026-03-13", "2026-03-13", 7)
+        burndown = [{"date": "2026-03-02", "committed": 6, "total": 6},
+                    {"date": "2026-03-05", "committed": 2, "total": 5},
+                    {"date": "2026-03-13", "committed": None, "total": None}]
+        by_day = {row["date"]: row["ideal"] for row in ideal}
+        self.assertEqual([row["spread"] for row in build.with_spread(burndown, ideal)],
+                         [-1, round(2 - by_day["2026-03-05"], 2), 0])
+
+
+class GoalFactsTest(unittest.TestCase):
+    def test_goal_verdicts(self):
+        # A 10-day sprint, 02/03 to 12/03: its halfway day is 07/03.
+        def verdicts(status="active", today="2026-03-06", goal="Ship login", end="2026-03-12"):
+            return tuple(build.goal_verdicts(goal, status, "2026-03-02", end, today))
+        cases = [
+            # The day before halfway, or before the start, is too early.
+            (verdicts(), ("Too early to tell",)),
+            (verdicts(today="2026-03-01"), ("Too early to tell",)),
+            # From the halfway day on, including a sprint running past its end.
+            (verdicts(today="2026-03-07"), ("On track", "At risk")),
+            (verdicts(today="2026-03-20"), ("On track", "At risk")),
+            # The halfway day is a whole day: with an odd span its midpoint
+            # is at noon, and the morning of that day can be judged too.
+            (verdicts(end="2026-03-11"), ("On track", "At risk")),
+            # A closed sprint is judged whenever it closed.
+            (verdicts(status="closed"), ("Fully met", "Partially met", "Not met")),
+            # No goal leaves nothing to judge, closed or not.
+            (verdicts(goal=""), ("No goal set in Jira for this sprint",)),
+            (verdicts(goal="   "), ("No goal set in Jira for this sprint",)),
+            (verdicts(status="closed", goal="\n \n"),
+             ("No goal set in Jira for this sprint",)),
+        ]
+        for got, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertEqual(got, expected)
+
+    def test_days_left(self):
+        # To the planned end, negative past it; none once closed.
+        cases = [("active", "2026-03-10", 3), ("active", "2026-03-13", 0),
+                 ("active", "2026-03-15", -2), ("closed", "2026-03-16", None)]
+        for status, today, expected in cases:
+            with self.subTest(status=status, today=today):
+                self.assertEqual(build.days_left(
+                    status, "2026-03-13", today), expected)
+
+
 class UnestimatedPtsTest(unittest.TestCase):
     def test_pts_totals_follow_known_sum(self):
         # Every pts total the report shows adds up the set estimates; one of
@@ -779,7 +875,7 @@ class MainTest(unittest.TestCase):
             default = [left(at("03-04"))] if issue in self.removed else []
             self.write(os.path.join(common.CHANGELOGS_DIR, f"{issue['key']}.json"),
                        self.changelogs.get(issue["key"], default))
-        argv = ["build_sprint_data.py", "--report-dir",
+        argv = ["build_data.py", "--report-dir",
                 self.dir]
         with mock.patch.object(sys, "argv", argv), mock.patch("builtins.print"):
             build.main()

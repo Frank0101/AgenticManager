@@ -16,7 +16,7 @@ import check_report  # noqa: E402
 import common  # noqa: E402
 import make_report  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import PERSON, PREP, DATA, temp_output, write_prep  # noqa: E402
+from prep_fixture import DATA, PERSON  # noqa: E402
 
 
 class MakeReportTest(unittest.TestCase):
@@ -50,14 +50,6 @@ class MakeReportTest(unittest.TestCase):
             '<a href="https://acme.atlassian.net/issues/?jql=x">PROJ-2</a> Invoices (1)', report)
         self.assertEqual(check_report.report_problems(
             report, work, common.CHART_FILES), [])
-
-    def test_make_report(self):
-        # The report and every chart, checked once written.
-        folder = temp_output(self)
-        write_prep(folder, report=False)
-        made = make_report.make_report(PREP)
-        self.assertEqual((made["problems"], sorted(os.listdir(os.path.join(folder, PREP, common.CHARTS_DIR)))),
-                         ([], sorted(common.CHART_FILES)))
 
 
 if __name__ == "__main__":

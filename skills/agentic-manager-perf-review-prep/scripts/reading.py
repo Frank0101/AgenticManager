@@ -13,7 +13,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Callable
 
-from common import (FOLDER_NAME, PERSON, PROTOCOL, RAW_DIR, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
+from common import (FOLDER_NAME, PERSON, PROTOCOL, json_text, RAW_DIR, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
                     fill_protocol, is_point, library_command, point_fields, point_shape, prep_dir, script_command, read_json, stdin_json,
                     summary_problems, word_count, work_folder, write_raw,
                     write_prep_file)
@@ -149,7 +149,7 @@ def submit(source, prep, task, answer):
     stored = answer if notes is None else {"items": [{**notes[item["note"] - 1], "synopsis": item["synopsis"]}
                                                      for item in sorted(answer["items"], key=lambda item: item["note"])]}
     write_raw(prep, os.path.join(source.name, raw_name(task)),
-              json.dumps(stored, ensure_ascii=False, indent=1))
+              json_text(stored))
     if all(answered(source, prep, name) for name in material["tasks"]):
         write_task(source, prep, MERGE, merge_task(source, prep, material))
     return {"task": task, "items": len(answer["items"])}
@@ -220,6 +220,18 @@ def submit_section(command, answer):
     return (f"## Submit\n\nSubmit your answer, as JSON in a quoted here-document:\n\n```bash\n"
             f"{command} <<'END_OF_INPUT'\n{answer}\nEND_OF_INPUT\n```\n\nIf the script refuses it, fix every "
             "problem it names and submit again, until it is accepted.")
+
+
+def merge_answer(link, item):
+    """The shape of a merge's answer, for a source whose evidence is linked
+    as `link`, such as "file://...", and whose items are each an `item`,
+    such as "note"."""
+    return ('{"going_well": [{"point": "...", "values": ["<each company value it clearly shows or calls for, '
+            'at most two>"],\n'
+            f'                 "links": ["{link}", ...]}}],\n'
+            f' "to_improve": [{{"point": "...", "values": [], "links": ["{link}"]}}],\n'
+            f' "context": [{{"point": "...", "links": ["{link}", ...]}}],\n'
+            f' "in_doubt": ["YYYY-MM-DD: what the {item} says, and why you left it out"]}}')
 
 
 def answer_shape(source, task):
@@ -376,6 +388,12 @@ def raw_name(task):
     return os.path.join(*((f"{kind}s", part) if part else (kind,))) + ".json"
 
 
+def task_month(task):
+    """The month a month's reading task is for, such as 2026-07 for
+    month:2026-07."""
+    return task.partition(":")[2]
+
+
 def answered(source, prep, task):
     """Whether `task` of the prep `prep` has an answer."""
     return os.path.exists(answer_path(source, prep, task))
@@ -390,8 +408,7 @@ def write_work_file(path, value):
     """Write `value`, a text or JSON, to the working folder's file `path`."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        f.write(value if isinstance(value, str) else json.dumps(
-            value, ensure_ascii=False, indent=1))
+        f.write(value if isinstance(value, str) else json_text(value))
 
 
 def load_material(source, prep):
@@ -408,10 +425,10 @@ def read_protocol(name):
     command that reads a Jira ticket by the path the skill pre-approves."""
     return fill_protocol(PROTOCOL, name, {"synopsis_words": SYNOPSIS_WORDS,
                                           "max_synopsis_words": MAX_SYNOPSIS_WORDS,
-                                          "jira_ticket": f"{script_command('jira_ticket.py')} --key <key>",
-                                          "extract_saved": library_command("extract_saved.py")})
+                                          "jira_ticket": f"{script_command(__file__, 'jira_ticket.py')} --key <key>",
+                                          "extract_saved": library_command(__file__, "extract_saved.py")})
 
 
 def call(source):
     """The command that runs the source's script, by script_command()."""
-    return script_command(source.script)
+    return script_command(__file__, source.script)

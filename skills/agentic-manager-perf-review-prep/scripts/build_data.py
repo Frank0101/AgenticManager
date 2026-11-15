@@ -1,9 +1,8 @@
 """Builds a prep's data.json from its raw files: the one model its report reads, every item and every fact worked out from them, once.
 
-As the sprint report's data.json: the report, its charts and the brief for
-the agent read these facts and never work them out again, and the final check
-rebuilds the file from the raw files and works the report's figures out again
-from the items, apart from this code. It needs no network, so rerunning it
+The report and its charts read these facts and never work them out again,
+and the final check rebuilds the file from the raw files and works the
+report's figures out again from the items, apart from this code. It needs no network, so rerunning it
 rebuilds the model from what step 7 fetched. Weeks are calendar weeks, Monday
 to Sunday, counted from a fixed Monday, so a day falls in the same week
 whatever the period, a few at a time when there would be more than MAX_POINTS.
@@ -12,9 +11,8 @@ import argparse
 import json
 import os
 from datetime import date, timedelta
-from urllib.parse import quote
 
-from common import (DATA, FOCUS_SHARE, PERSON, WORK_LISTS, epic_of, period_days, prep_dir, raw_work_problems,
+from common import (DATA, FOCUS_SHARE, project_of, PERSON, WORK_LISTS, epic_of, jira_search_url, pull_search_url, period_days, prep_dir, raw_work_problems,
                     read_json, read_raw_work, stops_on_failure, work_items, write_prep_file)
 
 # The searches data.json links to, by what they find: each list's, and the
@@ -135,7 +133,7 @@ def focus(resolved):
     if not ranked:
         projects = {}
         for issue in resolved:
-            project = issue["key"].rsplit("-", 1)[0]
+            project = project_of(issue["key"])
             projects[project] = projects.get(project, 0) + 1
         ranked = [{"key": key, "title": None, "url": None, "issues": count}
                   for key, count in sorted(projects.items(), key=lambda pair: (-pair[1], pair[0]))]
@@ -217,8 +215,7 @@ def search_urls(source, raw):
         return {**{f"{name}_search_url": jql and jira_search_url(raw["base_url"], jql) for name, jql in jqls.items()},
                 "epic_search_urls": epic_search_urls(raw)}
     if source == "github":
-        return {f"{name}_search_url": f"https://github.com/search?q={quote(raw[f'{name}_query'])}&type=pullrequests"
-                for name in WORK_LISTS[source]}
+        return {f"{name}_search_url": pull_search_url(raw[f"{name}_query"]) for name in WORK_LISTS[source]}
     return {}
 
 
@@ -245,11 +242,6 @@ def epic_search_urls(raw):
         urls[epic] = jira_search_url(
             raw["base_url"], f"{raw['resolved_jql']} AND ({' OR '.join(under)})")
     return urls
-
-
-def jira_search_url(base_url, jql):
-    """The address of the Jira search `jql` on the site at `base_url`."""
-    return f"{base_url}/issues/?jql={quote(jql)}"
 
 
 def main(argv=None):

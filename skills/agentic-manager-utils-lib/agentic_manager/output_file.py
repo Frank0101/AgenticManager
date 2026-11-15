@@ -116,8 +116,14 @@ def set_output_fields(name, relative, sets):
         else:
             raise SystemExit(f"{field!r}: there is no such field to set")
     with open(path, "w", encoding="utf-8") as f:
-        f.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+        f.write(json_text(data))
     return path, temporary
+
+
+def json_text(value):
+    """`value` as the JSON text every skill writes to a file: indented, its
+    characters as they are, ending with a newline."""
+    return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
 
 
 def read_json(path):

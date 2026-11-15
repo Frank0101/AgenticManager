@@ -8,19 +8,19 @@ timeline.
 import argparse
 import math
 import os
-from datetime import date, timedelta
+from datetime import date
 
 from common import (CHART_FILES, DATA_FILE, OUTCOME_COLOURS, OUTCOME_ROWS, OUTCOMES, display_date, known_sum, number,
                     outcome_total, pts, read_json, scope_group_label, unit, whole_percentage, write_report_file)
-from common import GRID, INK, MUTED, SURFACE, nice_step, svg, text, text_width
+from common import GRID, INK, MUTED, SURFACE, legend, nice_step, svg, text, text_width
 
 WEEKEND = "#e7e4dc"
 
-# The burndown's series. Commitment is the open pts of the original commitment;
-# Commitment + extra adds later scope, so it is never below; Ideal starts from
-# the same baseline, flat on the start day and over weekends, then even per
-# weekday to zero at the end; Spread is the commitment minus the ideal, positive
-# when behind. Blue and violet are close for deuteranopia, so each series also
+# The burndown's series, as data.json stores them. Commitment is the open pts
+# of the original commitment; Commitment + extra adds later scope, so it is
+# never below; Ideal starts from the same baseline, flat on the start day and
+# over weekends, then even per weekday to zero at the end; Spread is the
+# commitment minus the ideal, positive when behind. Blue and violet are close for deuteranopia, so each series also
 # has its own dash pattern, repeated in the legend: keep the four distinct.
 SERIES = {
     "committed": {"label": "Commitment", "color": "#2a78d6", "width": 2.4, "dash": None},
@@ -38,6 +38,22 @@ OUTCOME_MIN_BAR_SHARE = 0.5
 OUTCOME_MARGIN = 20
 OUTCOME_SEGMENTS = [(outcome, *OUTCOME_COLOURS[outcome])
                     for outcome in OUTCOMES]
+
+
+def write_charts(report_dir, data):
+    """Draw the report's charts from `data`, its data.json, into
+    `report_dir`'s _charts folder, and return their paths."""
+    series = build_series(data)
+    charts = {
+        "outcome_tickets": outcome_chart(data, is_points=False),
+        "outcome_pts": outcome_chart(data, is_points=True),
+        "burndown": burndown_chart(data, series),
+    }
+    paths = []
+    for name, content in charts.items():
+        paths.append(os.path.join(report_dir, CHART_FILES[name]))
+        write_report_file(paths[-1], content)
+    return paths
 
 
 # --- outcome charts
@@ -134,14 +150,9 @@ def outcome_chart(data, is_points):
         body.append(text(bracket_x - 8, middle + 4 + (i - (len(group_lines) - 1) / 2) * 15, line, size=size, color=color, anchor="end",
                          bold=i == 0))
 
-    legend_y = top + len(rows) * row_h + 14
-    lx = left
-    for _, seg_label, color, _ in outcome_segments(data):
-        body.append(
-            f'<rect x="{lx:.1f}" y="{legend_y - 10}" width="12" height="12" fill="{color}"/>')
-        body.append(text(lx + 18, legend_y, seg_label))
-        lx += 18 + text_width(seg_label, 12) + 24
-    return svg(width, legend_y + 18, body)
+    elements, bottom = legend([(seg_label, color, None) for _, seg_label, color, _ in outcome_segments(data)],
+                              left, width - OUTCOME_MARGIN, top + len(rows) * row_h + 4, size=12)
+    return svg(width, bottom, body + elements)
 
 
 def outcome_labels(data, is_points):
@@ -215,59 +226,35 @@ def outcome_segments(data):
 # --- burndown
 
 def build_series(data):
-    """The burndown's rows, from data.json's daily readings. The start day has
-    two points at the same x, so the drop between them is vertical: the whole
-    commitment at the start, Done or not, then that day's reading, as that
-    drop is work already Done and the day's changes, not delivery pace.
-    Unestimated pts (known_sum's None) are drawn at 0, as the lines need a
-    value, and each row's `unestimated` names the series whose value is
-    labelled "–" for it."""
-    actuals = {date.fromisoformat(
-        row["date"]): row for row in data["burndown"]}
-    sprint_start, sprint_end = date.fromisoformat(
-        data["sprint_start"]), date.fromisoformat(data["sprint_end"])
-    last_actual = max(actuals)
-
+    """The burndown's rows, from data.json's daily readings and ideal, drawn
+    as stored. The start day has two points at the same x, so the drop
+    between them is vertical: the whole commitment at the start, Done or not,
+    then that day's reading, as that drop is work already Done and the day's
+    changes, not delivery pace. Unestimated pts (known_sum's None) are drawn
+    at 0, as the lines need a value, and each row's `unestimated` names the
+    series whose value is labelled "–" for it."""
+    actuals = {row["date"]: row for row in data["burndown"]}
     baseline = data["burndown_baseline"]
     level = baseline or 0
-    weekdays = sum(1 for d in daterange(
-        sprint_start + timedelta(days=1), sprint_end) if is_weekday(d))
-
-    rows = [{"date": sprint_start, "label": "start", "committed": level, "total": level,
+    rows = [{"date": date.fromisoformat(data["sprint_start"]), "label": "start", "committed": level, "total": level,
              "ideal": level, "spread": 0, "unestimated": {"committed", "total"} if baseline is None else set()}]
-    # Actuals after the planned end run to the close or fetch; the ideal keeps
-    # its final planned value (the baseline when there were no later weekdays).
-    last_day = max(sprint_end, last_actual)
-    burned = 0
-    for day in daterange(sprint_start, last_day):
-        if sprint_start < day <= sprint_end and is_weekday(day):
-            burned += 1
-        ideal = round(level * (1 - burned / weekdays),
-                      2) if weekdays else level
-        row = {"date": day, "label": "close", "ideal": ideal,
+    # Days past the last actual, up to the planned end, have only the ideal.
+    for ideal in data["burndown_ideal"]:
+        row = {"date": date.fromisoformat(ideal["date"]), "label": "close", "ideal": ideal["ideal"],
                "committed": None, "total": None, "spread": None, "unestimated": set()}
-        if day <= last_actual:
+        actual = actuals.get(ideal["date"])
+        if actual:
             for key in ("committed", "total"):
-                row[key] = actuals[day][key] or 0
-                if actuals[day][key] is None:
+                row[key] = actual[key] or 0
+                if actual[key] is None:
                     row["unestimated"].add(key)
-            row["spread"] = round(row["committed"] - ideal, 2)
+            row["spread"] = actual["spread"]
         rows.append(row)
 
-    return {"rows": rows, "days": list(daterange(sprint_start, last_day)), "baseline": baseline,
-            "sprint_start": sprint_start, "sprint_end": sprint_end,
-            "last_actual": last_actual, "weekdays": weekdays}
-
-
-def daterange(start, end):
-    day = start
-    while day <= end:
-        yield day
-        day += timedelta(days=1)
-
-
-def is_weekday(day):
-    return day.weekday() < 5
+    return {"rows": rows, "days": [row["date"] for row in rows[1:]],
+            "weekends": {date.fromisoformat(row["date"]) for row in data["burndown_ideal"] if row["weekend"]},
+            "baseline": baseline, "sprint_start": rows[0]["date"],
+            "last_actual": date.fromisoformat(data["burndown"][-1]["date"]), "weekdays": data["burndown_weekdays"]}
 
 
 def burndown_chart(data, series):
@@ -297,7 +284,7 @@ def burndown_chart(data, series):
              size=11, color=MUTED),
     ]
     for day in days:
-        if not is_weekday(day):
+        if day in series["weekends"]:
             x1 = x_of(day)
             x0 = x1 - step_x if day_index[day] else left
             body.append(
@@ -356,15 +343,9 @@ def burndown_chart(data, series):
         body.append(text(x, axis_y, day.strftime("%d/%m"), size=10, color=MUTED, anchor="end",
                          extra=f' transform="rotate(-45 {x:.1f} {axis_y:.1f})"'))
 
-    legend_y = axis_y + 48
-    lx = left
-    for spec in SERIES.values():
-        dash = f' stroke-dasharray="{spec["dash"]}"' if spec["dash"] else ""
-        body.append(f'<line x1="{lx}" x2="{lx + 30}" y1="{legend_y - 4}" y2="{legend_y - 4}" '
-                    f'stroke="{spec["color"]}" stroke-width="{spec["width"]}" stroke-linecap="round"{dash}/>')
-        body.append(text(lx + 38, legend_y, spec["label"]))
-        lx += 38 + text_width(spec["label"], 12) + 28
-    return svg(width, legend_y + 16, body)
+    elements, bottom = legend([(spec["label"], spec["color"], (spec["width"], spec["dash"]))
+                               for spec in SERIES.values()], left, width - right, axis_y + 38, size=12)
+    return svg(width, bottom, body + elements)
 
 
 def value_text(row, key):
@@ -394,18 +375,10 @@ def main():
     args = parser.parse_args()
 
     data = read_json(os.path.join(args.report_dir, DATA_FILE))
-    series = build_series(data)
     if args.print_series:
-        print_series(series)
+        print_series(build_series(data))
         return
-    charts = {
-        "outcome_tickets": outcome_chart(data, is_points=False),
-        "outcome_pts": outcome_chart(data, is_points=True),
-        "burndown": burndown_chart(data, series),
-    }
-    for name, content in charts.items():
-        path = os.path.join(args.report_dir, CHART_FILES[name])
-        write_report_file(path, content)
+    for path in write_charts(args.report_dir, data):
         print("wrote", path)
 
 

@@ -12,12 +12,11 @@ import argparse
 import html
 import os
 import re
-from datetime import date
 from typing import cast
 
 from common import (browse_url, epic_title, SENTENCE_BREAK, CHART_FILES, COMMENTARY_WORDS, CONTENT_FILE, DATA_FILE, EPIC_COMMENTARY_WORDS, FIELD_TABLE_HEAD,
                     JIRA_CELL, NO_EPIC, OUTCOME_COLOURS, PULL_STATES, RETRO_NOTES, SCOPE_GROUPS, STATUS_HEADING,
-                    ACHIEVEMENTS_WORDS, BLOCKERS_WORDS, GOAL_REASON_WORDS, ai, allowed_verdicts, latest_points,
+                    ACHIEVEMENTS_WORDS, BLOCKERS_WORDS, GOAL_REASON_WORDS, ai, latest_points,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty, ratio,
                     report_file, scope_group_label, sprint_key, text_rule_problems, ticket_ref, unit, whole_percentage,
                     word_count, write_report_file)
@@ -46,6 +45,19 @@ UNESTIMATED = ("of them without an estimate", "unestimated")
 FROM_COMMITMENT = ("of them from the commitment", "from the commitment")
 
 
+def write_report(report_dir):
+    """Write the report in `report_dir` from its data.json and content.json,
+    and return its path; exits, writing nothing, when content.json breaks a
+    rule, each problem naming the field to fix."""
+    data = read_json(os.path.join(report_dir, DATA_FILE))
+    content = cast(dict, strip_em_dashes(
+        read_json(os.path.join(report_dir, CONTENT_FILE))))
+    validate_content(content, data)
+    out = os.path.join(report_dir, report_file(data["label"]))
+    write_report_file(out, Report(data, content).build())
+    return out
+
+
 def strip_em_dashes(value):
     """The agent's text with each em dash, and the spaces around it, as a
     comma, at any depth: the report uses none. Copied Jira text (the goal,
@@ -70,13 +82,14 @@ def validate_content(content, data):
             or any(not isinstance(n, str) or not n.strip().endswith("?") for n in notes)):
         problems.append(
             f"retro_notes must be a list of 1-{RETRO_NOTES} notes, each ending with a question")
-    if content.get("goal_verdict") not in allowed_verdicts(data):
+    verdicts = data["goal_verdicts"]
+    if content.get("goal_verdict") not in verdicts:
         problems.append("goal_verdict must be one of: " +
-                        ", ".join(f'"{v}"' for v in allowed_verdicts(data)))
+                        ", ".join(f'"{v}"' for v in verdicts))
     # A verdict chosen among several needs its reason; the only one offered,
     # such as for a sprint without a goal, says it all.
     reason = content.get("goal_reason")
-    if len(allowed_verdicts(data)) > 1:
+    if len(verdicts) > 1:
         if not isinstance(reason, str) or not reason.strip():
             problems.append(
                 "goal_reason must be a non-empty string: one sentence on why the goal got its verdict")
@@ -497,8 +510,7 @@ class Report:
 
     def days_left(self):
         """How long a running sprint has left, as a clause."""
-        days = (date.fromisoformat(
-            self.data["sprint_end"]) - date.fromisoformat(self.data["today"])).days
+        days = self.data["days_left"]
         if days == 0:
             return ", with no days left"
         if days > 0:
@@ -578,14 +590,7 @@ def main():
     parser.add_argument("--report-dir", required=True,
                         help="report folder holding data.json and content.json")
     args = parser.parse_args()
-
-    data = read_json(os.path.join(args.report_dir, DATA_FILE))
-    content = cast(dict, strip_em_dashes(
-        read_json(os.path.join(args.report_dir, CONTENT_FILE))))
-    validate_content(content, data)
-    out = os.path.join(args.report_dir, report_file(data["label"]))
-    write_report_file(out, Report(data, content).build())
-    print("wrote", out)
+    print("wrote", write_report(args.report_dir))
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 """Unit tests for skills/agentic-manager-slides-deck/scripts/check_deck.py.
 Run with: python3 tests/run.py agentic-manager-slides-deck
 
-Each test builds the fixture's deck with make_deck.py, then breaks the page or
+Each test builds the fixture's deck with finish_deck.py, then breaks the page or
 the folder the way a generator bug or a stray file would, and expects the
 check to say so.
 """
@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_deck  # noqa: E402
 import common  # noqa: E402
-import make_deck  # noqa: E402
+import finish_deck  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from deck_fixture import DECK, content, temp_output, write_asset, write_credited_asset, write_slides  # noqa: E402
 
@@ -29,7 +29,7 @@ class CheckDeckTest(unittest.TestCase):
         self.folder = temp_output(self)
         self.deck = os.path.join(self.folder, DECK)
         write_slides(self.folder, content())
-        self.assertTrue(make_deck.make_deck(DECK)["ok"])
+        self.assertTrue(finish_deck.finish(DECK)["ok"])
         with open(os.path.join(self.deck, PAGE), encoding="utf-8") as f:
             self.page = f.read()
 
@@ -86,7 +86,7 @@ class CheckDeckTest(unittest.TestCase):
         data = content()
         data["slides"][0]["html"].append("<img src='{{asset:acme-logo}}'>")
         write_slides(self.folder, data)
-        self.assertTrue(make_deck.make_deck(DECK)["ok"])
+        self.assertTrue(finish_deck.finish(DECK)["ok"])
         with open(os.path.join(self.deck, PAGE), encoding="utf-8") as f:
             page = f.read()
         # The check reads where each link leads: one that reaches no file, or
@@ -110,7 +110,7 @@ class CheckDeckTest(unittest.TestCase):
         data = content()
         data["slides"][1]["html"].append("<img src='{{asset:earth}}'>")
         write_slides(self.folder, data)
-        self.assertTrue(make_deck.make_deck(DECK)["ok"])
+        self.assertTrue(finish_deck.finish(DECK)["ok"])
         with open(os.path.join(self.deck, PAGE), encoding="utf-8") as f:
             page = f.read()
         self.assertEqual(self.errors_of(page.replace("Example Agency", "Someone")),
@@ -121,7 +121,7 @@ class CheckDeckTest(unittest.TestCase):
         data["slides"][2]["html"].append(
             "<figure data-image='the Earth seen from space'><svg viewBox='0 0 4 4'></svg></figure>")
         write_slides(self.folder, data)
-        self.assertEqual(make_deck.make_deck(DECK)["stand_ins"],
+        self.assertEqual(finish_deck.finish(DECK)["stand_ins"],
                          ["slide 3: the Earth seen from space"])
 
     def test_the_folder_holds_only_the_decks_files(self):

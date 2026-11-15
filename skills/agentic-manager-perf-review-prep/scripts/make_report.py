@@ -1,33 +1,20 @@
-"""Writes a prep's report, <Person>_Review_Prep.md, and its charts from data.json, then checks them: for now, the person's Jira figures.
+"""Writes a prep's report, <Person>_Review_Prep.md, from data.json: for now, the person's Jira figures.
 
 Every figure is one of data.json's facts, and every link one of its search
 addresses, so the report can't count differently from the model; the charts
-are make_charts.py's.
+it shows are make_charts.py's.
 """
-import argparse
-import json
-import os
-
-from check_report import report_problems
-from common import (CHARTS_DIR, FOCUS_SHARE, JIRA_CELLS, EPICS_CHART, DATA, FOLDER_NAME, PERSON, average_text, esc,
-                    number, prep_dir, read_json, report_name, shown, stops_on_failure, types_text, write_output_file)
-from make_charts import draw
+from common import (CHARTS_DIR, EPICS_CHART, FOCUS_SHARE, FOLDER_NAME, JIRA_CELLS, average_text, esc, number,
+                    report_name, shown, types_text, write_output_file)
 
 
-def make_report(prep):
-    """Write the prep `prep`'s report and its charts from data.json, then
-    check them; returns {report, problems}, the report's path and what the
-    check found."""
-    folder = prep_dir(prep)
-    person = read_json(os.path.join(folder, PERSON))
-    data = read_json(os.path.join(folder, DATA))
-    for name, content in draw(data).items():
-        write_output_file(
-            FOLDER_NAME, f"{prep}/{CHARTS_DIR}/{name}", content.encode("utf-8"))
+def write_report(prep, person, data):
+    """Write the prep `prep`'s report from `person`, its person.json, and
+    `data`, its data.json; returns (path, text)."""
     report = render(person, data)
     path, _ = write_output_file(
         FOLDER_NAME, f"{prep}/{report_name(prep)}", report.encode("utf-8"))
-    return {"report": path, "problems": report_problems(report, data, os.listdir(os.path.join(folder, CHARTS_DIR)))}
+    return path, report
 
 
 # The report.
@@ -60,8 +47,13 @@ def jira_section(jira):
                      for name, _ in JIRA_CELLS)
     charts = "".join(f'<td><img src="{CHARTS_DIR}/{chart}" width="100%" alt="{figures[name][3]}"></td>'
                      for name, chart in JIRA_CELLS)
-    return ['<table width="100%">', f"<tr>{heads}</tr>", f"<tr>{values}</tr>", f"<tr>{charts}</tr>",
-            "</table>"]
+    return table(heads, values, charts)
+
+
+def table(*rows):
+    """A report table's lines: the full width, each of `rows`, its cells
+    already written, aligned to the top, as HTML centres them by default."""
+    return ['<table width="100%">', *(f'<tr valign="top">{cells}</tr>' for cells in rows), "</table>"]
 
 
 def figure(value, url):
@@ -77,27 +69,8 @@ def focus_section(jira):
                       f'{esc(entry["title"] or "")} ({entry["issues"]})</li>' if entry["url"] else
                       f'<li>{esc(entry["key"])} ({entry["issues"]})</li>' for entry in jira["focus"])
     note = (f"the epics with the most resolved issues, which together hold at least "
-            f"{round(FOCUS_SHARE * 100)}% of the issues that have an epic")
-    return ['<table width="100%">',
-            f'<tr><td width="50%"><img src="{CHARTS_DIR}/{EPICS_CHART}" width="100%" '
-            f'alt="Resolved issues by epic"></td>',
-            f"<td width=\"50%\" valign=\"top\"><b>Main focus</b> ({note}):<ol>{entries}</ol></td></tr>",
-            "</table>"]
-
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Write the prep's report, <Person>_Review_Prep.md, and its charts from data.json, then check them.",
-        epilog="Prints one line of JSON: report, the report's path, and problems, what the check found, "
-        "empty when it passes. Exits 1 when it finds any.")
-    parser.add_argument("--prep", required=True,
-                        help="the prep's folder, <Person>_<YY-MM-DD>, as init_prep.py printed it")
-    args = parser.parse_args(argv)
-    with stops_on_failure():
-        result = make_report(args.prep)
-    print(json.dumps(result, ensure_ascii=False))
-    return 1 if result["problems"] else 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+            f"{round(FOCUS_SHARE * 100)}% of the issues that have an epic" if any(entry["url"] for entry in jira["focus"])
+            else f"no resolved issue has an epic: the projects with the most of them, which together hold at least "
+            f"{round(FOCUS_SHARE * 100)}% of them")
+    return table(f'<td width="50%"><img src="{CHARTS_DIR}/{EPICS_CHART}" width="100%" alt="Resolved issues by epic">'
+                 f'</td><td width="50%"><b>Main focus</b> ({note}):<ol>{entries}</ol></td>')

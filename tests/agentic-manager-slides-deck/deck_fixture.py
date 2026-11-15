@@ -38,6 +38,11 @@ CREDITED = ("# The Earth\n\n**Shows:** the Earth from space\n\n**Credit:** Examp
             "**Image:** https://example.org/files/earth.jpg\n")
 
 
+def slide(*lines):
+    """A slide of the HTML `lines`."""
+    return {"html": list(lines)}
+
+
 def content():
     return copy.deepcopy(CONTENT)
 

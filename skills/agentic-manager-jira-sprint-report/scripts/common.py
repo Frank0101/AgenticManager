@@ -1,31 +1,31 @@
 """Helpers shared by the sprint-report scripts: the report's files and scripts, a
 ticket's events and what they say at a past moment (its state, sprint moves,
 whether it was a blocker candidate), the report's vocabulary and formats, goal
-verdicts, epics and commentary groups, and a description's pieces.
+verdicts' words, epics and commentary groups, and a description's pieces.
 
 It also puts the agentic-manager-utils-lib skill, installed next to this one, on
 sys.path and imports what the scripts need from it. The scripts import those
 names from here, never from agentic_manager directly, so they don't depend on
 the order of their imports."""
-import json
 import os
 import re
 import subprocess
 import sys
-from datetime import date, tzinfo
+from datetime import tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
-from agentic_manager.output_file import read_json, write_output_file  # noqa: E402,F401
-from agentic_manager.text import HEADING, INLINE_LINK, display_date, link_text, number, word_count  # noqa: E402,F401
-from agentic_manager.svg import GRID, INK, MUTED, SURFACE, nice_step, svg, text, text_width  # noqa: E402,F401
+from agentic_manager.output_file import json_text, read_json, write_output_file  # noqa: E402,F401
+from agentic_manager.text import HEADING, INLINE_LINK, display_date, link_text, number, plural, word_count  # noqa: E402,F401
+from agentic_manager.svg import GRID, INK, MUTED, SURFACE, legend, nice_step, svg, text, text_width  # noqa: E402,F401
 from agentic_manager.output_folder import CHARTS_DIR, RAW_DIR, clear_folder, day_folder, document_name, output_folder  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order,  # noqa: E402,F401
                                   parse_ts, plain_text, project_of)
 from agentic_manager.batch import gather  # noqa: E402,F401
+from agentic_manager.period import days  # noqa: E402,F401
 from agentic_manager.failures import GITHUB_FAILED, stops_on_failure  # noqa: E402,F401
 from agentic_manager.github import GH_UNAVAILABLE, gh_available  # noqa: E402,F401
 from agentic_manager.ticket_pulls import pulls_by_ticket, read_events  # noqa: E402,F401
@@ -126,7 +126,7 @@ OUTCOME_COLOURS = {"completed": ("#0ca30c", "#ffffff"), "not_completed": ("#fab2
                    "descoped": ("#b5b2aa", INK)}
 
 # The groups of an epic's commentary, in the order it shows them (see
-# build_sprint_data.py's scope_group).
+# build_data.py's scope_group).
 SCOPE_GROUPS = ("completed", "in_review", "not_completed", "descoped")
 
 # A pull request's states as at the end, in the order the section counts them.
@@ -185,7 +185,7 @@ def report_file(label):
 
 def write_json(path, payload):
     """Writes a value as indented JSON inside the skill's output folder."""
-    write_report_file(path, json.dumps(payload, indent=2))
+    write_report_file(path, json_text(payload))
 
 
 def write_report_file(path, text):
@@ -573,11 +573,6 @@ def unit(count):
     return plural(count, "ticket", "tickets")
 
 
-def plural(count, one, many):
-    """The word for `count` things: `one` for exactly 1, else `many`."""
-    return one if count == 1 else many
-
-
 def pts(points):
     """Story points: "3 pts", "1 pt", or "– pts" when there's no estimate."""
     if points is None:
@@ -670,18 +665,6 @@ def banned_words(text):
 def estimate(points):
     """An estimate for display: "–" when there is none."""
     return "–" if points is None else number(points)
-
-
-def allowed_verdicts(data):
-    """The goal verdicts a sprint allows: with or without a goal, running or closed."""
-    if not data["sprint_goal"].strip():
-        return GOAL_VERDICTS["no_goal"]
-    if data["sprint_status"] == "closed":
-        return GOAL_VERDICTS["closed"]
-    start, end, today = (date.fromisoformat(data[k]) for k in (
-        "sprint_start", "sprint_end", "today"))
-    early = today < start + (end - start) / 2
-    return GOAL_VERDICTS["early" if early else "active"]
 
 
 def spell_epic(spell):

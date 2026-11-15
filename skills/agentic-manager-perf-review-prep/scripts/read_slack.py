@@ -18,11 +18,7 @@ READING_ANSWER = """{"items": [
   {"date": "YYYY-MM-DD", "link": "https://<workspace>.slack.com/archives/<channel>/p<message>",
    "synopsis": "In #<channel>, a cross-team channel, posted the rollout plan; three people asked..."}
  ]}"""
-MERGE_ANSWER = """{"going_well": [{"point": "...", "values": ["<each company value it clearly shows or calls for, at most two>"],
-                 "links": ["https://...", ...]}],
- "to_improve": [{"point": "...", "values": [], "links": ["https://..."]}],
- "context": [{"point": "...", "links": ["https://...", ...]}],
- "in_doubt": ["YYYY-MM-DD: what the conversation says, and why you left it out"]}"""
+MERGE_ANSWER = reading.merge_answer("https://...", "conversation")
 
 
 def gather(prep):
@@ -41,7 +37,7 @@ def task_text(prep, task, material):
     the filters that bound the month's searches, Slack's after: and before:
     excluding the day they name."""
     content = material["content"]
-    month = content["months"][task.split(":")[1]]
+    month = content["months"][reading.task_month(task)]
     after = date.fromisoformat(month["start"]) - timedelta(days=1)
     before = date.fromisoformat(month["end"]) + timedelta(days=1)
     account = content["account"]
@@ -56,7 +52,7 @@ def task_text(prep, task, material):
 
 def task_days(material, task):
     """Every day of the month `task` within the period."""
-    return days_between(**material["content"]["months"][task.split(":")[1]])
+    return days_between(**material["content"]["months"][reading.task_month(task)])
 
 
 SOURCE = reading.Source(name="slack", script="read_slack.py", output=SLACK, what="Slack summary", gather=gather,

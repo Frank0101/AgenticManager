@@ -2,7 +2,7 @@
 
 ## Rules that always apply
 
-For you, working in this repo, whatever the task. This file is for building the skills: whoever installs them doesn't have it, even though you have it while you run them here, so every rule an agent needs while running a skill is stated in that skill.
+For you, working in this repo, whatever the task. This file, with the [archetypes](#archetypes) it is split into, is for building the skills: whoever installs them doesn't have it, even though you have it while you run them here, so every rule an agent needs while running a skill is stated in that skill.
 
 ### Data and config
 
@@ -36,13 +36,17 @@ skills/<skill>/          one folder per skill
 skills/agentic-manager-utils-lib/
   agentic_manager/       Python package with the helpers shared by all the skills:
                          their scripts import it
+archetypes/              the kinds of skill, each a file with the pattern its skills follow
+                         (see Archetypes)
 tests/<skill>/           tests for that skill, mirroring skills/: unit tests per script or
                          module (test_<module>.py) and end-to-end tests (test_e2e_*.py)
 tests/repo/              checks of the repo's own integrity: every module and listed
                          function says what it is for, briefly, every module reads
                          top-down, every script answers --help, every link to a
                          section in AGENTS.md and each SKILL.md reaches a heading,
-                         and README.md's table lists every skill
+                         README.md's table lists every skill with its archetype, a
+                         run's folders and document take the library's names, and
+                         every skill has what its archetype requires
 tests/run.py             runs every skill's tests, each skill in its own process (its own
                          tests are in tests/runner/)
 .claude/skills  ─┐       symlinks to skills/, so the skills load when you run
@@ -104,13 +108,25 @@ Skills that split the work this way follow a model-view approach, with the check
 
 ## Writing a skill
 
+### Archetypes
+
+Every skill follows one archetype, the kind of skill it is, whose pattern it follows: the steps it takes, in order, and the files and scripts they need. Each archetype is a file of [archetypes/](archetypes/), on top of the rules here, which apply to every skill:
+
+- [Data report](archetypes/data-report.md): a document built from data the skill fetches or reads.
+- [Research report](archetypes/research-report.md): a document built from research, with a ledger of what it found as its model.
+- [Conversation document](archetypes/conversation-document.md): a document built from what the user gives in the conversation.
+
+Archetypes differ where their work differs; a step that is the same in several, such as Start or Finish, takes the same name, scripts and form in each, and its file states it in the same words, with only what is the archetype's own added. An archetype's file adds only what is its own: a rule every skill follows stays here. An archetype applies [The shape of a skill](#the-shape-of-a-skill) to its kind: when the two disagree, the shape decides, and a change to a rule there is carried into every archetype it affects.
+
+A skill declares its archetype in README.md's table of skills, where `tests/repo/` checks that it names one of these files and that the skill has what that file says its tests check. A new kind of skill gets a new archetype file before its first skill. When an archetype's file changes, update the checks `tests/repo/` makes for it in the same change, and the next refactoring brings every skill of that archetype in line with it. The library isn't a skill of any archetype.
+
 ### The shape of a skill
 
 Every skill other than a utility starts with the prerequisite, step 1. A skill that produces a document then follows the rest of these steps. Each script step is one command, pre-approved in the frontmatter.
 
 1. **Prerequisite:** run the library's `check_config.py` and state the sources the skill needs (see [Prerequisite, sources and permissions](#prerequisite-sources-and-permissions)).
 2. **Gather:** collect what the document is built from.
-   - When it is a fetch of known data, one script does it, builds everything deterministic and writes a brief holding only what the agent needs. It prints one line of JSON on stdout (the paths the next step needs) and progress on stderr; on failure it exits non-zero with a message that says what to do.
+   - When it is a fetch of known data, one script does it, builds everything deterministic and writes a brief holding only what the agent needs. A source only the agent can reach, such as an `mcp` one, it fetches itself, and a script records what the source gave. It prints one line of JSON on stdout (the paths the next step needs) and progress on stderr; on failure it exits non-zero with a message that says what to do.
    - When it is research, the agent does it and keeps its working notes in files, such as a ledger of sources and findings, written through `output_file.py` or a script of the skill that writes through the library. Scripts own what is mechanical about them: the folder, the skeleton, the allowed values and the structure check. They also answer the agent's lookups and print a brief of the notes for writing the document, so the agent doesn't read a notes file whole to research or write.
    - When that work is a long series of tasks a script hands out, the main agent coordinates and does none of the tasks itself, unless the skill leaves one to it. It gives each of the others to a fresh subagent, with only what the task holds, asks the user what only they can answer, confirms each answer was accepted and hands out the next. A fresh agent sees only its task, so each step stays independent of the work before it, and the main agent's context stays small over a long run.
 3. **Write:** the agent produces only the parts that need judgment, as a JSON file written through `output_file.py`, or a script of the skill that writes through the library. The skill gives its schema, the rules for each part and their limits.

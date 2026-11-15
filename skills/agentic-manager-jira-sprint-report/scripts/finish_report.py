@@ -1,15 +1,36 @@
 """Everything after the agent writes content.json: write the report, draw the
 charts and check it.
 
-It prints only what needs attention, as the agent would otherwise read hundreds
-of passing checks to find the one to fix.
+The one command of the step: each part is a module of its own, the report
+make_report.py's, the charts make_charts.py's and the check check_report.py's,
+and this script runs them in order, in one process. It prints only what needs
+attention, as the agent would otherwise read hundreds of passing checks to find
+the one to fix.
 """
 import argparse
 import os
-import subprocess
 import sys
 
-from common import DATA_FILE, read_json, report_file, run_script
+from check_report import check_report
+from common import DATA_FILE, read_json
+from make_charts import write_charts
+from make_report import write_report
+
+
+def finish(report_dir):
+    """Write the report in `report_dir` and its charts, then check them:
+    (the report's path, the Checker). Exits, with what to fix on stdout,
+    when content.json breaks a rule or the charts can't be drawn."""
+    try:
+        report = write_report(report_dir)
+        write_charts(report_dir, read_json(
+            os.path.join(report_dir, DATA_FILE)))
+    except SystemExit as stopped:
+        if not isinstance(stopped.code, str):
+            raise
+        print(stopped.code)
+        sys.exit(1)
+    return report, check_report(report_dir)
 
 
 def main():
@@ -21,25 +42,12 @@ def main():
     parser.add_argument("--report-dir", required=True,
                         help="report folder holding data.json and content.json")
     args = parser.parse_args()
-    for script in ("make_report.py", "make_charts.py"):
-        result = run_script(script, "--report-dir",
-                            args.report_dir, stderr=subprocess.STDOUT)
-        if result.returncode:
-            sys.stdout.write(result.stdout)
-            sys.exit(result.returncode)
-    result = run_script("check_report.py", "--report-dir",
-                        args.report_dir, stderr=subprocess.STDOUT)
-    lines = result.stdout.strip().splitlines()
-    if result.returncode and not any(line.strip().startswith("FAIL") for line in lines):
-        # The check itself crashed: show all of it, as content.json isn't the cause.
-        sys.stdout.write(result.stdout)
-        sys.exit(result.returncode)
-    print("\n".join(
-        [line for line in lines if line.strip().startswith("FAIL")] + lines[-1:]))
-    report = os.path.join(args.report_dir, report_file(
-        read_json(os.path.join(args.report_dir, DATA_FILE))["label"]))
-    print(("report: " if not result.returncode else "report (inspect the failed checks before rerunning): ") + report)
-    sys.exit(result.returncode)
+    report, checker = finish(args.report_dir)
+    for line in checker.failures:
+        print(f"  FAIL  {line}")
+    print(checker.summary())
+    print(("report (inspect the failed checks before rerunning): " if checker.failures else "report: ") + report)
+    sys.exit(1 if checker.failures else 0)
 
 
 if __name__ == "__main__":

@@ -370,31 +370,6 @@ class CommonTest(unittest.TestCase):
             with self.subTest(name), self.assertRaisesRegex(SystemExit, expected):
                 common.prep_dir(prep)
 
-    def test_script_command(self):
-        # By the folder the agent ran one of the skill's scripts from, even
-        # through a symlink, as the skill pre-approves it; by the skill's own
-        # folder otherwise.
-        scripts = os.path.dirname(os.path.realpath(common.__file__))
-        with tempfile.TemporaryDirectory() as folder:
-            link = os.path.join(folder, "scripts")
-            os.symlink(scripts, link)
-            # name: (sys.argv[0], the folder expected in the command)
-            cases = [("the script itself", os.path.join(link, "jira_ticket.py"), link),
-                     ("another of the skill's scripts", os.path.join(
-                         link, "read_notes.py"), link),
-                     ("not one of the skill's scripts", os.path.join(folder, "run.py"), scripts)]
-            for name, ran, expected in cases:
-                with self.subTest(name), mock.patch.object(sys, "argv", [ran]):
-                    self.assertEqual(common.script_command("jira_ticket.py"),
-                                     f"python3 {os.path.join(expected, 'jira_ticket.py')}")
-        # The library's module, beside the skill's folder, as the frontmatter
-        # names it: ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/...
-        with mock.patch.object(sys, "argv", [os.path.join(scripts, "read_notes.py")]):
-            command = common.library_command("extract_saved.py")
-        self.assertEqual(command, "python3 " + os.path.join(os.path.dirname(scripts), "..", "agentic-manager-utils-lib",
-                                                            "agentic_manager", "extract_saved.py"))
-        self.assertTrue(os.path.isfile(command.removeprefix("python3 ")))
-
 
 if __name__ == "__main__":
     unittest.main()

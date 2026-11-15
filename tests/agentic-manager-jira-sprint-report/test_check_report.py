@@ -521,12 +521,54 @@ class ChecksTest(unittest.TestCase):
              "model: every ticket with a spell has its events, and no other ticket"),
             ("a ticket without its events", lambda d: d["ticket_events"].pop("PROJ-3"),
              "model: every ticket with a spell has its events, and no other ticket"),
+            ("an ideal off its pace", lambda d: d["burndown_ideal"][3].update(ideal=5),
+             "model: the burndown's ideal burns"),
+            ("an ideal on a weekend that isn't one", lambda d: d["burndown_ideal"][1].update(weekend=True),
+             "model: the burndown's ideal burns"),
+            ("an ideal that stops short", lambda d: d["burndown_ideal"].pop(),
+             "model: the burndown's ideal burns"),
+            ("weekdays miscounted", lambda d: d.update(burndown_weekdays=10),
+             "model: the burndown's ideal burns"),
+            ("a spread that isn't the gap to the ideal", lambda d: d["burndown"][2].update(spread=0.5),
+             "model: each burndown reading's spread is its open commitment minus the ideal"),
+            ("a verdict the closed sprint doesn't allow", lambda d: d.update(goal_verdicts=["On track", "At risk"]),
+             "model: the goal verdicts offered are"),
+            ("days left for a closed sprint", lambda d: d.update(days_left=3),
+             "model: a closed sprint has no days left"),
+            ("a carry-over its events don't give", lambda d: d["spells"][0].update(carriedIn=True),
+             "model: the carried-over tickets are those in the previous sprint when it closed ['PROJ-1']"),
+            ("a carry-over left out", lambda d: d["spells"][1].update(carriedIn=False),
+             "model: the carried-over tickets are those in the previous sprint when it closed ['PROJ-2']"),
+            ("a blocker candidate its events don't give", lambda d: d["blocker_candidate_keys"].append("PROJ-3"),
+             "model: the blocker candidates are the tickets flagged, blocked or high priority at the end"),
+            ("a blocker candidate left out", lambda d: d["blocker_candidate_keys"].clear(),
+             "model: the blocker candidates are the tickets flagged, blocked or high priority at the end"),
         ]
         for name, breakage, expected in cases:
             with self.subTest(name):
                 data = sprint_data()
                 breakage(data)
                 self.assert_fails(expected, data=data)
+
+    def test_running_sprint_facts(self):
+        # A running sprint, 02/03 to 13/03: too early to tell before its
+        # halfway day, 07/03, and its days left to the planned end.
+        running = {"sprint_status": "active", "sprint_complete_date": None}
+        cases = [
+            ("early", {"today": "2026-03-06"}, {}, []),
+            ("past halfway", {"today": "2026-03-10"}, {}, []),
+            ("early, offered a verdict", {"today": "2026-03-06"}, {"goal_verdicts": ["On track", "At risk"]},
+             ["model: the goal verdicts offered are ('Too early to tell',)"]),
+            ("days left off by one", {"today": "2026-03-10"}, {"days_left": 4},
+             ["model: the days left are 3, to the planned end"]),
+        ]
+        for name, changes, breakage, expected in cases:
+            with self.subTest(name):
+                data = sprint_data(**running, **changes)
+                data.update(breakage)
+                failures = [f for f in self.failures(
+                    data=data) if f.startswith("model: ")]
+                self.assertEqual(failures, expected)
 
     def test_missing_parts(self):
         # A chart beside the report, or the tables and sections in it.

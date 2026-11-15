@@ -132,7 +132,7 @@ class FetchWorkTest(unittest.TestCase):
         # Opened and merged as gh returns them, only in the organisations gh
         # belongs to, with the same searches on github.com.
         run = FakeGh({"--author": [pr(1, closed="2026-09-03T10:00:00Z")]})
-        with mock.patch.object(common, "gh_available", return_value=True):
+        with mock.patch("agentic_manager.github.gh_available", return_value=True):
             raw = fetch_work.github_raw("janedoe", PERSON, run)
         self.assertEqual({key: value for key, value in raw.items() if key not in ("opened", "merged")},
                          {"start": "2026-08-10", "end": "2026-11-10", "orgs": ["acme"],

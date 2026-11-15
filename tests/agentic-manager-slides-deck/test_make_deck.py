@@ -8,8 +8,6 @@ import os
 import re
 import sys
 import unittest
-from pathlib import Path
-from unittest import mock
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
@@ -19,11 +17,7 @@ import check_deck  # noqa: E402
 import common  # noqa: E402
 import make_deck  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from deck_fixture import CREDIT, DECK, content, temp_output, write_asset, write_credited_asset, write_slides  # noqa: E402
-
-
-def slide(*lines):
-    return {"html": list(lines)}
+from deck_fixture import content, slide  # noqa: E402
 
 
 def chart_data(page):
@@ -189,16 +183,6 @@ class ProblemsTest(unittest.TestCase):
 
 
 class RingTest(unittest.TestCase):
-    def test_segment_path(self):
-        # Known paths: a 57° donut segment, and a 270° pie segment (large-arc flag set).
-        cases = [((120, 120, 88, 44, -88.5, -31.5),
-                  "M32.03,117.7 A88,88,0,0,1,74.02,44.97 L97.01,82.48 A44,44,0,0,0,76.02,118.85 Z"),
-                 ((100, 100, 80, 0, 0, 270),
-                  "M100,20 A80,80,0,1,1,20,100 L100,100 A0,0,0,1,0,100,100 Z")]
-        for args, expected in cases:
-            with self.subTest(args):
-                self.assertEqual(make_deck.segment_path(*args), expected)
-
     def test_segments_share_the_circle_by_value(self):
         # Values 1, 2 and 1 with 4° gaps starting at 12 o'clock: 90°, 180°
         # and 90° wide, each 2° in from its share's edges.
@@ -210,9 +194,9 @@ class RingTest(unittest.TestCase):
         paths = re.findall(r'<path d="([^"]+)" fill="(\w+)"/>', svg)
         self.assertEqual([fill for _, fill in paths], ["red", "blue", "green"])
         self.assertEqual([d for d, _ in paths],
-                         [make_deck.segment_path(100, 100, 100, 50, 2, 88),
-                          make_deck.segment_path(100, 100, 100, 50, 92, 268),
-                          make_deck.segment_path(100, 100, 100, 50, 272, 358)])
+                         [common.arc_segment(100, 100, 100, 50, 2, 88),
+                          common.arc_segment(100, 100, 100, 50, 92, 268),
+                          common.arc_segment(100, 100, 100, 50, 272, 358)])
 
 
 class BuildTest(unittest.TestCase):
@@ -270,68 +254,6 @@ class BuildTest(unittest.TestCase):
         self.assertNotIn("<", line)
         self.assertEqual(json.loads(
             line)["revenue"]["data"]["labels"], ["</script><b>"])
-
-
-class MakeDeckTest(unittest.TestCase):
-    def setUp(self):
-        self.folder = temp_output(self)
-
-    def test_invalid_slides_write_nothing(self):
-        data = content()
-        data["title"] = ""
-        write_slides(self.folder, data)
-        with self.assertRaisesRegex(SystemExit, "nothing was written:\n  - title: must be one"):
-            make_deck.make_deck(DECK)
-        self.assertEqual(os.listdir(os.path.join(
-            self.folder, DECK)), ["slides.json"])
-
-    def test_an_image_links_to_assets(self):
-        # The page links the image in _assets, beside the deck's folder,
-        # rather than holding a copy.
-        write_asset(self.folder)
-        data = content()
-        data["slides"][0] = slide("<img src='{{asset:acme-logo}}'>")
-        write_slides(self.folder, data)
-        result = make_deck.make_deck(DECK)
-        self.assertTrue(result["ok"], result)
-        with open(result["path"], encoding="utf-8") as f:
-            self.assertIn(
-                "<img src='../_assets/acme-logo/image.svg'>", f.read())
-
-    def test_valid_slides_write_a_deck_that_passes(self):
-        write_slides(self.folder, content())
-        result = make_deck.make_deck(DECK)
-        self.assertEqual(result, {"path": os.path.join(self.folder, DECK, "Acme-Q3-Review_Slides.html"),
-                                  "temporary": False, "ok": True, "errors": [],
-                                  "placeholders": ["[IMAGE: team photo]"], "stand_ins": [],
-                                  "credits": [], "opened": False})
-
-    def test_a_downloaded_image_is_credited_on_every_slide_that_shows_it(self):
-        write_credited_asset(self.folder)
-        data = content()
-        for number in (0, 2):
-            data["slides"][number]["html"].append(
-                "<img src='{{asset:earth}}'>")
-        write_slides(self.folder, data)
-        result = make_deck.make_deck(DECK)
-        self.assertTrue(result["ok"], result)
-        self.assertEqual(result["credits"], [{"asset": "earth", "license": CREDIT["license"],
-                                              "source": CREDIT["source"]}])
-        with open(result["path"], encoding="utf-8") as f:
-            slides = f.read().split('<div class="slide')[2:]
-        self.assertEqual([slide.count('<p class="asset-credit">Example Agency · CC BY 4.0</p>')
-                          for slide in slides], [1, 0, 1])
-
-    def test_open_shows_a_passing_deck_in_the_browser(self):
-        write_slides(self.folder, content())
-        for open_page, browser_opened, opened in ((False, True, False), (True, True, True),
-                                                  (True, False, False)):
-            with self.subTest(open_page=open_page, browser_opened=browser_opened), \
-                    mock.patch.object(make_deck.webbrowser, "open", return_value=browser_opened) as browser:
-                result = make_deck.make_deck(DECK, open_page)
-                self.assertEqual(result["opened"], opened)
-                self.assertEqual(browser.call_args_list,
-                                 [mock.call(Path(result["path"]).as_uri())] if open_page else [])
 
 
 if __name__ == "__main__":

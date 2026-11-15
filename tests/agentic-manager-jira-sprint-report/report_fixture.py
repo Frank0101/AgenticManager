@@ -1,6 +1,6 @@
 """A hand-written data.json and content.json for the make_report and check_report
 unit tests: a closed sprint, 02/03/2026 to 13/03/2026, with these tickets and
-events (see build_sprint_data.py for the model):
+events (see build_data.py for the model):
 
   PROJ-1  original, 2 pts, re-estimated to 3 on 03/03, completed 04/03   epic PROJ-100
   PROJ-2  original, 2 pts, carried over from Sprint 6, left 04/03
@@ -16,7 +16,7 @@ so the Status to Verify section lists both; PROJ-2, In Progress with its own
 merged, isn't listed (see PULLS).
 
 The spells are written by hand; every figure built from them (breakdown,
-epics, timeline, burndown) comes from build_sprint_data.py's own functions,
+epics, timeline, burndown) comes from build_data.py's own functions,
 which check_report.py verifies independently. Each ticket's events, which the
 model works its spells out from, are written to give those spells (see
 ticket_events).
@@ -32,8 +32,8 @@ TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
-import build_sprint_data as build  # noqa: E402
-from common import NO_EPIC, allowed_verdicts, parse_ts  # noqa: E402
+import build_data as build  # noqa: E402
+from common import NO_EPIC, parse_ts  # noqa: E402
 from sprint_fixture import PR  # noqa: E402
 
 BASE = "https://acme.test"
@@ -49,7 +49,7 @@ def ev(day, kind, points: int | float | None = 2, done=False, **extra):
 
 def ticket(key, events, outcome, status="Done", scope="original", carried=False, parent: str | None = "PROJ-100",
            marker=None, priority="Medium"):
-    """A spell as build_sprint_data.py stores it, with its events' flags; a
+    """A spell as build_data.py stores it, with its events' flags; a
     later spell of the same ticket is marked by with_flags."""
     return {"key": key, "summary": f"Work item {key}", "description": f"What {key} changes.", "status": status,
             "statusCategory": "done" if outcome == "completed" else "indeterminate",
@@ -98,11 +98,13 @@ def with_flags(spells):
 CREATED = "2026-02-20T10:00:00.000+0000"
 
 
-def ticket_events(spells, sprint_id, zone):
+def ticket_events(spells, sprint_id, zone, previous_id=None):
     """{key: its events} that give each ticket's spells, as
-    build_sprint_data.py stores them: a creation before the start, in the
-    sprint from then if its first spell is a commitment, then, at each later
-    event of its spells, the sprint, status and points changes that give it."""
+    build_data.py stores them: a creation before the start, with its first
+    spell's priority and flag, in the sprint from then if its first spell is
+    a commitment, and in the previous sprint, `previous_id`, if it is carried
+    over, then, at each later event of its spells, the sprint, status and
+    points changes that give it."""
     by_key = {}
     for spell in spells:
         by_key.setdefault(spell["key"], []).append(spell)
@@ -110,10 +112,12 @@ def ticket_events(spells, sprint_id, zone):
     for key, own in by_key.items():
         first = own[0]["events"][0]
         done, points = first["done"], first["points"]
+        sprints = ([previous_id] if previous_id and own[0]["carriedIn"] else []) + \
+            ([sprint_id] if first["type"] == "committed" else [])
         events = [event(CREATED, "created", zone, values={
-            "sprint": [sprint_id] if first["type"] == "committed" else [], "status": status(done),
-            "statusCategory": category(done), "resolution": None, "priority": "Medium", "parent": None,
-            "parentId": None, "points": points, "flagged": False})]
+            "sprint": sprints, "status": status(done),
+            "statusCategory": category(done), "resolution": None, "priority": own[0]["priority"], "parent": None,
+            "parentId": None, "points": points, "flagged": own[0]["flagged"]})]
         for e in (e for spell in own for e in spell["events"]):
             if e["points"] != points:
                 events.append(
@@ -178,9 +182,14 @@ def sprint_data(**changes):
     if "as_of_instant" not in changes:
         data["as_of_instant"] = f"{cutoff_day}T17:00:00.000+0000"
     tickets = with_flags(data["spells"])
+    if not data["previous_sprint"]:
+        # Without a previous sprint, nothing is carried over.
+        for spell in tickets:
+            spell["carriedIn"] = False
     if "ticket_events" not in changes:
-        data["ticket_events"] = ticket_events(
-            tickets, str(data["sprint_id"]), ZoneInfo(data["report_timezone"]))
+        previous = data["previous_sprint"]
+        data["ticket_events"] = ticket_events(tickets, str(data["sprint_id"]), ZoneInfo(data["report_timezone"]),
+                                              previous and str(previous["id"]))
     # Each ticket in the sprint at the end has its pull requests: none unless
     # a test gives some, as ticket_pulls() stores them.
     present = [t["key"]
@@ -189,6 +198,9 @@ def sprint_data(**changes):
         key, []) for key in present}
     data["ticket_pull_requests"] = pulls_of
     counts, points = build.outcome_breakdown(tickets)
+    baseline = build.burndown_baseline(tickets)
+    ideal = build.burndown_ideal(
+        data["sprint_start"], data["sprint_end"], cutoff_day, baseline)
     counted = [t for t in tickets if t["counted"]]
     data.update({
         "outcome_breakdown_counts": counts, "outcome_breakdown_points": points,
@@ -200,10 +212,16 @@ def sprint_data(**changes):
         "timeline": build.build_timeline(tickets, data["sprint_status"], data["sprint_start"], data["sprint_end"],
                                          data["sprint_complete_date"], data["today"]),
         "target_completion": build.target_completion(tickets),
-        "burndown_baseline": build.burndown_baseline(tickets),
-        "burndown": build.build_burndown(tickets, data["sprint_start"], cutoff_day, data["as_of_instant"],
-                                         timezone.utc),
+        "burndown_baseline": baseline,
+        "burndown": build.with_spread(build.build_burndown(tickets, data["sprint_start"], cutoff_day,
+                                                           data["as_of_instant"], timezone.utc), ideal),
+        "burndown_weekdays": build.burndown_weekdays(data["sprint_start"], data["sprint_end"]),
+        "burndown_ideal": ideal,
     })
+    data.setdefault("goal_verdicts", build.goal_verdicts(data["sprint_goal"], data["sprint_status"],
+                                                         data["sprint_start"], data["sprint_end"], data["today"]))
+    data.setdefault("days_left", build.days_left(
+        data["sprint_status"], data["sprint_end"], data["today"]))
     return data
 
 
@@ -248,7 +266,7 @@ def content_for(data):
     """CONTENT as the agent would write it for `data`: a sprint offered only
     one verdict gets it, and no reason."""
     content = copy.deepcopy(CONTENT)
-    if len(allowed_verdicts(data)) == 1:
-        content["goal_verdict"] = allowed_verdicts(data)[0]
+    if len(data["goal_verdicts"]) == 1:
+        content["goal_verdict"] = data["goal_verdicts"][0]
         del content["goal_reason"]
     return content

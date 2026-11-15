@@ -1,28 +1,22 @@
-"""Writes the deck's <Name>_Slides.html from <deck>/slides.json, then checks it
-with check_deck.py.
+"""Writes the deck's <Name>_Slides.html from <deck>/slides.json, the view
+finish_deck.py runs once slides.json has no problem.
 
-The page around the slides is fixed, and this script owns it: the slide's
+The page around the slides is fixed, and this module owns it: the slide's
 size, the grey page behind the slides, the toolbar with zoom and PDF export,
 the print rules that put one slide on each PDF page, and the scripts that zoom
 and draw the charts. slides.json holds only what needs judgment: the title,
-the deck's own CSS, each slide's HTML and the data of its charts and rings, so
-it is checked field by field and nothing is written while it has a problem.
+the deck's own CSS, each slide's HTML and the data of its charts and rings,
+which `problems` checks field by field.
 """
-import argparse
 import html
 import json
-import math
-import os
 import re
-import webbrowser
 from html.parser import HTMLParser
-from pathlib import Path
 from typing import TypeIs
 
-from common import (CHART_JS, ELEMENT_ID, FOLDER_NAME, PAGE, SLIDE_HEIGHT, SLIDE_WIDTH,
-                    SLIDES, TOKEN, URL_ATTRIBUTES, VOID, asset_link, asset_names, credit_line, credits,
-                    deck_dir, deck_file, link_kind, placed_images, read_json, write_output_file)
-import check_deck
+from common import (CHART_JS, ELEMENT_ID, FOLDER_NAME, PAGE, SLIDE_HEIGHT, SLIDE_WIDTH, TOKEN, URL_ATTRIBUTES, VOID,
+                    arc_segment, asset_link, coordinate, credit_line, deck_file, link_kind, placed_images,
+                    write_output_file)
 
 FIELDS = {"title", "style", "slides", "charts", "rings"}
 SLIDE_FIELDS = {"html", "class"}
@@ -211,30 +205,12 @@ CHART_SCRIPT = """    <script src="{src}"></script>
     </script>"""
 
 
-def make_deck(deck, open_page=False):
-    """Writes the deck and checks it, opening it in the default browser when
-    `open_page` and it passes; returns the JSON result, or exits with the
-    problems if slides.json is invalid."""
-    folder = deck_dir(deck)
-    content = read_json(os.path.join(folder, SLIDES))
-    errors, texts = problems(content, asset_names())
-    if errors:
-        raise SystemExit("slides.json has problems, so nothing was written:\n  - "
-                         + "\n  - ".join(errors))
-    known = credits()
-    path, temporary = write_output_file(
-        FOLDER_NAME, f"{deck}/{deck_file(deck)}", build(content, texts, known).encode("utf-8"))
-    result = {"path": path, "temporary": temporary,
-              **check_deck.check_deck(deck)}
-    result["credits"] = [{"asset": name, "license": known[name]["license"], "source": known[name]["source"]}
-                         for name in sorted({name for text in texts for name in placed_images(text)})
-                         if name in known]
-    # The user's own browser, not one a tool drives, so they review the deck
-    # where they will present it; only on request, since every revision after
-    # the first is a refresh of the page already open.
-    result["opened"] = bool(open_page and result["ok"]
-                            and webbrowser.open(Path(path).as_uri()))
-    return result
+def write_deck(deck, content, texts, image_credits):
+    """Writes the deck `deck` from slides.json's `content`, whose slides' HTML
+    `problems` returned as `texts`, crediting the downloaded images by
+    `image_credits`; returns (path, temporary) as output_file.py does."""
+    return write_output_file(FOLDER_NAME, f"{deck}/{deck_file(deck)}",
+                             build(content, texts, image_credits).encode("utf-8"))
 
 
 def problems(content, assets=frozenset()):
@@ -323,6 +299,7 @@ def css_loads_file(css):
 
 
 def unknown(item, allowed, where, errors):
+    """Adds to `errors` the fields of `item`, at `where`, that aren't in `allowed`."""
     extra = sorted(set(item) - allowed)
     if extra:
         errors.append(f"{where}: unknown field(s) {', '.join(extra)} "
@@ -342,6 +319,7 @@ def lines(value, where, errors, required=True):
 
 
 def check_chart(chart, where, errors):
+    """Adds to `errors` the problems of the chart `chart`, at `where`."""
     if not isinstance(chart, dict):
         errors.append(f"{where}: must be an object")
         return
@@ -375,6 +353,7 @@ def check_chart(chart, where, errors):
 
 
 def check_ring(ring, where, errors):
+    """Adds to `errors` the problems of the ring `ring`, at `where`."""
     if not isinstance(ring, dict):
         errors.append(f"{where}: must be an object")
         return
@@ -420,6 +399,7 @@ def check_ring(ring, where, errors):
 
 
 def is_number(value) -> TypeIs[int | float]:
+    """Whether `value` is a JSON number, not a boolean."""
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
@@ -543,6 +523,8 @@ def build(content, texts, image_credits, depth=1):
 
 
 def place(match, rings, depth):
+    """The HTML that a token's `match` stands for: a chart's canvas, a
+    ring's SVG from `rings`, or an image linked `depth` folders up."""
     kind, ident = match[1], match[2]
     if kind == "chart":
         return f'<div class="chart"><canvas id="chart-{ident}"></canvas></div>'
@@ -560,51 +542,11 @@ def ring_svg(ident, ring):
     centre, cursor, paths = size / 2, ring.get("start", 0), []
     for segment, value in zip(ring["segments"], values):
         span = 360 * value / sum(values)
-        path = segment_path(centre, centre, ring["outer"], ring.get("inner", 0),
-                            cursor + gap / 2, cursor + span - gap / 2)
+        path = arc_segment(centre, centre, ring["outer"], ring.get("inner", 0),
+                           cursor + gap / 2, cursor + span - gap / 2)
         paths.append(
             f'<path d="{path}" fill="{html.escape(segment["color"].strip())}"/>')
         cursor += span
     side = coordinate(size)
     return (f'<svg class="ring" id="ring-{ident}" viewBox="0 0 {side} {side}" width="{side}" '
             f'height="{side}">{"".join(paths)}</svg>')
-
-
-def coordinate(value):
-    """A coordinate for SVG: at most 2 decimals, no trailing zeros."""
-    text = f"{value:.2f}".rstrip("0").rstrip(".")
-    return "0" if text == "-0" else text
-
-
-def segment_path(cx, cy, outer, inner, start, end):
-    """The SVG path of one ring segment from `start` to `end` degrees,
-    clockwise from 12 o'clock, between the radii `inner` and `outer`."""
-    def point(radius, degrees):
-        angle = math.radians(degrees - 90)
-        return coordinate(cx + radius * math.cos(angle)), coordinate(cy + radius * math.sin(angle))
-    (ox1, oy1), (ox2, oy2) = point(outer, start), point(outer, end)
-    (ix2, iy2), (ix1, iy1) = point(inner, end), point(inner, start)
-    large = 1 if end - start > 180 else 0
-    R, r = coordinate(outer), coordinate(inner)
-    return (f"M{ox1},{oy1} A{R},{R},0,{large},1,{ox2},{oy2} "
-            f"L{ix2},{iy2} A{r},{r},0,{large},0,{ix1},{iy1} Z")
-
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Write the deck from slides.json, then check it. Prints one line of JSON: the deck's "
-        "path, whether the folder is temporary, what check_deck.py reports (ok, errors, placeholders, "
-        "stand_ins), the credits of the downloaded images it shows and whether it was opened. Exits 1 "
-        "if slides.json is invalid, writing nothing, or the deck fails the check.")
-    parser.add_argument("--deck", required=True,
-                        help="the deck's folder, <Name>_<YY-MM-DD>, inside slides-decks")
-    parser.add_argument("--open", action="store_true",
-                        help="open the deck in the default browser if it passes the check")
-    args = parser.parse_args(argv)
-    result = make_deck(args.deck, args.open)
-    print(json.dumps(result))
-    return 0 if result["ok"] else 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

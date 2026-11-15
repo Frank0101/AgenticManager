@@ -344,7 +344,7 @@ class FilesTest(unittest.TestCase):
         path = os.path.join(self.folder, "PROJ_Sprint_7", "_raw", "data.json")
         common.write_json(path, {"x": [1]})
         with open(path, encoding="utf-8") as f:
-            self.assertEqual(f.read(), json.dumps({"x": [1]}, indent=2))
+            self.assertEqual(f.read(), common.json_text({"x": [1]}))
 
     def test_nothing_is_written_outside_the_output_folder(self):
         os.symlink(self.tmp, os.path.join(self.folder, "link"))
@@ -379,10 +379,6 @@ class QuantitiesTest(unittest.TestCase):
         cases = [
             (common.number, (3.0,), "3"), (common.number,
                                            (2.5,), "2.5"), (common.number, (4,), "4"), (common.number, (0.1 + 0.2,), "0.3"),
-            (common.plural, (0, "it", "they"),
-             "they"), (common.plural, (1, "it", "they"), "it"),
-            (common.plural, (1.0, "it", "they"),
-             "it"), (common.plural, (2, "it", "they"), "they"),
             (common.unit, (1,), "ticket"), (common.unit,
                                             (0,), "tickets"), (common.unit, (2,), "tickets"),
             (common.pts, (1,), "1 pt"), (common.pts,
@@ -518,38 +514,6 @@ class ScopeGroupsTest(unittest.TestCase):
             with self.subTest(group=group, status=status):
                 self.assertEqual(common.scope_group_label(
                     group, status), expected)
-
-
-class AllowedVerdictsTest(unittest.TestCase):
-    def test_allowed_verdicts(self):
-        # A 10-day sprint, 02/03 to 12/03: its halfway day is 07/03.
-        def data(status="active", today="2026-03-06", goal="Ship login"):
-            return {"sprint_status": status, "sprint_goal": goal, "sprint_start": "2026-03-02",
-                    "sprint_end": "2026-03-12", "today": today}
-        cases = [
-            # The day before halfway, or before the start, is too early.
-            (data(), ("Too early to tell",)),
-            (data(today="2026-03-01"), ("Too early to tell",)),
-            # From the halfway day on, including a sprint running past its end.
-            (data(today="2026-03-07"), ("On track", "At risk")),
-            (data(today="2026-03-20"), ("On track", "At risk")),
-            # The halfway day is a whole day: with an odd span its midpoint
-            # is at noon, and the morning of that day can be judged too.
-            ({**data(today="2026-03-06"), "sprint_end": "2026-03-11"},
-             ("On track", "At risk")),
-            # A closed sprint is judged whenever it closed.
-            (data(status="closed"), ("Fully met", "Partially met", "Not met")),
-            # No goal leaves nothing to judge, closed or not.
-            (data(goal=""), ("No goal set in Jira for this sprint",)),
-            (data(goal="   "), ("No goal set in Jira for this sprint",)),
-            (data(status="closed", goal="\n \n"),
-             ("No goal set in Jira for this sprint",)),
-            (data(status="closed", goal=""),
-             ("No goal set in Jira for this sprint",)),
-        ]
-        for case, expected in cases:
-            with self.subTest(case):
-                self.assertEqual(common.allowed_verdicts(case), expected)
 
 
 if __name__ == "__main__":

@@ -15,8 +15,9 @@ import sys
 LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
-from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
-from agentic_manager.output_folder import DAY_FOLDER, DESCRIPTION, KEPT_EXAMPLES, document_name, description, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
+from agentic_manager.output_file import json_text, read_json, target, write_output_file  # noqa: E402,F401
+from agentic_manager.svg import arc_segment, coordinate  # noqa: E402,F401
+from agentic_manager.output_folder import DESCRIPTION, folder_problem, folder_subject, KEPT_EXAMPLES, document_name, description, read_description, clear_folder, day_folder, output_folder  # noqa: E402,F401
 from agentic_manager.text import NAME, SLUG, free_name, slug  # noqa: E402,F401
 from agentic_manager.web import ssl_context  # noqa: E402,F401
 
@@ -94,11 +95,11 @@ def expected_files(deck):
 
 def deck_file(deck):
     """The deck's HTML file name, <Name>_Slides.html, from its folder name."""
-    match = DAY_FOLDER.fullmatch(deck)
-    if not match:
+    name = folder_subject(deck)
+    if not name:
         raise SystemExit(
             f"{deck!r} is not a deck folder, <Name>_<YY-MM-DD>")
-    return document_name(match["subject"], DECK_KIND)
+    return document_name(name, DECK_KIND)
 
 
 def deck_dir(deck):

@@ -14,13 +14,14 @@ import os
 import subprocess
 from datetime import date, timedelta
 
-from common import (JIRA_SOURCE, PERSON, JiraClient, gh_json, gh_orgs, period_days, prep_dir, read_json, require_gh,
+from common import (JIRA_SOURCE, PARENT_FIELDS, PERSON, RAW_ITEM_FIELDS, fetched, JiraClient, gh_json, gh_orgs, period_days, prep_dir, read_json, require_gh,
                     stops_on_failure, WORK_LISTS, write_raw_work)
 
-JIRA_FIELDS = ["summary", "issuetype", "parent", "resolutiondate", "created", "status", "assignee", "reporter",
-               "updated"]
-PARENT_FIELDS = ["summary", "issuetype", "parent"]
-PR_FIELDS = "number,title,repository,url,createdAt,closedAt,author,updatedAt"
+# What is fetched is what the raw files must hold, and each issue's or story's
+# parent, which gives its epic.
+JIRA_FIELDS = fetched(RAW_ITEM_FIELDS["jira"], "fields.") + ["parent"]
+STORY_FIELDS = fetched(PARENT_FIELDS, "fields.") + ["parent"]
+PR_FIELDS = ",".join(fetched(RAW_ITEM_FIELDS["github"]))
 SEARCH_LIMIT = 1000
 # Each list is one search over the whole period, so few searches run; one
 # that comes back full, at SEARCH_LIMIT, may be cut short, so its window is
@@ -74,7 +75,7 @@ def jira_raw(client, account, person):
     stories = sorted({issue["fields"]["parent"]["key"] for issues in lists.values() for issue in issues
                       if issue["fields"]["issuetype"].get("subtask") and issue["fields"].get("parent")})
     parents = client.search(
-        f"key in ({', '.join(stories)})", PARENT_FIELDS) if stories else []
+        f"key in ({', '.join(stories)})", STORY_FIELDS) if stories else []
     return {"start": person["start"], "end": person["end"], "base_url": client.base_url,
             "points_fields": points_fields, **{f"{name}_jql": jql for name, jql in jqls.items()},
             "parents": parents, **lists}

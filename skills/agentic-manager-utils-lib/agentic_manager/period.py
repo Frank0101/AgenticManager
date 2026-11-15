@@ -9,7 +9,7 @@ period can't end after today, since nothing has happened there yet, and can't
 start after it ends.
 """
 import argparse
-from datetime import date
+from datetime import date, timedelta
 import calendar
 import json
 import os
@@ -55,6 +55,12 @@ def last_months(months, today):
     if months < 1:
         raise ValueError(f"a period of {months} months must be at least 1")
     return months_before(today, months), today
+
+
+def days(first, last):
+    """Every day from the date `first` to the date `last`, both included, as
+    dates."""
+    return [first + timedelta(days=n) for n in range((last - first).days + 1)]
 
 
 def months_before(day, months):

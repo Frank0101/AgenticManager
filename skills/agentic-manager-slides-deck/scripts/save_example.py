@@ -12,7 +12,7 @@ import argparse
 import json
 import os
 
-from common import (DESCRIPTION, EXAMPLE_PAGE, FOLDER_NAME, SLIDES, TOKEN, USE_FOR, KEPT_EXAMPLES, asset_names, credits,
+from common import (DESCRIPTION, EXAMPLE_PAGE, FOLDER_NAME, SLIDES, json_text, TOKEN, USE_FOR, KEPT_EXAMPLES, asset_names, credits,
                     deck_dir, description, free_name, read_json, slug, user_examples_dir, write_output_file)
 from make_deck import build, problems
 
@@ -25,10 +25,10 @@ def save(deck, number, title, use_for):
         deck_dir(deck), SLIDES)), number, title)
     errors, texts = problems(content, asset_names())
     if errors:
-        raise SystemExit("the slide has problems, so nothing was written; run make_deck.py on the deck "
+        raise SystemExit("the slide has problems, so nothing was written; run finish_deck.py on the deck "
                          "first:\n  - " + "\n  - ".join(errors))
     name = example_name(user_examples_dir(), title)
-    files = {SLIDES: json.dumps(content, ensure_ascii=False, indent=2) + "\n",
+    files = {SLIDES: json_text(content),
              EXAMPLE_PAGE: build(content, texts, credits(), depth=2),
              DESCRIPTION: description(title, {USE_FOR: use_for}, f"The slide: [{SLIDES}]({SLIDES}), "
                                       f"shown in [{EXAMPLE_PAGE}]({EXAMPLE_PAGE}).")}

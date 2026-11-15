@@ -17,7 +17,8 @@ from urllib.parse import parse_qs, urlparse
 class FakeJira(BaseHTTPRequestHandler):
     """Answers each path from `routes`: a payload, or a function of the query,
     or of a POST's JSON body, that returns one. A payload of (code, body)
-    sends that status, and of (code, body, headers) those headers too. Any
+    sends that status, and of (code, body, headers) those headers too; a
+    body of bytes is sent as it is. Any
     other path is answered by `fallback`, a function of the path and the
     query or body that returns a payload, or None for a 404, when a test
     sets one, and is a 404 otherwise. When a test sets `authorization`, a
@@ -50,7 +51,7 @@ class FakeJira(BaseHTTPRequestHandler):
         answer = self.route(path, query)
         code, body, *headers = answer if isinstance(
             answer, tuple) else (200, answer)
-        data = json.dumps(body).encode()
+        data = body if isinstance(body, bytes) else json.dumps(body).encode()
         self.send_response(code)
         for name, value in (headers[0] if headers else {}).items():
             self.send_header(name, value)

@@ -1,5 +1,5 @@
 """End-to-end tests for the sprint-report scripts that run after the fetch:
-build_sprint_data.py, make_brief.py, make_charts.py, make_report.py and
+build_data.py, make_brief.py, make_charts.py, make_report.py and
 check_report.py, run one after the other, and finish_report.py, which runs the
 last three. Each script's functions have unit tests in test_<script>.py; these
 cover the command lines, exit codes and outputs, and that the scripts fit.
@@ -71,7 +71,7 @@ class ReportTest(unittest.TestCase):
 
     def build(self):
         self.write_raw()
-        self.assert_runs("build_sprint_data.py")
+        self.assert_runs("build_data.py")
         with open(os.path.join(self.dir, "data.json"), encoding="utf-8") as f:
             return json.load(f)
 
@@ -102,7 +102,7 @@ class ReportTest(unittest.TestCase):
 
 
 class BuildTest(ReportTest):
-    """The fixture sprint, as the model sees it (see build_sprint_data.py).
+    """The fixture sprint, as the model sees it (see build_data.py).
     The other tests change it, so this pins what they start from; one
     ticket's history at a time is covered by test_e2e_cases.py."""
 
@@ -232,7 +232,7 @@ class BuildTest(ReportTest):
         # Raw files that disagree with each other or with Jira mean the fetch
         # caught the sprint mid-change or is incomplete: guessing would
         # misreport it, so the build stops with exit 1 and no data.json.
-        # Each guard's own message is unit-tested in test_build_sprint_data.py.
+        # Each guard's own message is unit-tested in test_build_data.py.
         cases = [
             (lambda raw: self.jira_did_not_complete_proj_6(),
              "completed: ['PROJ-6'] in our data but not in Jira's sprint report"),
@@ -246,7 +246,7 @@ class BuildTest(ReportTest):
                 self.raw = copy.deepcopy(fixture.raw_files())
                 change(self.raw)
                 self.write_raw()
-                proc = self.run_script("build_sprint_data.py")
+                proc = self.run_script("build_data.py")
                 self.assertEqual(proc.returncode, 1)
                 self.assertIn(expected, proc.stderr)
                 self.assertFalse(os.path.exists(
@@ -534,7 +534,7 @@ class OutputFolderTest(ReportTest):
         self.assert_runs("make_brief.py")
         outside = os.path.join(self.tmp.name, "elsewhere")
         cases = [
-            ("build_sprint_data.py", ["data.json"]),
+            ("build_data.py", ["data.json"]),
             ("make_brief.py", ["brief.json"]),
             ("make_charts.py", list(CHARTS)),
             ("make_report.py", [REPORT]),

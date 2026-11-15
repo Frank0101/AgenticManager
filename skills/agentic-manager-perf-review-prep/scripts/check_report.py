@@ -8,13 +8,13 @@ so a bug in the model or in the report can't pass by agreeing with itself.
 import html
 import re
 
-from common import (CHART_FILES, CHARTS_DIR, FOCUS_SHARE,
+from common import (CHART_FILES, CHARTS_DIR, FOCUS_SHARE, project_of,
                     JIRA_CELLS, average_text, types_text)
 
-# A main focus entry as the report writes it: its epic's link and key, its
-# title and how many resolved issues it holds.
+# A main focus entry as the report writes it: its epic's link, key and title,
+# or a project's key alone, and how many resolved issues it holds.
 FOCUS_ENTRY = re.compile(
-    r'<li><a href="([^"]+)">([^<]+)</a> (.*?) \((\d+)\)</li>')
+    r'<li>(?:<a href="([^"]+)">([^<]+)</a> (.*?)|([^<]+?)) \((\d+)\)</li>')
 # A Jira figure's cell and a chart's, as the report writes them.
 JIRA_FIGURE = re.compile(
     r'<td>(?:<a href="([^"]+)">([\d.]+)</a>|([\d.]+)) \((.*?)\)</td>')
@@ -29,7 +29,7 @@ def report_problems(report, data, charts):
     search, the main focus, and the series the charts draw."""
     charts = [name for name in charts if not name.startswith(".")]
     problems = [] if sorted(charts) == sorted(CHART_FILES) else [
-        f"the charts folder must hold only {', '.join(CHART_FILES)}: run make_report.py again"]
+        f"the charts folder must hold only {', '.join(CHART_FILES)}: run finish_report.py again"]
     jira = data["jira"]
     problems += _series_problems(jira, data["weeks"])
     estimated = [issue["points"]
@@ -42,17 +42,17 @@ def report_problems(report, data, charts):
         report), JIRA_CHART.findall(report)
     if (len(figures), len(charts_shown)) != (len(JIRA_CELLS), len(JIRA_CELLS)):
         return problems + ["the report's Jira table must have a row of three figures and one of their charts: "
-                           "run make_report.py again"]
+                           "run finish_report.py again"]
     for (name, chart), (url, linked, plain, made_of), shown in zip(JIRA_CELLS, figures, charts_shown):
         if (float(linked or plain), html.unescape(url) or None, html.unescape(made_of), shown) != (
                 expected[name][0], jira[f"{name}_search_url"], expected[name][1], chart):
             problems.append(
-                f"the report's Jira cell for {name} doesn't show data.json: run make_report.py again")
-    shown = [(html.unescape(url), html.unescape(key), html.unescape(title), int(n))
-             for url, key, title, n in FOCUS_ENTRY.findall(report)]
+                f"the report's Jira cell for {name} doesn't show data.json: run finish_report.py again")
+    shown = [(html.unescape(url) or None, html.unescape(key or project), html.unescape(title) or None, int(n))
+             for url, key, title, project, n in FOCUS_ENTRY.findall(report)]
     if shown != _focus(jira["resolved"], jira["epic_search_urls"]):
-        problems.append("the report's main focus doesn't show the epics of the resolved issues: run make_report.py "
-                        "again")
+        problems.append("the report's main focus doesn't show the epics, or projects, of the resolved issues: run "
+                        "finish_report.py again")
     return problems
 
 
@@ -60,7 +60,7 @@ def _series_problems(jira, weeks):
     """Why the series the charts draw, in `jira`, data.json's, don't count
     its issues, worked out again from them over `weeks`, empty when they do:
     each week's created and resolved issues, in all, by epic and with none,
-    and the resolved issues by story points and epic."""
+    the resolved issues by epic, and by story points and epic."""
     problems = []
     for name in ("created", "resolved"):
         counts = {"total": [0] * len(weeks),
@@ -79,6 +79,11 @@ def _series_problems(jira, weeks):
                                                                            counts["no_epic"]):
             problems.append(
                 f"the chart of the issues {name} doesn't count them week by week: run build_data.py again")
+    epics, no_epic = _epic_counts(jira["resolved"])
+    pie = jira["resolved_by_epic"]
+    if ({entry["key"]: entry["issues"] for entry in pie["epics"]}, pie["no_epic"]) != (epics, no_epic):
+        problems.append(
+            "the chart of the resolved issues by epic doesn't count them: run build_data.py again")
     stacks = {}
     for issue in jira["resolved"]:
         if issue["points"] is not None:
@@ -100,15 +105,18 @@ def _series_problems(jira, weeks):
 
 def _focus(resolved, urls):
     """[(url, key, title, issues)]: the main focus of the issues `resolved`
-    as the report lists it, each linked to its search in `urls`, worked out
-    apart from focus(): the epics holding the most of those with one, until
-    FOCUS_SHARE of them, every epic tied with the last one too."""
-    counts, epics = {}, {}
+    as the report lists it, worked out apart from focus(): the epics holding
+    the most of those with one, until FOCUS_SHARE of them, every epic tied
+    with the last one too, each linked to its search in `urls`; or, when none
+    has an epic, their projects the same way, with no link or title."""
+    counts, titles = _epic_counts(resolved)[0], {}
     for issue in resolved:
         if issue["epic"]:
-            key = issue["epic"]["key"]
-            counts[key] = counts.get(key, 0) + 1
-            epics[key] = issue["epic"]
+            titles[issue["epic"]["key"]] = issue["epic"]["title"]
+    if not counts:
+        for issue in resolved:
+            project = project_of(issue["key"])
+            counts[project] = counts.get(project, 0) + 1
     ranked = sorted(counts, key=lambda key: (-counts[key], key))
     total, covered = sum(counts.values()), 0
     for key in ranked:
@@ -116,7 +124,19 @@ def _focus(resolved, urls):
         if covered >= FOCUS_SHARE * total:
             ranked = [other for other in ranked if counts[other] >= counts[key]]
             break
-    return [(urls.get(key), key, epics[key]["title"], counts[key]) for key in ranked]
+    return [(urls.get(key) if key in titles else None, key, titles.get(key) or None, counts[key]) for key in ranked]
+
+
+def _epic_counts(resolved):
+    """({epic key: issues}, issues with no epic) of the issues `resolved`."""
+    counts, no_epic = {}, 0
+    for issue in resolved:
+        if issue["epic"]:
+            counts[issue["epic"]["key"]] = counts.get(
+                issue["epic"]["key"], 0) + 1
+        else:
+            no_epic += 1
+    return counts, no_epic
 
 
 def _types(issues):

@@ -1,6 +1,6 @@
 """Hand-made tickets and changelog entries for the unit tests of a ticket's
 events and what is built from them, in test_common.py and
-test_build_sprint_data.py: Sprint 7 starts on 02/03/2026 at 09:00 and closes
+test_build_data.py: Sprint 7 starts on 02/03/2026 at 09:00 and closes
 on 13/03 at 17:00, at +01:00.
 """
 

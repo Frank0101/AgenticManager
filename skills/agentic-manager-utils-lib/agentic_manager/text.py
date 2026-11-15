@@ -1,4 +1,4 @@
-"""Helpers for Markdown text, shared by every skill: word counts, names, links, the document a link reaches, headings, fenced code, and the dates and numbers reports show.
+"""Helpers for Markdown text, shared by every skill: word counts, names, links, the document a link reaches, headings, fenced code, and the dates, numbers and plural words reports show.
 
 A word count counts words as a reader would, the same in every skill: a link
 as its text, and only tokens with a letter or a digit ("don't" and "3.14" are
@@ -59,9 +59,10 @@ def link_text(text):
 
 
 def slug(text):
-    """`text` as lowercase words joined by hyphens: anything but a letter or a
-    digit becomes a hyphen. Empty if it holds neither."""
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    """`text` as lowercase words joined by hyphens, such as cafe-menu for
+    "Café Menu": as_name()'s, lowercase. Empty if it holds no letter or
+    digit."""
+    return as_name(text).lower()
 
 
 def as_name(text):
@@ -217,3 +218,8 @@ def number(value):
         if value.is_integer():
             return str(int(value))
     return str(value)
+
+
+def plural(count, one, many):
+    """The word for `count` things: `one` for exactly 1, else `many`."""
+    return one if count == 1 else many

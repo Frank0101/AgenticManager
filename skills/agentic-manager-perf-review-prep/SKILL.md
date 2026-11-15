@@ -2,7 +2,7 @@
 name: agentic-manager-perf-review-prep
 disable-model-invocation: true
 description: Helps a manager prepare a performance review of one person over a review period, from the evidence of their work in Jira, GitHub, the documentation, the team's messages and the manager's own notes. In development; not ready to use.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/build_data.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/build_data.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/check_prep.py *)
 ---
 
 # Performance Review Prep
@@ -17,7 +17,7 @@ perf-review-preps/
     ├── _raw/             read_notes.py and read_slack.py write (each reader's answer, by source: a month's in
     │                     months/, the notes' pages in pages.json); fetch_work.py and set_notion.py write what
     │                     each source gave, with its searches, jira.json, github.json and notion.json
-    ├── _charts/          make_report.py writes (the report's charts, one SVG each)
+    ├── _charts/          finish_report.py writes (the report's charts, one SVG each)
     ├── person.json       init_prep.py and set_identities.py write (the person, the period and who they are in each
     │                     source, as the manager confirmed)
     ├── orientation.json  set_summary.py writes (the manager's overall view of the person, summarised)
@@ -33,7 +33,7 @@ perf-review-preps/
     │                     the main focus, the resolved issues' story points, the series the charts draw and the
     │                     link to each search)
     └── Jane-Doe_Review_Prep.md
-                          make_report.py writes (the report for the manager, from the files above: for now, the
+                          finish_report.py writes (the report for the manager, from the files above: for now, the
                           person's Jira figures and main focus)
 ```
 
@@ -131,9 +131,9 @@ The person's work in Jira, GitHub and Notion, in the period. Like step 6, it is 
 
 3. **The data.** Once 1 and 2 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/build_data.py --prep <prep>`: it builds `data.json`, the model the report reads, from the raw files, with no network.
 
-## 8. Write the report
+## 8. Finish
 
-Once step 7 is done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/make_report.py --prep <prep>`: it writes the report, `<Person>_Review_Prep.md`, and its charts from `data.json`, with no judgment, and checks them. If its `problems` aren't empty, stop and tell the manager what they say.
+Once step 7 is done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py --prep <prep>`: it writes the report, `<Person>_Review_Prep.md`, and its charts from `data.json`, with no judgment, and checks them. If its `problems` aren't empty, stop and tell the manager what they say.
 
 ## 9. Tell the manager
 

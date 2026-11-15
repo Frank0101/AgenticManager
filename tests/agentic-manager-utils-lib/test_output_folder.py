@@ -124,7 +124,10 @@ class DayFolderTest(unittest.TestCase):
                 assert match
                 self.assertEqual((match["subject"], match["date"]),
                                  ("PROJ_Sprint_3", expected[-8:]))
+                self.assertEqual(output_folder.folder_subject(
+                    expected), "PROJ_Sprint_3")
         self.assertIsNone(output_folder.folder_day("_examples"))
+        self.assertIsNone(output_folder.folder_subject("_examples"))
 
     def test_clear_folder(self):
         # Only what is at the path goes: a link's target and the folder
@@ -157,6 +160,22 @@ class DayFolderTest(unittest.TestCase):
                     self.assertFalse(os.path.lexists(path))
                     self.assertEqual(sorted(os.listdir(tmp)), ["target"])
                     self.assertEqual(os.listdir(target), ["kept"])
+
+
+class FolderProblemTest(unittest.TestCase):
+    def test_folder_problem(self):
+        # name: (the files in the folder, the problem expected, or None)
+        wanted = {"data.json", "Report.md"}
+        cases = [("as wanted", ["data.json", "Report.md", ".DS_Store"], None),
+                 ("extra and missing", ["data.json", "notes.txt"],
+                  "the folder must hold only Report.md, data.json; move notes.txt to your own scratch folder; "
+                  "missing Report.md")]
+        for name, files, expected in cases:
+            with self.subTest(name), tempfile.TemporaryDirectory() as folder:
+                for file in files:
+                    open(os.path.join(folder, file), "w").close()
+                self.assertEqual(output_folder.folder_problem(
+                    folder, wanted), expected)
 
 
 class DescriptionTest(unittest.TestCase):

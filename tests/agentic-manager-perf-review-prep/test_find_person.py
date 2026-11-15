@@ -115,7 +115,7 @@ class FindPersonTest(unittest.TestCase):
         run = FakeGh({"author-email:jane@acme.test org:acme": {"janedoe": 1}},
                      {"janedoe": "Jane Doe"})
         with tempfile.TemporaryDirectory() as graph, \
-                mock.patch.object(common, "gh_available", return_value=True), \
+                mock.patch("agentic_manager.github.gh_available", return_value=True), \
                 mock.patch.object(find_person, "graph_path", return_value=graph):
             os.makedirs(os.path.join(graph, "journals"))
             with open(os.path.join(graph, "journals", "2026_09_01.md"), "w", encoding="utf-8") as f:
@@ -124,7 +124,7 @@ class FindPersonTest(unittest.TestCase):
         self.assertEqual(found, {"person": "Jane Doe", "email": "jane@acme.test",
                                  "github": [{"login": "janedoe", "name": "Jane Doe"}],
                                  "vault": [{"link": "Jane", "mentions": 1, "page": False, "alias_of": None}]})
-        with mock.patch.object(common, "gh_available", return_value=False), \
+        with mock.patch("agentic_manager.github.gh_available", return_value=False), \
                 self.assertRaisesRegex(SystemExit, "github-cli"):
             find_person.find(PREP, run=run)
 

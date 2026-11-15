@@ -10,7 +10,7 @@ never reads the raw files, so every fact it gives is the model's.
 import argparse
 import os
 
-from common import (BRIEF_FILE, DATA_FILE, SCOPE_GROUPS, allowed_verdicts, chunks, display_date,
+from common import (BRIEF_FILE, DATA_FILE, SCOPE_GROUPS, chunks, display_date,
                     epic_title, latest_points, link_text, read_json, spell_epic, write_json)
 from make_report import Report
 
@@ -56,7 +56,7 @@ def build_brief(data):
             "goal": data["sprint_goal"],
             "start": display_date(data["sprint_start"]), "end": display_date(data["sprint_end"]),
             "today": display_date(data["today"]),
-            "goal_verdicts": list(allowed_verdicts(data)),
+            "goal_verdicts": data["goal_verdicts"],
         },
         "epics": epics,
         "goal_tickets": [{

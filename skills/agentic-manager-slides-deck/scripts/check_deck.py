@@ -13,7 +13,7 @@ import os
 import re
 from html.parser import HTMLParser
 
-from common import (ASSETS, CHART_JS, PAGE, PLACEHOLDER, SLIDE_HEIGHT, SLIDE_WIDTH, SLIDES, STAND_IN,
+from common import (ASSETS, CHART_JS, PAGE, folder_problem, PLACEHOLDER, SLIDE_HEIGHT, SLIDE_WIDTH, SLIDES, STAND_IN,
                     TOKEN, URL_ATTRIBUTES, VOID, asset_names, credit_line, credits, deck_dir, deck_file,
                     expected_files, link_kind, placed_images, read_json)
 
@@ -33,13 +33,8 @@ def check(folder, deck, content):
     """(errors, placeholders, stand-ins) of the deck in `folder` against
     `content`, the slides.json it was built from."""
     errors = []
-    files = {name for name in os.listdir(folder) if not name.startswith(".")}
-    wanted = expected_files(deck)
-    if files != wanted:
-        extra, missing = sorted(files - wanted), sorted(wanted - files)
-        errors.append("the folder must hold only " + ", ".join(sorted(wanted))
-                      + (f"; move {', '.join(extra)} to your own scratch folder" if extra else "")
-                      + (f"; missing {', '.join(missing)}" if missing else ""))
+    if problem := folder_problem(folder, expected_files(deck)):
+        errors.append(problem)
     path = os.path.join(folder, deck_file(deck))
     if not os.path.isfile(path):
         return errors, [], []

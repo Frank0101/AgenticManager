@@ -10,9 +10,9 @@ calculations per view drifted apart before; one model can't.
 """
 import argparse
 import os
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time
 
-from common import (CHANGELOGS_DIR, COMMENTS_DIR, DATA_FILE, META_FILE, OUTCOME_ROWS, OUTCOMES, PARENTS_FILE,
+from common import (days, CHANGELOGS_DIR, COMMENTS_DIR, DATA_FILE, GOAL_VERDICTS, META_FILE, OUTCOME_ROWS, OUTCOMES, PARENTS_FILE,
                     PREVIOUS_SPRINT_FILE, PUNTED_ISSUES_FILE, RAW_DIR, SPRINT_FILE,
                     SPRINT_ISSUES_FILE, SPRINT_REPORT_FILE, STATUSES_FILE, SCOPE_GROUPS, Context, add_and_remove_events,
                     as_of, blocker_candidates, PULL_REQUESTS_FILE, PULL_STATES, ISSUE_KEY, in_sprint_at, key_order, known_sum,
@@ -421,8 +421,7 @@ def build_burndown(spells, start_date, last_date, moment, zone):
     The closing day stops at the exact close, an active snapshot's current day
     at the fetch."""
     rows = []
-    day, end = date.fromisoformat(start_date), date.fromisoformat(last_date)
-    while day <= end:
+    for day in days(date.fromisoformat(start_date), date.fromisoformat(last_date)):
         cutoff = min(datetime.combine(
             day, time.max, tzinfo=zone), parse_ts(moment))
         committed, total = [], []
@@ -434,7 +433,6 @@ def build_burndown(spells, start_date, last_date, moment, zone):
                     committed.append(state[2])
         rows.append({"date": day.isoformat(), "committed": known_sum(committed), "total": known_sum(total),
                      "committed_stories": len(committed), "total_stories": len(total)})
-        day += timedelta(days=1)
     return rows
 
 
@@ -447,6 +445,62 @@ def replay(events, until):
             break
         state = (e["type"] != "removed", e["done"], e["points"])
     return state
+
+
+def burndown_ideal(start_date, end_date, last_date, baseline):
+    """The burndown's ideal, a row per day from the start through the planned
+    end or `last_date`, the last actual, whichever is later: the day, whether
+    it is a weekend, and the commitment the ideal still has open at its end.
+    It starts from `baseline`, drawn as 0 when unestimated, holds on the start
+    day and over weekends, then burns evenly per weekday to zero at the
+    planned end, and stays there after it; with no weekday after the start,
+    it holds at the baseline, as there is no pace to divide by."""
+    start, end = date.fromisoformat(start_date), date.fromisoformat(end_date)
+    last = max(end, date.fromisoformat(last_date))
+    level, weekdays = baseline or 0, burndown_weekdays(start_date, end_date)
+    rows, burned = [], 0
+    for day in days(start, last):
+        if start < day <= end and day.weekday() < 5:
+            burned += 1
+        rows.append({"date": day.isoformat(), "weekend": day.weekday() >= 5,
+                     "ideal": round(level * (1 - burned / weekdays), 2) if weekdays else level})
+    return rows
+
+
+def burndown_weekdays(start_date, end_date):
+    """The weekdays after the start day through the planned end, the days the
+    ideal burns over."""
+    start = date.fromisoformat(start_date)
+    return sum(1 for day in days(start, date.fromisoformat(end_date)) if day > start and day.weekday() < 5)
+
+
+def with_spread(burndown, ideal):
+    """The burndown's rows, each with its spread: the commitment still open
+    minus the ideal that day, positive when behind; unestimated pts count as
+    0, as the chart draws them."""
+    by_day = {row["date"]: row["ideal"] for row in ideal}
+    return [{**row, "spread": round((row["committed"] or 0) - by_day[row["date"]], 2)} for row in burndown]
+
+
+def goal_verdicts(goal, status, start_date, end_date, today):
+    """The goal verdicts the agent may choose from: with or without a goal,
+    closed, or running before or from its halfway day, when too little is done
+    to tell before it."""
+    if not goal.strip():
+        return list(GOAL_VERDICTS["no_goal"])
+    if status == "closed":
+        return list(GOAL_VERDICTS["closed"])
+    start, end = date.fromisoformat(start_date), date.fromisoformat(end_date)
+    early = date.fromisoformat(today) < start + (end - start) / 2
+    return list(GOAL_VERDICTS["early" if early else "active"])
+
+
+def days_left(status, end_date, today):
+    """The days a running sprint has left to its planned end, negative once
+    past it; None for a closed one."""
+    if status != "active":
+        return None
+    return (date.fromisoformat(end_date) - date.fromisoformat(today)).days
 
 
 def cross_check(report, in_scope, completed, removed, later_moves=()):
@@ -630,13 +684,16 @@ def main():
     # tickets whose status the report checks.
     pulls_of = {t["key"]: ticket_pulls(pull_requests, t["key"], moment) for t in counted
                 if t["outcome"] != "descoped"}
+    baseline, last_day = burndown_baseline(spells), sprint_date(moment, zone)
+    ideal = burndown_ideal(start, end, last_day, baseline)
+    goal = sprint.get("goal") or ""
     data = {
         "sprint_id": sprint["id"],
         "sprint_name": sprint.get("name"),
         "label": meta.get("label"),
         "base_url": meta.get("base_url"),
         "sprint_status": status,
-        "sprint_goal": sprint.get("goal") or "",
+        "sprint_goal": goal,
         "sprint_start": start,
         "sprint_end": end,
         "sprint_complete_date": complete,
@@ -644,6 +701,9 @@ def main():
         "as_of_instant": moment,
         "report_timezone": zone.key,
         "today": today,
+        # What the goal may be judged as, and how long a running sprint has left.
+        "goal_verdicts": goal_verdicts(goal, status, start, end, today),
+        "days_left": days_left(status, end, today),
         "previous_sprint": previous and {
             "id": previous["id"], "name": previous.get("name"),
             "complete_instant": previous["completeDate"],
@@ -672,8 +732,10 @@ def main():
         "ticket_pull_requests": {key: pulls_of[key] for key in sorted(pulls_of, key=key_order)},
         "status_checks": build_status_checks(spells, pulls_of, epics),
         "timeline": build_timeline(spells, status, start, end, complete, today),
-        "burndown_baseline": burndown_baseline(spells),
-        "burndown": build_burndown(spells, start, sprint_date(moment, zone), moment, zone),
+        "burndown_baseline": baseline,
+        "burndown": with_spread(build_burndown(spells, start, last_day, moment, zone), ideal),
+        "burndown_weekdays": burndown_weekdays(start, end),
+        "burndown_ideal": ideal,
     }
     out = os.path.join(args.report_dir, DATA_FILE)
     write_json(out, data)

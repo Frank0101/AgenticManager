@@ -14,15 +14,16 @@ import fcntl
 import json
 import os
 import re
-import sys
 
-from common import (BLOCKED_BY, CONTENT, DESIGN_ORDER, FOLDER_NAME, LEDGER, REPORT_KIND, document_name, SCOPE_QUESTION, TABLES,
-                    clear_folder, ids, investigation_dir, plain, read_json, stops_on_failure, strip_anchors,
+from common import (BLOCKED_BY, CONTENT, json_text, DESIGN_ORDER, FOLDER_NAME, LEDGER, SCOPE_QUESTION, TABLES,
+                    clear_folder, ids, investigation_dir, plain, report_path, read_json, script_command, scripts_folder,
+                    stdin_json, stops_on_failure, strip_anchors,
                     topic_of, work_folder, write_output_file)
 from init_investigation import init, usable_sources
 from ledger import (as_written, basis, brief, design_basis, depends_on, load, move_row, save, scope_decisions,
                     table_rows)
 from submissions import design_rows, submit_research, submit_scope, submit_design
+from finish_report import finish
 import check_report
 import make_report
 import protocol
@@ -41,7 +42,7 @@ def start(topic):
     work = work_dir(result["investigation"])
     clear_folder(work)
     os.makedirs(work)
-    result["next"] = f"{call()} next --investigation {result['investigation']}"
+    result["next"] = next_command(result["investigation"])
     return result
 
 
@@ -123,8 +124,8 @@ def submit(relative, task, data):
     phase = phase_of(relative, lines)
     current = task_of(lines, phase)
     if task == "write" and phase == "write":
-        return submit_report(relative, data)
-    if (match := RESEARCH_TASK.fullmatch(task)) and phase == "research":
+        result = submit_report(relative, data)
+    elif (match := RESEARCH_TASK.fullmatch(task)) and phase == "research":
         research = [row for row in questions_to_work(
             lines, all_open=True) if not is_scope_question(row)]
         if match[1] not in {row[0] for row in research}:
@@ -140,8 +141,10 @@ def submit(relative, task, data):
         result = submit_design(lines, data)
     else:
         raise SystemExit("the investigation is finished: nothing to submit")
-    save(relative, lines)
-    return {"ok": True, "task": task, **result, "next": f"{call()} next --investigation {relative}"}
+    # The write task changes no ledger row: its text goes to content.json.
+    if task != "write":
+        save(relative, lines)
+    return {"ok": True, "task": task, **result, "next": next_command(relative)}
 
 
 def phase_of(relative, lines):
@@ -219,7 +222,7 @@ def render(relative, lines, task):
     else:
         folder, _, temporary = investigation_dir(relative)
         return "\n".join([*head, protocol.text("finished", **values), "",
-                          f"- The report: {os.path.join(folder, document_name(topic_of(folder), REPORT_KIND))}",
+                          f"- The report: {report_path(folder)}",
                           f"- The ledger: {values['ledger']}",
                           f"- The folder is {'temporary' if temporary else 'kept'}"])
     # Where the task keeps its files: one rule for every task, written once.
@@ -259,7 +262,7 @@ def fills(relative):
     them, the investigation, its topic and its ledger, the sources the
     config enables for the documentation and the code, and the folder of the
     shared clones."""
-    scripts = os.path.dirname(script_path())
+    scripts = scripts_folder(__file__)
     folder, _, _ = investigation_dir(relative)
     sources = usable_sources()
     return {"scripts": scripts, "investigation": relative, "ledger": os.path.join(folder, LEDGER),
@@ -369,7 +372,7 @@ def report_problems(relative):
     """What stops the report passing its final check: [] once it does, the
     problems of the text submitted while it doesn't, or None before any."""
     folder, _, _ = investigation_dir(relative)
-    report = os.path.join(folder, document_name(topic_of(folder), REPORT_KIND))
+    report = report_path(folder)
     if os.path.isfile(report):
         checked = check_report.check_report(report, handover=True)
         return [] if checked["ok"] else checked["errors"]
@@ -379,47 +382,26 @@ def report_problems(relative):
 
 
 def submit_report(relative, data):
-    """Write content.json, generate the report from it and run the final
-    check; exits with the problems unless the report passes."""
+    """Write content.json, then finish the report from it; returns the
+    report's path, whether the folder is temporary and the warnings, or exits
+    with the problems unless the report passes."""
     if not isinstance(data, dict):
         raise SystemExit(
             "the text is a JSON object, in the shape the write task shows")
-    folder, _, _ = investigation_dir(relative)
-    # A report left by an earlier submission is replaced, never checked again.
-    old = os.path.join(folder, document_name(topic_of(folder), REPORT_KIND))
-    if os.path.isfile(old):
-        os.remove(old)
     write_output_file(FOLDER_NAME, f"{relative}/{CONTENT}",
-                      json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8"))
-    made = make_report.make_report(relative)
-    checked = check_report.check_report(made["path"], handover=True)
-    if not checked["ok"]:
-        raise SystemExit("the report doesn't pass its final check; fix each of these and submit again:\n- "
-                         + "\n- ".join(checked["errors"]))
-    return {"ok": True, "task": "write", "path": made["path"], "temporary": made["temporary"],
-            "warnings": made["warnings"] + checked["warnings"],
-            "next": f"{call()} next --investigation {relative}"}
+                      json_text(data).encode("utf-8"))
+    return finish(relative)
+
+
+def next_command(relative):
+    """The command that hands out the investigation `relative`'s next task."""
+    return f"{call()} next --investigation {relative}"
 
 
 def call():
-    """The command that runs this script."""
-    return f"python3 {script_path()}"
-
-
-def script_path():
-    """This script's path as the agent ran it, so every command it is told to
-    run next matches the path the skill pre-approves."""
-    return os.path.abspath(sys.argv[0]) if sys.argv[0].endswith("investigate.py") else os.path.abspath(__file__)
-
-
-def read_input(path):
-    """The submission, from the file `path` or standard input, as JSON."""
-    if path:
-        return read_json(path)
-    try:
-        return json.loads(sys.stdin.read())
-    except ValueError as error:
-        raise SystemExit(f"the submission is not valid JSON: {error}")
+    """The command that runs this script, by the path the agent ran the
+    skill's scripts from."""
+    return script_command(__file__, "investigate.py")
 
 
 def main(argv=None):
@@ -466,7 +448,8 @@ def main(argv=None):
                 print(next_tasks(args.investigation,
                       max(1, args.max), args.resume))
         else:
-            data = read_input(args.input)
+            data = read_json(args.input) if args.input else stdin_json(
+                "Each task ends with its answer's shape and the command to copy.")
             with locked(args.investigation):
                 print(json.dumps(submit(args.investigation,
                       args.task, data), ensure_ascii=False))

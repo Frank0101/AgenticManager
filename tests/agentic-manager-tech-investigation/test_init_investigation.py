@@ -126,7 +126,7 @@ class InitTest(unittest.TestCase):
         cases = [("not signed in", mock.Mock(return_value=mock.Mock(returncode=1)), "gh isn't signed in"),
                  ("not installed", mock.Mock(side_effect=FileNotFoundError), "gh can't be run")]
         for name, run, expected in cases:
-            with self.subTest(name):
+            with self.subTest(name), mock.patch("agentic_manager.github.gh_available", return_value=True):
                 with self.assertRaisesRegex(SystemExit, expected):
                     init_investigation.init(
                         "Acme-Search", today=TODAY, run=run)

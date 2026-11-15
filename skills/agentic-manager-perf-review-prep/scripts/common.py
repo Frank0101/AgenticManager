@@ -9,25 +9,24 @@ and by the final check, so the two can't differ. Scripts import the shared
 library's names from here, so they don't depend on the order of their imports.
 """
 from datetime import date, timedelta
-import json
 import os
-import re
 import sys
 
 # The agentic-manager-utils-lib skill, installed next to this one.
 LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
+from agentic_manager.commands import library_command, script_command, stdin_json  # noqa: E402,F401
 from agentic_manager.config import company_setting  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
-from agentic_manager.github import commit_authors, gh_available, gh_json, gh_orgs, gh_signed_in, profile_name  # noqa: E402,F401
-from agentic_manager.jira import JiraClient, browse_url, plain_text  # noqa: E402,F401
+from agentic_manager.github import commit_authors, gh_json, gh_orgs, profile_name, pull_search_url, require_gh  # noqa: E402,F401
+from agentic_manager.jira import JiraClient, browse_url, plain_text, project_of, search_url as jira_search_url  # noqa: E402,F401
 from agentic_manager.logseq import graph_path, links, notes, page_aliases  # noqa: E402,F401
-from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
+from agentic_manager.output_file import json_text, read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
-from agentic_manager.output_folder import CHARTS_DIR, DAY_FOLDER, RAW_DIR, clear_folder, day_folder, document_name, output_folder, work_folder  # noqa: E402,F401
-from agentic_manager.period import add_period_arguments, period_problem, shown  # noqa: E402,F401
-from agentic_manager.svg import GRID, INK, MUTED, esc, nice_step, svg, text, text_width  # noqa: E402,F401
+from agentic_manager.output_folder import CHARTS_DIR, DAY_FOLDER, RAW_DIR, clear_folder, day_folder, document_name, folder_problem, folder_subject, output_folder, work_folder  # noqa: E402,F401
+from agentic_manager.period import add_period_arguments, days, period_problem, shown  # noqa: E402,F401
+from agentic_manager.svg import GRID, INK, MUTED, arc_segment, esc, legend, nice_step, svg, text, text_width  # noqa: E402,F401
 from agentic_manager.text import as_name, number, word_count  # noqa: E402,F401
 
 # How to write a point and pick its values, with their examples, lives in the
@@ -182,7 +181,17 @@ def expected_files(prep):
 def report_name(prep):
     """The file name of the prep `prep`'s report, <Person>_Review_Prep.md,
     from its folder's name, <Person>_<YY-MM-DD>."""
-    return document_name(prep.rsplit("_", 1)[0], REPORT_KIND)
+    subject = folder_subject(prep)
+    if not subject:
+        raise SystemExit(f"{prep!r} is not a prep folder, <Person>_<YY-MM-DD>")
+    return document_name(subject, REPORT_KIND)
+
+
+def fetched(paths, root=""):
+    """The fields to fetch for the fields at `paths`, such as
+    "fields.status.name", that are under `root`, such as "fields.": each
+    one's first name below it, once, in order."""
+    return list(dict.fromkeys(path.removeprefix(root).split(".")[0] for path in paths if path.startswith(root)))
 
 
 def write_raw_work(prep, source, raw, days):
@@ -191,7 +200,7 @@ def write_raw_work(prep, source, raw, days):
     Exits, writing nothing, when `raw` breaks a rule, `days` the period's."""
     if problems := raw_work_problems(source, raw, days):
         raise SystemExit("; ".join(problems))
-    return write_raw(prep, f"{source}.json", json.dumps(raw, ensure_ascii=False, indent=1))
+    return write_raw(prep, f"{source}.json", json_text(raw))
 
 
 def raw_work_problems(source, raw, days):
@@ -353,6 +362,45 @@ def pr_item(pr, stamp):
             "url": pr["url"], "date": (stamp or "")[:10]}
 
 
+def items_problems(source, lists, days):
+    """Why `lists`, {list: items} of `source`, don't follow their rules,
+    empty when they do: each item an object with a title, a link and a date,
+    one of `days`, but a Notion page its path and `between`, two of them, a
+    Jira issue its points too, a number or null, and listed once."""
+    problems = []
+    for name, items in lists.items():
+        problems += [f"the work's {source} {name}: {item!r:.80} needs a title, a link"
+                     + (", its path and the range it was found in, within the period" if source == "notion"
+                        else " and a day in the period")
+                     + (", and points, a number or null" if source == "jira" else "")
+                     for item in items if not _is_work_item(source, name, item, days)]
+        urls = [item.get("url") for item in items if isinstance(item, dict)]
+        problems += [f"the work's {source} {name} lists {url} more than once"
+                     for url in sorted(set(urls), key=str) if urls.count(url) > 1]
+    return problems
+
+
+def _is_work_item(source, name, item, days):
+    """Whether `item` of the list `name` of `source` follows its rules."""
+    if source == "notion":
+        return (_is_item(item, days, dated=False) and isinstance(item.get("path"), str)
+                and isinstance(item.get("between"), list) and len(item["between"]) == 2
+                and all(day in days for day in item["between"]))
+    points = item.get("points") if isinstance(item, dict) else None
+    return _is_item(item, days, dated=True) and (source != "jira" or points is None or (
+        isinstance(points, (int, float)) and not isinstance(points, bool)))
+
+
+def _is_item(item, days, dated):
+    """Whether `item` is an object with a title, a link and, when `dated`, a
+    date, one of `days`. A link is a web address, http or https: a Jira
+    item's is made from the site's base-url, which a self-hosted site may
+    serve over http."""
+    return (isinstance(item, dict) and _is_text(item.get("title"))
+            and str(item.get("url", "")).startswith(("http://", "https://"))
+            and (not dated or item.get("date") in days))
+
+
 def prep_dir(prep):
     """The absolute path of the prep folder `prep` inside the skill's output
     folder. Exits if `prep` isn't a prep folder name, <Person>_<YY-MM-DD>,
@@ -371,52 +419,8 @@ def write_prep_file(prep, name, value):
     """Writes `value` as indented JSON to the file `name` of the prep folder
     `prep`, through the shared writer; returns the file's path."""
     path, _ = write_output_file(FOLDER_NAME, f"{prep}/{name}",
-                                (json.dumps(value, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
+                                json_text(value).encode("utf-8"))
     return path
-
-
-def script_command(script):
-    """The command that runs the skill's script `script`, by the folder the
-    agent ran one of the skill's scripts from, so every command a task names
-    matches the one the skill pre-approves."""
-    return f"python3 {os.path.join(_scripts_folder(), script)}"
-
-
-def library_command(module):
-    """The command that runs the library's module `module`, such as
-    "extract_saved.py", by the path the skill pre-approves, beside the skill's
-    folder as script_command() finds it."""
-    return f"python3 {os.path.join(os.path.dirname(_scripts_folder()), '..', 'agentic-manager-utils-lib', 'agentic_manager', module)}"
-
-
-def _scripts_folder():
-    """The skill's scripts folder as the agent ran one of its scripts."""
-    # abspath, not realpath: the agent runs a script by the path the skill
-    # pre-approves, which can be a symlink to the installed skill.
-    ran = os.path.dirname(os.path.abspath(sys.argv[0]))
-    here = os.path.dirname(os.path.realpath(__file__))
-    return ran if os.path.realpath(ran) == here else here
-
-
-def require_gh(run, what):
-    """Exits, saying what to do, unless gh can be used and is signed in, as
-    `run` runs it; `what` says what is fetched with it, such as "the
-    person's pull requests are fetched"."""
-    if not gh_available():
-        raise SystemExit(
-            f"gh isn't installed or the github-cli source isn't enabled: {what} with it")
-    if not gh_signed_in(run):
-        raise SystemExit(
-            "gh isn't signed in: run gh auth login, then run this again")
-
-
-def stdin_json(usage):
-    """The JSON the agent wrote on stdin. Exits, showing `usage`, the input
-    to send, when it isn't JSON."""
-    try:
-        return json.loads(sys.stdin.read())
-    except json.JSONDecodeError as error:
-        raise SystemExit(f"the input isn't JSON: {error}\n\n{usage}")
 
 
 def person_problems(person, today):
@@ -455,8 +459,7 @@ def period_days(person):
 
 def days_between(start, end):
     """Every day from `start` to `end`, both as YYYY-MM-DD, in the same form."""
-    first, last = date.fromisoformat(start), date.fromisoformat(end)
-    return [(first + timedelta(days=n)).isoformat() for n in range((last - first).days + 1)]
+    return [day.isoformat() for day in days(date.fromisoformat(start), date.fromisoformat(end))]
 
 
 def months_of(first, last):
@@ -582,58 +585,6 @@ def slack_problems(slack, values, days):
     return summary_problems(slack, "the Slack summary", values, days)
 
 
-def items_problems(source, lists, days):
-    """Why `lists`, {list: items} of `source`, don't follow their rules,
-    empty when they do: each item an object with a title, a link and a date,
-    one of `days`, but a Notion page its path and `between`, two of them, a
-    Jira issue its points too, a number or null, and listed once."""
-    problems = []
-    for name, items in lists.items():
-        problems += [f"the work's {source} {name}: {item!r:.80} needs a title, a link"
-                     + (", its path and the range it was found in, within the period" if source == "notion"
-                        else " and a day in the period")
-                     + (", and points, a number or null" if source == "jira" else "")
-                     for item in items if not _is_work_item(source, name, item, days)]
-        urls = [item.get("url") for item in items if isinstance(item, dict)]
-        problems += [f"the work's {source} {name} lists {url} more than once"
-                     for url in sorted(set(urls), key=str) if urls.count(url) > 1]
-    return problems
-
-
-def _is_work_item(source, name, item, days):
-    """Whether `item` of the list `name` of `source` follows its rules."""
-    if source == "notion":
-        return (_is_item(item, days, dated=False) and isinstance(item.get("path"), str)
-                and isinstance(item.get("between"), list) and len(item["between"]) == 2
-                and all(day in days for day in item["between"]))
-    points = item.get("points") if isinstance(item, dict) else None
-    return _is_item(item, days, dated=True) and (source != "jira" or points is None or (
-        isinstance(points, (int, float)) and not isinstance(points, bool)))
-
-
-def _is_item(item, days, dated):
-    """Whether `item` is an object with a title, a link and, when `dated`, a
-    date, one of `days`. A link is a web address, http or https: a Jira
-    item's is made from the site's base-url, which a self-hosted site may
-    serve over http."""
-    return (isinstance(item, dict) and _is_text(item.get("title"))
-            and str(item.get("url", "")).startswith(("http://", "https://"))
-            and (not dated or item.get("date") in days))
-
-
-def types_text(by_type):
-    """A breakdown by type, [{type, issues}], as the report writes it, such
-    as "2 Task, 1 Bug": how the report and its check write it, so they
-    agree."""
-    return ", ".join(f"{entry['issues']} {entry['type']}" for entry in by_type)
-
-
-def average_text(average):
-    """The story points' `average` as the report writes it, such as
-    "avg=3.3", or "none estimated" when it is null."""
-    return "none estimated" if average is None else f"avg={number(average)}"
-
-
 def summary_problems(summary, what, values, days=None, undated_context=False):
     """Why `summary`, the summary of `what`, such as "the orientation", doesn't
     have the parts of SUMMARY_PARTS, empty when it does: each a list of
@@ -725,3 +676,16 @@ def _is_evidence(item):
     return (isinstance(item, dict) and sorted(item) == ["date", "link"]
             and (item["date"] is None or isinstance(item["date"], str))
             and isinstance(item["link"], str) and item["link"].startswith(LINK_SCHEMES))
+
+
+def types_text(by_type):
+    """A breakdown by type, [{type, issues}], as the report writes it, such
+    as "2 Task, 1 Bug": how the report and its check write it, so they
+    agree."""
+    return ", ".join(f"{entry['issues']} {entry['type']}" for entry in by_type)
+
+
+def average_text(average):
+    """The story points' `average` as the report writes it, such as
+    "avg=3.3", or "none estimated" when it is null."""
+    return "none estimated" if average is None else f"avg={number(average)}"

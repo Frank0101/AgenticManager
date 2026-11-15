@@ -9,6 +9,7 @@ import copy
 import os
 import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -366,12 +367,16 @@ class InvestigateTest(unittest.TestCase):
 
     def test_the_commands_name_the_script_as_it_was_run(self):
         # The pre-approved path is the one the agent ran, a symlink included.
-        with mock.patch.object(sys, "argv", ["/skills/x/scripts/investigate.py"]):
-            self.assertEqual(investigate.call(),
-                             "python3 /skills/x/scripts/investigate.py")
-            values = investigate.fills(INVESTIGATION)
-            self.assertEqual((values["scripts"], values["lib"]),
-                             ("/skills/x/scripts", "/skills/x/../agentic-manager-utils-lib/agentic_manager"))
+        scripts = os.path.dirname(os.path.realpath(investigate.__file__))
+        with tempfile.TemporaryDirectory(dir=os.path.dirname(self.path)) as folder:
+            link = os.path.join(folder, "scripts")
+            os.symlink(scripts, link)
+            with mock.patch.object(sys, "argv", [os.path.join(link, "investigate.py")]):
+                self.assertEqual(investigate.call(),
+                                 f"python3 {os.path.join(link, 'investigate.py')}")
+                values = investigate.fills(INVESTIGATION)
+                self.assertEqual((values["scripts"], values["lib"]),
+                                 (link, os.path.join(folder, "..", "agentic-manager-utils-lib", "agentic_manager")))
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ Run with: python3 tests/run.py agentic-manager-utils-lib
 """
 
 import os
+import re
 import sys
 import unittest
 
@@ -39,6 +40,37 @@ class SvgTest(unittest.TestCase):
         self.assertTrue(document.startswith(
             '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50"'))
         self.assertIn(f'fill="{svg.SURFACE}"/>\n<line/>\n</svg>', document)
+
+    def test_legend(self):
+        # A box per entry without a line, else a line of its width and dash
+        # pattern, solid without one; a row wraps before the right edge, and
+        # the bottom sits below the last row.
+        entries = [("Done", "#111111", None), ("Ideal", "#222222", (1.8, "7 5")),
+                   ("Actual", "#333333", (2.4, None))]
+        elements, bottom = svg.legend(entries, 10, 400, 50)
+        self.assertEqual(
+            elements[0], '<rect x="10.0" y="50.0" width="10" height="10" fill="#111111"/>')
+        self.assertIn('stroke="#222222" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="7 5"/>',
+                      elements[2])
+        self.assertTrue(elements[4].endswith(
+            'stroke="#333333" stroke-width="2.4" stroke-linecap="round"/>'))
+        self.assertEqual([svg.esc(label) in "".join(elements)
+                         for label, *_ in entries], [True] * 3)
+        self.assertEqual(bottom, 68)
+        wrapped, wrapped_bottom = svg.legend(entries, 10, 120, 50)
+        rows = sorted({float(y) for y in re.findall(
+            r'<text x="[\d.]+" y="([\d.]+)"', "".join(wrapped))})
+        self.assertEqual((len(rows), wrapped_bottom), (3, 68 + 2 * 16))
+
+    def test_arc_segment(self):
+        # Known paths: a 57° donut segment, and a 270° pie segment (large-arc flag set).
+        cases = [((120, 120, 88, 44, -88.5, -31.5),
+                  "M32.03,117.7 A88,88,0,0,1,74.02,44.97 L97.01,82.48 A44,44,0,0,0,76.02,118.85 Z"),
+                 ((100, 100, 80, 0, 0, 270),
+                  "M100,20 A80,80,0,1,1,20,100 L100,100 A0,0,0,1,0,100,100 Z")]
+        for args, expected in cases:
+            with self.subTest(args):
+                self.assertEqual(svg.arc_segment(*args), expected)
 
 
 if __name__ == "__main__":

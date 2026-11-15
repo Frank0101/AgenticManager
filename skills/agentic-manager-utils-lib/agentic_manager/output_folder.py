@@ -108,6 +108,26 @@ def folder_day(name):
     return datetime.strptime(match["date"], DAY_FORMAT).date() if match else None
 
 
+def folder_subject(name):
+    """The subject of a subject's folder named by day_folder(), or None for a
+    name of another form."""
+    match = DAY_FOLDER.fullmatch(name)
+    return match["subject"] if match else None
+
+
+def folder_problem(folder, wanted):
+    """What is wrong with the files in `folder`, those starting with a dot
+    aside, when they aren't the set `wanted`, or None when they are: the
+    files it must hold, those to move out and those missing."""
+    files = {name for name in os.listdir(folder) if not name.startswith(".")}
+    if files == wanted:
+        return None
+    extra, missing = sorted(files - wanted), sorted(wanted - files)
+    return ("the folder must hold only " + ", ".join(sorted(wanted))
+            + (f"; move {', '.join(extra)} to your own scratch folder" if extra else "")
+            + (f"; missing {', '.join(missing)}" if missing else ""))
+
+
 def clear_folder(path):
     """Deletes `path`, a folder with everything in it, or only the link or file
     found there instead, and returns whether there was anything to delete."""

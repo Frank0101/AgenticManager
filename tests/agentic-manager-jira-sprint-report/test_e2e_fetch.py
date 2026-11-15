@@ -1,5 +1,5 @@
 """End-to-end tests for skills/agentic-manager-jira-sprint-report/scripts/fetch_sprint.py
-and prepare_report.py, which runs it, build_sprint_data.py and make_brief.py: they
+and prepare_report.py, which runs it, build_data.py and make_brief.py: they
 run the whole scripts. fetch_sprint.py's functions have unit tests in
 test_fetch_sprint.py.
 Run with: python3 tests/run.py agentic-manager-jira-sprint-report
@@ -512,7 +512,7 @@ class FetchTest(unittest.TestCase):
         self.assertEqual(self.comment_files(out), ["PROJ-7"])
         self.assertEqual([c["id"] for c in self.raw(
             out, "comments/PROJ-7.json")], ["1", "2", "3", "4"])
-        built = self.run_script("build_sprint_data.py",
+        built = self.run_script("build_data.py",
                                 "--report-dir", out["report_dir"])
         self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
         with open(os.path.join(out["report_dir"], "data.json"), encoding="utf-8") as f:

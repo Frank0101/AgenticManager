@@ -21,7 +21,8 @@ tech-investigations/
 └── Payments-Retry-Service_26-10-05/
     ├── ledger.md                          the research record: scope boundaries, sources, findings, questions, design
     ├── content.json                       the report's text, as the write task submitted it
-    └── Payments-Retry-Service_Report.md   the report, generated from the two above
+    └── Payments-Retry-Service_Report.md   the report, which finish_report.py writes from the two above when the
+                                           write task's text is submitted
 ```
 
 ## Prerequisite

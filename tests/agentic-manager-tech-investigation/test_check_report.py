@@ -170,33 +170,41 @@ class CheckReportTest(unittest.TestCase):
                         ledger, handover=handover)
                 self.assertIn("cannot read research ledger", " ".join(errors))
 
-    def test_handover_gaps_need_a_valid_blocker(self):
-        # The gap rules apply at handover: a blocker, and evidence that traces
-        # it; the blocker's own cases are in test_common.py.
-        ledger = self.folder / "ledger.md"
-        cases = [("a decision", "Waiting on decision D01", "F01", None),
-                 ("nothing blocks it", "Not done yet",
-                  "F01", "Blocked by"),
-                 ("evidence that traces nothing", "Waiting on decision D01", "Code",
-                  "G01: Evidence names the findings or sources")]
-        for name, blocker, evidence, expected in cases:
-            with self.subTest(name):
-                text = with_rows(with_rows(LEDGER, "gaps", [["G01", "Gap", blocker, "Owner", evidence]]),
-                                 "decisions", [["D01", "Choice", "Unresolved: A or B", "Owner", "F01"]])
-                ledger.write_text(text, encoding="utf-8")
-                result = check_report.check_report(self.report, handover=True)
-                assert_problem(self, " ".join(
-                    result["errors"]) or None, expected)
+    def test_handover_rules(self):
+        # Rules only the handover check applies: the check before it passes
+        # every case. A gap needs a blocker, and evidence that traces it (the
+        # blocker's own cases are in test_common.py); nothing is left ready or
+        # in progress; a source links its reference, and a search is recorded
+        # by its exact query between backticks instead.
+        def gap(blocker, evidence):
+            return with_rows(with_rows(LEDGER, "gaps", [["G01", "Gap", blocker, "Owner", evidence]]),
+                             "decisions", [["D01", "Choice", "Unresolved: A or B", "Owner", "F01"]])
 
-    def test_handover_needs_the_queue_worked(self):
-        # At handover nothing is left ready or in progress.
+        def search(reference, ident="S04"):
+            return source_row(ident, "code: search", reference, "today", "search hit")
         open_question = ["Q01", "Start", "Read code", "—", "—"]
+        query = "`gh search code --repo acme/app PROJ-1`"
         cases = [
+            ("a gap waiting on a decision", gap(
+                "Waiting on decision D01", "F01"), None),
+            ("a gap nothing blocks", gap(
+                "Not done yet", "F01"), "Blocked by"),
+            ("a gap whose evidence traces nothing", gap("Waiting on decision D01", "Code"),
+             "G01: Evidence names the findings or sources"),
             ("a question answered", LEDGER, None),
             ("a ready question", with_queue(LEDGER, "Ready", [open_question]),
              "still ready or in progress"),
             ("a question in progress", with_queue(LEDGER, "In progress", [open_question]),
-             "still ready or in progress")]
+             "still ready or in progress"),
+            ("linked sources", with_sources([search(query)]), None),
+            ("a search described in words", with_sources([search("a GitHub code search")]),
+             "S04: link the Reference at its pinned revision"),
+            ("an unlinked source", with_sources([source_row(reference="acme/app", findings="F01")]),
+             "S01: link the Reference at its pinned revision"),
+            # Rows as ledger.py writes them: anchored IDs and linked citations.
+            ("an anchored search", with_sources(
+                [search(query, '<a id="s04"></a>S04')]), None),
+        ]
         for name, text, expected in cases:
             with self.subTest(name):
                 (self.folder / "ledger.md").write_text(text, encoding="utf-8")
@@ -220,29 +228,6 @@ class CheckReportTest(unittest.TestCase):
                 self.assertIn(f"Unexpected files in the investigation folder: {stray}", " ".join(
                     result["errors"]))
                 (self.folder / stray).unlink()
-
-    def test_handover_needs_links_to_sources(self):
-        # A source links its reference; a search is recorded by its exact query between backticks instead.
-        def search(reference, ident="S04"):
-            return source_row(ident, "code: search", reference, "today", "search hit")
-        query = "`gh search code --repo acme/app PROJ-1`"
-        cases = [
-            ("linked rows", [search(query)], None),
-            ("a search described in words", [search("a GitHub code search")],
-             "S04: link the Reference at its pinned revision"),
-            ("an unlinked source", [source_row(reference="acme/app", findings="F01")],
-             "S01: link the Reference at its pinned revision"),
-            # Rows as ledger.py writes them: anchored IDs and linked citations.
-            ("an anchored search", [
-             search(query, '<a id="s04"></a>S04')], None),
-        ]
-        for name, rows, expected in cases:
-            with self.subTest(name):
-                (self.folder / "ledger.md").write_text(with_sources(rows), encoding="utf-8")
-                self.assertTrue(check_report.check_report(self.report)["ok"])
-                result = check_report.check_report(self.report, handover=True)
-                assert_problem(self, " ".join(
-                    result["errors"]) or None, expected)
 
     def test_unlinked_references_fail(self):
         # In the ledger and the report alike: a backticked reference is a link

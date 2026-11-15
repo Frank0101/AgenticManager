@@ -3,7 +3,7 @@ folder.
 
 Nothing is computed here beyond choosing what to fetch: the previous sprint,
 the epics, whose comments and where to look for pull requests. The raw files
-keep what was fetched, today's values included, and build_sprint_data.py
+keep what was fetched, today's values included, and build_data.py
 rebuilds the sprint as at its end from them. Everything is fetched before the
 report folder is touched, so a Jira or gh failure, which stops the fetch with
 the library's failures.py, leaves the earlier report in place.
@@ -256,7 +256,7 @@ def main():
 
         # Comments are fetched only for the tickets that were blocker candidates
         # at the moment the report describes, worked out from the tickets'
-        # events, as build_sprint_data.py works out data.json's. The events
+        # events, as build_data.py works out data.json's. The events
         # need neither the epics' names nor the previous sprint.
         context = Context(sprint_id, sprint.get("startDate"), categories, (flagged_field, points_field), {},
                           reporting_zone, None)

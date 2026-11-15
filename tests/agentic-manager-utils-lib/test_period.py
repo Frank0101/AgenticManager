@@ -20,6 +20,11 @@ TODAY = date(2026, 11, 10)
 
 
 class PeriodTest(unittest.TestCase):
+    def test_days(self):
+        self.assertEqual(period.days(date(2026, 2, 27), date(2026, 3, 1)),
+                         [date(2026, 2, 27), date(2026, 2, 28), date(2026, 3, 1)])
+        self.assertEqual(period.days(date(2026, 3, 1), date(2026, 2, 27)), [])
+
     def test_last_months(self):
         # It ends today and starts the same day N months back, or that month's
         # last day when it is shorter.

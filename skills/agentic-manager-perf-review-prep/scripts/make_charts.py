@@ -5,11 +5,10 @@ worked out once and checked. An epic has one colour in every chart, its pie
 slice's, by data.json's epic order, so one legend reads them all. They are
 drawn as SVG by hand, as skills install nothing.
 """
-import math
 from datetime import date
 
-from common import (EPICS_CHART, GRID, INK, JIRA_CELLS,
-                    MUTED, nice_step, number, svg, text, text_width)
+from common import (CHARTS_DIR, arc_segment, EPICS_CHART, FOLDER_NAME, GRID, INK, JIRA_CELLS, MUTED, legend, nice_step, number,
+                    svg, text, text_width, write_output_file)
 
 # A chart's size, its plot's height, below which its legend adds rows; the
 # report fits it to its column.
@@ -27,6 +26,14 @@ PALETTE = ("#4a72b0", "#e08a2c", "#3f9c6c", "#c4524a", "#8a6bbf", "#2a9fb0", "#b
 NO_EPIC = "#a8a399"
 
 
+def write_charts(prep, data):
+    """Write every chart of the prep `prep`'s report, from `data`, its
+    data.json, to its _charts folder."""
+    for name, content in draw(data).items():
+        write_output_file(
+            FOLDER_NAME, f"{prep}/{CHARTS_DIR}/{name}", content.encode("utf-8"))
+
+
 def draw(data):
     """{file name: SVG}: every chart of the report, from `data`, its
     data.json."""
@@ -40,7 +47,7 @@ def draw(data):
              ("no epic", NO_EPIC, False)]
     bars = [*((key, colour, False) for key, colour in colours.items()), ("no epic", NO_EPIC, False),
             ("average", AVERAGE, True)]
-    height = max(legend(entries, HEIGHT)[1] for entries in (lines, bars))
+    height = max(chart_legend(entries)[1] for entries in (lines, bars))
     return {chart["created"]: over_time_chart(jira["created_by_week"], weeks, "created", colours, lines, height),
             chart["resolved"]: over_time_chart(jira["resolved_by_week"], weeks, "resolved", colours, lines, height),
             chart["resolved_points"]: points_chart(jira["points_by_epic"], jira["resolved_points"]["average"],
@@ -79,24 +86,16 @@ def over_time_chart(series, weeks, label, colours, entries, height):
                   f"{first:%b}", size=12, anchor="middle") for x, first in months]
     body.append(text(LEFT + plot_width / 2, HEIGHT -
                 6, label, size=13, anchor="middle"))
-    return svg(WIDTH, height, body + legend(entries, HEIGHT)[0])
+    return svg(WIDTH, height, body + chart_legend(entries)[0])
 
 
-def legend(entries, top):
+def chart_legend(entries):
     """(elements, height): a legend of `entries`, (label, colour, dashed),
-    each a box of its colour or, dashed, a dashed line, laid out in rows below
-    `top`, wrapping at the chart's width, and the chart's height with it."""
-    elements, x, y = [], LEFT, top + 4
-    for label, colour, dashed in entries:
-        width = 11 + 5 + text_width(label, 11) + 14
-        if x + width > WIDTH - RIGHT and x > LEFT:
-            x, y = LEFT, y + 16
-        elements += [f'<line x1="{x:.1f}" y1="{y + 5:.1f}" x2="{x + 10:.1f}" y2="{y + 5:.1f}" stroke="{colour}" '
-                     f'stroke-width="1.5" stroke-dasharray="3 2"/>' if dashed else
-                     f'<rect x="{x:.1f}" y="{y:.1f}" width="10" height="10" fill="{colour}"/>',
-                     text(x + 15, y + 9, label, size=11)]
-        x += width
-    return elements, y + 18
+    each a box of its colour or, dashed, a dashed line, laid out in rows
+    below the plot, wrapping at the chart's width, and the chart's height
+    with it."""
+    return legend([(label, colour, (1.5, "3 2") if dashed else None) for label, colour, dashed in entries],
+                  LEFT, WIDTH - RIGHT, HEIGHT + 4, line_length=10)
 
 
 def points_chart(rows, average, colours, entries, height):
@@ -129,7 +128,7 @@ def points_chart(rows, average, colours, entries, height):
                     number(row["points"]), size=12, anchor="middle"))
     x = average_x(average, values, centres)
     body += [f'<line x1="{x:.1f}" y1="{TOP:.1f}" x2="{x:.1f}" y2="{TOP + plot_height:.1f}" stroke="{AVERAGE}" '
-             f'stroke-width="1.5" stroke-dasharray="5 4"/>', *axes(), label, *legend(entries, HEIGHT)[0]]
+             f'stroke-width="1.5" stroke-dasharray="5 4"/>', *axes(), label, *chart_legend(entries)[0]]
     return svg(WIDTH, height, body)
 
 
@@ -151,19 +150,16 @@ def epics_chart(by_epic, colours, height):
                                               anchor="middle")])
     # The biggest slice ends at 12 o'clock, on the left; the others follow it
     # clockwise from 12.
-    body, angle = [], -math.pi / 2 - 2 * math.pi * slices[0][1] / total
+    body, start = [], -360 * slices[0][1] / total
     for _, count, colour in slices:
-        sweep = 2 * math.pi * count / total
+        sweep = 360 * count / total
         if count == total:
             body.append(
                 f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{radius:.1f}" fill="{colour}"/>')
         else:
-            end = angle + sweep
-            body.append(f'<path d="M{cx:.1f},{cy:.1f} L{cx + radius * math.cos(angle):.1f},'
-                        f'{cy + radius * math.sin(angle):.1f} A{radius:.1f},{radius:.1f} 0 '
-                        f'{int(sweep > math.pi)} 1 {cx + radius * math.cos(end):.1f},{cy + radius * math.sin(end):.1f} Z" '
+            body.append(f'<path d="{arc_segment(cx, cy, radius, 0, start, start + sweep)}" '
                         f'fill="{colour}" stroke="white" stroke-width="1.5"/>')
-        angle += sweep
+        start += sweep
     legend_x, top = cx + radius + 18, cy - row * len(slices) / 2
     for index, (label, count, colour) in enumerate(slices):
         y = top + row * index

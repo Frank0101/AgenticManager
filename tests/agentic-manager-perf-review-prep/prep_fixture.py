@@ -173,7 +173,7 @@ def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
     `orientation`, `reviews`, `feedback`, `notes`, `data`,
     and `slack`, each left out when None, the _raw folder, with
     `raw_work`, each source's raw file, unless None, and, with `report` and
-    both a person and data, the report as make_report.py writes it, with its
+    both a person and data, the report as finish_report.py writes it, with its
     charts, each an empty drawing."""
     os.makedirs(os.path.join(folder, prep, "_raw"), exist_ok=True)
     for source, lists in (raw_work or {}).items():

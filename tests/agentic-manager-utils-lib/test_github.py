@@ -57,6 +57,10 @@ class GithubTest(unittest.TestCase):
         # module fixtures for.
         self.enterContext(mock.patch.object(retry.time, "sleep"))
 
+    def test_pull_search_url(self):
+        self.assertEqual(github.pull_search_url("is:pr author:janedoe org:acme"),
+                         "https://github.com/search?q=is%3Apr%20author%3Ajanedoe%20org%3Aacme&type=pullrequests")
+
     def test_gh_json(self):
         # An answer, even an empty one, is returned; a failure raises with
         # gh's own message, so "gh failed" is never read as "nothing found".

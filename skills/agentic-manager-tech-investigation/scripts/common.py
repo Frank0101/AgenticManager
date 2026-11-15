@@ -16,14 +16,15 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.batch import gather  # noqa: E402,F401
+from agentic_manager.commands import script_command, scripts_folder, stdin_json  # noqa: E402,F401
 from agentic_manager.config import enabled_sources, is_enabled  # noqa: E402,F401
-from agentic_manager.github import NAME as GITHUB_CLI, GH_UNAVAILABLE, GhError, gh_available, gh_found, gh_hosts, gh_signed_in, pull_parts  # noqa: E402,F401
+from agentic_manager.github import NAME as GITHUB_CLI, GH_UNAVAILABLE, GhError, gh_available, require_gh, gh_found, gh_hosts, pull_parts  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
 from agentic_manager.jira import BROWSE_URL as TICKET_URL, NAME as JIRA_API, PROJECT_KEY, JiraClient, browse_url, plain_text, project_of  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
-from agentic_manager.output_file import read_json, target, write_output_file  # noqa: E402,F401
+from agentic_manager.output_file import json_text, read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
-from agentic_manager.output_folder import DAY_FOLDER, clear_folder, day_folder, document_name, folder_day, output_folder, work_folder  # noqa: E402,F401
+from agentic_manager.output_folder import clear_folder, day_folder, document_name, folder_day, folder_subject, output_folder, work_folder  # noqa: E402,F401
 from agentic_manager.text import DEFINITION, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, display_date, free_name, headings, inline_links, link_definitions, link_text, links, local_link, markdown, reference_key, same_document, slug, word_count  # noqa: E402,F401
 from agentic_manager.ticket_pulls import pulls_by_ticket  # noqa: E402,F401
 
@@ -36,7 +37,7 @@ REPORT_KIND = "Report.md"
 
 # <Topic>_<YY-MM-DD>: words joined by hyphens, capitalised by the agent, or
 # as the user named it.
-TOPIC, INVESTIGATION = NAME, DAY_FOLDER
+TOPIC = NAME
 
 # The report's headings: (level, title, id); the script names a heading by its id.
 HEADINGS = [
@@ -307,13 +308,19 @@ def investigation_dir(relative):
     return target(folder, relative), folder, temporary
 
 
+def report_path(folder):
+    """The absolute path of the report in the investigation folder `folder`,
+    <Topic>_Report.md; exits if `folder` isn't an investigation folder."""
+    return os.path.join(folder, document_name(topic_of(folder), REPORT_KIND))
+
+
 def topic_of(folder):
     """The <Topic> of an investigation folder's name, or exits."""
-    match = INVESTIGATION.fullmatch(os.path.basename(os.path.normpath(folder)))
-    if not match:
+    topic = folder_subject(os.path.basename(os.path.normpath(folder)))
+    if not topic:
         raise SystemExit(
             f"{folder!r} is not an investigation folder, <Topic>_<YY-MM-DD>")
-    return match["subject"]
+    return topic
 
 
 def table(header, rows):

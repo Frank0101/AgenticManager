@@ -61,7 +61,7 @@ class MainTest(unittest.TestCase):
         def run(script, *args):
             runs.append((script, *args))
             return {"fetch_sprint.py": json.dumps(FETCHED) + "\n",
-                    "build_sprint_data.py": "wrote data.json\n"}.get(script, "")
+                    "build_data.py": "wrote data.json\n"}.get(script, "")
         out, err = io.StringIO(), io.StringIO()
         with mock.patch.object(prepare_report, "run", side_effect=run), \
                 mock.patch.object(sys, "argv", ["prepare_report.py", *argv]), \
@@ -72,7 +72,7 @@ class MainTest(unittest.TestCase):
     def test_runs_the_steps_in_order(self):
         out, err, runs = self.main("--project", "PROJ")
         self.assertEqual(runs, [("fetch_sprint.py", "--project", "PROJ"),
-                                ("build_sprint_data.py",
+                                ("build_data.py",
                                  "--report-dir", REPORT_DIR),
                                 ("make_brief.py", "--report-dir", REPORT_DIR)])
         # One line of JSON: the fetch's, plus the brief and content.json's

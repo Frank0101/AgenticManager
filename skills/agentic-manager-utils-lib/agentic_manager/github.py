@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 from typing import Any
+from urllib.parse import quote
 
 from agentic_manager.batch import batches, gather
 from agentic_manager.config import is_enabled
@@ -72,6 +73,23 @@ GH_UNAVAILABLE = "gh isn't available or github-cli isn't enabled"
 PAGE_SIZE = 100
 
 
+def require_gh(run, what):
+    """Exits, saying what to do, unless gh can be used and is signed in, as
+    `run` runs it; `what` says what is done with it, such as "the person's
+    pull requests are fetched"."""
+    if not gh_available():
+        raise SystemExit(
+            f"gh isn't installed or the github-cli source isn't enabled: {what} with it")
+    try:
+        signed_in = gh_signed_in(run)
+    except GhError:
+        raise SystemExit(
+            f"gh can't be run: install it, then run this again, as {what} with it")
+    if not signed_in:
+        raise SystemExit(
+            "gh isn't signed in: run gh auth login, then run this again")
+
+
 def gh_available():
     """Whether gh can be used: installed, and enabled as the user's github-cli source."""
     return shutil.which("gh") is not None and is_enabled(GROUP, NAME)
@@ -98,6 +116,12 @@ def gh_orgs(run=subprocess.run):
     login, such as ["acme"], for a skill that searches only its user's
     organisations. Raises GhError when gh fails, as gh_json() does."""
     return sorted(org["login"] for org in gh_json(["api", f"user/orgs?per_page={PAGE_SIZE}"], run))
+
+
+def pull_search_url(query):
+    """The page of GitHub's search of pull requests for `query`, such as
+    "is:pr author:janedoe"."""
+    return f"https://{DEFAULT_HOST}/search?q={quote(query)}&type=pullrequests"
 
 
 def commit_authors(query, run=subprocess.run):

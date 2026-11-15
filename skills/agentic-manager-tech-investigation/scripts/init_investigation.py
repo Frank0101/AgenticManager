@@ -13,8 +13,8 @@ import subprocess
 
 from common import (DESIGN, citation, DESIGN_SUBSECTIONS, GITHUB_CLI, GROUPS, JIRA_API, QUEUE,
                     FOLDER_NAME, LEDGER, LEDGER_SECTIONS, QUEUE_HEADER,
-                    QUEUE_SUBSECTIONS, TOPIC, GhError, anchored, clear_folder, day_folder,
-                    enabled_sources, gh_signed_in, output_folder, table, write_output_file)
+                    QUEUE_SUBSECTIONS, TOPIC, anchored, clear_folder, day_folder,
+                    enabled_sources, output_folder, require_gh, table, write_output_file)
 
 # The first questions, as (kind of source, question), X the topic in words. The
 # first orients: what the topic is and what sits next to it, so the user decides
@@ -47,7 +47,8 @@ def init(topic, today=None, run=subprocess.run):
         raise SystemExit(f"No usable source for: {', '.join(missing)}. The investigation needs the code, the "
                          "tracker and the documentation: enable a source for each in the config, as "
                          "check_config.py shows, then run investigate.py start again")
-    check_gh(sources, run)
+    if GITHUB_CLI in sources["source_control"]:
+        require_gh(run, "the code is read")
     folder, temporary = output_folder(FOLDER_NAME)
     relative = day_folder(topic, today or date.today())
     path = os.path.join(folder, relative)
@@ -65,21 +66,6 @@ def usable_sources():
     tickets.py reads."""
     return {group: [name for name in enabled_sources(group) if group != "workflow" or name == JIRA_API]
             for group in GROUPS}
-
-
-def check_gh(sources, run=subprocess.run):
-    """Exits, saying what to do, when the code comes through gh and gh can't
-    be used: not installed, or not signed in."""
-    if GITHUB_CLI not in sources["source_control"]:
-        return
-    try:
-        signed_in = gh_signed_in(run)
-    except GhError:
-        raise SystemExit("github-cli is enabled but gh can't be run: install it, then run investigate.py start "
-                         "again")
-    if not signed_in:
-        raise SystemExit(
-            "gh isn't signed in: run gh auth login, then run investigate.py start again")
 
 
 def first_questions(topic):

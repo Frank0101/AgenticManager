@@ -11,7 +11,7 @@ import os
 
 from build_data import data_problems
 from check_report import report_problems
-from common import (CHARTS_DIR, FEEDBACK, NOTES, ORIENTATION, PERSON, RATINGS, RAW_DIR, REVIEWS, SLACK, SOURCES,
+from common import (CHARTS_DIR, FEEDBACK, folder_problem, NOTES, ORIENTATION, PERSON, RATINGS, RAW_DIR, REVIEWS, SLACK, SOURCES,
                     VALUES, DATA, company_names, expected_files, feedback_problems, notes_problems,
                     orientation_problems, period_days, person_problems, prep_dir, read_json, read_raw_work,
                     report_name, reviews_problems, slack_problems, sources_problems)
@@ -23,11 +23,8 @@ def check_prep(prep, today=None):
     errors = []
     files = {name for name in os.listdir(folder) if not name.startswith(".")}
     wanted, report = expected_files(prep), report_name(prep)
-    if files != wanted:
-        extra, missing = sorted(files - wanted), sorted(wanted - files)
-        errors.append("the folder must hold only " + ", ".join(sorted(wanted))
-                      + (f"; move {', '.join(extra)} to your own scratch folder" if extra else "")
-                      + (f"; missing {', '.join(missing)}" if missing else ""))
+    if problem := folder_problem(folder, wanted):
+        errors.append(problem)
     read = {name: read_json(os.path.join(folder, name))
             for name in (wanted & files) - {RAW_DIR, report, CHARTS_DIR}}
     person = read.get(PERSON)

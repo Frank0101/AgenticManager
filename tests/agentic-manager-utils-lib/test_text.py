@@ -33,7 +33,7 @@ class TextTest(unittest.TestCase):
     def test_slug(self):
         cases = [("Quarterly Review: Q3 2026", "quarterly-review-q3-2026"),
                  ("  --Team / Roadmap--  ", "team-roadmap"),
-                 ("Café_Menu", "caf-menu"),
+                 ("Café_Menu", "cafe-menu"),
                  ("already-a-slug", "already-a-slug"),
                  ("– & /", ""), ("", "")]
         for written, expected in cases:
@@ -176,6 +176,13 @@ class TextTest(unittest.TestCase):
         for value, expected in [(3, "3"), (201.0, "201"), (3.3, "3.3"), (0.1 + 0.2, "0.3"), (2.345, "2.35")]:
             with self.subTest(value):
                 self.assertEqual(text.number(value), expected)
+
+    def test_plural(self):
+        # The singular for exactly 1, 1.0 too; anything else, 0 included,
+        # takes the plural.
+        for count, expected in [(0, "they"), (1, "it"), (1.0, "it"), (2, "they"), (0.5, "they")]:
+            with self.subTest(count):
+                self.assertEqual(text.plural(count, "it", "they"), expected)
 
 
 if __name__ == "__main__":

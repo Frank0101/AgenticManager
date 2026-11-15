@@ -1,7 +1,7 @@
 ---
 name: agentic-manager-slides-deck
 description: Turns a conversation into an HTML slide deck - infers the kind of presentation (pitch, business review, townhall, report, roadmap, status update), asks a few qualifying questions one at a time, then builds a deck of fixed-size slides with zoom and PDF export, from a reference the user gives, from a library of described slide layouts or as plain slides to focus on the content, and iterates on it with the user. Use when the user asks for slides, a deck or a presentation, or to change the deck built in the same conversation.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_deck.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/add_asset.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/save_example.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/make_deck.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/snap_deck.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_deck.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/add_asset.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/save_example.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_deck.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/snap_deck.py *)
 ---
 
 # Slide Deck
@@ -10,7 +10,7 @@ Turns a conversation into an HTML slide deck. You drive: work out the kind of pr
 
 The files go to the `slides-decks` folder of the config's `output.root`, or to a temporary folder if none is set. The scripts choose and write that folder; never choose one yourself.
 
-You write only `slides.json`: the title, the CSS, each slide's HTML and the data of charts and rings. `make_deck.py` owns the rest, from the page around the slides to the check. When a script refuses something, its message says what to fix: fix the input, never work around the check.
+You write only `slides.json`: the title, the CSS, each slide's HTML and the data of charts and rings. `finish_deck.py` owns the rest, from the page around the slides to the check. When a script refuses something, its message says what to fix: fix the input, never work around the check.
 
 ```text
 slides-decks/
@@ -25,7 +25,7 @@ slides-decks/
 │       └── slide.html
 └── Acme-Q3-Review_26-10-12/
     ├── slides.json                  you write
-    └── Acme-Q3-Review_Slides.html   make_deck.py writes
+    └── Acme-Q3-Review_Slides.html   finish_deck.py writes
 ```
 
 ## Prerequisite
@@ -134,11 +134,11 @@ Many examples make it easy to build a deck that looks like several. Keep it one:
 - **Drawings.** Icons, arrows, badges and diagrams belong to the design: inline SVG, for good. A picture of something anyone could photograph, such as the Earth, a car or a banana, is an SVG drawing wrapped in `<figure data-image='<what the real image should show>'>`, unless an image in `assets` already shows it: a stand-in, which step 7 can swap for a real image.
 - **Depth.** Never use a blurred shadow, such as `box-shadow`: the PDF export draws it as a dark rectangle around the element, though the browser shows it fine. To lift a panel or an image off the slide, use solid shapes instead: a fill lighter or brighter than what's behind it, a 1px border in a lighter tone of the background or a coloured top edge, or a backing shape in a darker tone, offset a few pixels behind it with no blur.
 
-## 4. Build, look and open
+## 4. Finish, look and open
 
-1. **Build.** `python3 ${CLAUDE_SKILL_DIR}/scripts/make_deck.py --deck <deck>` writes the deck and checks it. Fix `slides.json` and run it again until `ok` is true; never edit the deck itself.
-2. **Look.** `python3 ${CLAUDE_SKILL_DIR}/scripts/snap_deck.py --deck <deck>` pictures the slides with headless Chrome. Look at its `sheet`, the whole deck in one image, opening a slide's own picture only where something looks wrong. Fix overflowing or clipped text, overlaps and fonts that don't render as intended, then build and look again. Without Chrome, skip this; never ask the user to install it.
-3. **Open.** Build with `--open` to open the deck in the user's browser, on every build until it has `opened` once in the conversation and never after: the user refreshes the page already open.
+1. **Finish.** `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_deck.py --deck <deck>` writes the deck and checks it. Fix `slides.json` and run it again until `ok` is true; never edit the deck itself.
+2. **Look.** `python3 ${CLAUDE_SKILL_DIR}/scripts/snap_deck.py --deck <deck>` pictures the slides with headless Chrome. Look at its `sheet`, the whole deck in one image, opening a slide's own picture only where something looks wrong. Fix overflowing or clipped text, overlaps and fonts that don't render as intended, then finish and look again. Without Chrome, skip this; never ask the user to install it.
+3. **Open.** Finish with `--open` to open the deck in the user's browser, on every finish until it has `opened` once in the conversation and never after: the user refreshes the page already open.
 
 ## 5. Tell the user
 
@@ -158,7 +158,7 @@ End with one question, the first that applies, so it isn't lost among the rest:
 
 ## 6. Iterate
 
-The user gives feedback and refreshes the browser. Change only what they asked, through the writer as its `--help` shows, not by rewriting the whole file. Build again, and confirm what changed in one line.
+The user gives feedback and refreshes the browser. Change only what they asked, through the writer as its `--help` shows, not by rewriting the whole file. Finish again, and confirm what changed in one line.
 
 ## 7. Swap the stand-ins for real images (optional)
 
@@ -169,7 +169,7 @@ For each, reuse an image in `assets` that shows what its `data-image` says, or f
 - **License.** Use an image only if its own page states a license allowing reuse in a presentation, never one from search results whose page you haven't opened. Record the license and credit exactly as the page states them, never from memory: prefer structured data where a site has it, such as Wikimedia Commons' file information, and if your tool summarises pages, ask it to quote those lines word for word.
 - **Fit.** Choose for fit, quality and the audience, keeping [Consistency](#consistency): the image shows what the drawing did, in its place and size. When the subject must be cut out, choose an image that already is, since the skill can't remove a background: a PNG with a transparent background, or a plain background CSS can hide (`mix-blend-mode: multiply` for white on a light slide, `screen` for black on a dark one, a round frame for a round subject).
 
-Add it with `python3 ${CLAUDE_SKILL_DIR}/scripts/add_asset.py --url`, describing what you saw in it, and replace the whole `<figure>` with `<img src='{{asset:<name>}}'>`, cropped (`object-fit: cover`) to the drawing's box. Each slide credits its downloaded images at the bottom right: restyle `.asset-credit` when a slide needs it, such as a dark one, but never hide it. Then build and hand over as in steps 4 and 5.
+Add it with `python3 ${CLAUDE_SKILL_DIR}/scripts/add_asset.py --url`, describing what you saw in it, and replace the whole `<figure>` with `<img src='{{asset:<name>}}'>`, cropped (`object-fit: cover`) to the drawing's box. Each slide credits its downloaded images at the bottom right: restyle `.asset-credit` when a slide needs it, such as a dark one, but never hide it. Then finish and hand over as in steps 4 and 5.
 
 ## 8. Keep a slide as an example (optional)
 

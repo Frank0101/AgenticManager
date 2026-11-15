@@ -24,11 +24,7 @@ READING_ANSWER = """{"items": [
   {"note": 1, "synopsis": "Presented the billing migration to the wider team; Sam asked for the slides, and Jane..."},
   {"note": 2, "synopsis": "..."}
  ]}"""
-MERGE_ANSWER = """{"going_well": [{"point": "...", "values": ["<each company value it clearly shows or calls for, at most two>"],
-                 "links": ["file://...", ...]}],
- "to_improve": [{"point": "...", "values": [], "links": ["file://..."]}],
- "context": [{"point": "...", "links": ["file://...", ...]}],
- "in_doubt": ["YYYY-MM-DD: what the note says, and why you left it out"]}"""
+MERGE_ANSWER = reading.merge_answer("file://...", "note")
 
 
 # Gathering the notes.
@@ -151,7 +147,7 @@ def task_text(prep, task, material):
             for number, page in enumerate(content["pages"], 1))
     return "notes", intro + "\n\n".join(
         f"### Note {number}, {note['date']}\n\n{note['text']}"
-        for number, note in enumerate(content["months"][task.split(":")[1]], 1))
+        for number, note in enumerate(content["months"][reading.task_month(task)], 1))
 
 
 def task_notes(material, task):
@@ -159,7 +155,7 @@ def task_notes(material, task):
     {date, link}, the day null for each of the pages."""
     if task == PAGES:
         return [{"date": None, "link": page["link"]} for page in material["content"]["pages"]]
-    return [{"date": note["date"], "link": note["link"]} for note in material["content"]["months"][task.split(":")[1]]]
+    return [{"date": note["date"], "link": note["link"]} for note in material["content"]["months"][reading.task_month(task)]]
 
 
 SOURCE = reading.Source(name="notes", script="read_notes.py", output=NOTES, what="notes summary", gather=gather,

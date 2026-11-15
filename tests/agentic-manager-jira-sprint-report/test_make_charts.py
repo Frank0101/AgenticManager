@@ -9,8 +9,8 @@ work its burndown out by hand:
   PROJ-4  original, 1 pt,  already Done at the start
 The outcome breakdown is a fixture of its own, independent of these tickets.
 Baseline 7 pts, the whole commitment at the start, including what was already
-Done, so the start day drops to 6 by its end; the ideal burns the 7 over 9
-later weekdays.
+Done, so the start day drops to 6 by its end; the ideal, build_data.py's,
+burns the 7 over 9 later weekdays.
 """
 
 import contextlib
@@ -27,6 +27,7 @@ TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
+import build_data as build  # noqa: E402
 import make_charts as charts  # noqa: E402
 
 
@@ -60,7 +61,13 @@ def sprint(**changes):
     if last > "2026-03-13":
         data["burndown"] += [{"date": f"2026-03-{day:02d}", "committed": 2, "total": 2}
                              for day in range(14, int(last[-2:]) + 1)]
-    data["burndown"] = [row for row in data["burndown"] if row["date"] <= last]
+    ideal = build.burndown_ideal(
+        data["sprint_start"], data["sprint_end"], last, data["burndown_baseline"])
+    data["burndown"] = build.with_spread(
+        [row for row in data["burndown"] if data["sprint_start"] <= row["date"] <= last], ideal)
+    data["burndown_ideal"] = ideal
+    data["burndown_weekdays"] = build.burndown_weekdays(
+        data["sprint_start"], data["sprint_end"])
     return data
 
 
@@ -82,19 +89,9 @@ def bar_widths(chart):
 
 
 class HelpersTest(unittest.TestCase):
-    def test_helpers(self):
-        days = list(charts.daterange(date(2026, 3, 6), date(2026, 3, 9)))
-        cases = [
-            ("amount_text", [charts.amount_text(n, p) for n, p in ((1, True), (2.5, True), (1, False), (2, False))],
-             ["1 pt", "2.5 pts", "1 ticket", "2 tickets"]),
-            ("daterange, both ends included", [
-             d.day for d in days], [6, 7, 8, 9]),
-            ("is_weekday", [charts.is_weekday(d)
-             for d in days], [True, False, False, True]),
-        ]
-        for name, got, expected in cases:
-            with self.subTest(name):
-                self.assertEqual(got, expected)
+    def test_amount_text(self):
+        self.assertEqual([charts.amount_text(n, p) for n, p in ((1, True), (2.5, True), (1, False), (2, False))],
+                         ["1 pt", "2.5 pts", "1 ticket", "2 tickets"])
 
 
 class BuildSeriesTest(unittest.TestCase):
@@ -120,30 +117,22 @@ class BuildSeriesTest(unittest.TestCase):
         self.assertEqual(by_day(charts.build_series(data))
                          ["2026-03-06"]["committed"], 4)
 
-    def test_ideal_holds_the_start_day_and_weekends_then_reaches_zero(self):
-        rows = by_day(charts.build_series(sprint()))
-        self.assertEqual(rows["2026-03-02"]["ideal"], 7)
-        self.assertEqual(rows["2026-03-03"]["ideal"], round(7 * 8 / 9, 2))
-        self.assertEqual(rows["2026-03-06"]["ideal"],
-                         rows["2026-03-07"]["ideal"])
-        self.assertEqual(rows["2026-03-07"]["ideal"],
-                         rows["2026-03-08"]["ideal"])
-        self.assertEqual(rows["2026-03-13"]["ideal"], 0)
-        self.assertEqual(rows["2026-03-05"]["spread"],
-                         round(2 - rows["2026-03-05"]["ideal"], 2))
-
-    def test_a_one_day_sprint_holds_the_ideal(self):
-        # No weekday after the start: no pace to divide by, so the ideal stays
-        # at the baseline instead of failing.
-        data = sprint(sprint_start="2026-03-13")
-        data["burndown"] = data["burndown"][-1:]
+    def test_draws_the_stored_ideal_and_spread(self):
+        # The ideal and the spread are data.json's, drawn as stored, and the
+        # weekends are the ideal's.
+        data = sprint()
+        data["burndown_ideal"][3]["ideal"] = 4.5
+        data["burndown"][3]["spread"] = 1.5
         series = charts.build_series(data)
-        self.assertEqual(series["weekdays"], 0)
-        self.assertEqual([r["ideal"] for r in series["rows"]], [7, 7])
+        rows = by_day(series)
+        self.assertEqual((rows["2026-03-05"]["ideal"],
+                         rows["2026-03-05"]["spread"]), (4.5, 1.5))
+        self.assertEqual(sorted(d.isoformat() for d in series["weekends"]), [
+                         "2026-03-07", "2026-03-08"])
 
     def test_where_the_actuals_and_the_chart_end(self):
-        # Actuals stop at the close or fetch; the chart runs at least to the
-        # planned end, and later actuals keep an ideal of zero.
+        # Actuals stop at the close or fetch; the chart runs as far as the
+        # stored ideal, at least to the planned end.
         active = {"sprint_status": "active", "sprint_complete_date": None}
         cases = [
             ("closed on its end date", {}, date(2026, 3, 13), date(2026, 3, 13)),
@@ -160,7 +149,6 @@ class BuildSeriesTest(unittest.TestCase):
                 self.assertEqual(
                     (series["last_actual"], series["days"][-1]), (last_actual, last_day))
                 last = series["rows"][-1]
-                self.assertEqual(last["ideal"], 0)
                 self.assertEqual(last["committed"] is None,
                                  last_actual < last_day)
 
@@ -231,7 +219,7 @@ class OutcomeChartTest(unittest.TestCase):
         # From the top of the first bar to the bottom of the second.
         self.assertRegex(chart, r'<path d="M [\d.]+ 56 H [\d.]+ V 152 ')
         legend = re.findall(
-            r'height="12" fill="[^"]+"/>\n<text [^>]*>([^<]+)<', chart)
+            r'height="\d+" fill="[^"]+"/>\n<text [^>]*>([^<]+)<', chart)
         self.assertEqual(legend, ["Completed", "Not completed", "Descoped"])
 
     def test_bars_share_one_scale(self):
