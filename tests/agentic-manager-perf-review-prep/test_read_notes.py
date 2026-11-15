@@ -133,7 +133,7 @@ class ReadNotesTest(unittest.TestCase):
         raw = os.path.join(self.folder, PREP, "_raw", "notes")
         self.assertEqual(sorted(os.path.relpath(os.path.join(where, name), raw)
                                 for where, _, names in os.walk(raw) for name in names),
-                         [os.path.join("months", "2026-08.json"), os.path.join("months", "2026-09.json"), "pages.json"])
+                         ["2026-08.json", "2026-09.json", "pages.json"])
         with open(merge, encoding="utf-8") as f:
             text = f.read()
         august = Path(self.graph, "journals", "2026_08_20.md").as_uri()

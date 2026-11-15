@@ -15,8 +15,9 @@ The skill's files go to the `perf-review-preps` folder of the user's configured 
 perf-review-preps/
 └── Jane-Doe_26-11-10/
     ├── _raw/             read_notes.py and read_slack.py write (each reader's answer, by source: a month's in
-    │                     months/, the notes' pages in pages.json); fetch_work.py and set_notion.py write what
-    │                     each source gave, with its searches, jira.json, github.json and notion.json
+    │                     its own file, such as 2026-07.json, the notes' pages in pages.json); fetch_work.py and
+    │                     set_notion.py write what each source gave, with its searches, jira.json, github.json and
+    │                     notion.json
     ├── _charts/          finish_report.py writes (the report's charts, one SVG each)
     ├── person.json       init_prep.py and set_identities.py write (the person, the period and who they are in each
     │                     source, as the manager confirmed)

@@ -382,10 +382,10 @@ def answer_path(source, prep, task):
 
 def raw_name(task):
     """The name of the reading task `task`'s answer in its source's _raw
-    folder: a month's in months, such as months/2026-07.json, else the
-    task's own, such as pages.json."""
+    folder: a month's by the month, such as 2026-07.json, else the task's
+    own, such as pages.json."""
     kind, _, part = task.partition(":")
-    return os.path.join(*((f"{kind}s", part) if part else (kind,))) + ".json"
+    return f"{part or kind}.json"
 
 
 def task_month(task):
