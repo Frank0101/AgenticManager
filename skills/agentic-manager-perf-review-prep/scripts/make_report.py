@@ -20,15 +20,17 @@ def write_report(prep, person, data):
 # The report.
 
 def render(person, data):
-    """The report's text: the person and the period, then their Jira work and
-    their GitHub work, each its main focus, then its figures, then the
-    Notion pages they created."""
+    """The report's text: the person and the period, then their GitHub work
+    and their Jira work, each its main focus, then its figures, then the
+    Notion pages they created. GitHub comes first: with agents writing much
+    of the code, pull requests stay the plainest trace of what someone did,
+    while tickets grow more generic."""
     return "\n".join([f"# {person['person']}: performance review prep", "",
-                      f"Period: {shown(person['start'], person['end'])}", "", "## Jira", "",
-                      *focus_section(data["jira"]), "", *
-                      jira_section(data["jira"]), "", "## GitHub", "",
+                      f"Period: {shown(person['start'], person['end'])}", "", "## GitHub", "",
                       *repos_section(data["github"]), "", *
-                      github_section(data["github"]), "", "## Notion", "",
+                      github_section(data["github"]), "", "## Jira", "",
+                      *focus_section(data["jira"]), "", *
+                      jira_section(data["jira"]), "", "## Notion", "",
                       *notion_section(data["notion"])]) + "\n"
 
 

@@ -1,4 +1,4 @@
-"""Checks a prep's report against data.json: that it shows every Jira and GitHub figure, each main focus, the charts' series and the Notion pages created as the items give them, and holds only its charts.
+"""Checks a prep's report against data.json: that it shows every GitHub and Jira figure, each main focus, the charts' series and the Notion pages created as the items give them, and holds only its charts.
 
 It reads each figure back from the report and works it out again from the
 items, apart from data.json's facts and from make_report.py, with which it
@@ -12,9 +12,9 @@ import re
 from common import (BINS_PER_DECADE, CHART_FILES, CHARTS_DIR, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS, PAGES_HEADING,
                     average_text, project_of, repo_code, repos_text, size_text, types_text, week_text)
 
-# Where the GitHub section starts, after the Jira one, and the Notion one
+# Where the Jira section starts, after the GitHub one, and the Notion one
 # after it.
-GITHUB_HEADING, NOTION_HEADING = "\n## GitHub\n", "\n## Notion\n"
+JIRA_HEADING, NOTION_HEADING = "\n## Jira\n", "\n## Notion\n"
 # The Notion section's count of the pages created, and each page's row: its
 # week's cell, on the first row of the week only, with how many rows it
 # spans, then its link and title, and its area.
@@ -48,11 +48,12 @@ def report_problems(report, data, charts):
     charts = [name for name in charts if not name.startswith(".")]
     problems = [] if sorted(charts) == sorted(CHART_FILES) else [
         f"the charts folder must hold only {', '.join(CHART_FILES)}: run finish_report.py again"]
-    if GITHUB_HEADING not in report or NOTION_HEADING not in report.split(GITHUB_HEADING, 1)[1]:
-        return problems + ["the report must have its Jira section, then its GitHub one, then its Notion one: run "
+    if "\n## GitHub\n" not in report.split(JIRA_HEADING, 1)[0] or JIRA_HEADING not in report or \
+            NOTION_HEADING not in report.split(JIRA_HEADING, 1)[1]:
+        return problems + ["the report must have its GitHub section, then its Jira one, then its Notion one: run "
                            "finish_report.py again"]
-    jira_text, rest = report.split(GITHUB_HEADING, 1)
-    github_text, notion_text = rest.split(NOTION_HEADING, 1)
+    github_text, rest = report.split(JIRA_HEADING, 1)
+    jira_text, notion_text = rest.split(NOTION_HEADING, 1)
     return problems + _jira_problems(jira_text, data["jira"], data["weeks"]) + \
         _github_problems(github_text, data["github"], data["weeks"]) + \
         _notion_problems(

@@ -75,7 +75,7 @@ class CheckTest(unittest.TestCase):
                   None, "_Review_Prep.md, _charts"),
                  ("a chart more", {}, "_charts/extra.svg",
                   "_Review_Prep.md: the charts folder must hold only"),
-                 ("a figure changed by hand", {}, ("{report}", '">1</a>', '">2</a>'),
+                 ("a figure changed by hand", {}, ("{report}", '">1</a> (1 Task)', '">2</a> (1 Task)'),
                   "_Review_Prep.md: the report's Jira cell for created doesn't show data.json"),
                  ("a Slack point with no evidence", {"slack": {**SLACK, "going_well": [
                      {**SLACK["going_well"][0], "evidence": []}]}},

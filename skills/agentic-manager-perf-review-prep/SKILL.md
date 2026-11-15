@@ -36,7 +36,7 @@ perf-review-preps/
     │                     the link to each search)
     └── Jane-Doe_Review_Prep.md
                           finish_report.py writes (the report for the manager, from the files above: for now, the
-                          person's Jira and GitHub figures, each with its main focus, and the Notion pages they
+                          person's GitHub and Jira figures, each with its main focus, and the Notion pages they
                           created)
 ```
 
