@@ -273,7 +273,7 @@ class ScriptsTest(unittest.TestCase):
              "url": f"{self.base_url}/browse/PROJ-12", "date": TODAY.isoformat(), "points": 5}])
         self.assertEqual((work["jira"]["focus"], work["github"]["opened"]), (
             [{"key": "PROJ-1", "title": "Billing migration",
-                "url": f"{self.base_url}/browse/PROJ-1", "issues": 1}],
+                "url": f"{self.base_url}/browse/PROJ-1", "issues": 1, "share": 100}],
             [{"repo": "acme/billing", "number": 7, "title": PR["title"], "url": PR["url"], "date": TODAY.isoformat(),
               "lines": 48, "files": 3}]))
         # The report, from data.json: one resolved issue of 5 points, one

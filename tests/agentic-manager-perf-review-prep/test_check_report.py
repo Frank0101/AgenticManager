@@ -81,6 +81,8 @@ class CheckReportTest(unittest.TestCase):
                   "issues created"),
                  ("the story points' stacks", lambda jira: jira["points_by_epic"].clear(),
                   "story points"),
+                 ("a focus share", lambda jira: jira["focus"][0].update(
+                     share=50), "shares the Jira pie"),
                  ("the epics coloured", lambda jira: jira["epic_order"].append("PROJ-9"),
                   "epics the charts colour")]
         github = [("the repositories' pie", lambda github: github["merged_by_repo"].update(other=1),
@@ -89,6 +91,8 @@ class CheckReportTest(unittest.TestCase):
                    "pull requests merged"),
                   ("the sizes", lambda github: github["lines_distribution"]["total"].reverse(),
                    "merged pull requests' size"),
+                  ("a focus share", lambda github: github["focus"][0].update(
+                      share=50), "shares the GitHub pie"),
                   ("the repositories coloured", lambda github: github["repo_order"].clear(),
                    "repositories the charts colour")]
         for name, change, source, expected in [*((name, change, "jira", expected) for name, change, expected in cases),

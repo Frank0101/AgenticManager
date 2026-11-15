@@ -63,6 +63,8 @@ class MakeChartsTest(unittest.TestCase):
         self.assertEqual([(len(points.split()), colour) for points, colour in lines],
                          [(3, "#123456"), (3, make_charts.NO_EPIC), (3, make_charts.LINE)])
         self.assertEqual(re.findall(r">(Jul|Aug)<", chart), ["Jul", "Aug"])
+        # A dashed line sets August apart from July, none before July.
+        self.assertEqual(len(re.findall(r'stroke-dasharray="3 3"', chart)), 1)
         self.assertIn('height="200"', chart)
 
     def test_bars_chart(self):
@@ -90,15 +92,20 @@ class MakeChartsTest(unittest.TestCase):
     def test_pie_chart(self):
         # Its title, a slice for each group holding any, and a legend of
         # each with its count; a note when none holds any.
-        chart = make_charts.pie_chart("Merged PRs by repository", [("api", 3, "#123456"), ("other", 0, "#654321"),
-                                                                   ("web", 1, "#abcdef")], "None", 230)
+        chart = make_charts.pie_chart("Merged PRs by repository", [("api", 3, "#123456", None), ("other", 0, "#654321", None),
+                                                                   ("web", 1, "#abcdef", None)], "None", 230)
         self.assertIn(">Merged PRs by repository<", chart)
         self.assertEqual(re.findall(
             r'<path d="[^"]+" fill="([^"]+)"', chart), ["#123456", "#abcdef"])
         self.assertEqual(re.findall(r">(\w+) \((\d+)\)<", chart),
                          [("api", "3"), ("web", "1")])
+        # A slice of the main focus shows its share; the others none.
+        shared = make_charts.pie_chart(
+            "Title", [("api", 3, "#123456", 75), ("web", 1, "#abcdef", None)], "None", 230)
+        self.assertEqual(re.findall(
+            rf'font-size="{make_charts.VALUE_FONT}"[^>]*>([^<]+)<', shared), ["75%"])
         self.assertIn(">None<", make_charts.pie_chart(
-            "Title", [("api", 0, "#123456")], "None", 230))
+            "Title", [("api", 0, "#123456", None)], "None", 230))
         self.assertIn('height="230"', chart)
 
     def test_distribution_chart(self):
@@ -120,6 +127,17 @@ class MakeChartsTest(unittest.TestCase):
         plot = make_charts.WIDTH - make_charts.LEFT - make_charts.RIGHT
         self.assertAlmostEqual(
             float(line[1]), make_charts.LEFT + plot / 2, places=0)
+
+    def test_value_labels(self):
+        # Each point of the total and each bar has its value written over
+        # it, small, a zero none.
+        def values(chart):
+            return re.findall(rf'font-size="{make_charts.VALUE_FONT}"[^>]*>(\d+)<', chart)
+        line = make_charts.over_time_chart(
+            [2, 0, 5], [], WEEKS, "created", [], 200)
+        bars = make_charts.bars_chart([("1", [("#123456", 1), ("#654321", 2)]), ("3", [("#123456", 0)])],
+                                      "story points", "None", [], 200)
+        self.assertEqual((values(line), values(bars)), (["2", "5"], ["3"]))
 
 
 if __name__ == "__main__":

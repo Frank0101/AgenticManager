@@ -75,9 +75,14 @@ def _jira_problems(text, jira, weeks):
         jira, weeks) + _cells_problems(text, "Jira", JIRA_CELLS, expected, jira)
     shown = [(html.unescape(url) or None, html.unescape(key or project), html.unescape(title) or None, int(n))
              for url, key, title, project, n in FOCUS_ENTRY.findall(text)]
-    if shown != _focus(jira["resolved"], {**jira["epic_search_urls"], "no epic": jira["no_epic_search_url"]}):
+    focus = _focus(jira["resolved"], {
+                   **jira["epic_search_urls"], "no epic": jira["no_epic_search_url"]})
+    if shown != focus:
         problems.append("the report's Jira main focus doesn't show the epics, or projects, of the resolved issues: "
                         "run finish_report.py again")
+    if [entry["share"] for entry in jira["focus"]] != _shares([n for *_, n in focus], len(jira["resolved"])):
+        problems.append(
+            "the shares the Jira pie shows aren't the main focus's: run build_data.py again")
     return problems
 
 
@@ -172,6 +177,10 @@ def _github_problems(text, github, weeks):
                  for repo in _covered(counts)]:
         problems.append("the report's GitHub main focus doesn't show the repositories of the merged pull requests: "
                         "run finish_report.py again")
+    if [entry["share"] for entry in github["focus"]] != _shares([counts[repo] for repo in _covered(counts)],
+                                                                len(merged)):
+        problems.append(
+            "the shares the GitHub pie shows aren't the main focus's: run build_data.py again")
     return problems
 
 
@@ -296,6 +305,11 @@ def _covered(counts):
         if covered >= FOCUS_SHARE * total:
             return [other for other in _ranked(counts) if counts[other] >= counts[key]]
     return []
+
+
+def _shares(counts, total):
+    """Each of `counts` as a percentage of `total`, rounded."""
+    return [round(100 * n / total) for n in counts]
 
 
 def _order(counts, others):

@@ -26,7 +26,7 @@ from agentic_manager.output_file import json_text, read_json, target, write_outp
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
 from agentic_manager.output_folder import CHARTS_DIR, DAY_FOLDER, RAW_DIR, clear_folder, day_folder, document_name, folder_problem, folder_subject, output_folder, work_folder  # noqa: E402,F401
 from agentic_manager.period import add_period_arguments, days, period_problem, shown  # noqa: E402,F401
-from agentic_manager.svg import GRID, INK, MUTED, arc_segment, esc, legend, nice_step, svg, text, text_width  # noqa: E402,F401
+from agentic_manager.svg import GRID, SURFACE, INK, MUTED, arc_segment, esc, legend, nice_step, svg, text, text_width  # noqa: E402,F401
 from agentic_manager.text import as_name, number, plural, word_count  # noqa: E402,F401
 
 # How to write a point and pick its values, with their examples, lives in the

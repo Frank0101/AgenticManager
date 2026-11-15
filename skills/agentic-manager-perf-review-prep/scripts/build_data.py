@@ -79,11 +79,12 @@ def source_facts(source, lists, weeks):
     """The facts of `lists`, the items of `source`, over `weeks`: counts, how
     many items each list holds; for Jira, created_by_type and
     resolved_by_type, the issues of each type, most first, resolved_by_epic,
-    the resolved issues by epic, focus, their main focus, resolved_points,
+    the resolved issues by epic, focus, their main focus, each with its share, resolved_points,
     the resolved issues' points, their total, how many are estimated and
     their average, null when none is, an unestimated issue counting toward
     neither; for GitHub, merged_by_repo, the merged pull requests by
-    repository, focus, the repositories that hold most of them,
+    repository, focus, the repositories that hold most of them, each with
+    its share,
     repo_counts, how many repositories each list's pull requests are in, and
     merged_lines, the median of the merged ones' lines changed. For the
     charts, epic_order or repo_order, the epics or repositories they colour,
@@ -103,7 +104,8 @@ def source_facts(source, lists, weeks):
                   "resolved_by_epic": {"epics": with_no_epic(shown, ranked["no_epic"]),
                                        "other": sum(entry["issues"] for entry in ranked["epics"])
                                        - sum(entry["issues"] for entry in shown)},
-                  "focus": focus(lists["resolved"]), "resolved_points": points(lists["resolved"]),
+                  "focus": with_shares(focus(lists["resolved"]), "issues", len(lists["resolved"])),
+                  "resolved_points": points(lists["resolved"]),
                   "epic_order": order,
                   **{f"{name}_by_week": grouped(lists[name], order, epic_key, lambda found: weekly(found, weeks),
                                                 "epics", "no_epic") for name in ("created", "resolved")},
@@ -114,7 +116,7 @@ def source_facts(source, lists, weeks):
                             pr["repo"] for pr in lists["opened"]})
         shown = [entry for entry in ranked if entry["repo"] in order]
         facts |= {"merged_by_repo": {"repos": shown, "other": len(lists["merged"]) - sum(entry["prs"] for entry in shown)},
-                  "focus": cover(ranked, "prs"), "repo_order": order,
+                  "focus": with_shares(cover(ranked, "prs"), "prs", len(lists["merged"])), "repo_order": order,
                   "repo_counts": {name: len({pr["repo"] for pr in prs}) for name, prs in lists.items()},
                   **{f"{name}_by_week": grouped(lists[name], order, repo_key, lambda found: weekly(found, weeks),
                                                 "repos") for name in ("opened", "merged")},
@@ -175,6 +177,12 @@ def with_no_epic(epics, no_epic):
     entries = [*epics, *([{"key": None, "title": None,
                          "url": None, "issues": no_epic}] if no_epic else [])]
     return sorted(entries, key=lambda entry: (-entry["issues"], entry["key"] is None, entry["key"] or ""))
+
+
+def with_shares(entries, count, total):
+    """`entries`, each with its share, the percentage of the `total` its
+    `count` makes, rounded, which its pie slice shows."""
+    return [{**entry, "share": round(100 * entry[count] / total)} for entry in entries]
 
 
 def cover(ranked, count):

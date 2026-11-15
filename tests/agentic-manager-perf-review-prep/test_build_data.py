@@ -166,6 +166,11 @@ class BuildDataTest(unittest.TestCase):
                 self.assertEqual(build_data.points(
                     [{"points": value} for value in points]), expected)
 
+    def test_with_shares(self):
+        # Each entry's count as a percentage of the total, rounded.
+        self.assertEqual(build_data.with_shares([{"key": "a", "prs": 2}, {"key": "b", "prs": 1}], "prs", 3),
+                         [{"key": "a", "prs": 2, "share": 67}, {"key": "b", "prs": 1, "share": 33}])
+
     def test_focus(self):
         # name: (parents of the resolved issues, by key, None for none, the
         # focus expected as (key, issues)): the fewest parents covering 80%
