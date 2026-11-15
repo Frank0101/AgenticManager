@@ -13,8 +13,9 @@ import math
 import os
 from datetime import date, timedelta
 
+from check_report import report_problems
 from common import (CHARTS_DIR, EPICS_CHART, FOCUS_SHARE, JIRA_CELLS, FOLDER_NAME, GRID, INK, MUTED, PERSON, WORK, number,
-                    average_text, esc, nice_step, prep_dir, read_json, report_name, report_problems, shown, stops_on_failure, svg, text, text_width,
+                    average_text, esc, nice_step, prep_dir, read_json, report_name, shown, stops_on_failure, svg, text, text_width,
                     types_text, write_output_file)
 
 EPOCH_MONDAY = date(2001, 1, 1)

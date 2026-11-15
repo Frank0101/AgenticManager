@@ -9,10 +9,11 @@ from datetime import date
 import json
 import os
 
+from check_report import report_problems
 from common import (CHARTS_DIR, FEEDBACK, NOTES, ORIENTATION, PERSON, RATINGS, RAW_DIR, REVIEWS, SLACK, SOURCES,
                     VALUES, WORK, company_names, expected_files, feedback_problems, notes_problems,
                     orientation_problems, period_days, person_problems, prep_dir, read_json, read_raw_work,
-                    report_name, report_problems, reviews_problems, slack_problems, sources_problems, work_from_raw_problems,
+                    report_name, reviews_problems, slack_problems, sources_problems, work_from_raw_problems,
                     work_problems)
 
 

@@ -13,6 +13,7 @@ TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
+import check_report  # noqa: E402
 import common  # noqa: E402
 import make_report  # noqa: E402
 sys.path.insert(0, TEST_DIR)
@@ -64,7 +65,7 @@ class MakeReportTest(unittest.TestCase):
             "# Jane Doe: performance review prep\n\nPeriod: 10/08/2026 to 10/11/2026"))
         self.assertIn(
             f"<a href=\"{html.escape(WORK['jira']['resolved_points_search_url'])}\">3</a> (avg=3)", report)
-        self.assertEqual(common.report_problems(
+        self.assertEqual(check_report.report_problems(
             report, WORK, common.CHART_FILES), [])
 
     def test_focus_section(self):
@@ -84,7 +85,7 @@ class MakeReportTest(unittest.TestCase):
         report = make_report.render(PERSON, work)
         self.assertIn(
             '<a href="https://acme.atlassian.net/issues/?jql=x">PROJ-2</a> Invoices (1)', report)
-        self.assertEqual(common.report_problems(
+        self.assertEqual(check_report.report_problems(
             report, work, common.CHART_FILES), [])
 
     def test_make_report(self):
