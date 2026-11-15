@@ -118,7 +118,7 @@ Every skill follows one archetype, the kind of skill it is, whose pattern it fol
 
 Archetypes differ where their work differs; a step that is the same in several, such as Start or Finish, takes the same name, scripts and form in each, and its file states it in the same words, with only what is the archetype's own added. An archetype's file adds only what is its own: a rule every skill follows stays here. An archetype applies [The shape of a skill](#the-shape-of-a-skill) to its kind: when the two disagree, the shape decides, and a change to a rule there is carried into every archetype it affects.
 
-A skill declares its archetype in README.md's table of skills, where `tests/repo/` checks that it names one of these files and that the skill has what that file says its tests check. A new kind of skill gets a new archetype file before its first skill. When an archetype's file changes, update the checks `tests/repo/` makes for it in the same change, and the next refactoring brings every skill of that archetype in line with it. The library isn't a skill of any archetype.
+Before you change a skill, read its archetype's file, which README.md's table names. A skill declares its archetype in README.md's table of skills, where `tests/repo/` checks that it names one of these files and that the skill has what that file says its tests check. A new kind of skill gets a new archetype file before its first skill. When an archetype's file changes, update the checks `tests/repo/` makes for it in the same change, and the next refactoring brings every skill of that archetype in line with it. The library isn't a skill of any archetype.
 
 ### The shape of a skill
 
