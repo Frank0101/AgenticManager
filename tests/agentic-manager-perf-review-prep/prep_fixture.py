@@ -56,7 +56,8 @@ WORK_ITEMS = {"jira": {"created": [{"key": "PROJ-13", "title": "Retire old billi
                                      "url": "https://github.com/acme/billing/pull/1", "date": "2026-09-01",
                                      "lines": 150, "files": 4}]},
               "notion": {"created": [{"title": "Billing plan", "url": "https://www.notion.so/billing-plan",
-                                      "path": "Engineering / Billing", "between": ["2026-08-10", "2026-08-16"]}]}}
+                                      "path": "Engineering / Billing", "space": "Engineering",
+                                      "between": ["2026-08-10", "2026-08-16"]}]}}
 # Notion's searches for PERSON's period, 10/08/2026, a Monday, to
 # 10/11/2026, a week at a time, the last of two days: the first finds the
 # billing plan, a database and a database's row, as the search returns them.
@@ -147,7 +148,8 @@ DATA = {"weeks": WEEKS,
                    "repo_search_urls": {"acme/billing": "https://github.com/search?q="
                                         f"{quote(QUERY['merged'].replace(' org:acme', '') + ' repo:acme/billing')}"
                                         "&type=pullrequests"}},
-        "notion": {**WORK_ITEMS["notion"], "counts": {"created": 1}}}
+        "notion": {"created": [{**page, "week": ["2026-08-10", "2026-08-16"]} for page in WORK_ITEMS["notion"]["created"]],
+                   "counts": {"created": 1}}}
 # Two more Jira models, worked out by hand, each changing DATA's resolved
 # issues and the facts they give. In the first, the issues with no epic hold
 # the most, so the main focus lists them before the epic: PROJ-12 and PROJ-14

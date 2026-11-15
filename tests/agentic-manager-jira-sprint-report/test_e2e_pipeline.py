@@ -72,6 +72,8 @@ class ReportTest(unittest.TestCase):
     def build(self):
         self.write_raw()
         self.assert_runs("build_data.py")
+        # As prepare_report.py does, so the folder holds the brief too.
+        self.assert_runs("make_brief.py")
         with open(os.path.join(self.dir, "data.json"), encoding="utf-8") as f:
             return json.load(f)
 

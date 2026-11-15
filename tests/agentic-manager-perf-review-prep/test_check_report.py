@@ -25,6 +25,16 @@ class CheckReportTest(unittest.TestCase):
         # table and worked out again from the items.
         report = make_report.render(PERSON, DATA)
         cases = [("as written", None, common.CHART_FILES, None),
+                 ("a page count changed", ("Pages created</b> (1)", "Pages created</b> (2)"),
+                  common.CHART_FILES, "Notion pages"),
+                 ("a page's week changed", ("<small>10–16 Aug</small>", "<small>17–23 Aug</small>"),
+                  common.CHART_FILES, "Notion pages"),
+                 ("a page's area changed", ("<small>Engineering</small>", "<small>Billing</small>"),
+                  common.CHART_FILES, "Notion pages"),
+                 ("a week's span changed", ('rowspan="1"', 'rowspan="2"'),
+                  common.CHART_FILES, "Notion pages"),
+                 ("no Notion section", ("## Notion", "## Pages"),
+                  common.CHART_FILES, "then its Notion one"),
                  ("a count changed", ('">1</a>', '">2</a>'),
                   common.CHART_FILES, "cell for created"),
                  ("a breakdown changed", ("(1 Task)", "(1 Bug)"),
@@ -80,7 +90,8 @@ class CheckReportTest(unittest.TestCase):
                   ("the repositories coloured", lambda github: github["repo_order"].clear(),
                    "repositories the charts colour")]
         for name, change, source, expected in [*((name, change, "jira", expected) for name, change, expected in cases),
-                                               *((name, change, "github", expected) for name, change, expected in github)]:
+                                               *((name, change, "github", expected)
+                                                 for name, change, expected in github)]:
             with self.subTest(name):
                 data = copy.deepcopy(DATA)
                 change(data[source])

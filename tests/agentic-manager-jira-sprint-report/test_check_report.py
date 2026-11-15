@@ -19,7 +19,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_report  # noqa: E402
-from common import CHART_FILES, CHARTS_DIR, ai, expected_files  # noqa: E402
+from common import CHART_FILES, CHARTS_DIR, RAW_DIR, ai, expected_files  # noqa: E402
 from make_report import Report, tag  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
@@ -98,10 +98,12 @@ class ChecksTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        os.makedirs(os.path.join(self.tmp.name, CHARTS_DIR))
-        for name in CHART_FILES.values():
-            open(os.path.join(self.tmp.name, name), "w").close()
         self.data = sprint_data()
+        # Every file of the report, as the folder holds them at Finish.
+        os.makedirs(os.path.join(self.tmp.name, CHARTS_DIR))
+        os.makedirs(os.path.join(self.tmp.name, RAW_DIR))
+        for name in [*CHART_FILES.values(), *(expected_files(self.data["label"]) - {CHARTS_DIR, RAW_DIR})]:
+            open(os.path.join(self.tmp.name, name), "w").close()
         self.md = Report(self.data, copy.deepcopy(CONTENT)).build()
 
     def failures(self, md=None, data=None):
@@ -262,10 +264,8 @@ class ChecksTest(unittest.TestCase):
                     self.assert_fails(expected, md.replace(old, new, 1), data)
 
     def test_only_the_reports_files_are_allowed(self):
-        # Every file a report folder holds passes, and so does a hidden one; any other fails.
-        expected = expected_files(self.data["label"])
-        for name in sorted(expected - {CHARTS_DIR}):
-            open(os.path.join(self.tmp.name, name), "w").close()
+        # Every file a report folder holds, as setUp() makes it, passes, and
+        # so does a hidden one; any other fails, and so does a missing one.
         open(os.path.join(self.tmp.name, ".DS_Store"), "w").close()
         open(os.path.join(self.tmp.name, CHARTS_DIR, ".DS_Store"), "w").close()
         self.assertEqual(self.failures(), [])
@@ -274,6 +274,8 @@ class ChecksTest(unittest.TestCase):
                 open(os.path.join(self.tmp.name, stray), "w").close()
                 self.assert_fails("files")
                 os.remove(os.path.join(self.tmp.name, stray))
+        os.remove(os.path.join(self.tmp.name, "brief.json"))
+        self.assert_fails("files: the folder must hold only")
 
     def test_caveats_require_every_affected_ticket(self):
         for kind in ("membership", "non_delivery"):

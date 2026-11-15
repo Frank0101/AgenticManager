@@ -27,6 +27,11 @@ class MakeReportTest(unittest.TestCase):
             "# Jane Doe: performance review prep\n\nPeriod: 10/08/2026 to 10/11/2026"))
         self.assertIn(
             f"<a href=\"{html.escape(DATA['jira']['resolved_points_search_url'])}\">3</a> (avg=3)", report)
+        # The Notion pages, the most recent week first, each week named once
+        # beside its pages, in small type.
+        self.assertIn('<tr valign="top"><td rowspan="1"><small><small>10–16 Aug</small></small></td><td><small>'
+                      '<small><a href="https://www.notion.so/billing-plan">Billing plan</a></small></small></td><td>'
+                      '<small><small>Engineering</small></small></td></tr>', report)
         self.assertEqual(check_report.report_problems(
             report, DATA, common.CHART_FILES), [])
 
@@ -41,6 +46,20 @@ class MakeReportTest(unittest.TestCase):
                       '</ol>', report)
         self.assertEqual(check_report.report_problems(
             report, DATA_NO_EPIC_FIRST, common.CHART_FILES), [])
+
+    def test_notion_pages_by_calendar_week(self):
+        # Pages found by a week's search split in two share that week's row.
+        page = DATA["notion"]["created"][0]
+        pages = [{**page, "between": ["2026-08-10", "2026-08-12"]},
+                 {**page, "url": "https://www.notion.so/billing-risks", "title": "Billing risks",
+                  "between": ["2026-08-13", "2026-08-16"]}]
+        data = {**DATA, "notion": {**DATA["notion"],
+                                   "created": pages, "counts": {"created": 2}}}
+        report = make_report.render(PERSON, data)
+        self.assertEqual(report.count(
+            '<td rowspan="2"><small><small>10–16 Aug</small></small></td>'), 1)
+        self.assertEqual(check_report.report_problems(
+            report, data, common.CHART_FILES), [])
 
 
 if __name__ == "__main__":

@@ -48,11 +48,16 @@ def raws_problems(raws, days):
 def build(raws, person):
     """data.json from `raws`, every source's raw file, for the period in
     `person`: weeks, the period's weeks as the charts group it, and for each
-    source its items, its facts and its searches' addresses."""
+    source its items, its facts and its searches' addresses; a Notion page
+    with its calendar week, by calendar_week(), as its search may span only
+    part of one."""
     weeks = week_groups(person["start"], person["end"])
     data: dict = {"weeks": weeks}
     for source, raw in raws.items():
         lists = work_items(source, raw)
+        if source == "notion":
+            lists = {"created": [{**page, "week": calendar_week(page["between"][0], person["start"], person["end"])}
+                                 for page in lists["created"]]}
         data[source] = {
             **lists, **source_facts(source, lists, weeks), **search_urls(source, raw)}
     return data
@@ -271,6 +276,14 @@ def repo_key(pr):
 def weekly(items, weeks):
     """How many of `items` fall in each of `weeks`, by their day."""
     return [sum(1 for item in items if first <= item["date"] <= last) for first, last in weeks]
+
+
+def calendar_week(day, start, end):
+    """[first, last]: the calendar week, Monday to Sunday, of the day `day`,
+    clipped to the period from `start` to `end`, all as YYYY-MM-DD."""
+    monday = date.fromisoformat(
+        day) - timedelta(days=date.fromisoformat(day).weekday())
+    return [max(monday.isoformat(), start), min((monday + timedelta(days=6)).isoformat(), end)]
 
 
 def week_groups(start, end):

@@ -174,9 +174,11 @@ REPORT_KIND = "Review_Prep.md"
 # its search, with what it is made of, and below it its chart.
 JIRA_CELLS = (("created", "jira_created_over_time.svg"), ("resolved", "jira_resolved_over_time.svg"),
               ("resolved_points", "jira_story_points.svg"))
-# Each cell's heading, which its chart's axis repeats.
+# Each figure's heading, which its chart's axis repeats.
 HEADINGS = {"created": "Issues created", "resolved": "Issues resolved", "resolved_points": "SP resolved",
             "opened": "PRs created", "merged": "PRs merged", "merged_lines": "PRs size"}
+# The Notion section's heading of its table of the pages created.
+PAGES_HEADING = "Pages created"
 # The chart of the resolved issues by epic, beside the main focus.
 EPICS_CHART = "jira_epics.svg"
 # The GitHub cells of the report, in order, as the Jira ones, and the chart
@@ -331,7 +333,8 @@ def read_raw_work(prep):
 def work_items(source, raw):
     """{list: items}: the items of `raw`, the raw file of `source`, as
     data.json records them, without the fields kept only to check them, and
-    of Notion's results only the pages of their own."""
+    of Notion's results only the pages of their own, each with its space, the
+    first place of its path, or none at the top of the workspace."""
     if source == "jira":
         parents = {parent["key"]: parent for parent in raw["parents"]}
         return {name: [issue_item(raw["base_url"], issue, dated_by, raw["points_fields"], parents)
@@ -341,6 +344,7 @@ def work_items(source, raw):
         return {name: sorted((pr_item(pr, pr[stamp]) for pr in raw[name]), key=lambda item: (item["date"], item["url"]))
                 for name, stamp in (("opened", "createdAt"), ("merged", "mergedAt"))}
     return {"created": sorted(({"title": result["title"], "url": result["url"], "path": result.get("path") or "",
+                                "space": (result.get("path") or "").split(" / ")[0] or None,
                                 "between": [search["start"], search["end"]]}
                                for search in raw["created"] for result in search["results"] if is_notion_page(result)),
                               key=lambda page: (page["between"][0], page["url"]))}
@@ -732,3 +736,14 @@ def size_text(median, merged):
     if median is None:
         return "none merged"
     return f"median, in {merged} merged {plural(merged, 'PR', 'PRs')}"
+
+
+def week_text(week):
+    """A Notion page's `week`, its first and last day, as the report writes
+    it, the month as the charts' axes name it: "13–19 Jul", "28 Jul–3 Aug"
+    across two months, or "13 Jul" for a single day."""
+    first, last = (date.fromisoformat(day) for day in week)
+    if first == last:
+        return f"{last.day} {last:%b}"
+    start = f"{first.day}" if first.month == last.month else f"{first.day} {first:%b}"
+    return f"{start}–{last.day} {last:%b}"

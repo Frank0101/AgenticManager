@@ -72,6 +72,18 @@ class BuildDataTest(unittest.TestCase):
         self.assertEqual(build_data.chart_order([f"PROJ-{n}" for n in range(12)], set()), [
                          f"PROJ-{n}" for n in range(common.MAX_GROUPS)])
 
+    def test_calendar_week(self):
+        # The Monday to Sunday of the day, clipped to the period: a page a
+        # search of part of a week found shares its week with the others.
+        cases = [("mid-week", "2026-08-12", ["2026-08-10", "2026-08-16"]),
+                 ("the period's first week", "2026-08-03",
+                  ["2026-08-05", "2026-08-09"]),
+                 ("the period's last day, a Monday", "2026-11-09", ["2026-11-09", "2026-11-09"])]
+        for name, day, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(build_data.calendar_week(
+                    day, "2026-08-05", "2026-11-09"), expected)
+
     def test_github_facts(self):
         # The merged pull requests by repository, the most first, those
         # beyond the coloured ones counted as other; the main focus; how

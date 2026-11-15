@@ -1,18 +1,27 @@
-"""Checks a prep's report against data.json: that it shows every Jira and GitHub figure, each main focus and the charts' series as the items give them, and holds only its charts.
+"""Checks a prep's report against data.json: that it shows every Jira and GitHub figure, each main focus, the charts' series and the Notion pages created as the items give them, and holds only its charts.
 
 It reads each figure back from the report and works it out again from the
 items, apart from data.json's facts and from make_report.py, with which it
 shares only the report's constants and how a figure is written, in common.py:
 so a bug in the model or in the report can't pass by agreeing with itself.
 """
+from datetime import date, timedelta
 import html
 import re
 
-from common import (BINS_PER_DECADE, CHART_FILES, CHARTS_DIR, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS,
-                    average_text, project_of, repo_code, repos_text, size_text, types_text)
+from common import (BINS_PER_DECADE, CHART_FILES, CHARTS_DIR, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS, PAGES_HEADING,
+                    average_text, project_of, repo_code, repos_text, size_text, types_text, week_text)
 
-# Where the GitHub section starts, after the Jira one.
-GITHUB_HEADING = "\n## GitHub\n"
+# Where the GitHub section starts, after the Jira one, and the Notion one
+# after it.
+GITHUB_HEADING, NOTION_HEADING = "\n## GitHub\n", "\n## Notion\n"
+# The Notion section's count of the pages created, and each page's row: its
+# week's cell, on the first row of the week only, with how many rows it
+# spans, then its link and title, and its area.
+PAGES_COUNT = re.compile(rf"<b>{re.escape(PAGES_HEADING)}</b> \((\d+)\)")
+PAGE_ROW = re.compile(r'<tr valign="top">(?:<td rowspan="(\d+)"><small><small>([^<]*)</small></small></td>)?'
+                      r'<td><small><small><a href="([^"]+)">([^<]*)</a></small></small></td>'
+                      r'<td><small><small>([^<]*)</small></small></td></tr>')
 # A Jira main focus entry as the report writes it: its epic's link, key and
 # title, or the link of the issues with no epic, or a project's key alone,
 # and how many resolved issues it holds. The title holds no tag, so it can't
@@ -35,15 +44,19 @@ def report_problems(report, data, charts):
     `charts`, the files in the charts folder, those starting with a dot
     aside, aren't its charts, empty when they are: each count, total, average
     and median, each breakdown and each link to its search, each main focus,
-    and the series the charts draw."""
+    the series the charts draw, and the Notion pages created."""
     charts = [name for name in charts if not name.startswith(".")]
     problems = [] if sorted(charts) == sorted(CHART_FILES) else [
         f"the charts folder must hold only {', '.join(CHART_FILES)}: run finish_report.py again"]
-    if GITHUB_HEADING not in report:
-        return problems + ["the report must have its Jira section, then its GitHub one: run finish_report.py again"]
-    jira_text, github_text = report.split(GITHUB_HEADING, 1)
+    if GITHUB_HEADING not in report or NOTION_HEADING not in report.split(GITHUB_HEADING, 1)[1]:
+        return problems + ["the report must have its Jira section, then its GitHub one, then its Notion one: run "
+                           "finish_report.py again"]
+    jira_text, rest = report.split(GITHUB_HEADING, 1)
+    github_text, notion_text = rest.split(NOTION_HEADING, 1)
     return problems + _jira_problems(jira_text, data["jira"], data["weeks"]) + \
-        _github_problems(github_text, data["github"], data["weeks"])
+        _github_problems(github_text, data["github"], data["weeks"]) + \
+        _notion_problems(
+            notion_text, data["notion"], (data["weeks"][0][0], data["weeks"][-1][1]))
 
 
 # Jira.
@@ -200,6 +213,45 @@ def _pulls_problems(github, weeks, merged, order):
     if (series["total"], dict(series["repos"]), series["other"]) != expected:
         problems.append(
             "the chart of the merged pull requests' size doesn't count them: run build_data.py again")
+    return problems
+
+
+# Notion.
+
+def _notion_problems(text, notion, period):
+    """Why `text`, the report's Notion section, doesn't show the pages
+    `notion`, data.json's, created, the most recent week first, each week
+    named once beside its pages, worked out again from the day its search
+    began, clipped to `period`, each with its area worked out again from its
+    path, empty when it does."""
+    pages = notion["created"]
+
+    def space(page):
+        return page["path"].split(" / ")[0] or None
+
+    def week_of(page):
+        day = date.fromisoformat(page["between"][0])
+        monday, sunday = day - \
+            timedelta(days=day.weekday()), day + \
+            timedelta(days=6 - day.weekday())
+        return week_text([max(monday.isoformat(), period[0]), min(sunday.isoformat(), period[1])])
+    problems = []
+    count = PAGES_COUNT.search(text)
+    shown, week, spans = [], None, []
+    for span, named, url, title, area in PAGE_ROW.findall(text):
+        if named:
+            week = named
+            spans.append(int(span))
+        shown.append((week, html.unescape(url),
+                     html.unescape(title), html.unescape(area)))
+    newest = sorted(pages, key=lambda page: (
+        page["between"][0], page["url"]), reverse=True)
+    expected = [(week_of(page), page["url"],
+                 page["title"], space(page) or "") for page in newest]
+    if not count or int(count[1]) != len(pages) or shown != expected or spans != [
+            sum(1 for row in expected if row[0] == named) for named in dict.fromkeys(row[0] for row in expected)]:
+        problems.append(
+            "the report's Notion pages don't show data.json's: run finish_report.py again")
     return problems
 
 

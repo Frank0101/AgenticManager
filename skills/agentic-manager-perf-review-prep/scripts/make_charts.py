@@ -45,8 +45,8 @@ def write_charts(prep, data):
 
 def draw(data):
     """{file name: SVG}: every chart of the report, from `data`, its
-    data.json. Every chart has one height, its tallest legend's, so the two
-    sections' tables show alike, and each pie it too, one and a half times
+    data.json. Every chart has one height, its tallest legend's, so the
+    sections' charts show alike, and each pie it too, one and a half times
     as wide, so on the page it shows as tall as they do."""
     jira, github, weeks = data["jira"], data["github"], data["weeks"]
     keys = jira_legends(jira)
@@ -205,7 +205,8 @@ def line_chart(total, thin, xs, ticks, label, entries, height, marker=None):
     def points(values):
         return " ".join(f"{x:.1f},{TOP + plot_height * (1 - value / top):.1f}" for x, value in zip(places, values))
     line = points(total)
-    body = [*y_axis(step, top), f'<polygon points="{places[0]:.1f},{TOP + plot_height:.1f} {line} '
+    body = [*y_axis(step, top),
+            f'<polygon points="{places[0]:.1f},{TOP + plot_height:.1f} {line} '
             f'{places[-1]:.1f},{TOP + plot_height:.1f}" fill="{AREA}"/>',
             *(f'<polyline points="{points(values)}" fill="none" stroke="{colour}" stroke-width="1.3"/>'
               for colour, values in thin if any(values)),

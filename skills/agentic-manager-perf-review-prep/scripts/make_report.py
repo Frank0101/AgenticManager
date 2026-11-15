@@ -1,11 +1,11 @@
-"""Writes a prep's report, <Person>_Review_Prep.md, from data.json: for now, the person's Jira and GitHub figures.
+"""Writes a prep's report, <Person>_Review_Prep.md, from data.json: for now, the person's Jira, GitHub and Notion figures.
 
 Every figure is one of data.json's facts, and every link one of its search
 addresses, so the report can't count differently from the model; the charts
 it shows are make_charts.py's.
 """
-from common import (CHARTS_DIR, EPICS_CHART, FOCUS_SHARE, FOLDER_NAME, GITHUB_CELLS, HEADINGS, JIRA_CELLS, REPOS_CHART,
-                    average_text, esc, number, report_name, repo_code, repos_text, shown, size_text, types_text,
+from common import (CHARTS_DIR, EPICS_CHART, FOCUS_SHARE, FOLDER_NAME, GITHUB_CELLS, HEADINGS, JIRA_CELLS, PAGES_HEADING, REPOS_CHART,
+                    average_text, esc, number, report_name, repo_code, repos_text, shown, size_text, types_text, week_text,
                     write_output_file)
 
 
@@ -21,12 +21,15 @@ def write_report(prep, person, data):
 
 def render(person, data):
     """The report's text: the person and the period, then their Jira work and
-    their GitHub work, each its main focus, then its figures."""
+    their GitHub work, each its main focus, then its figures, then the
+    Notion pages they created."""
     return "\n".join([f"# {person['person']}: performance review prep", "",
                       f"Period: {shown(person['start'], person['end'])}", "", "## Jira", "",
                       *focus_section(data["jira"]), "", *
                       jira_section(data["jira"]), "", "## GitHub", "",
-                      *repos_section(data["github"]), "", *github_section(data["github"])]) + "\n"
+                      *repos_section(data["github"]), "", *
+                      github_section(data["github"]), "", "## Notion", "",
+                      *notion_section(data["notion"])]) + "\n"
 
 
 def jira_section(jira):
@@ -113,6 +116,28 @@ def repos_section(github):
     note = (f"the repositories with the most merged pull requests, which together hold at least "
             f"{round(FOCUS_SHARE * 100)}% of them")
     return focus_table(REPOS_CHART, "Merged pull requests by repository", note, entries)
+
+
+def notion_section(notion):
+    """The Notion section's lines: how many pages were created, then a table
+    of them, in small type, by their calendar week, the most recent first, each week named once beside its pages, each page
+    linked, with its area. Notion gives no search to link the count to."""
+    weeks = {}
+    for page in reversed(notion["created"]):
+        weeks.setdefault(week_text(page["week"]), []).append(page)
+    rows = [f'{f"""<td rowspan="{len(pages)}">{small(week)}</td>""" if index == 0 else ""}'
+            f'<td>{small(f"""<a href="{esc(page["url"])}">{esc(page["title"])}</a>""")}</td>'
+            f'<td>{small(esc(page["space"] or ""))}</td>'
+            for week, pages in weeks.items() for index, page in enumerate(pages)]
+    heads = "".join(
+        f"<th>{small(head)}</th>" for head in ("Week", "Page", "Area"))
+    return [f'<b>{PAGES_HEADING}</b> ({notion["counts"]["created"]})', "", *table(heads, *rows)]
+
+
+def small(content):
+    """`content`, already written as HTML, in smaller type, two steps down,
+    as the Notion table holds many rows."""
+    return f"<small><small>{content}</small></small>"
 
 
 def focus_table(chart, description, note, entries):

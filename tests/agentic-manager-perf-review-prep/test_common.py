@@ -373,6 +373,16 @@ class CommonTest(unittest.TestCase):
                 common.prep_dir(prep)
 
 
+class WeekTextTest(unittest.TestCase):
+    def test_week_text(self):
+        # The month named once within it, twice across two.
+        cases = [(["2026-07-13", "2026-07-19"], "13–19 Jul"), (["2026-07-13", "2026-07-13"], "13 Jul"),
+                 (["2026-07-27", "2026-08-02"], "27 Jul–2 Aug")]
+        for between, expected in cases:
+            with self.subTest(expected):
+                self.assertEqual(common.week_text(between), expected)
+
+
 class RepoCodeTest(unittest.TestCase):
     def test_repo_code(self):
         # A letter by the repository's place in the order, none beyond it.
