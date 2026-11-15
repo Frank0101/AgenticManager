@@ -15,6 +15,7 @@ TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
+import build_data  # noqa: E402
 import common  # noqa: E402
 import fetch_work  # noqa: E402
 sys.path.insert(0, TEST_DIR)
@@ -125,7 +126,7 @@ class FetchWorkTest(unittest.TestCase):
                                         "url": "https://acme.atlassian.net/browse/PROJ-2"})
         # Its epic's search finds it through its story.
         self.assertIn("AND%20%28parent%20in%20%28PROJ-20%29%29",
-                      common.epic_search_urls(raw)["PROJ-2"])
+                      build_data.epic_search_urls(raw)["PROJ-2"])
 
     def test_github_raw(self):
         # Opened and merged as gh returns them, only in the organisations gh
@@ -163,10 +164,9 @@ class FetchWorkTest(unittest.TestCase):
 
     def test_fetch(self):
         # Jira by the person's account there, GitHub by their login, each
-        # to its raw file; Notion's is in already, so work.json is built
-        # from all three.
+        # to its raw file, nothing else.
         folder = temp_output(self)
-        write_prep(folder, work=None, raw_work={"notion": WORK_RAW["notion"]})
+        write_prep(folder, data=None, raw_work={"notion": WORK_RAW["notion"]})
         logins = []
 
         def github_raw(login, person, run):
@@ -177,12 +177,8 @@ class FetchWorkTest(unittest.TestCase):
             result = fetch_work.fetch(PREP, client=client)
         with open(result["raw"][1], encoding="utf-8") as f:
             self.assertEqual(json.load(f), WORK_RAW["github"])
-        with open(result["work"], encoding="utf-8") as f:
-            work = json.load(f)
-        days = common.period_days(PERSON)
-        self.assertEqual((work, common.work_problems(work, days)), (common.build_work(
-            {"jira": common.read_json(result["raw"][0]), "github": WORK_RAW["github"],
-             "notion": WORK_RAW["notion"]}, days), []))
+        self.assertFalse(os.path.exists(
+            os.path.join(folder, PREP, common.DATA)))
         self.assertEqual(logins, [PERSON["sources"]["github-cli"]["id"]])
         self.assertTrue(
             all(f'"{PERSON["sources"]["jira-api"]["id"]}"' in jql for jql in client.queries))

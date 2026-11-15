@@ -14,7 +14,7 @@ import check_report  # noqa: E402
 import common  # noqa: E402
 import make_report  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import PERSON, WORK  # noqa: E402
+from prep_fixture import PERSON, DATA  # noqa: E402
 
 
 class CheckReportTest(unittest.TestCase):
@@ -22,7 +22,7 @@ class CheckReportTest(unittest.TestCase):
         # name: (a change to the report's text, the charts, expected in the
         # problems, or None for none): each Jira figure is read back from the
         # table and worked out again from the items.
-        report = make_report.render(PERSON, WORK)
+        report = make_report.render(PERSON, DATA)
         cases = [("as written", None, common.CHART_FILES, None),
                  ("a count changed", ('">1</a>', '">2</a>'),
                   common.CHART_FILES, "cell for created"),
@@ -40,7 +40,7 @@ class CheckReportTest(unittest.TestCase):
                 text = report.replace(
                     change[0], change[1], 1) if change else report
                 problems = " ".join(
-                    check_report.report_problems(text, WORK, charts))
+                    check_report.report_problems(text, DATA, charts))
                 if expected is None:
                     self.assertEqual(problems, "")
                 else:

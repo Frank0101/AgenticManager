@@ -40,7 +40,7 @@ NOTES = {"going_well": [{"point": "Presented the migration to the wider team", "
                                       {"date": "2026-08-20", "link": "file:///vault/journals/2026_08_20.md"}]}],
          "context": [{"point": "Moved to the payments team in the summer",
                       "evidence": [{"date": None, "link": "file:///vault/pages/Jane.md"}]}]}
-# The work's items, as work.json records them, in PERSON's period.
+# The work's items, as data.json records them, in PERSON's period.
 WORK_ITEMS = {"jira": {"created": [{"key": "PROJ-13", "title": "Retire old billing", "type": "Task", "epic": None,
                                     "status": "In Progress", "url": "https://acme.atlassian.net/browse/PROJ-13",
                                     "date": "2026-08-20", "points": None}],
@@ -67,7 +67,7 @@ NOTION_SEARCHES = [{"start": (monday := date(2026, 8, 10) + timedelta(weeks=n)).
                                 {**PLAN_RESULT, "id": "5e6f", "title": "Fix the build", "url": "https://www.notion.so/fix",
                                  "parent_data_source_url": "collection://7a8b"}] if n == 0 else []}
                    for n in range(14)]
-# The raw files work.json is built from: what Jira and gh return, with the
+# The raw files data.json is built from: what Jira and gh return, with the
 # period and the searches, and Notion's pages as recorded.
 JIRA_ID = PERSON["sources"]["jira-api"]["id"]
 JIRA_BASE = "https://acme.atlassian.net"
@@ -97,8 +97,23 @@ WORK_RAW = {"jira": {"start": "2026-08-10", "end": "2026-11-10", "base_url": JIR
                        "opened_query": QUERY["opened"], "merged_query": QUERY["merged"],
                        "opened": [PULL], "merged": [PULL]},
             "notion": {"created": NOTION_SEARCHES}}
-# work.json as built from them, its facts worked out by hand.
-WORK = {"jira": {**WORK_ITEMS["jira"], "counts": {"created": 1, "resolved": 1},
+# data.json as built from them, its facts worked out by hand: PERSON's period,
+# 10/08/2026, a Monday, to 10/11/2026, is fourteen weeks, the last of two days.
+WEEKS = [[(monday := date(2026, 8, 10) + timedelta(weeks=n)).isoformat(),
+          min(monday + timedelta(days=6), date(2026, 11, 10)).isoformat()] for n in range(14)]
+
+
+def weekly(*indexes):
+    """A week-by-week series over WEEKS, one item in each week of `indexes`."""
+    return [int(n in indexes) for n in range(len(WEEKS))]
+
+
+DATA = {"weeks": WEEKS,
+        "jira": {**WORK_ITEMS["jira"], "counts": {"created": 1, "resolved": 1},
+                 "epic_order": ["PROJ-1"],
+                 "created_by_week": {"total": weekly(1), "epics": {}, "no_epic": weekly(1)},
+                 "resolved_by_week": {"total": weekly(3), "epics": {"PROJ-1": weekly(3)}, "no_epic": weekly()},
+                 "points_by_epic": [{"points": 3, "issues": 1, "epics": {"PROJ-1": 1}, "no_epic": 0}],
                  "created_by_type": [{"type": "Task", "issues": 1}],
                  "resolved_by_type": [{"type": "Story", "issues": 1}],
                  "resolved_by_epic": {"epics": [{"key": "PROJ-1", "title": "Billing",
@@ -153,12 +168,12 @@ def temp_output(test):
 
 
 def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
-               reviews=REVIEWS, feedback=FEEDBACK, notes=NOTES, work=WORK, slack=SLACK, raw_work=WORK_RAW, report=True):
+               reviews=REVIEWS, feedback=FEEDBACK, notes=NOTES, data=DATA, slack=SLACK, raw_work=WORK_RAW, report=True):
     """Writes the prep `prep` in the output folder `folder`, holding `person`,
-    `orientation`, `reviews`, `feedback`, `notes`, `work`,
+    `orientation`, `reviews`, `feedback`, `notes`, `data`,
     and `slack`, each left out when None, the _raw folder, with
     `raw_work`, each source's raw file, unless None, and, with `report` and
-    both a person and work, the report as make_report.py writes it, with its
+    both a person and data, the report as make_report.py writes it, with its
     charts, each an empty drawing."""
     os.makedirs(os.path.join(folder, prep, "_raw"), exist_ok=True)
     for source, lists in (raw_work or {}).items():
@@ -167,15 +182,15 @@ def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
     for name, value in (("person.json", person),
                         ("orientation.json", orientation), ("reviews.json", reviews),
                         ("feedback.json", feedback), ("notes.json", notes),
-                        ("work.json", work), ("slack.json", slack)):
+                        ("data.json", data), ("slack.json", slack)):
         if value is not None:
             with open(os.path.join(folder, prep, name), "w", encoding="utf-8") as f:
                 json.dump(value, f)
-    if report and person is not None and work is not None:
+    if report and person is not None and data is not None:
         os.makedirs(os.path.join(
             folder, prep, common.CHARTS_DIR), exist_ok=True)
         for name in common.CHART_FILES:
             with open(os.path.join(folder, prep, common.CHARTS_DIR, name), "w", encoding="utf-8") as f:
                 f.write("<svg/>")
         with open(os.path.join(folder, prep, common.report_name(prep)), "w", encoding="utf-8") as f:
-            f.write(make_report.render(person, work))
+            f.write(make_report.render(person, data))

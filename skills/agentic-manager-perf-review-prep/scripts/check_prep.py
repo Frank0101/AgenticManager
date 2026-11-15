@@ -9,12 +9,12 @@ from datetime import date
 import json
 import os
 
+from build_data import data_problems
 from check_report import report_problems
 from common import (CHARTS_DIR, FEEDBACK, NOTES, ORIENTATION, PERSON, RATINGS, RAW_DIR, REVIEWS, SLACK, SOURCES,
-                    VALUES, WORK, company_names, expected_files, feedback_problems, notes_problems,
+                    VALUES, DATA, company_names, expected_files, feedback_problems, notes_problems,
                     orientation_problems, period_days, person_problems, prep_dir, read_json, read_raw_work,
-                    report_name, reviews_problems, slack_problems, sources_problems, work_from_raw_problems,
-                    work_problems)
+                    report_name, reviews_problems, slack_problems, sources_problems)
 
 
 def check_prep(prep, today=None):
@@ -50,24 +50,24 @@ def check_prep(prep, today=None):
         days = period_days(person)
         rules[NOTES] = lambda value: notes_problems(value, values, days)
         rules[SLACK] = lambda value: slack_problems(value, values, days)
-        rules[WORK] = lambda value: work_problems(value, days) or work_from_raw_problems(
-            value, read_raw_work(prep), days)
+        rules[DATA] = lambda value: data_problems(
+            value, read_raw_work(prep), person)
     for name, problems in rules.items():
         if name in read:
             errors += [
                 f"{name}: {problem}" for problem in problems(read[name])]
-    # The report shows work.json, so it is checked once work.json passes.
-    if {report, CHARTS_DIR} <= files and WORK in read and not any(error.startswith(WORK) for error in errors):
+    # The report shows data.json, so it is checked once data.json passes.
+    if {report, CHARTS_DIR} <= files and DATA in read and not any(error.startswith(DATA) for error in errors):
         with open(os.path.join(folder, report), encoding="utf-8") as f:
             errors += [f"{report}: {problem}" for problem in report_problems(
-                f.read(), read[WORK], os.listdir(os.path.join(folder, CHARTS_DIR)))]
+                f.read(), read[DATA], os.listdir(os.path.join(folder, CHARTS_DIR)))]
     return {"ok": not errors, "errors": errors}
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Check a prep folder: that it holds only the prep's files, that its person.json names the "
-        "person, a period that can be reported on and who the person is in each source, that its orientation summarises the manager's view, that its reviews hold the person's previous reviews, that its feedback holds what the person heard during the period, that its notes summarise the manager's notes, that its Slack summary holds what the person's messages show, that its work holds the data points, and that its report shows them. Prints one line of JSON: ok and errors. Exits 1 if any check fails.")
+        "person, a period that can be reported on and who the person is in each source, that its orientation summarises the manager's view, that its reviews hold the person's previous reviews, that its feedback holds what the person heard during the period, that its notes summarise the manager's notes, that its Slack summary holds what the person's messages show, that its data.json is what the raw files give, and that its report shows it. Prints one line of JSON: ok and errors. Exits 1 if any check fails.")
     parser.add_argument("--prep", required=True,
                         help="the prep's folder, <Person>_<YY-MM-DD>, inside perf-review-preps")
     result = check_prep(parser.parse_args(argv).prep)

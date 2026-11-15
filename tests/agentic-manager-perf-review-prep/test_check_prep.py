@@ -15,7 +15,7 @@ import check_prep  # noqa: E402
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from prep_fixture import (FEEDBACK, REVIEWS, NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP,
-                          SLACK, WORK, temp_output, write_prep)  # noqa: E402
+                          SLACK, DATA, WORK_RAW, temp_output, write_prep)  # noqa: E402
 
 TODAY = date(2026, 11, 10)
 
@@ -64,24 +64,19 @@ class CheckTest(unittest.TestCase):
                          {**NOTES["going_well"][0]["evidence"][0], "date": "2026-06-30"}]}]}},
                   None, "notes.json: the notes summary's going_well: 'Presented the migration to the wider team'...'s "
                   "evidence must each be of a day"),
-                 ("no work", {"work": None}, None,
-                  "_charts, work.json"),
-                 ("work dated outside the period", {"work": {**WORK, "jira": {**WORK["jira"], "resolved": [
-                     {**WORK["jira"]["resolved"][0], "date": "2026-07-01"}]}}},
-                  None, "work.json: the work's jira resolved"),
-                 ("Notion pages twice", {"work": {**WORK, "notion": {**WORK["notion"],
-                                                                     "created": WORK["notion"]["created"] * 2}}},
-                  None, "work.json: the work's notion created lists"),
-                 ("facts that don't match the items", {"work": {**WORK, "jira": {**WORK["jira"], "focus": []}}},
-                  None, "work.json: the work's jira facts don't match its items"),
-                 ("no facts", {"work": {**WORK, "github": {k: v for k, v in WORK["github"].items() if k != "counts"}}},
-                  None, "work.json: the work's github must hold"),
+                 ("no data", {"data": None}, None, "_charts, data.json"),
+                 ("data changed by hand", {"data": {**DATA, "jira": {**DATA["jira"], "focus": []}}},
+                  None, "data.json: data.json doesn't match the raw files it is built from"),
+                 ("a raw file missing", {"raw_work": {"jira": WORK_RAW["jira"], "github": WORK_RAW["github"]}},
+                  None, "data.json: the work's raw files are missing"),
+                 ("a raw file that breaks its rules", {"raw_work": {**WORK_RAW, "github": {
+                     **WORK_RAW["github"], "start": "2026-08-01"}}}, None, "data.json: the github raw file is for"),
                  ("no report", {"report": False},
                   None, "_Review_Prep.md, _charts"),
                  ("a chart more", {}, "_charts/extra.svg",
                   "_Review_Prep.md: the charts folder must hold only"),
                  ("a figure changed by hand", {}, ("{report}", '">1</a>', '">2</a>'),
-                  "_Review_Prep.md: the report's Jira cell for created doesn't show work.json"),
+                  "_Review_Prep.md: the report's Jira cell for created doesn't show data.json"),
                  ("a Slack point with no evidence", {"slack": {**SLACK, "going_well": [
                      {**SLACK["going_well"][0], "evidence": []}]}},
                   None, "slack.json: the Slack summary's going_well must be a list of points")]
@@ -89,7 +84,7 @@ class CheckTest(unittest.TestCase):
             with self.subTest(name):
                 prep = f"Case-{i}_26-11-10"
                 files = {"person": PERSON, "orientation": ORIENTATION,
-                         "reviews": REVIEWS, "feedback": FEEDBACK, "notes": NOTES, "work": WORK, "slack": SLACK,
+                         "reviews": REVIEWS, "feedback": FEEDBACK, "notes": NOTES, "data": DATA, "slack": SLACK,
                          **changes}
                 write_prep(self.folder, prep=prep, **files)
                 if isinstance(extra, tuple):

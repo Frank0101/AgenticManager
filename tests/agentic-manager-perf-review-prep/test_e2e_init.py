@@ -1,12 +1,12 @@
 """End-to-end tests for skills/agentic-manager-perf-review-prep/scripts/find_jira_account.py,
 init_prep.py, find_person.py, set_identities.py, rules.py, set_summary.py,
-read_notes.py, fetch_work.py,
-set_notion.py, read_slack.py and check_prep.py: they run
+read_notes.py, fetch_work.py, set_notion.py, read_slack.py, build_data.py,
+make_report.py and check_prep.py: they run
 each as a script, as the agent does, from looking the person up in Jira and
 starting the prep on the account the manager confirmed, through who the
 person is in each other source, their view, the person's previous reviews
 and the period's feedback, the manager's notes, the person's work and their Slack
-messages, to the final check. Each script's functions have unit tests of
+messages, to the report and the final check. Each script's functions have unit tests of
 their own, in test_<script>.py.
 Run with: python3 tests/run.py agentic-manager-perf-review-prep
 
@@ -53,6 +53,7 @@ NOTES_SCRIPT = os.path.join(SCRIPTS, "read_notes.py")
 WORK_SCRIPT = os.path.join(SCRIPTS, "fetch_work.py")
 NOTION_SCRIPT = os.path.join(SCRIPTS, "set_notion.py")
 REPORT_SCRIPT = os.path.join(SCRIPTS, "make_report.py")
+DATA_SCRIPT = os.path.join(SCRIPTS, "build_data.py")
 SLACK_SCRIPT = os.path.join(SCRIPTS, "read_slack.py")
 TOKEN = "s3cret-token"
 JANE = {"accountId": "5b10ac8d82e05b22cc7d4ef5", "accountType": "atlassian", "displayName": "Jane Doe",
@@ -192,10 +193,10 @@ class ScriptsTest(unittest.TestCase):
         # summaries follow, set_summary.py records the summaries of the
         # manager's view, the previous reviews and the period's feedback, read_notes.py hands out the notes'
         # tasks and takes their answers, fetch_work.py and set_notion.py
-        # record the work, read_slack.py the Slack messages, and
-        # the work's facts are worked out once all three are in; check_prep.py
-        # passes the prep, and fails it once the folder holds a file of the
-        # agent's.
+        # record the work, read_slack.py the Slack messages, build_data.py
+        # builds data.json from the raw files and make_report.py the report
+        # from it; check_prep.py passes the prep, and fails it once the folder
+        # holds a file of the agent's.
         found = self.run_ok(ACCOUNT_SCRIPT, "--person", "Jane Doe")
         self.assertEqual([account["accountId"] for account in found["accounts"]], [
                          JANE["accountId"]])
@@ -248,7 +249,6 @@ class ScriptsTest(unittest.TestCase):
                     query in FakeJira.requests if path == "/rest/api/3/search/jql"]
         self.assertEqual((len(searches), all(f'= "{JANE["accountId"]}"' in jql for jql in searches)),
                          (2, True))
-        self.assertIsNone(fetched["work"])
         with open(fetched["raw"][0], encoding="utf-8") as f:
             jira = json.load(f)
         self.assertEqual(([issue["key"] for issue in jira["resolved"]], [issue["key"] for issue in jira["created"]],
@@ -264,7 +264,9 @@ class ScriptsTest(unittest.TestCase):
                                              {**PAGE, "type": "database", "url": PAGE["url"] + "-db"}]}]}))
         self.assertEqual(recorded["pages"], 2)
         self.read_slack(prep)
-        with open(recorded["work"], encoding="utf-8") as f:
+        # The data, built from the raw files with no network.
+        built = self.run_ok(DATA_SCRIPT, "--prep", prep)
+        with open(built["data"], encoding="utf-8") as f:
             work = json.load(f)
         self.assertEqual(work["jira"]["resolved"], [
             {"key": "PROJ-12", "title": "Migrate invoices", "type": "Story",
@@ -275,7 +277,7 @@ class ScriptsTest(unittest.TestCase):
             [{"key": "PROJ-1", "title": "Billing migration",
                 "url": f"{self.base_url}/browse/PROJ-1", "issues": 1}],
             [{"repo": "acme/billing", "number": 7, "title": PR["title"], "url": PR["url"], "date": TODAY.isoformat()}]))
-        # The report, from work.json: one resolved issue of 5 points, one
+        # The report, from data.json: one resolved issue of 5 points, one
         # created, each linked to its search.
         made = self.run_ok(REPORT_SCRIPT, "--prep", prep)
         with open(made["report"], encoding="utf-8") as f:

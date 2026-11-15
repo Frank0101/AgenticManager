@@ -1,4 +1,4 @@
-"""Fetches a prep's person's work in the period from Jira and GitHub into their raw files, which work.json is built from.
+"""Fetches a prep's person's work in the period from Jira and GitHub into their raw files, which data.json is built from.
 
 Each raw file keeps what the API returned, with the period and the searches
 that found it, so whose each item is can be checked again without searching
@@ -15,7 +15,7 @@ import subprocess
 from datetime import date, timedelta
 
 from common import (JIRA_SOURCE, PERSON, JiraClient, gh_json, gh_orgs, period_days, prep_dir, read_json, require_gh,
-                    stops_on_failure, WORK_LISTS, write_work)
+                    stops_on_failure, WORK_LISTS, write_raw_work)
 
 JIRA_FIELDS = ["summary", "issuetype", "parent", "resolutiondate", "created", "status", "assignee", "reporter",
                "updated"]
@@ -26,11 +26,10 @@ SEARCH_LIMIT = 1000
 # that comes back full, at SEARCH_LIMIT, may be cut short, so its window is
 # split in halves and each searched again. GitHub's secondary rate limit,
 # which searches in quick succession meet, is the library's to wait out.
-OUTPUT = """Prints one line of JSON: raw, the raw files written, work, work.json's path once
-set_notion.py has recorded Notion too, else null, and how many items each list holds.
+OUTPUT = """Prints one line of JSON: raw, the raw files written, and how many items each
+list holds.
 
-It writes each source's raw file in the prep's _raw, and work.json once
-every source's is in:
+It writes each source's raw file in the prep's _raw:
   jira     start and end, the period; base_url, the Jira site's;
            points_fields, the ids of its story points fields; created,
            the issues the person created in the period, and resolved, those
@@ -47,15 +46,12 @@ every source's is in:
 
 def fetch(prep, client=None, run=subprocess.run):
     """Fetch the work of the prep `prep`'s person and write it to its raw
-    files, and work.json once Notion is in too; returns where they are and
-    how many items each list holds."""
+    files; returns where they are and how many items each list holds."""
     folder = prep_dir(prep)
     person = read_json(os.path.join(folder, PERSON))
     raws = {"jira": jira_raw(client or JiraClient(), person["sources"][JIRA_SOURCE]["id"], person),
             "github": github_raw(person["sources"]["github-cli"]["id"], person, run)}
-    written = [write_work(prep, source, raw, period_days(person))
-               for source, raw in raws.items()]
-    return {"raw": [paths["raw"] for paths in written], "work": written[-1]["work"],
+    return {"raw": [write_raw_work(prep, source, raw, period_days(person)) for source, raw in raws.items()],
             "counts": {f"{source}.{name}": len(raw[name]) for source, raw in raws.items() for name in WORK_LISTS[source]}}
 
 
@@ -130,7 +126,7 @@ def search(flags, date_flag, window, org, run=subprocess.run):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Fetch the prep's person's work in the period from Jira and GitHub into their raw files, and build work.json once Notion's is in too.",
+        description="Fetch the prep's person's work in the period from Jira and GitHub into their raw files.",
         epilog=OUTPUT, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--prep", required=True,
                         help="the prep's folder, <Person>_<YY-MM-DD>, as init_prep.py printed it")

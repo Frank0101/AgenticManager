@@ -13,7 +13,6 @@ import json
 import os
 import re
 import sys
-from urllib.parse import quote
 
 # The agentic-manager-utils-lib skill, installed next to this one.
 LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
@@ -120,13 +119,10 @@ NOTES = "notes.json"
 # issues and GitHub's pull requests as their APIs return them, with the
 # period and the searches that found them, so whose each item is, and why it
 # is there, can be checked again without searching again; Notion's searches,
-# which only the agent reaches, with their results as returned. Once every
-# source's is in, work.json is built from them, with no network, and nowhere
-# else: for each source its items, each with its title, date and link, for
-# the writing step to cite, the facts worked out from them, once, and for
-# Jira and GitHub the address of each list's search, to see the same items
-# live.
-WORK = "work.json"
+# which only the agent reaches, with their results as returned. build_data.py
+# builds data.json from them, the one model the report reads: each item, with
+# its title, date and link, built here, and every fact worked out from them.
+DATA = "data.json"
 WORK_LISTS = {"jira": ("created", "resolved"), "github": (
     "opened", "merged"), "notion": ("created",)}
 # What a raw file holds beside its lists: the period and, for each list, the
@@ -136,7 +132,7 @@ WORK_LISTS = {"jira": ("created", "resolved"), "github": (
 # first of them it has.
 RAW_FIELDS = {"jira": ("start", "end", "base_url", "points_fields", "created_jql", "resolved_jql", "parents"),
               "github": ("start", "end", "orgs", "opened_query", "merged_query"), "notion": ()}
-# The fields of a raw item work.json is built from, and those kept only to
+# The fields of a raw item data.json is built from, and those kept only to
 # check whose it is: Jira's assignee, reporter and updated, GitHub's author
 # and updatedAt. A parent, which Jira leaves out when an issue has none,
 # needs its own.
@@ -154,14 +150,6 @@ PARENT_FIELDS = ("key", "fields.summary", "fields.issuetype.name")
 # split, so one still full keeps what it found. A database's rows aren't
 # pages of their own.
 NOTION_LIMIT = 50
-# The facts of each source. The activity over time isn't one: each item
-# has its day, and grouping them, such as by week, is for whatever shows it.
-FACT_KEYS = {"jira": ("counts", "created_by_type", "resolved_by_type", "resolved_by_epic", "focus", "resolved_points"),
-             "github": ("counts",), "notion": ("counts",)}
-# The searches work.json links to, by what they find: each list's, and the
-# resolved issues that are estimated, whose points are summed.
-SEARCH_URLS = {"jira": ("created", "resolved", "resolved_points"),
-               "github": ("opened", "merged")}
 # The share of the resolved issues the main focus covers.
 FOCUS_SHARE = 0.8
 # What the person's Slack messages show, read by subagents a month each and
@@ -171,7 +159,7 @@ SLACK = "slack.json"
 # folder per source, kept so a summary can be traced back to the notes and
 # synopses it came from, and the raw file of each source of the work. The
 # report, <Person>_Review_Prep.md, is drawn from the files above, and
-# CHARTS_DIR holds the charts it shows, each a view of work.json, as SVG.
+# CHARTS_DIR holds the charts it shows, each a view of data.json, as SVG.
 REPORT_KIND = "Review_Prep.md"
 # The Jira cells of the report, in order: each a fact's figure, linked to
 # its search, with what it is made of, and below it its chart.
@@ -186,10 +174,9 @@ def expected_files(prep):
     """Every file the prep folder `prep` holds, and nothing else: the person,
     the period and who they are in each source, the manager's view of them,
     their previous reviews, the period's feedback, the manager's notes on
-    them, what their Slack messages show, their work in Jira, GitHub and
-    Notion, the _raw folder of what each source gave, and the report with its
-    _charts folder."""
-    return {PERSON, ORIENTATION, REVIEWS, FEEDBACK, NOTES, SLACK, WORK, RAW_DIR, report_name(prep), CHARTS_DIR}
+    them, what their Slack messages show, the report's data, the _raw folder
+    of what each source gave, and the report with its _charts folder."""
+    return {PERSON, ORIENTATION, REVIEWS, FEEDBACK, NOTES, SLACK, DATA, RAW_DIR, report_name(prep), CHARTS_DIR}
 
 
 def report_name(prep):
@@ -198,21 +185,13 @@ def report_name(prep):
     return document_name(prep.rsplit("_", 1)[0], REPORT_KIND)
 
 
-def write_work(prep, source, raw, days):
+def write_raw_work(prep, source, raw, days):
     """Writes `raw`, what `source` gave, such as {"created": [...]} for
-    "notion", to its raw file in the prep `prep`, then, once every
-    source's is in and follows its rules, as one from an earlier version or
-    period doesn't, work.json, built from them; returns {raw, work}, the
-    files' paths, work null until it is built. Exits, writing nothing, when
-    `raw` breaks a rule, `days` the period's."""
+    "notion", to its raw file in the prep `prep`; returns the file's path.
+    Exits, writing nothing, when `raw` breaks a rule, `days` the period's."""
     if problems := raw_work_problems(source, raw, days):
         raise SystemExit("; ".join(problems))
-    path = write_raw(prep, f"{source}.json", json.dumps(
-        raw, ensure_ascii=False, indent=1))
-    raws = read_raw_work(prep)
-    ready = raws is not None and not any(raw_work_problems(
-        source, other, days) for source, other in raws.items())
-    return {"raw": path, "work": write_prep_file(prep, WORK, build_work(raws, days)) if ready else None}
+    return write_raw(prep, f"{source}.json", json.dumps(raw, ensure_ascii=False, indent=1))
 
 
 def raw_work_problems(source, raw, days):
@@ -321,21 +300,9 @@ def read_raw_work(prep):
     return {source: read_json(path) for source, path in paths.items()}
 
 
-def build_work(raws, days):
-    """work.json from `raws`, every source's raw file: for each source its
-    items, its facts over `days` and the address of each of its
-    SEARCH_URLS."""
-    work = {}
-    for source, raw in raws.items():
-        lists = work_items(source, raw)
-        work[source] = {
-            **lists, **source_facts(source, lists, days), **search_urls(source, raw)}
-    return work
-
-
 def work_items(source, raw):
     """{list: items}: the items of `raw`, the raw file of `source`, as
-    work.json records them, without the fields kept only to check them, and
+    data.json records them, without the fields kept only to check them, and
     of Notion's results only the pages of their own."""
     if source == "jira":
         parents = {parent["key"]: parent for parent in raw["parents"]}
@@ -352,7 +319,7 @@ def work_items(source, raw):
 
 
 def issue_item(base_url, issue, dated_by, points_fields, parents):
-    """A Jira issue as work.json records it, its link on the site at
+    """A Jira issue as data.json records it, its link on the site at
     `base_url`, dated by the day of its field `dated_by`, its points the
     first of `points_fields` it has, or null when it isn't estimated, and its
     epic, {key, title, url}, or null, by epic_of() from `parents`. Jira's
@@ -379,72 +346,11 @@ def epic_of(fields, parents):
 
 
 def pr_item(pr, stamp):
-    """A pull request as work.json records it, dated by the day of `stamp`,
+    """A pull request as data.json records it, dated by the day of `stamp`,
     a merged one by when it was closed, as gh's search gives no merge time
     and a merged search finds only merged ones."""
     return {"repo": pr["repository"]["nameWithOwner"], "number": pr["number"], "title": pr["title"],
             "url": pr["url"], "date": (stamp or "")[:10]}
-
-
-def search_urls(source, raw):
-    """{<search>_search_url: address}: the address of each of the SEARCH_URLS
-    of `source`, Jira's JQL on its site or GitHub's query on github.com,
-    which finds the same items live; the estimated resolved issues' null
-    when the site has no points field; for Jira also epic_search_urls, by
-    epic_search_urls(); {} for a source with none."""
-    if source == "jira":
-        estimated = " OR ".join(f"cf[{field.removeprefix('customfield_')}] is not EMPTY"
-                                for field in raw["points_fields"])
-        jqls = {"created": raw["created_jql"], "resolved": raw["resolved_jql"],
-                "resolved_points": estimated and f"{raw['resolved_jql']} AND ({estimated})"}
-        return {**{f"{name}_search_url": jql and jira_search_url(raw["base_url"], jql) for name, jql in jqls.items()},
-                "epic_search_urls": epic_search_urls(raw)}
-    if source == "github":
-        return {f"{name}_search_url": f"https://github.com/search?q={quote(raw[f'{name}_query'])}&type=pullrequests"
-                for name in WORK_LISTS[source]}
-    return {}
-
-
-def epic_search_urls(raw):
-    """{epic: address}: for each epic of the resolved issues in `raw`, Jira's
-    raw file, the search that finds the ones counted in it: the resolved
-    search, narrowed to the epic's children and to the sub-tasks of its
-    stories, as a sub-task counts in its story's epic."""
-    parents = {parent["key"]: parent for parent in raw["parents"]}
-    children, stories = set(), {}
-    for issue in raw["resolved"]:
-        fields = issue["fields"]
-        if not (epic := epic_of(fields, parents)):
-            continue
-        if fields["issuetype"].get("subtask"):
-            stories.setdefault(epic["key"], set()).add(fields["parent"]["key"])
-        else:
-            children.add(epic["key"])
-    urls = {}
-    for epic in sorted({*children, *stories}):
-        under = [f"parent = {epic}"] if epic in children else []
-        if epic in stories:
-            under.append(f"parent in ({', '.join(sorted(stories[epic]))})")
-        urls[epic] = jira_search_url(
-            raw["base_url"], f"{raw['resolved_jql']} AND ({' OR '.join(under)})")
-    return urls
-
-
-def jira_search_url(base_url, jql):
-    """The address of the Jira search `jql` on the site at `base_url`."""
-    return f"{base_url}/issues/?jql={quote(jql)}"
-
-
-def work_from_raw_problems(work, raws, days):
-    """Why `work` isn't work.json as build_work() makes it from `raws`, every
-    source's raw file, or None while one is missing, empty when it is."""
-    if raws is None:
-        return ["the work's raw files are missing: run fetch_work.py and set_notion.py again"]
-    if any(raw_work_problems(source, raw, days) for source, raw in raws.items()):
-        return ["the work's raw files break their rules: run fetch_work.py and set_notion.py again"]
-    if work != build_work(raws, days):
-        return ["work.json doesn't match the raw files it is built from: run fetch_work.py again"]
-    return []
 
 
 def prep_dir(prep):
@@ -676,38 +582,6 @@ def slack_problems(slack, values, days):
     return summary_problems(slack, "the Slack summary", values, days)
 
 
-def work_problems(work, days):
-    """Why `work` isn't the person's work, empty when it is: for each source
-    of WORK_LISTS, its lists, by items_problems(), its FACT_KEYS, matching the
-    items, and each of its SEARCH_URLS' address."""
-    if not (isinstance(work, dict) and sorted(work) == sorted(WORK_LISTS)):
-        return [f"the work must hold {', '.join(WORK_LISTS)}"]
-    problems = []
-    for source, lists in WORK_LISTS.items():
-        keys = work_keys(source)
-        if not (isinstance(work[source], dict) and sorted(work[source]) == sorted(keys)
-                and all(isinstance(work[source][name], list) for name in lists)):
-            problems.append(f"the work's {source} must hold {', '.join(keys)}")
-            continue
-        problems += items_problems(source,
-                                   {name: work[source][name] for name in lists}, days)
-    if problems:
-        return problems
-    return [f"the work's {source} facts don't match its items: run fetch_work.py again, which builds it anew"
-            for source, lists in WORK_LISTS.items()
-            if any(work[source][key] != value for key, value in source_facts(
-                source, {name: work[source][name] for name in lists}, days).items())]
-
-
-def work_keys(source):
-    """What the work of `source` holds: its lists, its FACT_KEYS and each of
-    its SEARCH_URLS as <search>_search_url, and for Jira the search of each
-    epic's resolved issues."""
-    return (*WORK_LISTS[source], *FACT_KEYS[source],
-            *(f"{name}_search_url" for name in SEARCH_URLS.get(source, ())),
-            *(("epic_search_urls",) if source == "jira" else ()))
-
-
 def items_problems(source, lists, days):
     """Why `lists`, {list: items} of `source`, don't follow their rules,
     empty when they do: each item an object with a title, a link and a date,
@@ -745,81 +619,6 @@ def _is_item(item, days, dated):
     return (isinstance(item, dict) and _is_text(item.get("title"))
             and str(item.get("url", "")).startswith(("http://", "https://"))
             and (not dated or item.get("date") in days))
-
-
-def source_facts(source, lists, days):
-    """The facts of `lists`, the items of `source`, in the period of `days`,
-    as FACT_KEYS names them: counts, how many items each list holds; for
-    Jira, created_by_type and resolved_by_type, the issues of each type, most
-    first, resolved_by_epic, the resolved issues by epic, focus, their main
-    focus, and resolved_points,
-    the resolved issues' points: their total, how many are estimated and
-    their average, null when none is, an unestimated issue counting toward
-    neither."""
-    facts: dict = {"counts": {name: len(items)
-                              for name, items in lists.items()}}
-    if source == "jira":
-        facts |= {"created_by_type": by_type(lists["created"]), "resolved_by_type": by_type(lists["resolved"]),
-                  "resolved_by_epic": by_epic(lists["resolved"]), "focus": focus(lists["resolved"]),
-                  "resolved_points": points(lists["resolved"])}
-    return facts
-
-
-def points(issues):
-    """{total, estimated, average}: the points of the estimated `issues`,
-    summed, how many they are and their average, null when there are none,
-    to one decimal."""
-    estimated = [issue["points"]
-                 for issue in issues if issue["points"] is not None]
-    return {"total": round(sum(estimated), 1), "estimated": len(estimated),
-            "average": round(sum(estimated) / len(estimated), 1) if estimated else None}
-
-
-def by_type(issues):
-    """[{type, issues}]: how many of `issues` there are of each type, most
-    first, then by type."""
-    types = {}
-    for issue in issues:
-        types[issue["type"]] = types.get(issue["type"], 0) + 1
-    return [{"type": kind, "issues": count} for kind, count in sorted(types.items(), key=lambda pair: (-pair[1], pair[0]))]
-
-
-def by_epic(resolved):
-    """{epics, no_epic}: the issues `resolved` by their epic, each {key,
-    title, url, issues}, the most issues first, then by key; and how many
-    have none."""
-    counts = {}
-    for issue in resolved:
-        if issue["epic"]:
-            entry = counts.setdefault(issue["epic"]["key"], {
-                                      **issue["epic"], "issues": 0})
-            entry["issues"] += 1
-    return {"epics": sorted(counts.values(), key=lambda entry: (-entry["issues"], entry["key"])),
-            "no_epic": sum(1 for issue in resolved if not issue["epic"])}
-
-
-def focus(resolved):
-    """The main focus of the issues `resolved`: the fewest of their epics,
-    as by_epic() ranks them, whose issues are at least FOCUS_SHARE of those
-    with an epic, with every epic tied with the last one, each {key, title,
-    url, issues}; or, when none has an epic, their projects the same way,
-    the title and url null. A fixed number of epics would give someone who
-    works on two as long a list as someone who works on eight."""
-    ranked = by_epic(resolved)["epics"]
-    if not ranked:
-        projects = {}
-        for issue in resolved:
-            project = issue["key"].rsplit("-", 1)[0]
-            projects[project] = projects.get(project, 0) + 1
-        ranked = [{"key": key, "title": None, "url": None, "issues": count}
-                  for key, count in sorted(projects.items(), key=lambda pair: (-pair[1], pair[0]))]
-    total, covered, cutoff = sum(entry["issues"] for entry in ranked), 0, 0
-    for entry in ranked:
-        covered += entry["issues"]
-        if covered >= FOCUS_SHARE * total:
-            cutoff = entry["issues"]
-            break
-    return [entry for entry in ranked if entry["issues"] >= cutoff]
 
 
 def types_text(by_type):

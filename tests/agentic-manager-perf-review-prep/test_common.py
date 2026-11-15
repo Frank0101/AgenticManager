@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import (NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP, SLACK, NOTION_SEARCHES, PLAN_RESULT, WORK, WORK_ITEMS, WORK_RAW,  # noqa: E402
+from prep_fixture import (NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP, SLACK, NOTION_SEARCHES, PLAN_RESULT, DATA, WORK_ITEMS, WORK_RAW,  # noqa: E402
                            temp_output, write_prep)  # noqa: E402
 
 TODAY = date(2026, 11, 10)
@@ -285,26 +285,6 @@ class CommonTest(unittest.TestCase):
                     {**WORK_ITEMS["jira"]["resolved"][0], "url": url}]}, days)
                 self.assertEqual(problems == [], accepted, problems)
 
-    def test_build_work(self):
-        # The fixture's work.json, worked out by hand from its raw files: each
-        # source's items without the fields kept only to check them, its
-        # facts, such as the main focus of its one resolved issue, and each
-        # search's address.
-        self.assertEqual(common.build_work(
-            WORK_RAW, common.period_days(PERSON)), WORK)
-
-    def test_write_work(self):
-        # work.json is built once every source's raw file is in and follows
-        # its rules: one in an earlier format waits to be fetched again.
-        folder = temp_output(self)
-        write_prep(folder, work=None, raw_work={
-                   "jira": WORK_RAW["jira"], "github": {"opened": [], "merged": []}})
-        days = common.period_days(PERSON)
-        self.assertIsNone(common.write_work(
-            PREP, "notion", WORK_RAW["notion"], days)["work"])
-        written = common.write_work(PREP, "github", WORK_RAW["github"], days)
-        self.assertEqual(common.read_json(written["work"]), WORK)
-
     def test_raw_work_problems(self):
         # name: (the source, a change to its raw file, expected in its
         # problems, or None for none).
@@ -370,46 +350,6 @@ class CommonTest(unittest.TestCase):
                     self.assertEqual(problems, "")
                 else:
                     self.assertIn(expected, problems)
-
-    def test_points(self):
-        # name: (the issues' points, {total, estimated, average}): an
-        # unestimated issue counts toward neither the total nor the average.
-        cases = [("none estimated", [None, None], {"total": 0, "estimated": 0, "average": None}),
-                 ("some estimated", [3, None, 5, 1], {
-                  "total": 9, "estimated": 3, "average": 3.0}),
-                 ("halves", [0.5, 2, 1], {"total": 3.5, "estimated": 3, "average": 1.2})]
-        for name, points, expected in cases:
-            with self.subTest(name):
-                self.assertEqual(common.points(
-                    [{"points": value} for value in points]), expected)
-
-    def test_focus(self):
-        # name: (parents of the resolved issues, by key, None for none, the
-        # focus expected as (key, issues)): the fewest parents covering 80%
-        # of the issues with one, those tied with the last one too; with no
-        # parent at all, the projects.
-        def issues(*epics):
-            return [{"key": f"PROJ-{n}", "epic": {"key": epic, "title": epic.title(), "url": f"https://acme.test/{epic}"}
-                     if epic else None}
-                    for n, epic in enumerate(epics)]
-        cases = [("nothing", [], []),
-                 ("one parent", issues("billing"), [("billing", 1)]),
-                 ("80% covered", issues(
-                     *["a"] * 5, *["b"] * 3, "c", "d"), [("a", 5), ("b", 3)]),
-                 ("tied at the cutoff", issues(*["a"] * 4, *["b"] * 2, *["c"] * 2, *["d"] * 2),
-                  [("a", 4), ("b", 2), ("c", 2), ("d", 2)]),
-                 ("no parent left out", issues("a", "a", None, None, None), [("a", 2)])]
-        for name, resolved, expected in cases:
-            with self.subTest(name):
-                self.assertEqual([(entry["key"], entry["issues"])
-                                 for entry in common.focus(resolved)], expected)
-        projects = [{"key": key, "epic": None}
-                    for key in ("PROJ-1", "PROJ-2", "OPS-3")]
-        self.assertEqual(common.focus(projects), [{"key": "PROJ", "title": None, "url": None, "issues": 2},
-                                                  {"key": "OPS", "title": None, "url": None, "issues": 1}])
-        self.assertEqual(common.by_epic(issues("a", None, "b", "a")), {
-            "epics": [{"key": "a", "title": "A", "url": "https://acme.test/a", "issues": 2},
-                      {"key": "b", "title": "B", "url": "https://acme.test/b", "issues": 1}], "no_epic": 1})
 
     def test_name_words(self):
         for name, words in [("Jane Doe", ["jane", "doe"]), ("José  Núñez-Ruiz", ["jose", "nunez", "ruiz"]),

@@ -1,7 +1,7 @@
-"""Checks a prep's report against work.json: that it shows every Jira figure and the main focus as the issues give them, and holds only its charts.
+"""Checks a prep's report against data.json: that it shows every Jira figure, the main focus and the charts' series as the issues give them, and holds only its charts.
 
 It reads each figure back from the report and works it out again from the
-issues, apart from work.json's facts and from make_report.py, with which it
+issues, apart from data.json's facts and from make_report.py, with which it
 shares only the report's constants and how a figure is written, in common.py:
 so a bug in the model or in the report can't pass by agreeing with itself.
 """
@@ -21,16 +21,17 @@ JIRA_FIGURE = re.compile(
 JIRA_CHART = re.compile(rf'<td><img src="{CHARTS_DIR}/([^"]+)"')
 
 
-def report_problems(report, work, charts):
-    """Why `report`, the report's text, doesn't show `work`, work.json, or
+def report_problems(report, data, charts):
+    """Why `report`, the report's text, doesn't show `data`, data.json, or
     `charts`, the files in the charts folder, those starting with a dot
     aside, aren't its charts, empty when they are: each count, the story
     points' total and average, each breakdown by type and each link to its
-    search, and the main focus."""
+    search, the main focus, and the series the charts draw."""
     charts = [name for name in charts if not name.startswith(".")]
     problems = [] if sorted(charts) == sorted(CHART_FILES) else [
         f"the charts folder must hold only {', '.join(CHART_FILES)}: run make_report.py again"]
-    jira = work["jira"]
+    jira = data["jira"]
+    problems += _series_problems(jira, data["weeks"])
     estimated = [issue["points"]
                  for issue in jira["resolved"] if issue["points"] is not None]
     total = round(sum(estimated), 1)
@@ -46,12 +47,54 @@ def report_problems(report, work, charts):
         if (float(linked or plain), html.unescape(url) or None, html.unescape(made_of), shown) != (
                 expected[name][0], jira[f"{name}_search_url"], expected[name][1], chart):
             problems.append(
-                f"the report's Jira cell for {name} doesn't show work.json: run make_report.py again")
+                f"the report's Jira cell for {name} doesn't show data.json: run make_report.py again")
     shown = [(html.unescape(url), html.unescape(key), html.unescape(title), int(n))
              for url, key, title, n in FOCUS_ENTRY.findall(report)]
     if shown != _focus(jira["resolved"], jira["epic_search_urls"]):
         problems.append("the report's main focus doesn't show the epics of the resolved issues: run make_report.py "
                         "again")
+    return problems
+
+
+def _series_problems(jira, weeks):
+    """Why the series the charts draw, in `jira`, data.json's, don't count
+    its issues, worked out again from them over `weeks`, empty when they do:
+    each week's created and resolved issues, in all, by epic and with none,
+    and the resolved issues by story points and epic."""
+    problems = []
+    for name in ("created", "resolved"):
+        counts = {"total": [0] * len(weeks),
+                  "epics": {}, "no_epic": [0] * len(weeks)}
+        for issue in jira[name]:
+            index = next(n for n, (first, last) in enumerate(
+                weeks) if first <= issue["date"] <= last)
+            counts["total"][index] += 1
+            if issue["epic"]:
+                counts["epics"].setdefault(issue["epic"]["key"], [
+                                           0] * len(weeks))[index] += 1
+            else:
+                counts["no_epic"][index] += 1
+        series = jira[f"{name}_by_week"]
+        if (series["total"], dict(series["epics"]), series["no_epic"]) != (counts["total"], counts["epics"],
+                                                                           counts["no_epic"]):
+            problems.append(
+                f"the chart of the issues {name} doesn't count them week by week: run build_data.py again")
+    stacks = {}
+    for issue in jira["resolved"]:
+        if issue["points"] is not None:
+            row = stacks.setdefault(
+                issue["points"], {"issues": 0, "epics": {}, "no_epic": 0})
+            row["issues"] += 1
+            if issue["epic"]:
+                row["epics"][issue["epic"]["key"]] = row["epics"].get(
+                    issue["epic"]["key"], 0) + 1
+            else:
+                row["no_epic"] += 1
+    shown = {row["points"]: {"issues": row["issues"], "epics": dict(row["epics"]), "no_epic": row["no_epic"]}
+             for row in jira["points_by_epic"]}
+    if shown != stacks or [row["points"] for row in jira["points_by_epic"]] != sorted(stacks):
+        problems.append(
+            "the chart of the story points doesn't count the resolved issues: run build_data.py again")
     return problems
 
 
