@@ -1,4 +1,4 @@
-"""Checks a prep's report against data.json: that it shows every GitHub and Jira figure, each main focus, the charts' series and the Notion pages created as the items give them, and the feedback's points as the summaries give them, and holds only its charts.
+"""Checks a prep's report against data.json: that it shows every GitHub and Jira figure, each main focus, the charts' series and the Notion pages created as the items give them, and the observations' points as the summaries give them, each table under content.json's summary of it, and holds only its charts.
 
 It reads each figure back from the report and works it out again from the
 items, apart from data.json's facts and from make_report.py, with which it
@@ -10,28 +10,29 @@ from datetime import date, timedelta
 import html
 import re
 
-from common import (BINS_PER_DECADE, CHART_FILES, CHARTS_DIR, FEEDBACK_HEADINGS, FEEDBACK_SOURCES, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS, NO_VALUE,
-                    PAGES_HEADING, REFERENCE_NAMES, VALUED_PARTS, average_text, day_text, link_href, project_of, repo_code, repos_text, size_text, types_text,
+from common import (BINS_PER_DECADE, CHART_FILES, CHARTS_DIR, OBSERVATION_HEADINGS, OBSERVATION_SOURCES, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS, NO_VALUE,
+                    PAGES_HEADING, REFERENCE_NAMES, VALUED_PARTS, average_text, day_text, details_text, link_href, project_of, repo_code, repos_text, size_text, types_text,
                     week_text)
 
 # The report's sections, in order, each where its heading starts it.
-SECTION_HEADINGS = ("\n## Feedback\n", "\n## GitHub\n",
+SECTION_HEADINGS = ("\n## Observations\n", "\n## GitHub\n",
                     "\n## Jira\n", "\n## Notion\n")
-# The start of a row of a table grouped as the Notion pages and the Feedback
+# The start of a row of a table grouped as the Notion pages and the Observations
 # points are: its group's cell, on the group's first row only, with how many
 # rows it spans and the group's name.
-GROUP_CELL = r'<tr valign="top">(?:<td rowspan="(\d+)"><small><small>([^<]*)</small></small></td>)?'
+GROUP_CELL = r'<tr valign="top">(?:<td rowspan="(\d+)">([^<]*)</td>)?'
 # The Notion section's count of the pages created, and each page's row: its
 # week's cell, then its link and title, and its area.
 PAGES_COUNT = re.compile(rf"<b>{re.escape(PAGES_HEADING)}</b> \((\d+)\)")
-PAGE_ROW = re.compile(GROUP_CELL + r'<td><small><small><a href="([^"]+)">([^<]*)</a></small></small></td>'
-                      r'<td><small><small>([^<]*)</small></small></td></tr>')
-# A Feedback part: its heading, how many points it holds and its table, up
-# to the next part; and each point's row: its value's cell, then its text,
-# its source and its reference.
-FEEDBACK_PART = re.compile(r"<b>([^<]+)</b> \((\d+)\)((?:(?!<b>).)*)", re.S)
-FEEDBACK_ROW = re.compile(GROUP_CELL + r'<td><small><small>([^<]*)</small></small></td><td><small><small>([^<]*)</small></small></td>'
-                          r'<td><small><small>(.*?)</small></small></td></tr>')
+PAGE_ROW = re.compile(GROUP_CELL + r'<td><a href="([^"]+)">([^<]*)</a></td>'
+                      r'<td>([^<]*)</td></tr>')
+# An Observations part: its heading and what follows it, up
+# to the next part; and each point's row: its value's cell, then the second
+# value it names, its text, its source and its reference.
+OBSERVATION_PART = re.compile(r"<b>([^<]+)</b>((?:(?!<b>).)*)", re.S)
+DETAILS = re.compile(r"<details><summary>([^<]*)</summary>")
+OBSERVATION_ROW = re.compile(GROUP_CELL + r'<td>([^<]*)</td><td>([^<]*)</td><td>([^<]*)</td>'
+                             r'<td>(.*?)</td></tr>')
 LINK = re.compile(r'<a href="([^"]+)">([^<]*)</a>')
 # A Jira main focus entry as the report writes it: its epic's link, key and
 # title, or the link of the issues with no epic, or a project's key alone,
@@ -50,28 +51,30 @@ CHART = re.compile(
     rf'<td><a href="{CHARTS_DIR}/([^"]+)" target="_blank"><img src="{CHARTS_DIR}/\1"')
 
 
-def report_problems(report, data, charts, summaries, values, folder):
+def report_problems(report, data, charts, summaries, values, folder, content):
     """Why `report`, the report's text, doesn't show `data`, data.json, and
     `summaries`, the feedback's pieces, the notes' summary and Slack's, by
     SUMMARY_FILES' names, with `values`, the company's, or `charts`, the
     files in the charts folder, those starting with a dot aside, aren't its
     charts, empty when they are: each count, total, average and median, each
     breakdown and each link to its search, each main focus, the series the
-    charts draw, the Notion pages created and the feedback's points, a note's
-    link relative to `folder`, the report's."""
+    charts draw, the Notion pages created and the observations' points, a note's
+    link relative to `folder`, the report's, each table under its summary in
+    `content`, content.json."""
     charts = [name for name in charts if not name.startswith(".")]
     problems = [] if sorted(charts) == sorted(CHART_FILES) else [
         f"the charts folder must hold only {', '.join(CHART_FILES)}: run finish_report.py again"]
     sections = re.split(
         "(" + "|".join(map(re.escape, SECTION_HEADINGS)) + ")", report)
     if tuple(sections[1::2]) != SECTION_HEADINGS:
-        return problems + ["the report must have its Feedback section, then its GitHub one, its Jira one and its "
+        return problems + ["the report must have its Observations section, then its GitHub one, its Jira one and its "
                            "Notion one: run finish_report.py again"]
-    feedback_text, github_text, jira_text, notion_text = sections[2::2]
+    observations_text, github_text, jira_text, notion_text = sections[2::2]
     return problems + _jira_problems(jira_text, data["jira"], data["weeks"]) + \
         _github_problems(github_text, data["github"], data["weeks"]) + \
         _notion_problems(notion_text, data["notion"], (data["weeks"][0][0], data["weeks"][-1][1])) + \
-        _feedback_problems(feedback_text, summaries, values, folder)
+        _observations_problems(
+            observations_text, summaries, values, folder, content)
 
 
 # Jira.
@@ -96,7 +99,7 @@ def _jira_problems(text, jira, weeks):
                         "run finish_report.py again")
     if [entry["share"] for entry in jira["focus"]] != _shares([n for *_, n in focus], len(jira["resolved"])):
         problems.append(
-            "the shares the Jira pie shows aren't the main focus's: run build_data.py again")
+            "the shares the Jira pie shows aren't the main focus's: run prepare_report.py again")
     return problems
 
 
@@ -112,13 +115,13 @@ def _series_problems(jira, weeks):
     order = _order(resolved, {epic(issue)
                    for issue in jira["created"]} - {None})
     problems = [] if jira["epic_order"] == order else [
-        "the epics the charts colour aren't those with the most resolved issues: run build_data.py again"]
+        "the epics the charts colour aren't those with the most resolved issues: run prepare_report.py again"]
     for name in ("created", "resolved"):
         counts = _weekly(jira[name], weeks, epic, order)
         series = jira[f"{name}_by_week"]
         if (series["total"], dict(series["epics"]), series["other"], series["no_epic"]) != counts:
             problems.append(
-                f"the chart of the issues {name} doesn't count them week by week: run build_data.py again")
+                f"the chart of the issues {name} doesn't count them week by week: run prepare_report.py again")
     pie = jira["resolved_by_epic"]
     shown, other, none = _split(resolved, order, sum(
         1 for issue in jira["resolved"] if not issue["epic"]))
@@ -127,7 +130,7 @@ def _series_problems(jira, weeks):
     slices.sort(key=lambda pair: (-pair[1], pair[0] is None, pair[0] or ""))
     if ([(entry["key"], entry["issues"]) for entry in pie["epics"]], pie["other"]) != (slices, other):
         problems.append(
-            "the chart of the resolved issues by epic doesn't count them: run build_data.py again")
+            "the chart of the resolved issues by epic doesn't count them: run prepare_report.py again")
     estimated = [issue for issue in jira["resolved"]
                  if issue["points"] is not None]
     stacks = {value: (len(at), *_split(_counts(at, epic), order, sum(1 for issue in at if not issue["epic"])))
@@ -137,7 +140,7 @@ def _series_problems(jira, weeks):
              for row in jira["points_by_epic"]}
     if shown != stacks or [row["points"] for row in jira["points_by_epic"]] != sorted(stacks):
         problems.append(
-            "the chart of the story points doesn't count the resolved issues: run build_data.py again")
+            "the chart of the story points doesn't count the resolved issues: run prepare_report.py again")
     return problems
 
 
@@ -194,7 +197,7 @@ def _github_problems(text, github, weeks):
     if [entry["share"] for entry in github["focus"]] != _shares([counts[repo] for repo in _covered(counts)],
                                                                 len(merged)):
         problems.append(
-            "the shares the GitHub pie shows aren't the main focus's: run build_data.py again")
+            "the shares the GitHub pie shows aren't the main focus's: run prepare_report.py again")
     return problems
 
 
@@ -209,17 +212,17 @@ def _pulls_problems(github, weeks, merged, order):
     def repo(pr):
         return pr["repo"]
     problems = [] if github["repo_order"] == order else [
-        "the repositories the charts colour aren't those with the most merged pull requests: run build_data.py "
+        "the repositories the charts colour aren't those with the most merged pull requests: run prepare_report.py "
         "again"]
     for name in ("opened", "merged"):
         series = github[f"{name}_by_week"]
         if (series["total"], dict(series["repos"]), series["other"]) != _weekly(github[name], weeks, repo, order)[:3]:
             problems.append(
-                f"the chart of the pull requests {name} doesn't count them week by week: run build_data.py again")
+                f"the chart of the pull requests {name} doesn't count them week by week: run prepare_report.py again")
     pie = github["merged_by_repo"]
     if ({entry["repo"]: entry["prs"] for entry in pie["repos"]}, pie["other"]) != _split(merged, order, 0)[:2]:
         problems.append(
-            "the chart of the merged pull requests by repository doesn't count them: run build_data.py again")
+            "the chart of the merged pull requests by repository doesn't count them: run prepare_report.py again")
     sizes = [pr["lines"] for pr in github["merged"]]
     bins = BINS_PER_DECADE * \
         len(str(max([size for size in sizes if size >= 1], default=1)))
@@ -236,7 +239,7 @@ def _pulls_problems(github, weeks, merged, order):
                 counts([pr for pr in github["merged"] if pr["repo"] not in order]))
     if (series["total"], dict(series["repos"]), series["other"]) != expected:
         problems.append(
-            "the chart of the merged pull requests' size doesn't count them: run build_data.py again")
+            "the chart of the merged pull requests' size doesn't count them: run prepare_report.py again")
     return problems
 
 
@@ -274,25 +277,25 @@ def _notion_problems(text, notion, period):
     return problems
 
 
-# Feedback.
+# Observations.
 
-def _feedback_problems(text, summaries, values, folder):
-    """Why `text`, the report's Feedback section, doesn't show the points of
+def _observations_problems(text, summaries, values, folder, content):
+    """Why `text`, the report's Observations section, doesn't show the points of
     `summaries` going well and to improve, each part's table by the first of
-    `values` each names, those with the most points first, in their order
+    `values` each names, the second it names beside it, those with the most points first, in their order
     when as many, those naming none last, the most
     recent first, by its piece's date or its latest evidence's, undated
     first, and its evidence too, those of a day in the order given, a note's
-    link relative to `folder`, the report's, empty
-    when it does."""
+    link relative to `folder`, the report's, each table folded under its
+    summary in `content`, empty when it does."""
     def rows(part):
-        found = [(piece["date"], value(point), point["point"], "feedback", [], piece["period"] or "–")
+        found = [(piece["date"], value(point), point["point"], also(point), "feedback", [], piece["period"] or "–")
                  for piece in summaries["feedback"]["pieces"] for point in piece[part]]
         for source in ("notes", "slack"):
             for point in summaries[source][part]:
                 days = sorted(point["evidence"],
                               key=lambda item: item["date"], reverse=True)
-                found.append((days[0]["date"], value(point), point["point"], source,
+                found.append((days[0]["date"], value(point), point["point"], also(point), source,
                               [(link_href(item["link"], folder), f"{REFERENCE_NAMES[source]} {day_text(item['date'])}")
                                for item in days],
                               ""))
@@ -305,22 +308,30 @@ def _feedback_problems(text, summaries, values, folder):
 
     def value(point):
         return point["values"][0] if point["values"] else NO_VALUE
+
+    def also(point):
+        return point["values"][1] if len(point["values"]) > 1 else ""
     shown_parts = {}
-    for heading, count, table in FEEDBACK_PART.findall(text):
-        found, spans = _grouped_rows(FEEDBACK_ROW, table)
+    for heading, table in OBSERVATION_PART.findall(text):
+        found, spans = _grouped_rows(OBSERVATION_ROW, table)
         shown = []
-        for named, point, source, reference in found:
+        for named, second, point, source, reference in found:
             links = [(html.unescape(link), day)
                      for link, day in LINK.findall(reference)]
-            shown.append((named, html.unescape(point), source,
+            shown.append((named, html.unescape(point), html.unescape(second), source,
                          links, "" if links else html.unescape(reference)))
-        shown_parts[heading] = (int(count), shown, spans)
+        details = DETAILS.search(table)
+        shown_parts[heading] = (details[1] if details else None, shown, spans,
+                                table.split("<details>", 1)[0])
     for part in VALUED_PARTS:
-        expected = [(name, point, FEEDBACK_SOURCES[source], links, period)
-                    for name, point, source, links, period in rows(part)]
-        if shown_parts.get(FEEDBACK_HEADINGS[part]) != (len(expected), expected, _spans(expected)):
-            return [f"the report's {FEEDBACK_HEADINGS[part]} points don't show the summaries': run finish_report.py "
-                    "again"]
+        expected = [(name, point, second, OBSERVATION_SOURCES[source], links, period)
+                    for name, point, second, source, links, period in rows(part)]
+        heading = OBSERVATION_HEADINGS[part]
+        if shown_parts.get(heading, ())[:3] != (details_text(len(expected)) if expected else None, expected,
+                                                _spans(expected)):
+            return [f"the report's {heading} points don't show the summaries': run finish_report.py again"]
+        if expected and content[part].strip() not in shown_parts[heading][3]:
+            return [f"the report's {heading} summary isn't content.json's: run finish_report.py again"]
     return []
 
 

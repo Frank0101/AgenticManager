@@ -2,7 +2,7 @@
 name: agentic-manager-perf-review-prep
 disable-model-invocation: true
 description: Helps a manager prepare a performance review of one person over a review period, from the evidence of their work in Jira, GitHub, the documentation, the team's messages and the manager's own notes. In development; not ready to use.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/build_data.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *)
 ---
 
 # Performance Review Prep
@@ -28,7 +28,7 @@ perf-review-preps/
     ├── notes.json        read_notes.py writes (what the manager's own notes say about the person, merged, with
     │                     their links)
     ├── slack.json        read_slack.py writes (what the person's Slack messages show, merged, with their links)
-    ├── data.json         build_data.py writes, from _raw, feedback.json, notes.json and slack.json (the model
+    ├── data.json         prepare_report.py writes, through build_data.py, from _raw, feedback.json, notes.json and slack.json (the model
     │                     the report reads: by source, the person's Jira issues, pull requests and Notion pages
     │                     in the period, each with its day or week, and their facts: the counts, the issues
     │                     created and resolved by type, the resolved ones by epic, the merged pull requests by
@@ -36,6 +36,8 @@ perf-review-preps/
     │                     requests' lines changed, the series the charts draw and the link to each search; and
     │                     the points of the feedback, the notes and Slack, going well and to improve, by company
     │                     value)
+    ├── brief.json        prepare_report.py writes (each table of observations' points, which you summarise)
+    ├── content.json      you write, step 8 (your summary of each table of observations)
     └── Jane-Doe_Review_Prep.md
                           finish_report.py writes (the report for the manager, from the files above: for now,
                           what is going well and what to improve, by company value, then the person's GitHub
@@ -119,7 +121,7 @@ Record their answer as [Summaries](#summaries) says, with `python3 ${CLAUDE_SKIL
 
 ## 6. Gather more feedback from the manager's notes and Slack
 
-The manager's own notes on the person, in their vault, and the person's Slack messages are many, and most aren't feedback, so subagents read them, each source on its own: one task for each month of the period, and for the notes one for the person's pages, which give only context, each writing a synopsis of every note or conversation; then, for each source, one judges them all and merges what matters into a summary, so a behaviour seen in several months becomes one point with all its days. Each task holds its own instructions. You coordinate, and read none of the notes or messages yourself: a fresh subagent hasn't heard the manager's view, so what they say is read without it. Your one judgment is on what the merges left out in doubt, in 3. Say nothing to the manager while the subagents work, not even as each one finishes.
+The manager's own notes on the person, in their vault, and the person's Slack messages are many, and most aren't feedback, so subagents read them, each source on its own: one task for each month of the period, and for the notes one for the person's pages, which give only context, each writing a synopsis of every note or conversation; then, for each source, one judges them all and merges what matters into a summary, so a behaviour seen in several months becomes one point with all its days. Each task holds its own instructions. You coordinate, and read none of the notes or messages yourself: they would fill your context, and the subagents read them faster, side by side. Your one judgment is on what the merges left out in doubt, in 3. Say nothing to the manager while the subagents work, not even as each one finishes.
 
 1. **Start.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py start --prep <prep>` and `python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py start --prep <prep>`: each prints `tasks`, a line `Task <name>: <path>` for each of its tasks, and `merge`, its merge task's line. When there is nothing to read, a script records an empty summary and prints what `finished` would.
 2. **Hand out the tasks.** Give each of both scripts' `tasks` to a fresh subagent, all at once, only its path, with: "Do the task in <path> exactly as written there, then reply in one line." Give a reading task a smaller model than your own, as it only reads and summarises, and a merge your own, as it judges. Once all of a source's tasks have replied, give its `merge` to one more fresh subagent the same way, and once that one has replied, run its script's `finished`. After a break, run `start` again: step 6 starts over.
@@ -127,18 +129,45 @@ The manager's own notes on the person, in their vault, and the person's Slack me
 
 ## 7. Gather the data points
 
-The person's work in Jira, GitHub and Notion, in the period. Like step 6, it is read without the manager's view, and neither needs the other, so start it as soon as step 6's subagents are handed their tasks, without waiting for them. Say nothing to the manager about it while it runs, unless a script stops; step 6's message is sent as soon as its merges are done, without waiting for this step.
+The person's work in Jira, GitHub and Notion, in the period. It and step 6 don't need each other, so start it as soon as step 6's subagents are handed their tasks, without waiting for them. Say nothing to the manager about it while it runs, unless a script stops; step 6's message is sent as soon as its merges are done, without waiting for this step.
 
 1. **Jira and GitHub.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py --prep <prep>`: it fetches the issues and pull requests, with no judgment, into their raw files.
 2. **Notion.** Find the pages the person created: one search per calendar week of the period, Monday to Sunday, the first and last clipped to it, all at once, with the Notion MCP's search, an empty `query` and only filters, as any query text silently drops pages, `created_by_user_ids` set to their Notion id, `created_date_range` set to the week, `page_size` 50 and `max_highlight_length` 0. A result's date is its last edit, not its creation, so each page is dated by the week it was found in. Pages the person edited aren't gathered: Notion knows only a page's last editor, so they would be undercounted.
 
    When a search returns 50 results, rows included, search its range again in shorter ranges, and record those instead; a single day that still returns 50 is recorded as full, as `set_notion.py`'s `--help` says. Record every search with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py --prep <prep>`, its results as the search returned them, unchanged: the script keeps the pages of their own, leaving out databases and their rows.
 
-## 8. Finish
+## 8. Summarise the observations
 
-Once steps 6 and 7 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py --prep <prep>`: it builds `data.json`, the model the report reads, from the raw files and the feedback, notes and Slack summaries, with no network, then writes the report, `<Person>_Review_Prep.md`, and its charts from it, with no judgment, and checks the whole prep. If its `problems` aren't empty, fix what each names by running again the step that writes that file, then run it again; if you can't, stop and tell the manager what they say.
+Once steps 6 and 7 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py --prep <prep>`: it builds `data.json`, the model the report reads, from the raw files and the feedback, notes and Slack summaries, with no network, then `brief.json`, which holds all you need to write. The report opens with two tables of observations, what is going well and what to improve, each point under the company value it shows most; read `brief.json`, at the `brief` path it prints, and write a summary of each table, which the report shows above it, the table folded below as the detail:
 
-## 9. Tell the manager
+- Say what the person did, as behaviours, from the table's points alone, and how they show the company values: name a value inside the sentence, as the brief names it, such as "reflecting Ownership", never as a label or a list.
+- Touch on every company value the table groups points under, the first of a point's `values`, even in a few words for one with few points: the script checks each is named. A value a point names second is a weaker signal: name it only where it adds something.
+- Open with the person's main contribution, then go down to the rest. Judge it by how often a theme comes back across the points and by the brief's `focus`, where most of their pull requests and resolved issues went: a measure of volume, not of impact, so it orders what the points say and adds nothing they don't.
+- Write in the third person, with the person's name as the brief gives it, as [Writing to the manager](#writing-to-the-manager) says.
+- Write flowing paragraphs, no lists or headings, of about 200 words at most, fewer when the table holds few points. Say once what several points, or several sources, show together.
+- Leave a summary empty when its table holds no point.
+
+For example, going well, opening with the main contribution:
+
+> Jane has owned the billing migration from its design to its launch, keeping the plan visible to the teams around it and answering their questions with figures, which reflects Ownership. Beyond the squad, Jane became the person others turn to for the payments API, helping colleagues in three teams, who thanked Jane by name, an example of Teamwork. Since September Jane has also questioned how the squad estimates, proposing a lighter process the squad then adopted.
+
+And to improve:
+
+> Jane's main development area is making the reporting work visible. Jane delivers the tasks picked up, but the squad often learns where the work stands only by asking, and Sam usually presents it in reviews. Jane should own the reporting rollout end to end, setting its plan, sharing progress every week and raising risks early, which reflects Ownership; progress would show in the squad knowing what Jane owns and what comes next without chasing. Jane rarely speaks in planning: bringing ideas and questions there would show Teamwork.
+
+Write `content.json` through the shared writer, with the `content_path` `prepare_report.py` printed, and the same way for every revision, never with your own file tools; its `--help` shows how to change part of it later:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py --name perf-review-preps --path '<content_path>' <<'END_OF_FILE'
+{"going_well": "One or more paragraphs.", "to_improve": "One or more paragraphs."}
+END_OF_FILE
+```
+
+## 9. Finish
+
+Run `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py --prep <prep>`: it checks `content.json` field by field, then writes the report, `<Person>_Review_Prep.md`, and its charts from `data.json` and `content.json`, and checks the whole prep. If its `problems` aren't empty, fix what each names by running again the step that writes that file, step 8 for `content.json`, then run it again; if you can't, stop and tell the manager what they say.
+
+## 10. Tell the manager
 
 Say the prep is ready, with a Markdown link to its report, and that the rest of the report, from what else was gathered, isn't built yet. If step 1's `temporary` is `true`, add that the folder is temporary and setting `output.root` in the config keeps preps.
 

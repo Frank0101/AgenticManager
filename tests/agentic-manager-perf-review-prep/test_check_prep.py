@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import check_prep  # noqa: E402
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import (FEEDBACK, REVIEWS, NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP,
+from prep_fixture import (CONTENT, FEEDBACK, REVIEWS, NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP,
                           SLACK, DATA, WORK_RAW, temp_output, write_prep)  # noqa: E402
 
 TODAY = date(2026, 11, 10)
@@ -71,6 +71,10 @@ class CheckTest(unittest.TestCase):
                   None, "data.json: the work's raw files are missing"),
                  ("a raw file that breaks its rules", {"raw_work": {**WORK_RAW, "github": {
                      **WORK_RAW["github"], "start": "2026-08-01"}}}, None, "data.json: the github raw file is for"),
+                 ("no content", {"content": None},
+                  None, "missing content.json"),
+                 ("content that breaks a rule", {"content": {**CONTENT, "to_improve": ""}}, None,
+                  "content.json: content.json's to_improve is empty"),
                  ("no report", {"report": False},
                   None, "_Review_Prep.md, _charts"),
                  ("a chart more", {}, "_charts/extra.svg",

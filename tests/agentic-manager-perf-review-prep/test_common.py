@@ -396,6 +396,36 @@ class RepoCodeTest(unittest.TestCase):
         self.assertEqual([common.repo_code(repo, order) for repo in ("acme/api", "acme/web", "acme/docs")],
                          ["A", "B", None])
 
+    def test_content_problems(self):
+        # name: (content.json, the tables' points, expected in its problems,
+        # or None for none): each table's summary, empty exactly when the
+        # table holds no point, not longer than SUMMARY_WORDS words, and
+        # naming each value its table groups points under.
+        long = "word " * (common.SUMMARY_WORDS + 1)
+        cases = [("both summarised", {"going_well": "Good.", "to_improve": "Better."}, (1, 1), None),
+                 ("no point to improve", {
+                  "going_well": "Good.", "to_improve": ""}, (1, 0), None),
+                 ("a table not summarised", {"going_well": " ", "to_improve": "Better."}, (1, 1),
+                  "going_well is empty"),
+                 ("a summary of no point", {"going_well": "Good.", "to_improve": "Better."}, (1, 0),
+                  "to_improve must be empty"),
+                 ("too long", {"going_well": long,
+                  "to_improve": ""}, (1, 0), "keep it to about"),
+                 ("a field missing", {
+                  "going_well": "Good."}, (1, 0), 'must be {"going_well"'),
+                 ("a value not named", {"going_well": "Good teamwork.", "to_improve": ""},
+                  (["Teamwork", "Ownership", None], 0), "doesn't name Ownership")]
+        for name, content, counts, expected in cases:
+            with self.subTest(name):
+                groups = [[{"value": value} for value in n] if isinstance(n, list) else [{"value": None}] * n
+                          for n in counts]
+                problems = " ".join(common.content_problems(
+                    content, dict(zip(("going_well", "to_improve"), groups))))
+                if expected is None:
+                    self.assertEqual(problems, "")
+                else:
+                    self.assertIn(expected, problems)
+
     def test_link_href(self):
         # A web address as it is; a file's path relative to the report's
         # folder, escaped, so a space doesn't break the link.

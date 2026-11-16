@@ -33,7 +33,7 @@ NOTE = {"period": "Q3 2026", "date": "2026-09-30",
                         "values": ["Ownership"]}],
         "to_improve": [], "context": []}
 FEEDBACK = {"pieces": [NOTE]}
-NOTES = {"going_well": [{"point": "Presented the migration to the wider team", "values": ["Teamwork"],
+NOTES = {"going_well": [{"point": "Presented the migration to the wider team", "values": ["Teamwork", "Ownership"],
                          "evidence": [{"date": "2026-09-02", "link": "/vault/journals/2026_09_02.md"}]}],
          "to_improve": [{"point": "Didn't flag delays until asked, many times", "values": ["Ownership"],
                          "evidence": [{"date": "2026-10-01", "link": "/vault/journals/2026_10_01.md"},
@@ -113,26 +113,26 @@ def weekly(*indexes):
     return [indexes.count(n) for n in range(len(WEEKS))]
 
 
-# The Feedback section's points, worked out by hand from FEEDBACK, NOTES and
+# The Observations section's points, worked out by hand from FEEDBACK, NOTES and
 # SLACK: going well, under Teamwork, which has the most, Slack's, of 3
 # September, before the notes', of 2 September, then under Ownership the Q3
 # piece's; to improve, under Ownership, the notes' point, its evidence the
 # most recent first.
-FEEDBACK_POINTS = {
+OBSERVATIONS = {
     "going_well": [
         {"value": "Teamwork", "points": [
-            {"point": "Explained the outage's cause in the incident channel, and colleagues thanked them",
+            {"point": "Explained the outage's cause in the incident channel, and colleagues thanked them", "also": None,
              "source": "slack", "date": "2026-09-03", "period": None,
              "evidence": [{"date": "2026-09-03", "link": "https://acme.slack.com/archives/C1/p1"}]},
-            {"point": "Presented the migration to the wider team", "source": "notes", "date": "2026-09-02",
+            {"point": "Presented the migration to the wider team", "also": "Ownership", "source": "notes", "date": "2026-09-02",
              "period": None,
              "evidence": [{"date": "2026-09-02", "link": "/vault/journals/2026_09_02.md"}]}]},
         {"value": "Ownership", "points": [
-            {"point": "Agreed to own the billing migration and has kept to its plan", "source": "feedback",
+            {"point": "Agreed to own the billing migration and has kept to its plan", "also": None, "source": "feedback",
              "date": "2026-09-30", "period": "Q3 2026", "evidence": []}]}],
     "to_improve": [
         {"value": "Ownership", "points": [
-            {"point": "Didn't flag delays until asked, many times", "source": "notes", "date": "2026-10-01",
+            {"point": "Didn't flag delays until asked, many times", "also": None, "source": "notes", "date": "2026-10-01",
              "period": None,
              "evidence": [{"date": "2026-10-01", "link": "/vault/journals/2026_10_01.md"},
                           {"date": "2026-08-20", "link": "/vault/journals/2026_08_20.md"}]}]}]}
@@ -174,7 +174,7 @@ DATA = {"weeks": WEEKS,
                                         "&type=pullrequests"}},
         "notion": {"created": [{**page, "week": ["2026-08-10", "2026-08-16"]} for page in WORK_ITEMS["notion"]["created"]],
                    "counts": {"created": 1}},
-        "feedback": FEEDBACK_POINTS}
+        "observations": OBSERVATIONS}
 # Two more Jira models, worked out by hand, each changing DATA's resolved
 # issues and the facts they give. In the first, the issues with no epic hold
 # the most, so the main focus lists them before the epic: PROJ-12 and PROJ-14
@@ -221,8 +221,27 @@ VALUE_NAMES = [value["value"] for value in VALUES]
 # Where the report is written, beside the vault, for the links to notes,
 # which it writes relative to it.
 REPORT_FOLDER = "/vault/.out/perf-review-preps/Jane-Doe_26-11-10"
-# The summaries the Feedback section is built from, by their source.
+# The summaries the Observations section is built from, by their source.
 SUMMARIES = {"feedback": FEEDBACK, "notes": NOTES, "slack": SLACK}
+# The agent's summaries of the two tables, and the brief it writes them
+# from, worked out by hand from DATA: the work's main focus, and each
+# table's points in its order, with the values each names, its source and
+# when it was seen.
+CONTENT = {"going_well": "Jane explains outages to the teams around them and presented the billing migration to the "
+           "wider team, showing Teamwork, and has owned the migration and kept to its plan, reflecting Ownership.",
+           "to_improve": "Jane flagged delays only when asked, many times, where Ownership calls for raising them "
+           "early."}
+BRIEF = {"person": "Jane Doe", "values": VALUES,
+         "focus": {"github": [{"repo": "acme/billing", "prs": 1, "share": 100}],
+                   "jira": [{"key": "PROJ-1", "title": "Billing", "issues": 1, "share": 100}]},
+         "going_well": [{"point": "Explained the outage's cause in the incident channel, and colleagues thanked them",
+                         "values": ["Teamwork"], "source": "Slack", "when": "2026-09-03"},
+                        {"point": "Presented the migration to the wider team", "values": ["Teamwork", "Ownership"],
+                         "source": "Manager's notes", "when": "2026-09-02"},
+                        {"point": "Agreed to own the billing migration and has kept to its plan",
+                         "values": ["Ownership"], "source": "Feedback", "when": "Q3 2026"}],
+         "to_improve": [{"point": "Didn't flag delays until asked, many times", "values": ["Ownership"],
+                         "source": "Manager's notes", "when": "2026-10-01"}]}
 RATINGS = [{"rating": "Below", "meaning": "Misses most expectations"},
            {"rating": "Meets", "meaning": "Meets every expectation"},
            {"rating": "Exceeds", "meaning": "Goes beyond most expectations"}]
@@ -250,13 +269,15 @@ def temp_output(test):
 
 
 def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
-               reviews=REVIEWS, feedback=FEEDBACK, notes=NOTES, data=DATA, slack=SLACK, raw_work=WORK_RAW, report=True):
+               reviews=REVIEWS, feedback=FEEDBACK, notes=NOTES, data=DATA, slack=SLACK, raw_work=WORK_RAW,
+               brief=BRIEF, content=CONTENT, report=True):
     """Writes the prep `prep` in the output folder `folder`, holding `person`,
-    `orientation`, `reviews`, `feedback`, `notes`, `data`,
-    and `slack`, each left out when None, the _raw folder, with
+    `orientation`, `reviews`, `feedback`, `notes`, `data`, `slack`, `brief`
+    and `content`, each left out when None, the _raw folder, with
     `raw_work`, each source's raw file, unless None, and, with `report` and
     both a person and data, the report as finish_report.py writes it, with its
-    charts, each an empty drawing."""
+    charts, each an empty drawing, its summaries CONTENT's when `content` is
+    None, as if content.json went after the report was written."""
     os.makedirs(os.path.join(folder, prep, "_raw"), exist_ok=True)
     for source, lists in (raw_work or {}).items():
         with open(os.path.join(folder, prep, "_raw", f"{source}.json"), "w", encoding="utf-8") as f:
@@ -264,7 +285,9 @@ def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
     for name, value in (("person.json", person),
                         ("orientation.json", orientation), ("reviews.json", reviews),
                         ("feedback.json", feedback), ("notes.json", notes),
-                        ("data.json", data), ("slack.json", slack)):
+                        ("data.json", data), ("slack.json",
+                                              slack), ("brief.json", brief),
+                        ("content.json", content)):
         if value is not None:
             with open(os.path.join(folder, prep, name), "w", encoding="utf-8") as f:
                 json.dump(value, f)
@@ -276,4 +299,4 @@ def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
                 f.write("<svg/>")
         with open(os.path.join(folder, prep, common.report_name(prep)), "w", encoding="utf-8") as f:
             f.write(make_report.render(
-                person, data, os.path.join(folder, prep)))
+                person, data, os.path.join(folder, prep), content or CONTENT))

@@ -9,7 +9,7 @@ import os
 
 from build_data import data_problems
 from check_report import report_problems
-from common import (CHARTS_DIR, FEEDBACK, folder_problem, NOTES, ORIENTATION, PERSON, RATINGS, RAW_DIR, REVIEWS, SLACK, SOURCES,
+from common import (CHARTS_DIR, CONTENT, FEEDBACK, content_problems, folder_problem, NOTES, ORIENTATION, PERSON, RATINGS, RAW_DIR, REVIEWS, SLACK, SOURCES,
                     SUMMARY_FILES, VALUES, DATA, company_names, expected_files, feedback_problems, notes_problems,
                     orientation_problems, period_days, person_problems, prep_dir, read_json, read_raw_work,
                     report_name, reviews_problems, slack_problems, sources_problems)
@@ -58,8 +58,15 @@ def check_prep(prep, today=None):
     if built and DATA in read:
         errors += [f"{DATA}: {problem}" for problem in data_problems(
             read[DATA], read_raw_work(prep), person, summaries, values)]
-    if built and {report, CHARTS_DIR} <= files and DATA in read and not any(error.startswith(DATA) for error in errors):
+    # The agent's summaries are checked against the model they summarise.
+    data_passes = built and DATA in read and not any(
+        error.startswith(DATA) for error in errors)
+    if data_passes and CONTENT in read:
+        errors += [f"{CONTENT}: {problem}" for problem in content_problems(
+            read[CONTENT], read[DATA]["observations"])]
+    if data_passes and {report, CHARTS_DIR} <= files and CONTENT in read and not any(
+            error.startswith(CONTENT) for error in errors):
         with open(os.path.join(folder, report), encoding="utf-8") as f:
             errors += [f"{report}: {problem}" for problem in report_problems(
-                f.read(), read[DATA], os.listdir(os.path.join(folder, CHARTS_DIR)), summaries, values, folder)]
+                f.read(), read[DATA], os.listdir(os.path.join(folder, CHARTS_DIR)), summaries, values, folder, read[CONTENT])]
     return {"ok": not errors, "errors": errors}

@@ -149,7 +149,7 @@ class BuildDataTest(unittest.TestCase):
                 self.assertEqual(([(entry["key"], entry["issues"]) for entry in pie["epics"]], pie["other"]),
                                  (slices, other))
 
-    def test_feedback(self):
+    def test_observations(self):
         # name: (the feedback's pieces, the notes' points going well, the
         # values, (value, point) of each going well, in order): a point
         # under its first value, the company's order, those naming none
@@ -178,7 +178,8 @@ class BuildDataTest(unittest.TestCase):
                 summaries = {"feedback": {"pieces": pieces},
                              "notes": {"going_well": notes, "to_improve": [], "context": []},
                              "slack": {"going_well": [], "to_improve": [], "context": []}}
-                groups = build_data.feedback(summaries, values)["going_well"]
+                groups = build_data.observations(
+                    summaries, values)["going_well"]
                 self.assertEqual([(group["value"], point["point"]) for group in groups for point in group["points"]],
                                  expected)
 

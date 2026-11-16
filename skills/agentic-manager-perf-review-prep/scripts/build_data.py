@@ -44,7 +44,7 @@ def build_data(prep):
 
 
 def read_summaries(prep):
-    """The summaries the report's feedback is built from, in the prep
+    """The summaries the report's observations are built from, in the prep
     `prep`, by SUMMARY_FILES' names, each None while it is missing."""
     folder = prep_dir(prep)
     return {name: read_json(os.path.join(folder, file)) if os.path.exists(os.path.join(folder, file)) else None
@@ -64,7 +64,7 @@ def build(raws, person, summaries, values):
     `person`: weeks, the period's weeks as the charts group it, and for each
     source its items, its facts and its searches' addresses; a Notion page
     with its calendar week, by calendar_week(), as its search may span only
-    part of one; and feedback, the points of `summaries`, by feedback(), with
+    part of one; and observations, the points of `summaries`, by observations(), with
     `values`, the company's."""
     weeks = week_groups(person["start"], person["end"])
     data: dict = {"weeks": weeks}
@@ -75,7 +75,7 @@ def build(raws, person, summaries, values):
                                  for page in lists["created"]]}
         data[source] = {
             **lists, **source_facts(source, lists, weeks), **search_urls(source, raw)}
-    data["feedback"] = feedback(summaries, values)
+    data["observations"] = observations(summaries, values)
     return data
 
 
@@ -86,29 +86,31 @@ def data_problems(data, raws, person, summaries, values):
     if problems := raws_problems(raws, period_days(person)):
         return problems
     if data != build(raws, person, summaries, values):
-        return ["data.json doesn't match the raw files and summaries it is built from: run build_data.py again"]
+        return ["data.json doesn't match the raw files and summaries it is built from: run prepare_report.py again"]
     return []
 
 
-# The feedback.
+# The observations.
 
-def feedback(summaries, values):
+def observations(summaries, values):
     """The points of `summaries`, the feedback's pieces, the notes' summary
     and Slack's, for each part of VALUED_PARTS: a group for each of `values`
     that a point names first, those with the most points first, in their
     order when as many, then one, its value null, of the points that name
     none; each group's points the most recent first,
     those with no date first, as the most recent of all, by their date, a
-    piece's or the latest of their evidence's. Each point is {point, source,
-    date, period, evidence}: its source a key of SUMMARY_FILES, its period
+    piece's or the latest of their evidence's. Each point is {point, also,
+    source, date, period, evidence}: also the second value it names, null
+    when it names one or none, so it shows though the point sits under its
+    first; its source a key of SUMMARY_FILES, its period
     its piece's, null for a reading's, and its evidence a reading's, the most
     recent first, those of a day in the order given, empty for a piece's."""
     result = {}
     for part in VALUED_PARTS:
-        points = [{"point": point["point"], "source": "feedback", "date": piece["date"], "period": piece["period"],
+        points = [{"point": point["point"], "also": also(point), "source": "feedback", "date": piece["date"], "period": piece["period"],
                    "evidence": [], "value": next(iter(point["values"]), None)}
                   for piece in summaries["feedback"]["pieces"] for point in piece[part]]
-        points += [{"point": point["point"], "source": source,
+        points += [{"point": point["point"], "also": also(point), "source": source,
                     "date": max(item["date"] for item in point["evidence"]), "period": None,
                     "evidence": sorted(point["evidence"], key=lambda item: item["date"], reverse=True),
                     "value": next(iter(point["values"]), None)}
@@ -122,6 +124,11 @@ def feedback(summaries, values):
                                                     for point in newest if point["value"] == value]}
                         for value in [*ranked, *([None] if counts[None] else [])]]
     return result
+
+
+def also(point):
+    """The second company value `point` names, null when it names fewer."""
+    return point["values"][1] if len(point["values"]) > 1 else None
 
 
 # The facts.

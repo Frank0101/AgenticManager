@@ -51,7 +51,9 @@ NOTES_SCRIPT = os.path.join(SCRIPTS, "read_notes.py")
 WORK_SCRIPT = os.path.join(SCRIPTS, "fetch_work.py")
 NOTION_SCRIPT = os.path.join(SCRIPTS, "set_notion.py")
 REPORT_SCRIPT = os.path.join(SCRIPTS, "finish_report.py")
-DATA_SCRIPT = os.path.join(SCRIPTS, "build_data.py")
+PREPARE_SCRIPT = os.path.join(SCRIPTS, "prepare_report.py")
+OUTPUT_FILE_SCRIPT = os.path.join(REPO_ROOT, "skills", "agentic-manager-utils-lib", "agentic_manager",
+                                  "output_file.py")
 SLACK_SCRIPT = os.path.join(SCRIPTS, "read_slack.py")
 TOKEN = "s3cret-token"
 JANE = {"accountId": "5b10ac8d82e05b22cc7d4ef5", "accountType": "atlassian", "displayName": "Jane Doe",
@@ -262,10 +264,12 @@ class ScriptsTest(unittest.TestCase):
                                              {**PAGE, "type": "database", "url": PAGE["url"] + "-db"}]}]}))
         self.assertEqual(recorded["pages"], 2)
         self.read_slack(prep)
-        # The data, built from the raw files with no network.
-        built = self.run_ok(DATA_SCRIPT, "--prep", prep)
-        with open(built["data"], encoding="utf-8") as f:
+        # The data, built from the raw files with no network, then the brief.
+        prepared = self.run_ok(PREPARE_SCRIPT, "--prep", prep)
+        with open(os.path.join(result["prep_dir"], "data.json"), encoding="utf-8") as f:
             work = json.load(f)
+        with open(prepared["brief"], encoding="utf-8") as f:
+            brief = json.load(f)
         self.assertEqual(work["jira"]["resolved"], [
             {"key": "PROJ-12", "title": "Migrate invoices", "type": "Story",
              "epic": {"key": "PROJ-1", "title": "Billing migration", "url": f"{self.base_url}/browse/PROJ-1"},
@@ -276,8 +280,18 @@ class ScriptsTest(unittest.TestCase):
                 "url": f"{self.base_url}/browse/PROJ-1", "issues": 1, "share": 100}],
             [{"repo": "acme/billing", "number": 7, "title": PR["title"], "url": PR["url"], "date": TODAY.isoformat(),
               "lines": 48, "files": 3}]))
-        # The report, from data.json: one resolved issue of 5 points, one
-        # created, each linked to its search.
+        # No report until content.json is written, then the report, from
+        # data.json: one resolved issue of 5 points, one created, each linked
+        # to its search.
+        code, out, _ = self.run_script(REPORT_SCRIPT, "--prep", prep)
+        self.assertEqual((code, json.loads(out)["report"]), (1, None))
+        self.assertIn("content.json is missing", out)
+        # Each summary names the values its table groups points under.
+        content = {part: " ".join(["Jane did well, showing", *sorted({point["values"][0] for point in brief[part]
+                                                                      if point["values"]})])
+                   if brief[part] else "" for part in ("going_well", "to_improve")}
+        self.run_ok(OUTPUT_FILE_SCRIPT, "--name", "perf-review-preps", "--path", prepared["content_path"],
+                    stdin=json.dumps(content))
         made = self.run_ok(REPORT_SCRIPT, "--prep", prep)
         with open(made["report"], encoding="utf-8") as f:
             report = f.read()

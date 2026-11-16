@@ -25,6 +25,18 @@ class FinishReportTest(unittest.TestCase):
         self.assertEqual((made["problems"], sorted(os.listdir(os.path.join(folder, PREP, common.CHARTS_DIR)))),
                          ([], sorted(common.CHART_FILES)))
 
+    def test_content_first(self):
+        # Nothing written while content.json is missing or breaks a rule,
+        # each problem naming its field.
+        folder = temp_output(self)
+        write_prep(folder, content=None, report=False)
+        self.assertEqual(finish_report.finish(PREP), {"report": None, "problems": [
+            "content.json is missing: write it, as step 8 says"]})
+        write_prep(folder, content={
+                   "going_well": "", "to_improve": "Better."}, report=False)
+        self.assertEqual((finish_report.finish(PREP)["report"], os.path.exists(os.path.join(folder, PREP, common.CHARTS_DIR))),
+                         (None, False))
+
 
 if __name__ == "__main__":
     unittest.main()

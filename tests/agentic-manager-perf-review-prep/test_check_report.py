@@ -16,7 +16,7 @@ import check_report  # noqa: E402
 import common  # noqa: E402
 import make_report  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import DATA, DATA_BY_PROJECT, DATA_NO_EPIC_FIRST, PERSON, REPORT_FOLDER, SUMMARIES, VALUE_NAMES  # noqa: E402
+from prep_fixture import CONTENT, DATA, DATA_BY_PROJECT, DATA_NO_EPIC_FIRST, PERSON, REPORT_FOLDER, SUMMARIES, VALUE_NAMES  # noqa: E402
 
 
 class CheckReportTest(unittest.TestCase):
@@ -24,31 +24,33 @@ class CheckReportTest(unittest.TestCase):
         # name: (a change to the report's text, the charts, expected in the
         # problems, or None for none): each Jira figure is read back from the
         # table and worked out again from the items.
-        report = make_report.render(PERSON, DATA, REPORT_FOLDER)
+        report = make_report.render(PERSON, DATA, REPORT_FOLDER, CONTENT)
         cases = [("as written", None, common.CHART_FILES, None),
                  ("a page count changed", ("Pages created</b> (1)", "Pages created</b> (2)"),
                   common.CHART_FILES, "Notion pages"),
-                 ("a page's week changed", ("<small>10–16 Aug</small>", "<small>17–23 Aug</small>"),
+                 ("a page's week changed", (">10–16 Aug<", ">17–23 Aug<"),
                   common.CHART_FILES, "Notion pages"),
-                 ("a page's area changed", ("<small>Engineering</small>", "<small>Billing</small>"),
+                 ("a page's area changed", (">Engineering<", ">Billing<"),
                   common.CHART_FILES, "Notion pages"),
-                 ("a week's span changed", ('rowspan="1"><small><small>10–16', 'rowspan="2"><small><small>10–16'),
+                 ("a week's span changed", ('rowspan="1">10–16', 'rowspan="2">10–16'),
                   common.CHART_FILES, "Notion pages"),
                  ("no Notion section", ("## Notion", "## Pages"),
                   common.CHART_FILES, "its Jira one and its Notion one"),
-                 ("no Feedback section", ("## Feedback", "## Evidence"),
-                  common.CHART_FILES, "must have its Feedback section"),
-                 ("a point count changed", ("Going well</b> (3)", "Going well</b> (4)"),
+                 ("no Feedback section", ("## Observations", "## Evidence"),
+                  common.CHART_FILES, "must have its Observations section"),
+                 ("a point count changed", ("Details (3 points)", "Details (4 points)"),
                   common.CHART_FILES, "Going well points"),
                  ("a point's text changed", ("Presented the migration", "Presented the plan"),
                   common.CHART_FILES, "Going well points"),
-                 ("a point's source changed", ("<small>Slack</small>", "<small>Feedback</small>"),
+                 ("a point's source changed", (">Slack<", ">Feedback<"),
                   common.CHART_FILES, "Going well points"),
-                 ("a period changed", ("<small>Q3 2026</small>", "<small>Q2 2026</small>"),
+                 ("a period changed", (">Q3 2026<", ">Q2 2026<"),
                   common.CHART_FILES, "Going well points"),
                  ("an evidence's day changed", (">Journal 20 Aug</a>", ">Journal 21 Aug</a>"),
                   common.CHART_FILES, "To improve points"),
-                 ("a value's span changed", ('rowspan="2"><small><small>Teamwork', 'rowspan="1"><small><small>Teamwork'),
+                 ("a summary changed", ("Jane explains outages", "Jane fixes outages"),
+                  common.CHART_FILES, "Going well summary"),
+                 ("a value's span changed", ('rowspan="2">Teamwork', 'rowspan="1">Teamwork'),
                   common.CHART_FILES, "Going well points"),
                  ("a count changed", ('">1</a> (1 Task)', '">2</a> (1 Task)'),
                   common.CHART_FILES, "cell for created"),
@@ -80,7 +82,7 @@ class CheckReportTest(unittest.TestCase):
                 text = report.replace(
                     change[0], change[1], 1) if change else report
                 problems = " ".join(
-                    check_report.report_problems(text, DATA, charts, SUMMARIES, VALUE_NAMES, REPORT_FOLDER))
+                    check_report.report_problems(text, DATA, charts, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT))
                 if expected is None:
                     self.assertEqual(problems, "")
                 else:
@@ -117,24 +119,24 @@ class CheckReportTest(unittest.TestCase):
                 data = copy.deepcopy(DATA)
                 change(data[source])
                 self.assertIn(expected, " ".join(check_report.report_problems(
-                    make_report.render(PERSON, data, REPORT_FOLDER), data, common.CHART_FILES, SUMMARIES, VALUE_NAMES, REPORT_FOLDER)))
+                    make_report.render(PERSON, data, REPORT_FOLDER, CONTENT), data, common.CHART_FILES, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT)))
 
-    def test_feedback_order(self):
+    def test_observations_order(self):
         # Two points swapped, the older first, or a value moved under
         # another: the check orders them again from the summaries.
-        report = make_report.render(PERSON, DATA, REPORT_FOLDER)
+        report = make_report.render(PERSON, DATA, REPORT_FOLDER, CONTENT)
         slack, notes = (point["point"]
-                        for point in DATA["feedback"]["going_well"][0]["points"])
+                        for point in DATA["observations"]["going_well"][0]["points"])
         swapped = report.replace(slack, "\0").replace(
             notes, slack).replace("\0", notes)
         self.assertIn("Going well points", " ".join(check_report.report_problems(
-            swapped, DATA, common.CHART_FILES, SUMMARIES, VALUE_NAMES, REPORT_FOLDER)))
+            swapped, DATA, common.CHART_FILES, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT)))
         self.assertIn("Going well points", " ".join(check_report.report_problems(
-            report.replace("<small>Teamwork</small>",
-                           "<small>Ownership</small>", 1), DATA, common.CHART_FILES,
-            SUMMARIES, VALUE_NAMES, REPORT_FOLDER)))
+            report.replace(">Teamwork<",
+                           ">Ownership<", 1), DATA, common.CHART_FILES,
+            SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT)))
 
-    def test_feedback_same_day(self):
+    def test_observations_same_day(self):
         # Evidence of the same day keeps the order the summary gives it, in
         # the model and in the check alike.
         later = {"date": "2026-10-01",
@@ -144,9 +146,9 @@ class CheckReportTest(unittest.TestCase):
             *SUMMARIES["notes"]["to_improve"][0]["evidence"][1:]]}]}
         summaries = {**SUMMARIES, "notes": notes}
         data = {
-            **DATA, "feedback": build_data.feedback(summaries, VALUE_NAMES)}
+            **DATA, "observations": build_data.observations(summaries, VALUE_NAMES)}
         self.assertEqual(check_report.report_problems(
-            make_report.render(PERSON, data, REPORT_FOLDER), data, common.CHART_FILES, summaries, VALUE_NAMES, REPORT_FOLDER), [])
+            make_report.render(PERSON, data, REPORT_FOLDER, CONTENT), data, common.CHART_FILES, summaries, VALUE_NAMES, REPORT_FOLDER, CONTENT), [])
 
     def test_focus(self):
         # name: (data.json, an entry of its Jira main focus as the report
@@ -157,12 +159,13 @@ class CheckReportTest(unittest.TestCase):
                  ("by project", DATA_BY_PROJECT, "<li>PROJ (1)</li>")]
         for name, data, entry in cases:
             with self.subTest(name):
-                report = make_report.render(PERSON, data, REPORT_FOLDER)
+                report = make_report.render(
+                    PERSON, data, REPORT_FOLDER, CONTENT)
                 self.assertIn(entry, report)
                 self.assertEqual(check_report.report_problems(
-                    report, data, common.CHART_FILES, SUMMARIES, VALUE_NAMES, REPORT_FOLDER), [])
+                    report, data, common.CHART_FILES, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT), [])
                 self.assertIn("main focus", " ".join(check_report.report_problems(
-                    report.replace(entry, entry.replace("(", "(7"), 1), data, common.CHART_FILES, SUMMARIES, VALUE_NAMES, REPORT_FOLDER)))
+                    report.replace(entry, entry.replace("(", "(7"), 1), data, common.CHART_FILES, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT)))
 
 
 if __name__ == "__main__":

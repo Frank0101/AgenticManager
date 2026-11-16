@@ -16,6 +16,9 @@ from urllib.parse import parse_qsl, unquote, urlencode, urlsplit
 # Marks a part of a document the AI wrote, on its heading or label, so a
 # reader tells judgment from what was generated from data and checked.
 AI_LABEL = "[AI Gen.]"
+# The type of a report's table of many rows, small enough to scan it whole,
+# the same in every skill.
+SMALL_TYPE = "font-size:75%"
 
 # Markdown links, defined once for every skill: (image mark, text, URL) of an
 # inline link, (image mark, text, key) of a reference link, and (key, URL) of

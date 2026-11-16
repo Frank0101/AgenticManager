@@ -28,7 +28,7 @@ from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
 from agentic_manager.output_folder import CHARTS_DIR, DAY_FOLDER, RAW_DIR, clear_folder, day_folder, document_name, folder_problem, folder_subject, output_folder, work_folder  # noqa: E402,F401
 from agentic_manager.period import add_period_arguments, days, is_day, period_problem, shown  # noqa: E402,F401
 from agentic_manager.svg import GRID, SURFACE, INK, MUTED, arc_segment, esc, legend, nice_step, svg, text, text_width  # noqa: E402,F401
-from agentic_manager.text import ai_marked, as_name, number, plural, word_count  # noqa: E402,F401
+from agentic_manager.text import SMALL_TYPE, ai_marked, as_name, number, plural, word_count  # noqa: E402,F401
 
 # How to write a point and pick its values, with their examples, lives in the
 # protocol's shared part _point.md, the one place for them: the merges' tasks
@@ -92,8 +92,7 @@ SUMMARY_HELP = "\n".join(
        f'them, at most {MAX_VALUES}, or [] when none fits' if part in VALUED_PARTS else "a sentence")
     for part, meaning in SUMMARY_PARTS.items())
 # The manager's overall view of the person, summarised: guidance for the
-# writing step, the only one that reads it, so the evidence is gathered without
-# it and can contradict it.
+# writing step, the only one that reads it.
 ORIENTATION = "orientation.json"
 # What the manager gives, previous reviews or the period's feedback, is a
 # list of pieces, each a summary with its period as the source names it, such
@@ -188,18 +187,25 @@ HEADINGS = {"created": "Issues created", "resolved": "Issues resolved", "resolve
             "opened": "PRs created", "merged": "PRs merged", "merged_lines": "PRs size"}
 # The Notion section's heading of its table of the pages created.
 PAGES_HEADING = "Pages created"
-# The Feedback section: a table for each valued part, by its heading, each
+# The Observations section: a table for each valued part, by its heading, each
 # point under the first company value it names, the one it shows most, so it
-# shows once, the values with the most points first, those naming none under
+# shows once, the second value it names beside it, the values with the most points first, those naming none under
 # NO_VALUE, last, as it is no value; each point's source, by the summary file
 # it comes from, as the report names it; and what a reading's reference
 # names, by its source, beside the day it was seen on.
-FEEDBACK_HEADINGS = {"going_well": "Going well", "to_improve": "To improve"}
+OBSERVATION_HEADINGS = {"going_well": "Going well", "to_improve": "To improve"}
 NO_VALUE = "No value"
-FEEDBACK_SOURCES = {"feedback": "Feedback",
-                    "notes": "Manager's notes", "slack": "Slack"}
+OBSERVATION_SOURCES = {"feedback": "Feedback",
+                       "notes": "Manager's notes", "slack": "Slack"}
 REFERENCE_NAMES = {"notes": "Journal", "slack": "Slack"}
 SUMMARY_FILES = {"feedback": FEEDBACK, "notes": NOTES, "slack": SLACK}
+# What the agent reads to summarise each table of observations, made from
+# data.json, and the summaries it writes, one per table, a few flowing
+# paragraphs above it: about SUMMARY_WORDS words at most, a length that is
+# room, not a quota, so only more is refused.
+BRIEF = "brief.json"
+CONTENT = "content.json"
+SUMMARY_WORDS = 200
 # The chart of the resolved issues by epic, beside the main focus.
 EPICS_CHART = "jira_epics.svg"
 # The GitHub cells of the report, in order, as the Jira ones, and the chart
@@ -217,7 +223,8 @@ def expected_files(prep):
     their previous reviews, the period's feedback, the manager's notes on
     them, what their Slack messages show, the report's data, the _raw folder
     of what each source gave, and the report with its _charts folder."""
-    return {PERSON, ORIENTATION, REVIEWS, FEEDBACK, NOTES, SLACK, DATA, RAW_DIR, report_name(prep), CHARTS_DIR}
+    return {PERSON, ORIENTATION, REVIEWS, FEEDBACK, NOTES, SLACK, DATA, BRIEF, CONTENT, RAW_DIR, report_name(prep),
+            CHARTS_DIR}
 
 
 def report_name(prep):
@@ -620,6 +627,35 @@ def pieces_problems(value, names, fields, values, rules):
     return problems
 
 
+def content_problems(content, observations):
+    """Why `content` isn't the agent's summaries of `observations`,
+    data.json's, empty when it is: {going_well, to_improve}, each a text of
+    at most SUMMARY_WORDS words, empty exactly when its table holds no
+    point, naming every company value its table groups points under; one a
+    point names only second is the agent's to weigh, so it isn't checked."""
+    if not (isinstance(content, dict) and sorted(content) == sorted(VALUED_PARTS)):
+        return [f"content.json must be {{{', '.join(f'\"{part}\": \"...\"' for part in VALUED_PARTS)}}}"]
+    problems = []
+    for part in VALUED_PARTS:
+        text, points = content[part], observations[part]
+        if not isinstance(text, str):
+            problems.append(f"content.json's {part} must be a text")
+        elif points and not text.strip():
+            problems.append(
+                f"content.json's {part} is empty: summarise its table's points")
+        elif not points and text.strip():
+            problems.append(
+                f"content.json's {part} must be empty, as its table holds no point")
+        elif word_count(text) > SUMMARY_WORDS:
+            problems.append(f"content.json's {part} has {word_count(text)} words: keep it to about "
+                            f"{SUMMARY_WORDS} at most")
+        elif missing := [group["value"] for group in points
+                         if group["value"] and group["value"].casefold() not in text.casefold()]:
+            problems.append(f"content.json's {part} doesn't name {', '.join(missing)}: say, even briefly, how "
+                            "its table's points show each value they are grouped under")
+    return problems
+
+
 def notes_problems(notes, values, days):
     """Why `notes` aren't the summary of the manager's notes, empty when they
     are: summary_problems() with `days`, every day of the period, a context
@@ -760,6 +796,12 @@ def size_text(median, merged):
     if median is None:
         return "none merged"
     return f"median, in {merged} merged {plural(merged, 'PR', 'PRs')}"
+
+
+def details_text(count):
+    """What a table of observations' fold says, its `count` points among
+    it: "Details (29 points)"."""
+    return f"Details ({count} {plural(count, 'point', 'points')})"
 
 
 def week_text(week):

@@ -16,7 +16,7 @@ from typing import cast
 
 from common import (browse_url, epic_title, SENTENCE_BREAK, CHART_FILES, COMMENTARY_WORDS, CONTENT_FILE, DATA_FILE, EPIC_COMMENTARY_WORDS, FIELD_HEADER,
                     JIRA_CELL, NO_EPIC, OUTCOME_COLOURS, PULL_STATES, RETRO_NOTES, SCOPE_GROUPS, STATUS_HEADING,
-                    ACHIEVEMENTS_WORDS, BLOCKERS_WORDS, GOAL_REASON_WORDS, ai_marked, latest_points, table,
+                    ACHIEVEMENTS_WORDS, BLOCKERS_WORDS, GOAL_REASON_WORDS, SMALL_TYPE, ai_marked, latest_points, table,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty, ratio,
                     report_file, scope_group_label, sprint_key, text_rule_problems, ticket_ref, unit, whole_percentage,
                     word_count, write_report_file)
@@ -219,7 +219,7 @@ class Report:
         ticket with events that day, its estimate at the end of the day and its
         events as tags in time order; the day's date and end-of-day figures
         span its rows."""
-        lines = ['<table style="font-size:75%">', '<tr>', '<th style="width:14%">Date</th>',
+        lines = [f'<table style="{SMALL_TYPE}">', '<tr>', '<th style="width:14%">Date</th>',
                  '<th style="width:14%">Ticket</th>', '<th style="width:46%">Events</th>',
                  '<th style="width:26%">End of day</th>', '</tr>']
         names = {"sprint_start": "sprint start",

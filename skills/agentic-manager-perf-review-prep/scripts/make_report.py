@@ -1,37 +1,38 @@
-"""Writes a prep's report, <Person>_Review_Prep.md, from data.json: for now, the person's GitHub, Jira and Notion figures, and the feedback, by company value.
+"""Writes a prep's report, <Person>_Review_Prep.md, from data.json: for now, the person's GitHub, Jira and Notion figures, and the observations, by company value.
 
 Every figure is one of data.json's facts, and every link one of its search
 addresses, so the report can't count differently from the model; the charts
 it shows are make_charts.py's.
 """
-from common import (CHARTS_DIR, EPICS_CHART, FEEDBACK_HEADINGS, FEEDBACK_SOURCES, FOCUS_SHARE, FOLDER_NAME, GITHUB_CELLS, HEADINGS, JIRA_CELLS, NO_VALUE, PAGES_HEADING, REFERENCE_NAMES, REPOS_CHART,
-                    ai_marked, average_text, day_text, esc, link_href, number, prep_dir, report_name, repo_code, repos_text, shown, size_text, types_text, week_text,
+from common import (CHARTS_DIR, EPICS_CHART, OBSERVATION_HEADINGS, OBSERVATION_SOURCES, FOCUS_SHARE, FOLDER_NAME, GITHUB_CELLS, HEADINGS, JIRA_CELLS, NO_VALUE, PAGES_HEADING, REFERENCE_NAMES, REPOS_CHART,
+                    SMALL_TYPE, ai_marked, average_text, day_text, details_text, esc, link_href, number, prep_dir, report_name, repo_code, repos_text, shown, size_text, types_text, week_text,
                     write_output_file)
 
 
-def write_report(prep, person, data):
-    """Write the prep `prep`'s report from `person`, its person.json, and
-    `data`, its data.json; returns its path."""
+def write_report(prep, person, data, content):
+    """Write the prep `prep`'s report from `person`, its person.json, `data`,
+    its data.json, and `content`, its content.json; returns its path."""
     path, _ = write_output_file(
-        FOLDER_NAME, f"{prep}/{report_name(prep)}", render(person, data, prep_dir(prep)).encode("utf-8"))
+        FOLDER_NAME, f"{prep}/{report_name(prep)}", render(person, data, prep_dir(prep), content).encode("utf-8"))
     return path
 
 
 # The report.
 
-def render(person, data, folder):
-    """The report's text: the person and the period, then the Feedback,
+def render(person, data, folder, content):
+    """The report's text: the person and the period, then the Observations,
     what is going well and what to improve, first, as what the review is
-    about, a note it cites linked relative to `folder`, the report's, then
+    about, each summarised as `content`, content.json, says, a note it cites
+    linked relative to `folder`, the report's, then
     their GitHub work and their Jira work, each its main focus,
     then its figures, then the Notion pages they created. GitHub comes before
     Jira: with agents writing much
     of the code, pull requests stay the plainest trace of what someone did,
     while tickets grow more generic."""
     return "\n".join([f"# {person['person']}: performance review prep", "",
-                      f"Period: {shown(person['start'], person['end'])}", "", "## Feedback", "",
-                      *feedback_section(data["feedback"],
-                                        folder), "", "## GitHub", "",
+                      f"Period: {shown(person['start'], person['end'])}", "", "## Observations", "",
+                      *observations_section(data["observations"],
+                                            folder, content), "", "## GitHub", "",
                       *repos_section(data["github"]), "", *
                       github_section(data["github"]), "", "## Jira", "",
                       *focus_section(data["jira"]), "", *
@@ -84,10 +85,12 @@ def cells_table(cells, figures, facts):
     return table(heads, values, charts)
 
 
-def table(*rows):
+def table(*rows, small=False):
     """A report table's lines: the full width, each of `rows`, its cells
-    already written, aligned to the top, as HTML centres them by default."""
-    return ['<table width="100%">', *(f'<tr valign="top">{cells}</tr>' for cells in rows), "</table>"]
+    already written, aligned to the top, as HTML centres them by default;
+    with `small`, in SMALL_TYPE, for a table of many rows."""
+    style = f' style="{SMALL_TYPE}"' if small else ""
+    return [f'<table width="100%"{style}>', *(f'<tr valign="top">{cells}</tr>' for cells in rows), "</table>"]
 
 
 def figure(value, url):
@@ -132,38 +135,43 @@ def notion_section(notion):
     weeks = {}
     for page in reversed(notion["created"]):
         weeks.setdefault(week_text(page["week"]), []).append(page)
-    rows = grouped_rows((week, [f'<td>{small(f"""<a href="{esc(page["url"])}">{esc(page["title"])}</a>""")}</td>'
-                                f'<td>{small(esc(page["space"] or ""))}</td>' for page in pages])
+    rows = grouped_rows((week, [f'<td><a href="{esc(page["url"])}">{esc(page["title"])}</a></td>'
+                                f'<td>{esc(page["space"] or "")}</td>' for page in pages])
                         for week, pages in weeks.items())
     heads = "".join(
-        f"<th>{small(head)}</th>" for head in ("Week", "Page", "Area"))
-    return [f'<b>{PAGES_HEADING}</b> ({notion["counts"]["created"]})', "", *table(heads, *rows)]
+        f"<th>{head}</th>" for head in ("Week", "Page", "Area"))
+    return [f'<b>{PAGES_HEADING}</b> ({notion["counts"]["created"]})', "", *table(heads, *rows, small=True)]
 
 
-def feedback_section(feedback, folder):
-    """The Feedback section's lines: for each part of FEEDBACK_HEADINGS, how
-    many points it holds and a table of them, in small type, by company
+def observations_section(observations, folder, content):
+    """The Observations section's lines: for each part of OBSERVATION_HEADINGS,
+    a divider apart from the one before, its heading, marked as the agent's, as
+    its summary, `content`'s, follows, then, folded under it as the detail,
+    with how many points it holds, a table of them, in small type, its columns
+    as wide in both, so the two read alike, by company
     value, each value named once beside its points, the most recent first,
     each with its source and its reference: a piece's period, as the source
     names it, or the days of a reading's evidence, the most recent first,
     each linked to its note or message."""
     lines = []
-    for part, heading in FEEDBACK_HEADINGS.items():
-        groups = feedback[part]
+    for part, heading in OBSERVATION_HEADINGS.items():
+        groups = observations[part]
         rows = grouped_rows((esc(group["value"] or NO_VALUE),
-                             [f'<td>{small(esc(point["point"]))}</td><td>{small(FEEDBACK_SOURCES[point["source"]])}</td>'
-                              f'<td>{small(reference(point, folder))}</td>' for point in group["points"]])
+                             [f'<td>{esc(point["also"] or "")}</td><td>{esc(point["point"])}</td>'
+                              f'<td>{OBSERVATION_SOURCES[point["source"]]}</td>'
+                              f'<td>{reference(point, folder)}</td>' for point in group["points"]])
                             for group in groups)
-        heads = "".join(f"<th>{small(head)}</th>" for head in (
-            "Value", ai_marked("Point"), "Source", "References"))
+        heads = "".join(f'<th width="{width}%">{head}</th>' for head, width in (
+            ("Value", 10), ("Also", 10), (ai_marked("Point"), 50), ("Source", 10), ("References", 20)))
         count = sum(len(group["points"]) for group in groups)
-        lines += [*([""] if lines else []), f"<b>{heading}</b> ({count})",
-                  *(["", *table(heads, *rows)] if rows else [])]
+        lines += [*(["", "---", ""] if lines else []), ai_marked(f"<b>{heading}</b>") if rows else f"<b>{heading}</b>",
+                  *(["", content[part].strip(), "", f"<details><summary>{details_text(count)}</summary>", "",
+                     *table(heads, *rows, small=True), "", "</details>"] if rows else [])]
     return lines
 
 
 def reference(point, folder):
-    """Where a feedback point comes from, as its row writes it: its piece's
+    """Where an observation comes from, as its row writes it: its piece's
     period, – when the piece names none, or its evidence, each its source
     and day, such as "Slack 14 Oct", linked to its message or note."""
     if point["source"] == "feedback":
@@ -174,16 +182,10 @@ def reference(point, folder):
 
 def grouped_rows(groups):
     """A grouped table's rows, each group (name, rows), its name written as
-    HTML and each row its cells: the name in small type in a cell beside the
-    group's first row, spanning all of them."""
-    return [(f'<td rowspan="{len(rows)}">{small(name)}</td>' if index == 0 else "") + cells
+    HTML and each row its cells: the name in a cell beside the group's first
+    row, spanning all of them."""
+    return [(f'<td rowspan="{len(rows)}">{name}</td>' if index == 0 else "") + cells
             for name, rows in groups for index, cells in enumerate(rows)]
-
-
-def small(content):
-    """`content`, already written as HTML, in smaller type, two steps down,
-    as the Notion table holds many rows."""
-    return f"<small><small>{content}</small></small>"
 
 
 def focus_table(chart, description, note, entries):
