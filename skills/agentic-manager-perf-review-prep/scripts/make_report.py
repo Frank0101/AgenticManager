@@ -1,29 +1,31 @@
-"""Writes a prep's report, <Person>_Review_Prep.md, from data.json and content.json: the observations, going well and to improve by company value, then the context, each table under its summary, then the person's GitHub, Jira and Notion figures.
+"""Writes a prep's report, <Person>_Review_Prep.md, from data.json, content.json and step_change.json: the observations, going well and to improve by company value, then the context, then the step change from the latest previous review, each table under its summary, then the person's GitHub, Jira and Notion figures.
 
 Every figure is one of data.json's facts, and every link one of its search
 addresses, so the report can't count differently from the model; the charts
 it shows are make_charts.py's.
 """
-from common import (CHARTS_DIR, EPICS_CHART, OBSERVATION_HEADINGS, OBSERVATION_SOURCES, FOCUS_SHARE, FOLDER_NAME, GITHUB_CELLS, HEADINGS, JIRA_CELLS, NO_VALUE, PAGES_HEADING, REPOS_CHART,
-                    SMALL_TYPE, VALUED_PARTS, ai_marked, average_text, details_text, esc, link_href, reference_text, number, prep_dir, report_name, repo_code, repos_text, shown, size_text, types_text, week_text,
+from common import (CHARTS_DIR, EPICS_CHART, NOT_APPLICABLE, NOT_RAISED, OBSERVATION_HEADINGS, OBSERVATION_SOURCES, FOCUS_SHARE, FOLDER_NAME, GITHUB_CELLS, HEADINGS, JIRA_CELLS, NO_VALUE, PAGES_HEADING, PIECE_SOURCES, REPOS_CHART,
+                    SMALL_TYPE, STEP_CHANGE_HEADING, STEP_CHANGES, VALUED_PARTS, ai_marked, period_points, review_points, average_text, details_text, esc, link_href, reference_text, number, prep_dir, report_name, repo_code, repos_text, shown, size_text, types_text, week_text,
                     write_output_file)
 
 
-def write_report(prep, person, data, content):
+def write_report(prep, person, data, content, step_change):
     """Write the prep `prep`'s report from `person`, its person.json, `data`,
-    its data.json, and `content`, its content.json; returns its path."""
-    path, _ = write_output_file(
-        FOLDER_NAME, f"{prep}/{report_name(prep)}", render(person, data, prep_dir(prep), content).encode("utf-8"))
+    its data.json, `content`, its content.json, and `step_change`, its
+    step_change.json; returns its path."""
+    path, _ = write_output_file(FOLDER_NAME, f"{prep}/{report_name(prep)}",
+                                render(person, data, prep_dir(prep), content, step_change).encode("utf-8"))
     return path
 
 
 # The report.
 
-def render(person, data, folder, content):
+def render(person, data, folder, content, step_change):
     """The report's text: the person and the period, then the Observations,
-    what is going well, what to improve and the context, first, as what the
-    review is about, each summarised as `content`, content.json, says, a note it cites
-    linked relative to `folder`, the report's, then
+    what is going well, what to improve and the context, each summarised as
+    `content`, content.json, says, then the step change, `step_change`,
+    step_change.json, these two first, as what the review is about, a note
+    they cite linked relative to `folder`, the report's, then
     their GitHub work and their Jira work, each its main focus,
     then its figures, then the Notion pages they created. GitHub comes before
     Jira: with agents writing much
@@ -32,7 +34,10 @@ def render(person, data, folder, content):
     return "\n".join([f"# {person['person']}: performance review prep", "",
                       f"Period: {shown(person['start'], person['end'])}", "", "## Observations", "",
                       *observations_section(data["observations"],
-                                            folder, content), "", "## GitHub", "",
+                                            folder, content), "",
+                      *step_change_section(step_change,
+                                           data["observations"], data["reviews"], folder),
+                      "", "## GitHub", "",
                       *repos_section(data["github"]), "", *
                       github_section(data["github"]), "", "## Jira", "",
                       *focus_section(data["jira"]), "", *
@@ -87,10 +92,54 @@ def reference(point, folder):
     """Where an observation comes from, as its row writes it: its piece's
     period, – when the piece names none, or its evidence, each by
     reference_text(), such as "Slack 14 Oct", linked to its message or note."""
-    if point["source"] == "feedback":
+    if point["source"] in PIECE_SOURCES:
         return esc(point["period"] or "–")
     return ", ".join(f'<a href="{esc(link_href(item["link"], folder))}">{esc(reference_text(point["source"], item))}</a>'
                      for item in point["evidence"])
+
+
+def step_change_section(step_change, observations, reviews, folder):
+    """The Step change section's lines: its heading, marked as the agent's,
+    its summary, `step_change`'s, step_change.json, then, folded under it with
+    how many rows it holds, a table, in small type, of its rows by
+    step_change_rows(); with no previous review in `reviews`, data.json's,
+    the heading, unmarked, and N/A alone, as there is nothing to compare."""
+    if reviews is None:
+        return [f"## {STEP_CHANGE_HEADING}", "", NOT_APPLICABLE]
+    rows = step_change_rows(step_change["rows"], observations, reviews, folder)
+    return [f"## {ai_marked(STEP_CHANGE_HEADING)}", "", step_change["summary"].strip(),
+            *(["", f"<details><summary>{details_text(len(rows), ('change', 'changes'))}</summary>", "",
+               *table(observation_heads((("Review point", 35), (ai_marked("Change"), 15), ("Evidence", 50))),
+                      *rows, small=True), "", "</details>"] if rows else [])]
+
+
+def step_change_rows(rows, observations, reviews, folder):
+    """The step change table's rows, each step_change.json's row of `rows`: the
+    latest review's point, after its part, such as "To improve: …", or –
+    for a period context point; its change's label; and each period point
+    it cites, by its id in `observations`, data.json's, its text, source and
+    references as its own row gives them, or, for an improved one citing
+    none, NOT_RAISED. Ordered by change, in the order of STEP_CHANGES, then
+    by the review point's order in `reviews`, data.json's, those with none
+    last, in the order given."""
+    review, period = review_points(
+        reviews["latest"]), period_points(observations)
+    order = [*review, None]
+    ordered = sorted(rows, key=lambda row: (list(STEP_CHANGES).index(row["change"]),
+                                            order.index(row["review_point"])))
+
+    def cited(point):
+        return f'{esc(point["point"])} ({OBSERVATION_SOURCES[point["source"]]}: {reference(point, folder)})'
+    return [f'<td>{esc(point_label(*review[row["review_point"]])) if row["review_point"] else "–"}</td>'
+            f'<td>{STEP_CHANGES[row["change"]]}</td>'
+            f'<td>{"<br>".join(cited(period[item][1]) for item in row["evidence"]) or NOT_RAISED}</td>'
+            for row in ordered]
+
+
+def point_label(part, point):
+    """A review point as the step change names it, after its part: "To
+    improve: Could lead a design review alone"."""
+    return f'{OBSERVATION_HEADINGS[part]}: {point["point"]}'
 
 
 def github_section(github):

@@ -1,4 +1,4 @@
-"""Finishes a prep's report: checks the agent's content.json, writes the report and draws its charts from data.json, then checks the whole prep.
+"""Finishes a prep's report: checks the agent's content.json and step_change.json, writes the report and draws its charts from data.json, then checks the whole prep.
 
 The one command of the step: each part is a module of its own, the report
 make_report.py's, the charts make_charts.py's and the check check_prep.py's, which reads back every file of the prep, the
@@ -11,35 +11,41 @@ import json
 import os
 
 from check_prep import check_prep
-from common import CONTENT, DATA, PERSON, content_problems, prep_dir, read_json
+from common import (CONTENT, DATA, PERSON, STEP_CHANGE, content_problems, prep_dir, read_json,
+                    step_change_problems)
 from make_charts import write_charts
 from make_report import write_report
 
 
 def finish(prep):
-    """Write the prep `prep`'s report and charts from data.json and
-    content.json, then check the whole prep; returns {report, problems}, the
-    report's path and what the check found. With content.json missing or
-    breaking a rule, it writes nothing, and the report is null and the
-    problems content.json's, each naming its field."""
+    """Write the prep `prep`'s report and charts from data.json,
+    content.json and step_change.json, then check the whole prep; returns
+    {report, problems}, the report's path and what the check found. With
+    content.json or step_change.json missing or breaking a rule, it writes
+    nothing, and the report is null and the problems theirs, each naming its
+    field."""
     folder = prep_dir(prep)
     person, data = read_json(os.path.join(folder, PERSON)), read_json(
         os.path.join(folder, DATA))
-    path = os.path.join(folder, CONTENT)
-    if not os.path.exists(path):
-        return {"report": None, "problems": ["content.json is missing: write it, as step 8 says"]}
-    content = read_json(path)
-    if problems := content_problems(content, data["observations"]):
+    missing = [f"{name} is missing: write it, as step 8's {task} task says"
+               for name, task in ((CONTENT, "observations"), (STEP_CHANGE, "step-change"))
+               if not os.path.exists(os.path.join(folder, name))]
+    if missing:
+        return {"report": None, "problems": missing}
+    content, step_change = (read_json(os.path.join(folder, name))
+                            for name in (CONTENT, STEP_CHANGE))
+    if problems := (content_problems(content, data["observations"])
+                    + step_change_problems(step_change, data["observations"], data["reviews"])):
         return {"report": None, "problems": problems}
     write_charts(prep, data)
-    path = write_report(prep, person, data, content)
+    path = write_report(prep, person, data, content, step_change)
     return {"report": path, "problems": check_prep(prep)["errors"]}
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Check the prep's content.json, write its report, <Person>_Review_Prep.md, and its charts from "
-        "data.json and content.json, then check "
+        description="Check the prep's content.json and step_change.json, write its report, "
+        "<Person>_Review_Prep.md, and its charts from data.json, content.json and step_change.json, then check "
         "the whole prep: that its folder holds only the prep's files, each following the rules it was written by, "
         "and that the report shows data.json.",
         epilog="Prints one line of JSON: report, the report's path, and problems, what the check found, "

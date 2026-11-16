@@ -1,4 +1,4 @@
-"""Builds a prep's data.json from its raw files and the summaries of the feedback, the notes and Slack: the one model its report reads, every item and every fact worked out from them, once.
+"""Builds a prep's data.json from its raw files and the summaries of the reviews, the feedback, the notes and Slack: the one model its report reads, every item and every fact worked out from them, once.
 
 The report and its charts read these facts and never work them out again,
 and the final check rebuilds the file from the same files and works the
@@ -16,7 +16,7 @@ import statistics
 from collections import Counter
 from datetime import date, timedelta
 
-from common import (BINS_PER_DECADE, DATA, FOCUS_SHARE, MAX_GROUPS, OBSERVATION_HEADINGS, SUMMARY_FILES, VALUED_PARTS, VALUES, project_of, PERSON, WORK_LISTS, company_names, epic_of, jira_search_url, pull_search_url, period_days, prep_dir, raw_work_problems,
+from common import (BINS_PER_DECADE, newest_key, DATA, FOCUS_SHARE, MAX_GROUPS, OBSERVATION_HEADINGS, PIECE_SOURCES, SUMMARY_FILES, SUMMARY_PARTS, VALUED_PARTS, VALUES, point_id, project_of, PERSON, WORK_LISTS, company_names, epic_of, jira_search_url, pull_search_url, period_days, prep_dir, raw_work_problems,
                     is_sub_task, read_json, read_raw_work, work_items, write_prep_file)
 
 # The searches data.json links to, by what they find: each list's, and the
@@ -25,14 +25,11 @@ SEARCH_URLS = {"jira": ("created", "resolved",
                         "resolved_points"), "github": ("opened", "merged")}
 EPOCH_MONDAY = date(2001, 1, 1)
 MAX_POINTS = 20
-# Sorts after every day, so an undated point or evidence comes first, the most
-# recent first.
-UNDATED = "9999-12-31"
 
 
 def build_data(prep):
     """Build the prep `prep`'s data.json from its raw files and the summaries
-    of the feedback, the notes and Slack; returns its path. Exits, writing
+    of the reviews, the feedback, the notes and Slack; returns its path. Exits, writing
     nothing, when a raw file is missing or breaks a rule, or a summary is
     missing."""
     person = read_json(os.path.join(prep_dir(prep), PERSON))
@@ -41,14 +38,15 @@ def build_data(prep):
         raise SystemExit("; ".join(problems))
     summaries = read_summaries(prep)
     if missing := [name for name, summary in summaries.items() if summary is None]:
-        raise SystemExit(f"{', '.join(SUMMARY_FILES[name] for name in missing)} missing: record the feedback "
-                         "and read the notes and Slack, steps 5 and 6, first")
+        raise SystemExit(f"{', '.join(SUMMARY_FILES[name] for name in missing)} missing: record the reviews "
+                         "and the feedback and read the notes and Slack, steps 4 to 6, first")
     return write_prep_file(prep, DATA, build(raws, person, summaries, company_names(VALUES)))
 
 
 def read_summaries(prep):
-    """The summaries the report's observations are built from, in the prep
-    `prep`, by SUMMARY_FILES' names, each None while it is missing."""
+    """The summaries the report's observations and step change are built
+    from, in the prep `prep`, by SUMMARY_FILES' names, each None while it is
+    missing."""
     folder = prep_dir(prep)
     return {name: read_json(os.path.join(folder, file)) if os.path.exists(os.path.join(folder, file)) else None
             for name, file in SUMMARY_FILES.items()}
@@ -67,8 +65,9 @@ def build(raws, person, summaries, values):
     `person`: weeks, the period's weeks as the charts group it, and for each
     source its items, its facts and its searches' addresses; a Notion page
     with its calendar week, by calendar_week(), as its search may span only
-    part of one; and observations, the points of `summaries`, by observations(), with
-    `values`, the company's."""
+    part of one; observations, the points of `summaries`, the reviews in the
+    period among them, by observations(), with `values`, the company's; and
+    reviews, the previous ones, by previous_reviews()."""
     weeks = week_groups(person["start"], person["end"])
     data: dict = {"weeks": weeks}
     for source, raw in raws.items():
@@ -78,7 +77,10 @@ def build(raws, person, summaries, values):
                                  for page in lists["created"]]}
         data[source] = {
             **lists, **source_facts(source, lists, weeks), **search_urls(source, raw)}
-    data["observations"] = observations(summaries, values)
+    in_period, previous = split_reviews(
+        summaries["reviews"]["pieces"], person["start"], person["end"])
+    data["observations"] = observations(summaries, in_period, values)
+    data["reviews"] = previous_reviews(previous)
     return data
 
 
@@ -95,32 +97,53 @@ def data_problems(data, raws, person, summaries, values):
 
 # The observations.
 
-def observations(summaries, values):
+def split_reviews(pieces, start, end):
+    """(in the period, previous): the review `pieces` dated from `start` to
+    `end`, the period's first and last day, in their order, and those dated
+    before it or undated, by newest(), so the first is the latest, an
+    undated one counting as the most recent; one dated after it is
+    neither."""
+    return ([piece for piece in pieces if piece["date"] and start <= piece["date"] <= end],
+            newest([piece for piece in pieces if not piece["date"] or piece["date"] < start]))
+
+
+def observations(summaries, reviews, values):
     """The points of `summaries`, the feedback's pieces, the notes' summary
-    and Slack's, for each part of OBSERVATION_HEADINGS, by part_points(): a
+    and Slack's, and of `reviews`, the review pieces in the period, for each
+    part of OBSERVATION_HEADINGS, by part_points(), each with its id, by
+    point_id(), in its table's order: a
     part of VALUED_PARTS as a group for each of `values` that a point names
     first, those with the most points first, in their order when as many,
     then one, its value null, of the points that name none, each point
-    {point, also, source, date, period, evidence}, also the second value it
+    {id, point, also, source, date, period, evidence}, also the second value it
     names, null when it names one or none, so it shows though the point sits
     under its first; context, which names no value, as its points alone."""
     result = {}
     for part in OBSERVATION_HEADINGS:
-        points = part_points(summaries, part)
+        points = part_points(summaries, reviews, part)
         if part not in VALUED_PARTS:
-            result[part] = points
+            result[part] = numbered(points, part)
             continue
         counts = Counter(point["value"] for point in points)
-        ranked = sorted(
-            (value for value in values if counts[value]), key=lambda value: -counts[value])
+        ranked = [*sorted((value for value in values if counts[value]), key=lambda value: -counts[value]),
+                  *([None] if counts[None] else [])]
+        ordered = numbered(
+            [point for value in ranked for point in points if point["value"] == value], part)
         result[part] = [{"value": value, "points": [{key: field for key, field in point.items() if key != "value"}
-                                                    for point in points if point["value"] == value]}
-                        for value in [*ranked, *([None] if counts[None] else [])]]
+                                                    for point in ordered if point["value"] == value]}
+                        for value in ranked]
     return result
 
 
-def part_points(summaries, part):
-    """The points of `part` in `summaries`, the most recent first, those with
+def numbered(points, part, review=False):
+    """`points` of `part`, each with its id first, by point_id(), in their
+    order, or with `review` as the latest previous review's."""
+    return [{"id": point_id(part, number, review), **point} for number, point in enumerate(points, 1)]
+
+
+def part_points(summaries, reviews, part):
+    """The points of `part` in `summaries` and `reviews`, the review pieces in
+    the period, the most recent first, those with
     no date first, as the most recent of all, by their date, a piece's or the
     latest of their dated evidence's, null when none is dated: each {point,
     source, date, period, evidence}, and in VALUED_PARTS its also and its
@@ -128,9 +151,10 @@ def part_points(summaries, part):
     its period its piece's, null for a reading's, and its evidence a
     reading's, the most recent first the same way, those of a day in the
     order given, empty for a piece's."""
-    points = [{**point_text(point, part), "source": "feedback", "date": piece["date"], "period": piece["period"],
+    pieces = {"feedback": summaries["feedback"]["pieces"], "reviews": reviews}
+    points = [{**point_text(point, part), "source": source, "date": piece["date"], "period": piece["period"],
                "evidence": []}
-              for piece in summaries["feedback"]["pieces"] for point in piece[part]]
+              for source in PIECE_SOURCES for piece in pieces[source] for point in piece[part]]
     points += [{**point_text(point, part), "source": source,
                 "date": max((item["date"] for item in point["evidence"] if item["date"]), default=None),
                 "period": None, "evidence": newest(point["evidence"])}
@@ -151,7 +175,30 @@ def point_text(point, part):
 def newest(dated):
     """`dated`, each with a date, the most recent first, those with none
     first, as the most recent of all, those of a day in the order given."""
-    return sorted(dated, key=lambda item: item["date"] or UNDATED, reverse=True)
+    return sorted(dated, key=lambda item: newest_key(item["date"]), reverse=True)
+
+
+def previous_reviews(previous):
+    """{latest, earlier}: the `previous` reviews, the most recent first, the
+    step change compares the period with, or null when there are none: the
+    latest, the first, {period, date, rating} and its parts, each point with
+    its id, by numbered(), its text and, in VALUED_PARTS, its values; and the
+    earlier ones, which only weigh a point raised again, {period, date} and
+    their parts, each point's text."""
+    if not previous:
+        return None
+    latest = previous[0]
+
+    def texts(point):
+        return point if isinstance(point, str) else point["point"]
+    return {"latest": {"period": latest["period"], "date": latest["date"], "rating": latest["rating"],
+                       **{part: numbered([{"point": texts(point), **({"values": point["values"]}
+                                                                     if part in VALUED_PARTS else {})}
+                                          for point in latest[part]], part, review=True)
+                          for part in SUMMARY_PARTS}},
+            "earlier": [{"period": piece["period"], "date": piece["date"],
+                         **{part: [texts(point) for point in piece[part]] for part in SUMMARY_PARTS}}
+                        for piece in previous[1:]]}
 
 
 # The facts.
@@ -454,7 +501,7 @@ def epic_search_urls(raw):
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Build the prep's data.json, the model its report reads, from the raw files step 7 wrote and "
-        "the summaries of the feedback, the notes and Slack.",
+        "the summaries of the reviews, the feedback, the notes and Slack.",
         epilog="Prints one line of JSON: data, data.json's path. Needs no network: run it again to rebuild it.")
     parser.add_argument("--prep", required=True,
                         help="the prep's folder, <Person>_<YY-MM-DD>, as init_prep.py printed it")

@@ -13,9 +13,10 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import build_data  # noqa: E402
 import check_report  # noqa: E402
+import common  # noqa: E402
 import make_report  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import CONTENT, DATA, DATA_BY_PROJECT, DATA_NO_EPIC_FIRST, PERSON, REPORT_FOLDER, SUMMARIES, VALUE_NAMES  # noqa: E402
+from prep_fixture import CONTENT, STEP_CHANGE, CONTEXT_STEP_CHANGE, CONTEXT_DATA, CONTEXT_SUMMARIES, DATA, DATA_BY_PROJECT, DATA_NO_EPIC_FIRST, PERSON, REPORT_FOLDER, REVIEW_IN_PERIOD, SUMMARIES, VALUE_NAMES  # noqa: E402
 
 
 class CheckReportTest(unittest.TestCase):
@@ -23,7 +24,8 @@ class CheckReportTest(unittest.TestCase):
         # name: (a change to the report's text, expected in the
         # problems, or None for none): each Jira figure is read back from the
         # table and worked out again from the items.
-        report = make_report.render(PERSON, DATA, REPORT_FOLDER, CONTENT)
+        report = make_report.render(
+            PERSON, DATA, REPORT_FOLDER, CONTENT, STEP_CHANGE)
         cases = [("as written", None, None),
                  ("a page count changed", ("Pages created</b> (1)",
                   "Pages created</b> (2)"), "Notion pages"),
@@ -58,6 +60,28 @@ class CheckReportTest(unittest.TestCase):
                                               '</td><td>Feedback</td><td>Q3 2026</td></tr>\n', ""), "Context points"),
                  ("the context summary changed", ("Jane moved to the payments team",
                   "Jane moved to the data team"), "Context summary"),
+                 ("a review's period changed", ("<td>Q3 Check-in 2026</td>", "<td>Q2 Check-in 2026</td>"),
+                  "To improve points"),
+                 ("a review's source changed", ("<td>Review</td><td>Q3", "<td>Feedback</td><td>Q3"),
+                  "To improve points"),
+                 ("a step change label changed", ("<td>Held</td>",
+                  "<td>Worsened</td>"), "step change rows"),
+                 ("a step change's review point changed", ("<td>To improve: Could lead",
+                                                           "<td>Going well: Could lead"), "step change rows"),
+                 ("a step change's evidence changed", ("<td>Not raised again in the period</td>",
+                                                       "<td>Raised again</td>"), "step change rows"),
+                 ("a step change's cited source changed", ("(Feedback: Q3 2026)", "(Slack: Q3 2026)"),
+                  "step change rows"),
+                 ("a step change's cited point dropped", ("<br>Could raise risks earlier in planning "
+                                                          "(Review: Q3 Check-in 2026)", ""), "step change rows"),
+                 ("a step change row dropped", ("<tr valign=\"top\"><td>–</td>", "<tr valign=\"top\"><td>?</td>"),
+                  "step change rows"),
+                 ("the step change's count changed", ("Details (4 changes)", "Details (3 changes)"),
+                  "step change rows"),
+                 ("the step change summary changed", ("Jane no longer needs support", "Jane needs support"),
+                  "step change summary"),
+                 ("no Step change section", ("## Step change",
+                  "## Shift"), "then its Step change one"),
                  ("a value's span changed", ('rowspan="2">Teamwork',
                   'rowspan="1">Teamwork'), "Going well points"),
                  ("a count changed", ('">1</a> (1 Task)',
@@ -75,7 +99,7 @@ class CheckReportTest(unittest.TestCase):
                   "acme/billing</a> (2)"), "GitHub main focus"),
                  ("a repository's code changed",
                   ("<li>A <a", "<li>B <a"), "GitHub main focus"),
-                 ("no GitHub section", ("## GitHub", "## Code"), "then its GitHub one"),
+                 ("no GitHub section", ("## GitHub", "## Code"), "its GitHub one"),
                  ("no Jira section", ("## Jira", "## Tickets"), "its Jira one"),
                  ("no charts", ('<td><a href="_charts', '<td><a href="charts'), "a row of three figures and one of their charts")]
         for name, change, expected in cases:
@@ -83,7 +107,7 @@ class CheckReportTest(unittest.TestCase):
                 text = report.replace(
                     change[0], change[1], 1) if change else report
                 problems = " ".join(
-                    check_report.report_problems(text, DATA, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT))
+                    check_report.report_problems(text, DATA, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT, STEP_CHANGE))
                 if expected is None:
                     self.assertEqual(problems, "")
                 else:
@@ -120,33 +144,35 @@ class CheckReportTest(unittest.TestCase):
                 data = copy.deepcopy(DATA)
                 change(data[source])
                 self.assertIn(expected, " ".join(check_report.report_problems(
-                    make_report.render(PERSON, data, REPORT_FOLDER, CONTENT), data, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT)))
+                    make_report.render(PERSON, data, REPORT_FOLDER, CONTENT, STEP_CHANGE), data, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT, STEP_CHANGE)))
 
     def test_observations_order(self):
         # Two points swapped, the older first, or a value moved under
         # another: the check orders them again from the summaries.
-        report = make_report.render(PERSON, DATA, REPORT_FOLDER, CONTENT)
+        report = make_report.render(
+            PERSON, DATA, REPORT_FOLDER, CONTENT, STEP_CHANGE)
         slack, notes = (point["point"]
                         for point in DATA["observations"]["going_well"][0]["points"])
         swapped = report.replace(slack, "\0").replace(
             notes, slack).replace("\0", notes)
         self.assertIn("Going well points", " ".join(check_report.report_problems(
-            swapped, DATA, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT)))
+            swapped, DATA, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT, STEP_CHANGE)))
         self.assertIn("Going well points", " ".join(check_report.report_problems(
             report.replace(">Teamwork<",
                            ">Ownership<", 1), DATA,
-            SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT)))
+            SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT, STEP_CHANGE)))
 
     def test_context_order(self):
         # Two context points swapped, the undated page's after a dated one:
         # the check orders them again from the summaries, undated first.
-        report = make_report.render(PERSON, DATA, REPORT_FOLDER, CONTENT)
+        report = make_report.render(
+            PERSON, DATA, REPORT_FOLDER, CONTENT, STEP_CHANGE)
         page, piece = (point["point"]
                        for point in DATA["observations"]["context"][:2])
         swapped = report.replace(page, "\0").replace(
             piece, page).replace("\0", piece)
         self.assertIn("Context points", " ".join(check_report.report_problems(
-            swapped, DATA, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT)))
+            swapped, DATA, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT, STEP_CHANGE)))
 
     def test_observations_same_day(self):
         # Evidence of the same day keeps the order the summary gives it, in
@@ -158,9 +184,48 @@ class CheckReportTest(unittest.TestCase):
             *SUMMARIES["notes"]["to_improve"][0]["evidence"][1:]]}]}
         summaries = {**SUMMARIES, "notes": notes}
         data = {
-            **DATA, "observations": build_data.observations(summaries, VALUE_NAMES)}
+            **DATA, "observations": build_data.observations(summaries, [REVIEW_IN_PERIOD], VALUE_NAMES)}
         self.assertEqual(check_report.report_problems(
-            make_report.render(PERSON, data, REPORT_FOLDER, CONTENT), data, summaries, VALUE_NAMES, REPORT_FOLDER, CONTENT), [])
+            make_report.render(PERSON, data, REPORT_FOLDER, CONTENT, STEP_CHANGE), data, summaries, VALUE_NAMES, REPORT_FOLDER, CONTENT, STEP_CHANGE), [])
+
+    def test_step_change(self):
+        # name: (data.json's previous reviews, step_change.json,
+        # a change to the report, expected in the problems, or None for
+        # none): with no previous review the step change says N/A alone,
+        # unmarked, else it is marked, a review context point that changed
+        # shown.
+        def change(old, new):
+            return lambda report: report.replace(old, new, 1)
+        no_review = {**SUMMARIES, "reviews": {"pieces": [REVIEW_IN_PERIOD]}}
+        step = STEP_CHANGE
+        cases = [("no previous review", None, None, no_review, lambda report: report, None),
+                 ("no previous review, a summary", None, None, no_review,
+                  change("N/A", "Jane improved."), "must say N/A"),
+                 ("no previous review, marked", None, None, no_review,
+                  change("## Step change", f"## {common.ai_marked('Step change')}"), "must say N/A"),
+                 ("unmarked", DATA["reviews"], step, SUMMARIES,
+                  change(f"## {common.ai_marked('Step change')}", "## Step change"), "step change summary"),
+                 ("a review context point changed", CONTEXT_DATA["reviews"], CONTEXT_STEP_CHANGE,
+                  CONTEXT_SUMMARIES, lambda report: report, None)]
+        for name, reviews, step_change, summaries, edit, expected in cases:
+            with self.subTest(name):
+                data = {**DATA, "reviews": reviews}
+                report = make_report.render(
+                    PERSON, data, REPORT_FOLDER, CONTENT, step_change)
+                problems = " ".join(check_report.report_problems(
+                    edit(report), data, summaries, VALUE_NAMES, REPORT_FOLDER, CONTENT, step_change))
+                if expected is None:
+                    self.assertEqual(problems, "")
+                else:
+                    self.assertIn(expected, problems)
+        # A step change step_change.json can't have, such as one citing a point
+        # that isn't there, is refused before any row is read.
+        bad = {**step, "rows": [{**step["rows"][0],
+                                 "evidence": ["G9"]}, *step["rows"][1:]]}
+        report = make_report.render(
+            PERSON, DATA, REPORT_FOLDER, CONTENT, STEP_CHANGE)
+        self.assertIn("evidence names G9", " ".join(check_report.report_problems(
+            report, DATA, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT, bad)))
 
     def test_focus(self):
         # name: (data.json, an entry of its Jira main focus as the report
@@ -172,12 +237,12 @@ class CheckReportTest(unittest.TestCase):
         for name, data, entry in cases:
             with self.subTest(name):
                 report = make_report.render(
-                    PERSON, data, REPORT_FOLDER, CONTENT)
+                    PERSON, data, REPORT_FOLDER, CONTENT, STEP_CHANGE)
                 self.assertIn(entry, report)
                 self.assertEqual(check_report.report_problems(
-                    report, data, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT), [])
+                    report, data, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT, STEP_CHANGE), [])
                 self.assertIn("main focus", " ".join(check_report.report_problems(
-                    report.replace(entry, entry.replace("(", "(7"), 1), data, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT)))
+                    report.replace(entry, entry.replace("(", "(7"), 1), data, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT, STEP_CHANGE)))
 
 
 if __name__ == "__main__":

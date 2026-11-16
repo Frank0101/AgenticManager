@@ -53,6 +53,7 @@ NOTION_SCRIPT = os.path.join(SCRIPTS, "set_notion.py")
 REPORT_SCRIPT = os.path.join(SCRIPTS, "finish_report.py")
 PREPARE_SCRIPT = os.path.join(SCRIPTS, "prepare_report.py")
 CONTENT_SCRIPT = os.path.join(SCRIPTS, "set_content.py")
+STEP_CHANGE_SCRIPT = os.path.join(SCRIPTS, "set_step_change.py")
 SLACK_SCRIPT = os.path.join(SCRIPTS, "read_slack.py")
 TOKEN = "s3cret-token"
 JANE = {"accountId": "5b10ac8d82e05b22cc7d4ef5", "accountType": "atlassian", "displayName": "Jane Doe",
@@ -263,12 +264,18 @@ class ScriptsTest(unittest.TestCase):
                                              {**PAGE, "type": "database", "url": PAGE["url"] + "-db"}]}]}))
         self.assertEqual(recorded["pages"], 2)
         self.read_slack(prep)
-        # The data, built from the raw files with no network, then the brief.
+        # The data, built from the raw files with no network, then the
+        # briefs and a task for each.
         prepared = self.run_ok(PREPARE_SCRIPT, "--prep", prep)
         with open(os.path.join(result["prep_dir"], "data.json"), encoding="utf-8") as f:
             work = json.load(f)
-        with open(prepared["brief"], encoding="utf-8") as f:
-            brief = json.load(f)
+        briefs = []
+        for path in prepared["briefs"]:
+            with open(path, encoding="utf-8") as f:
+                briefs.append(json.load(f))
+        brief, step_change_brief = briefs
+        self.assertEqual([line.split(":", 1)[0] for line in prepared["tasks"]],
+                         ["Task observations", "Task step-change"])
         self.assertEqual(work["jira"]["resolved"], [
             {"key": "PROJ-12", "title": "Migrate invoices", "type": "Story",
              "epic": {"key": "PROJ-1", "title": "Billing migration", "url": f"{self.base_url}/browse/PROJ-1"},
@@ -279,23 +286,33 @@ class ScriptsTest(unittest.TestCase):
                 "url": f"{self.base_url}/browse/PROJ-1", "issues": 1, "share": 100}],
             [{"repo": "acme/billing", "number": 7, "title": PR["title"], "url": PR["url"], "date": TODAY.isoformat(),
               "lines": 48, "files": 3}]))
-        # No report until content.json is written, then the report, from
-        # data.json: one resolved issue of 5 points, one created, each linked
-        # to its search.
+        # No report until content.json and step_change.json are written,
+        # then the report, from data.json: one resolved issue of 5 points,
+        # one created, each linked to its search.
         code, out, _ = self.run_script(REPORT_SCRIPT, "--prep", prep)
         self.assertEqual((code, json.loads(out)["report"]), (1, None))
         self.assertIn("content.json is missing", out)
+        self.assertIn("step_change.json is missing", out)
         # Each valued summary names the values its table groups points under.
-        content = {part: " ".join(["Jane did well, showing", *sorted({point["values"][0] for point in brief[part]
-                                                                      if point["values"]})])
-                   if brief[part] else "" for part in ("going_well", "to_improve")}
+        content: dict[str, object] = {part: " ".join(["Jane did well, showing", *sorted({point["values"][0] for point in brief[part]
+                                                                                         if point["values"]})])
+                                      if brief[part] else "" for part in ("going_well", "to_improve")}
         content["context"] = "Jane moved team." if brief["context"] else ""
-        self.assertTrue(prepared["task"].startswith("Task observations: "))
         code, _, err = self.run_script(CONTENT_SCRIPT, "--prep", prep, stdin=json.dumps(
             {**content, "going_well": "Jane did well."}))
         self.assertEqual(code, 1)
         self.assertIn("doesn't name", err)
         self.run_ok(CONTENT_SCRIPT, "--prep", prep, stdin=json.dumps(content))
+        # The review of June is before the period, so the step change
+        # compares with it: it raised nothing to improve, so it needs no row.
+        self.assertEqual(
+            step_change_brief["reviews"]["latest"]["period"], PIECE["period"])
+        code, _, err = self.run_script(
+            STEP_CHANGE_SCRIPT, "--prep", prep, stdin="null")
+        self.assertEqual(code, 1)
+        self.assertIn("step_change.json must be {", err)
+        self.run_ok(STEP_CHANGE_SCRIPT, "--prep", prep, stdin=json.dumps(
+            {"summary": "Jane kept delivering on time.", "rows": []}))
         made = self.run_ok(REPORT_SCRIPT, "--prep", prep)
         with open(made["report"], encoding="utf-8") as f:
             report = f.read()

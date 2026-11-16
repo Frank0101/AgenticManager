@@ -199,23 +199,59 @@ PAGES_HEADING = "Pages created"
 OBSERVATION_HEADINGS = {"going_well": "Going well",
                         "to_improve": "To improve", "context": "Context"}
 NO_VALUE = "No value"
-OBSERVATION_SOURCES = {"feedback": "Feedback",
+OBSERVATION_SOURCES = {"feedback": "Feedback", "reviews": "Review",
                        "notes": "Manager's notes", "slack": "Slack"}
 REFERENCE_NAMES = {"notes": "Journal", "slack": "Slack"}
 PAGE_REFERENCE = "Page"
-SUMMARY_FILES = {"feedback": FEEDBACK, "notes": NOTES, "slack": SLACK}
-# What the agent reads to summarise each table of observations, made from
-# data.json, and the summaries it writes, one per table, a few flowing
-# paragraphs above it: about OBSERVATIONS_WORDS words, by part, fewer for a
-# table of few points, the context half as long, as it says facts once
-# rather than weighing themes. An agent writes up to any number it is told and a little over
-# a target, so it is told the target alone, in the protocol, the help and the
-# error, and only more than MAX_OBSERVATIONS_WORDS, a margin it never sees,
-# is refused.
+SUMMARY_FILES = {"reviews": REVIEWS, "feedback": FEEDBACK,
+                 "notes": NOTES, "slack": SLACK}
+# A review dated within the period is what the person heard in it, as the
+# feedback is, so its points join the observations; one dated before it, or
+# undated, the most recent of them, is a previous review, only compared
+# with. Pieces, the feedback's and those reviews', are referred to
+# by their period, a reading's points by their evidence.
+PIECE_SOURCES = ("feedback", "reviews")
+# Every point of the period and of the latest previous review has an id, by
+# its part and its place in the table's order, the review's prefixed, such as
+# G1 and R-I2: the step change cites them, so it can name a point the report
+# then shows as the tables do, never a text the agent retyped.
+POINT_IDS = {"going_well": "G", "to_improve": "I", "context": "C"}
+REVIEW_ID = "R-"
+# The step change: how the period compares with the latest previous review,
+# the baseline, a review point to a row, each change one of STEP_CHANGES, in
+# the report's order, with its label. A to-improve point of the review always
+# has a row, as the manager needs to know where each stands; one the period
+# no longer raises counts as improved, said as not raised again rather than
+# as a proven change. A going-well point has one only when the period shows
+# it held or worsened, and context only for a significant change: a review
+# context point that changed, or, a row with no review point, by the None
+# key, a period context point the review didn't have, standing for itself.
+STEP_CHANGE_HEADING = "Step change"
+STEP_CHANGES = {"improved": "Improved", "still_to_improve": "Still to improve", "worsened": "Worsened",
+                "held": "Held", "context_change": "Context changed", "new_context": "New context"}
+STEP_CHANGE_PARTS = {"going_well": ("held", "worsened"), "to_improve": ("improved", "still_to_improve", "worsened"),
+                     "context": ("context_change",), None: ("new_context",)}
+STEP_CHANGE_ROW = ("review_point", "change", "evidence")
+STEP_CHANGE_SHAPE = ('{"summary": "...", "rows": [{"review_point": "R-I1", "change": "improved", '
+                     '"evidence": ["I2", ...]}, ...]}')
+NOT_RAISED = "Not raised again in the period"
+NOT_APPLICABLE = "N/A"
+# What the agents read, each made from data.json, and what they write: one
+# summarises each table of observations, a few flowing paragraphs above it,
+# the other writes the step change. Each is about OBSERVATIONS_WORDS words,
+# by part, fewer for a table of few points, the context half as long, as it
+# says facts once rather than weighing themes. An agent writes up to any
+# number it is told and a little over a target, so it is told the target
+# alone, in the protocol, the help and the error, and only more than
+# MAX_OBSERVATIONS_WORDS, a margin it never sees, is refused.
 BRIEF = "brief.json"
+STEP_CHANGE_BRIEF = "step_change_brief.json"
 CONTENT = "content.json"
-OBSERVATIONS_WORDS = {"going_well": 150, "to_improve": 150, "context": 75}
-MAX_OBSERVATIONS_WORDS = {"going_well": 200, "to_improve": 200, "context": 100}
+STEP_CHANGE = "step_change.json"
+OBSERVATIONS_WORDS = {"going_well": 150,
+                      "to_improve": 150, "context": 75, "step_change": 150}
+MAX_OBSERVATIONS_WORDS = {"going_well": 200,
+                          "to_improve": 200, "context": 100, "step_change": 200}
 # The chart of the resolved issues by epic, beside the main focus.
 EPICS_CHART = "jira_epics.svg"
 # The GitHub cells of the report, in order, as the Jira ones, and the chart
@@ -232,10 +268,11 @@ def expected_files(prep):
     the period and who they are in each source, the manager's view of them,
     their previous reviews, the period's feedback, the manager's notes on
     them, what their Slack messages show, the report's data, the brief of
-    its observations and the agent's summaries of them, the _raw folder of
-    what each source gave, and the report with its _charts folder."""
-    return {PERSON, ORIENTATION, REVIEWS, FEEDBACK, NOTES, SLACK, DATA, BRIEF, CONTENT, RAW_DIR, report_name(prep),
-            CHARTS_DIR}
+    its observations and the agent's summaries of them, the brief of the
+    step change and the agent's step change, the _raw folder of what each
+    source gave, and the report with its _charts folder."""
+    return {PERSON, ORIENTATION, REVIEWS, FEEDBACK, NOTES, SLACK, DATA, BRIEF, CONTENT, STEP_CHANGE_BRIEF, STEP_CHANGE,
+            RAW_DIR, report_name(prep), CHARTS_DIR}
 
 
 def report_name(prep):
@@ -755,14 +792,119 @@ def content_problems(content, observations):
         elif not points and text.strip():
             problems.append(
                 f"content.json's {part} must be empty, as its table holds no point")
-        elif word_count(text) > MAX_OBSERVATIONS_WORDS[part]:
-            problems.append(f"content.json's {part} has {word_count(text)} words, more than "
-                            f"{OBSERVATIONS_WORDS[part]}: cut it to about {OBSERVATIONS_WORDS[part]}, keeping what matters most")
+        elif problem := _length_problem(f"content.json's {part}", text, part):
+            problems.append(problem)
         elif part in VALUED_PARTS and (missing := [group["value"] for group in points
                                                    if group["value"] and group["value"].casefold() not in text.casefold()]):
             problems.append(f"content.json's {part} doesn't name {', '.join(missing)}: say, even briefly, how "
                             "its table's points show each value they are grouped under")
     return problems
+
+
+def step_change_problems(step_change, observations, reviews):
+    """Why `step_change`, step_change.json's, isn't the step change from the
+    latest previous review in `reviews`, data.json's, to the period's points
+    in `observations`, empty when it is: null when there is no previous
+    review; else a summary, not empty, of at most its MAX_OBSERVATIONS_WORDS
+    words, and rows, each {review_point, change, evidence}: the review point
+    one of the latest review's ids, once, or null for a period context
+    point; the change one of STEP_CHANGE_PARTS for its part, or for None
+    when it has none; the evidence
+    period point ids, each once, at least one but for improved, and a
+    period context point among them when the review point is null; and
+    every to-improve point of the review with a row."""
+    what = STEP_CHANGE
+    if reviews is None:
+        return [] if step_change is None else [f"{what} must be null, as there is no previous review to compare with"]
+    if not (isinstance(step_change, dict) and sorted(step_change) == ["rows", "summary"]
+            and isinstance(step_change["summary"], str) and isinstance(step_change["rows"], list)):
+        return [f"{what} must be {STEP_CHANGE_SHAPE}, as there is a previous review"]
+    problems = []
+    summary = step_change["summary"]
+    if not summary.strip():
+        problems.append(f"{what}'s summary is empty: summarise how the period compares with the latest previous "
+                        "review")
+    elif problem := _length_problem(f"{what}'s summary", summary, "step_change"):
+        problems.append(problem)
+    review, period = review_points(
+        reviews["latest"]), period_points(observations)
+    seen = []
+    for number, row in enumerate(step_change["rows"], 1):
+        field = f"{what}'s row {number}"
+        if not (isinstance(row, dict) and sorted(row) == sorted(STEP_CHANGE_ROW)
+                and (row["review_point"] is None or isinstance(row["review_point"], str))
+                and isinstance(row["change"], str) and isinstance(row["evidence"], list)
+                and all(isinstance(item, str) for item in row["evidence"])):
+            problems.append(f'{field} must be {{"review_point": "R-I1" or null, "change": "...", '
+                            '"evidence": ["I2", ...]}')
+            continue
+        point, change, evidence = row["review_point"], row["change"], row["evidence"]
+        if point is not None and point not in review:
+            problems.append(f"{field}'s review_point, {point!r}, must be one of the latest review's points: "
+                            f"{', '.join(review) or 'it has none'}, or null for a period context point")
+            continue
+        if point is not None and point in seen:
+            problems.append(
+                f"{field}'s review_point, {point}, has a row already: give each one row")
+        seen.append(point)
+        part = review[point][0] if point else None
+        allowed = STEP_CHANGE_PARTS[part]
+        if change not in allowed:
+            problems.append(f"{field}'s change, {change!r}, must be {' or '.join(allowed)} for "
+                            + (f"a {part} point of the review" if part else "a row with no review_point"))
+        if unknown := [item for item in evidence if item not in period]:
+            problems.append(f"{field}'s evidence names {', '.join(unknown)}, not points of the period: cite the "
+                            "brief's ids, such as G1")
+        elif len(set(evidence)) != len(evidence):
+            problems.append(
+                f"{field}'s evidence names a point more than once: name each once")
+        elif not evidence and change != "improved":
+            problems.append(
+                f"{field}'s evidence is empty: cite the period points that show it, by their ids")
+        elif point is None and not any(period[item][0] == "context" for item in evidence):
+            problems.append(f"{field} has no review_point, so its evidence must cite the period context point it "
+                            "stands for, such as C1")
+    if missing := [point for point, (part, _) in review.items() if part == "to_improve" and point not in seen]:
+        problems.append(f"{what} has no row for {', '.join(missing)}: give every to-improve point of the latest "
+                        "review one, improved, still_to_improve or worsened")
+    return problems
+
+
+def _length_problem(what, text, part):
+    """Why `text`, `what`, the summary of `part`, is too long, or None: more
+    than its MAX_OBSERVATIONS_WORDS words, the error giving the target
+    alone."""
+    if word_count(text) <= MAX_OBSERVATIONS_WORDS[part]:
+        return None
+    return (f"{what} has {word_count(text)} words, more than {OBSERVATIONS_WORDS[part]}: cut it to about "
+            f"{OBSERVATIONS_WORDS[part]}, keeping what matters most")
+
+
+def period_points(observations):
+    """{id: (part, point)}: every point of the period in `observations`,
+    data.json's, by its id, in the tables' order."""
+    return {point["id"]: (part, point) for part in OBSERVATION_HEADINGS
+            for point in observation_points(observations, part)}
+
+
+def observation_points(observations, part):
+    """The points of `part` in `observations`, data.json's, in its table's
+    order: a valued part's group by group."""
+    if part not in VALUED_PARTS:
+        return observations[part]
+    return [point for group in observations[part] for point in group["points"]]
+
+
+def review_points(review):
+    """{id: (part, point)}: every point of `review`, the latest previous
+    review as data.json holds it, by its id, part by part."""
+    return {point["id"]: (part, point) for part in SUMMARY_PARTS for point in review[part]}
+
+
+def point_id(part, number, review=False):
+    """The id of the `number`th point of `part`, from 1, in its table, or with
+    `review` in the latest previous review: G1, I2, C3, or R-G1."""
+    return f"{REVIEW_ID if review else ''}{POINT_IDS[part]}{number}"
 
 
 def types_text(by_type):
@@ -801,10 +943,10 @@ def size_text(median, merged):
     return f"median, in {merged} merged {plural(merged, 'PR', 'PRs')}"
 
 
-def details_text(count):
-    """What a table of observations' fold says, its `count` points among
-    it: "Details (29 points)"."""
-    return f"Details ({count} {plural(count, 'point', 'points')})"
+def details_text(count, names=("point", "points")):
+    """What a table's fold says, its `count` items among it, by `names`, the
+    one and the many: "Details (29 points)"."""
+    return f"Details ({count} {plural(count, *names)})"
 
 
 def week_text(week):
@@ -816,6 +958,13 @@ def week_text(week):
         return day_text(week[0])
     start = f"{first.day}" if first.month == last.month else f"{first.day} {first:%b}"
     return f"{start}–{last.day} {last:%b}"
+
+
+def newest_key(day):
+    """The key that sorts, with reverse=True, items by `day`, YYYY-MM-DD or
+    None, from the latest, those with none first, as the most recent of all,
+    each kept in the order given."""
+    return (day is None, day or "")
 
 
 def day_text(day):

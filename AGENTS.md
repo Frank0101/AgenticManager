@@ -45,8 +45,9 @@ tests/repo/              checks of the repo's own integrity: every module and li
                          top-down, every script answers --help, every link to a
                          section in AGENTS.md and each SKILL.md reaches a heading,
                          README.md's table lists every skill with its archetype, a
-                         run's folders and document take the library's names, and
-                         every skill has what its archetype requires
+                         run's folders and document take the library's names, every
+                         skill has what its archetype requires, and every skill runs
+                         only when called by its name
 tests/run.py             runs every skill's tests, each skill in its own process (its own
                          tests are in tests/runner/)
 .claude/skills  ─┐       symlinks to skills/, so the skills load when you run

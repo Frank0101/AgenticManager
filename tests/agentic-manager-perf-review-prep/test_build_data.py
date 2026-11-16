@@ -179,7 +179,7 @@ class BuildDataTest(unittest.TestCase):
                              "notes": {"going_well": notes, "to_improve": [], "context": []},
                              "slack": {"going_well": [], "to_improve": [], "context": []}}
                 groups = build_data.observations(
-                    summaries, values)["going_well"]
+                    summaries, [], values)["going_well"]
                 self.assertEqual([(group["value"], point["point"]) for group in groups for point in group["points"]],
                                  expected)
 
@@ -208,9 +208,56 @@ class BuildDataTest(unittest.TestCase):
                 summaries = {"feedback": {"pieces": pieces},
                              "notes": {"going_well": [], "to_improve": [], "context": notes},
                              "slack": {"going_well": [], "to_improve": [], "context": []}}
-                points = build_data.observations(summaries, [])["context"]
+                points = build_data.observations(summaries, [], [])["context"]
                 self.assertEqual([(point["point"], point["source"], point["date"], point["period"],
                                    [item["date"] for item in point["evidence"]]) for point in points], expected)
+
+    def test_split_reviews(self):
+        # name: (the reviews' dates, in their order, the in-period ones', the
+        # previous ones'): a review dated within the period is the period's,
+        # one before it or undated, the most recent, a previous one, in the
+        # order given, one after it neither.
+        cases = [("in the period, edges included", ["2026-11-10", "2026-10-15", "2026-08-10"],
+                  ["2026-11-10", "2026-10-15", "2026-08-10"], []),
+                 ("before the period", [
+                  "2026-08-09", "2025-12-31"], [], ["2026-08-09", "2025-12-31"]),
+                 ("undated, the latest previous one", [None, "2026-09-01", "2026-06-30"], ["2026-09-01"],
+                  [None, "2026-06-30"]),
+                 ("previous given oldest first", ["2025-12-31", "2026-06-30"], [],
+                  ["2026-06-30", "2025-12-31"]),
+                 ("after the period, neither", ["2026-11-11"], [], [])]
+        for name, dates, in_period, previous in cases:
+            with self.subTest(name):
+                found = build_data.split_reviews(
+                    [{"date": day} for day in dates], "2026-08-10", "2026-11-10")
+                self.assertEqual(([piece["date"] for piece in found[0]], [piece["date"] for piece in found[1]]),
+                                 (in_period, previous))
+
+    def test_review_points(self):
+        # An in-period review's points join the observations as a piece's,
+        # by its period, with ids by part and place; the previous reviews
+        # give the step change its baseline, the first of them, its points
+        # with ids, the earlier ones' as texts; none, null.
+        def review(day, period, point):
+            return {"period": period, "date": day, "rating": None, "going_well": [],
+                    "to_improve": [{"point": point, "values": ["Teamwork"]}], "context": [f"{point} context"]}
+        summaries = {"feedback": {"pieces": []}, **{source: {"going_well": [], "to_improve": [], "context": []}
+                                                    for source in ("notes", "slack")}}
+        found = build_data.observations(
+            summaries, [review("2026-09-01", "Q3", "a")], ["Teamwork"])
+        self.assertEqual((found["to_improve"], found["context"]), (
+            [{"value": "Teamwork", "points": [{"id": "I1", "point": "a", "also": None, "source": "reviews",
+                                               "date": "2026-09-01", "period": "Q3", "evidence": []}]}],
+            [{"id": "C1", "point": "a context", "source": "reviews", "date": "2026-09-01", "period": "Q3",
+              "evidence": []}]))
+        self.assertEqual(build_data.previous_reviews(
+            [review(None, None, "b"), review("2026-06-30", "H1", "c")]),
+            {"latest": {"period": None, "date": None, "rating": None, "going_well": [],
+                        "to_improve": [{"id": "R-I1", "point": "b", "values": ["Teamwork"]}],
+                        "context": [{"id": "R-C1", "point": "b context"}]},
+             "earlier": [{"period": "H1", "date": "2026-06-30", "going_well": [], "to_improve": ["c"],
+                          "context": ["c context"]}]})
+        self.assertIsNone(build_data.previous_reviews([]))
 
     def test_model_fixtures(self):
         # name: (a model the report's tests use, worked out by hand): its

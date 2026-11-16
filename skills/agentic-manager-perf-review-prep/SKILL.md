@@ -2,7 +2,7 @@
 name: agentic-manager-perf-review-prep
 disable-model-invocation: true
 description: Helps a manager prepare a performance review of one person over a review period, from the evidence of their work in Jira, GitHub, the documentation, the team's messages and the manager's own notes. In development; not ready to use.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_content.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_content.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_step_change.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *)
 ---
 
 # Performance Review Prep
@@ -22,25 +22,34 @@ perf-review-preps/
     ├── person.json       init_prep.py and set_identities.py write (the person, the period and who they are in each
     │                     source, as the manager confirmed)
     ├── orientation.json  set_summary.py writes (the manager's overall view of the person, summarised)
-    ├── reviews.json      set_summary.py writes (the person's previous performance reviews, each summarised)
+    ├── reviews.json      set_summary.py writes (the person's performance reviews, each summarised: one dated in
+    │                     the period counts as its feedback, the others are previous reviews)
     ├── feedback.json     set_summary.py writes (the person's OKRs, 1:1 notes and recognition in the period, each
     │                     piece summarised)
     ├── notes.json        read_notes.py writes (what the manager's own notes say about the person, merged, with
     │                     their links)
     ├── slack.json        read_slack.py writes (what the person's Slack messages show, merged, with their links)
-    ├── data.json         prepare_report.py writes, through build_data.py, from _raw, feedback.json, notes.json and slack.json (the model
+    ├── data.json         prepare_report.py writes, through build_data.py, from _raw, reviews.json, feedback.json, notes.json and slack.json (the model
     │                     the report reads: by source, the person's Jira issues, pull requests and Notion pages
     │                     in the period, each with its day or week, and their facts: the counts, the issues
     │                     created and resolved by type, the resolved ones by epic, the merged pull requests by
     │                     repository, each main focus, the resolved issues' story points, the merged pull
     │                     requests' lines changed, the series the charts draw and the link to each search; and
-    │                     the points of the feedback, the notes and Slack, going well and to improve, by company
-    │                     value, and context)
-    ├── brief.json        prepare_report.py writes (each table of observations' points, going well, to improve and context, which the observations task summarises)
+    │                     the points of the feedback, the reviews in the period, the notes and Slack, going well
+    │                     and to improve, by company value, and context, each with its id; and the previous
+    │                     reviews, the latest's points with their ids)
+    ├── brief.json        prepare_report.py writes (each table of observations' points, going well, to improve and
+    │                     context, the company values and the work's main focus, which the observations task
+    │                     summarises)
     ├── content.json      set_content.py writes (the summary of each table of observations)
+    ├── step_change_brief.json
+    │                     prepare_report.py writes (each table of observations' points, with their ids, and the
+    │                     previous reviews, which the step change task compares)
+    ├── step_change.json  set_step_change.py writes (the step change from the latest previous review)
     └── Jane-Doe_Review_Prep.md
                           finish_report.py writes (the report for the manager, from the files above: for now,
-                          what is going well and what to improve, by company value, and the context, then the person's GitHub
+                          what is going well and what to improve, by company value, the context and the step change
+                          from the latest previous review, then the person's GitHub
                           and Jira figures, each with its main focus, and the Notion pages they created)
 ```
 
@@ -109,7 +118,7 @@ Ask the manager, in a message of its own:
 
 > Do you have Jane Doe's previous performance reviews, with the colleagues' feedback gathered for them? Paste them, give me paths or links to them, such as PDFs exported from your HR tool, or sum up their main points. Say "none" if there aren't any.
 
-Record their answer as [Summaries](#summaries) says, each review with its rating, as the company's ratings name it, or null when it gives none of them, with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py --prep <prep> --of reviews`.
+Record their answer as [Summaries](#summaries) says, each review with its rating, as the company's ratings name it, or null when it gives none of them, with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py --prep <prep> --of reviews`. A review dated within the period counts as the period's feedback; one dated before it, or undated, as the most recent, is what the report compares the period with.
 
 ## 5. Read the period's OKRs and feedback
 
@@ -138,13 +147,13 @@ The person's work in Jira, GitHub and Notion, in the period. It and step 6 don't
 
 ## 8. Summarise the observations
 
-Once steps 6 and 7 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py --prep <prep>`: it builds `data.json`, the model the report reads, from the raw files and the feedback, notes and Slack summaries, with no network, then `brief.json`, and prints `task`, the line of the task that summarises each table of observations, what is going well, what to improve and the context, from the brief. Give it to a fresh subagent, only its path, with: "Do the task in <path> exactly as written there, then reply in one line." The task holds its own instructions and records the summaries in `content.json` with `set_content.py`, which checks them as they're written. Once it has replied, go on to step 9.
+Once steps 6 and 7 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py --prep <prep>`: it builds `data.json`, the model the report reads, from the raw files and the reviews, feedback, notes and Slack summaries, with no network, then a brief for each task, and prints `tasks`, a line `Task <name>: <path>` for each of its tasks: one summarises each table of observations, what is going well, what to improve and the context, and the other writes the step change from the latest previous review, when there is one. Give each to a fresh subagent, all at once, only its path, with: "Do the task in <path> exactly as written there, then reply in one line." Each task holds its own instructions and records what it writes with a script that checks it as it's written. Once all have replied, go on to step 9.
 
-To change a summary later, as the manager asks, edit it yourself and record every summary again with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_content.py --prep <prep>`, whose `--help` shows the input, then run step 9 again.
+To change a summary or the step change later, as the manager asks, edit it yourself and record it whole again with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_content.py --prep <prep>` or `python3 ${CLAUDE_SKILL_DIR}/scripts/set_step_change.py --prep <prep>`, whose `--help` shows the input, then run step 9 again.
 
 ## 9. Finish
 
-Run `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py --prep <prep>`: it checks `content.json` field by field, then writes the report, `<Person>_Review_Prep.md`, and its charts from `data.json` and `content.json`, and checks the whole prep. If its `problems` aren't empty, fix what each names by running again the step that writes that file, step 8 for `content.json`, then run it again; if you can't, stop and tell the manager what they say.
+Run `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py --prep <prep>`: it checks `content.json` and `step_change.json` field by field, then writes the report, `<Person>_Review_Prep.md`, and its charts from `data.json`, `content.json` and `step_change.json`, and checks the whole prep. If its `problems` aren't empty, fix what each names by running again the step that writes that file, step 8 for `content.json` and `step_change.json`, then run it again; if you can't, stop and tell the manager what they say.
 
 ## 10. Tell the manager
 

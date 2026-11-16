@@ -1,6 +1,6 @@
 # Summarise what is going well, what to improve and the context
 
-A manager is preparing a performance review of the person named below. Other agents read the manager's notes, the person's Slack messages and the feedback the person received in the period, and turned them into points, each of what is going well or what to improve grouped under the company value it shows most. The report shows them as three tables, what is going well, what to improve and the context. Write a summary of each table, which the report shows above it, the table folded below as the detail: the manager reads the summary first, to see the picture without going through every point.
+A manager is preparing a performance review of the person named below. Other agents read the manager's notes, the person's Slack messages and the feedback and reviews the person received in the period, and turned them into points, each of what is going well or what to improve grouped under the company value it shows most. The report shows them as three tables, what is going well, what to improve and the context. Write a summary of each table, which the report shows above it, the table folded below as the detail: the manager reads the summary first, to see the picture without going through every point.
 
 ## What to read
 

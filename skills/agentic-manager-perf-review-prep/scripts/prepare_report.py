@@ -1,52 +1,81 @@
-"""Prepares everything a prep's report needs before its summaries are written: builds data.json, then brief.json, then the task that writes the summaries.
+"""Prepares everything a prep's report needs before its summaries are written: builds data.json, then the two briefs, then the two tasks, the one that writes the summaries and the one that writes the step change.
 
 Everything the report is built from was gathered in the steps before, so
-what is left is the model, the brief and the task. Each stays a module of
+what is left is the model, the briefs and the tasks. Each stays a module of
 its own, build_data.py's and make_brief.py's, testable and rerunnable alone;
-this only saves the agent running them one by one, in order, as the brief
-reads the model. The summaries are a subagent's task, as their rules and
-examples are long: the protocol holds them, so the skill's instructions
-don't.
+this only saves the agent running them in order. The summaries and the step
+change are independent subagents' tasks, as their rules and examples are
+long: each protocol holds its own, and each agent reads only its brief.
 """
 import argparse
 import json
 
 from build_data import build_data
-from common import (FOLDER_NAME, PROTOCOL, OBSERVATIONS_WORDS, fill_protocol, script_command,
-                    submit_section, work_folder, write_task_file)
-from make_brief import write_brief
+from common import (FOLDER_NAME, PROTOCOL, OBSERVATIONS_WORDS, STEP_CHANGE_SHAPE, fill_protocol, script_command,
+                    read_json, submit_section, work_folder, write_task_file)
+from make_brief import write_briefs
 from reading import person_section
+from set_step_change import set_step_change
 
 OBSERVATIONS_TASK = "observations"
+STEP_CHANGE_TASK = "step-change"
 
 
 def prepare(prep):
-    """Build the prep `prep`'s data.json, then its brief.json, then write
-    the summaries' task; returns {brief, task}: the brief's path and the
-    line that hands the task out, 'Task observations: <path>'."""
-    build_data(prep)
-    brief = write_brief(prep)
-    task = write_task_file(work_folder(FOLDER_NAME, prep, OBSERVATIONS_TASK), OBSERVATIONS_TASK,
-                           summary_task(prep, brief))
-    return {"brief": brief, "task": task}
+    """Build the prep `prep`'s data.json, then its briefs, then write the
+    summaries' task and the step change's, or, with no previous review,
+    record the step change as null; returns {briefs, tasks}: the briefs'
+    paths and the lines that hand the tasks out, 'Task observations: <path>'
+    and 'Task step-change: <path>'."""
+    data = read_json(build_data(prep))
+    brief, step_change_brief = write_briefs(prep)
+    texts = [(OBSERVATIONS_TASK, summary_task(prep, brief))]
+    if data["reviews"]:
+        texts.append((STEP_CHANGE_TASK, step_change_task(
+            prep, step_change_brief)))
+    else:
+        # Null needs no judgement: no agent is started to write it.
+        set_step_change(prep, None)
+    tasks = [write_task_file(work_folder(FOLDER_NAME, prep, name), name, text)
+             for name, text in texts]
+    return {"briefs": [brief, step_change_brief], "tasks": tasks}
 
 
 def summary_task(prep, brief):
     """The text of the task that writes the prep `prep`'s summaries from
     the brief at `brief`: its protocol, the person, the brief and how to
     submit."""
-    command = f"{script_command(__file__, 'set_content.py')} --prep {prep}"
-    return "\n\n".join([fill_protocol(PROTOCOL, OBSERVATIONS_TASK, {"observations_words": OBSERVATIONS_WORDS["going_well"], "context_words": OBSERVATIONS_WORDS["context"]}), person_section(prep),
-                        f"## The brief\n\n{brief}",
-                        submit_section(command, '{"going_well": "...", "to_improve": "...", "context": "..."}')])
+    words = {"observations_words": OBSERVATIONS_WORDS["going_well"],
+             "context_words": OBSERVATIONS_WORDS["context"]}
+    return task_text(prep, OBSERVATIONS_TASK, words, brief, "set_content.py",
+                     '{"going_well": "...", "to_improve": "...", "context": "..."}')
+
+
+def step_change_task(prep, brief):
+    """The text of the task that writes the prep `prep`'s step change from
+    the brief at `brief`: its protocol, the person, the brief and how to
+    submit."""
+    return task_text(prep, STEP_CHANGE_TASK, {"step_change_words": OBSERVATIONS_WORDS["step_change"]}, brief,
+                     "set_step_change.py", STEP_CHANGE_SHAPE)
+
+
+def task_text(prep, name, words, brief, script, answer):
+    """The text of the task `name` of the prep `prep`: its protocol, filled
+    with `words`, the person, the brief at `brief`, and how to submit
+    `answer`, its shape, with `script`."""
+    command = f"{script_command(__file__, script)} --prep {prep}"
+    return "\n\n".join([fill_protocol(PROTOCOL, name, words), person_section(prep), f"## The brief\n\n{brief}",
+                        submit_section(command, answer)])
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Build the prep's data.json from what was gathered, then brief.json, then the task that "
-        "writes the summary of each table of observations.",
-        epilog="Prints one line of JSON: brief, brief.json's path, and task, the line that hands the summaries' "
-        "task out, 'Task observations: <path>'.")
+        description="Build the prep's data.json from what was gathered, then its briefs, brief.json and "
+        "step_change_brief.json, then the two tasks: the one that writes the summary of each table of "
+        "observations, and the one that writes the step change from the latest previous review.",
+        epilog="Prints one line of JSON: briefs, the two briefs' paths, and tasks, the lines that hand the tasks "
+        "out, 'Task observations: <path>' and 'Task step-change: <path>'. With no previous review, the step "
+        "change is recorded as null and has no task.")
     parser.add_argument("--prep", required=True,
                         help="the prep's folder, <Person>_<YY-MM-DD>, as init_prep.py printed it")
     args = parser.parse_args(argv)

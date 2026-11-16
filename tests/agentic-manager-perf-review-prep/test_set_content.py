@@ -22,8 +22,11 @@ class SetContentTest(unittest.TestCase):
         # nothing, with every problem.
         folder = temp_output(self)
         write_prep(folder, content=None, report=False)
-        with self.assertRaisesRegex(SystemExit, "to_improve is empty"):
-            set_content.set_content(PREP, {**CONTENT, "to_improve": ""})
+        cases = [("a summary empty", {**CONTENT, "to_improve": ""}, "to_improve is empty"),
+                 ("a step change too", {**CONTENT, "step_change": None}, "content.json must be")]
+        for name, value, expected in cases:
+            with self.subTest(name), self.assertRaisesRegex(SystemExit, f"{expected}(.|\n)*END_OF_INPUT"):
+                set_content.set_content(PREP, value)
         self.assertFalse(os.path.exists(
             os.path.join(folder, PREP, "content.json")))
         self.assertEqual(common.read_json(

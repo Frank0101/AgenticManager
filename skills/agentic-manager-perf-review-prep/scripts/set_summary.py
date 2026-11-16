@@ -45,14 +45,14 @@ every previous review, such as:
 
   python3 set_summary.py --prep Jane-Doe_26-11-10 --of reviews <<'END_OF_INPUT'
   {"pieces": [
-    {"period": "Mid Year Review 2026", "date": "2026-06-30", "rating": "Meets",
-     "going_well": [{"point": "Jane delivered the billing migration on time", "values": ["Ownership"]}],
-     "to_improve": [{"point": "Jane could lead a design review alone", "values": []}],
-     "context": ["Jane moved to the payments team in March"]},
     {"period": null, "date": null, "rating": null,
      "going_well": [{"point": "Jane built a community of practice that reaches other teams",
                      "values": ["Teamwork", "Ownership"]}],
-     "to_improve": [], "context": []}
+     "to_improve": [], "context": []},
+    {"period": "Mid Year Review 2026", "date": "2026-06-30", "rating": "Meets",
+     "going_well": [{"point": "Jane delivered the billing migration on time", "values": ["Ownership"]}],
+     "to_improve": [{"point": "Jane could lead a design review alone", "values": []}],
+     "context": ["Jane moved to the payments team in March"]}
   ]}
   END_OF_INPUT
 

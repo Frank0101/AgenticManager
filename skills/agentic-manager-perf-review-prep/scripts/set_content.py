@@ -1,4 +1,4 @@
-"""Records the summary of each table of observations in a prep's content.json, which the report shows above the table.
+"""Records the summary of each table of observations in a prep's content.json, which the report shows above each table.
 
 The summaries are checked against data.json, the tables they summarise,
 before anything is written, by the rule the final check applies, so a
@@ -19,12 +19,12 @@ INPUT = f"""Input, on stdin: the summary of each table, such as:
    "context": "A paragraph."}}
   END_OF_INPUT
 
-  going_well  the summary of what is going well, about {OBSERVATIONS_WORDS["going_well"]} words, fewer
-              for a table of few points,
-              naming every company value its table groups points under
-  to_improve  the same, of what to improve
-  context     the same, of the context, about {OBSERVATIONS_WORDS["context"]} words, naming
-              no company value
+  going_well   the summary of what is going well, about {OBSERVATIONS_WORDS["going_well"]} words, fewer
+               for a table of few points,
+               naming every company value its table groups points under
+  to_improve   the same, of what to improve
+  context      the same, of the context, about {OBSERVATIONS_WORDS["context"]} words, naming
+               no company value
 
 A summary is empty, "", exactly when its table holds no point.
 

@@ -24,10 +24,20 @@ PERSON = {"person": "Jane Doe", "start": "2026-08-10", "end": "2026-11-10",
 ORIENTATION = {"going_well": [{"point": "Has led the billing migration well since May", "values": ["Ownership"]}],
                "to_improve": [{"point": "Could share progress with the wider team more often", "values": []}],
                "context": ["Came back from a long leave in May"]}
+# The reviews, the most recent first: one in PERSON's period, whose points
+# join the observations as feedback's do, then the previous ones, the latest
+# of them, PIECE, the step change's baseline, and an earlier one.
+REVIEW_IN_PERIOD = {"period": "Q3 Check-in 2026", "date": "2026-10-15", "rating": None, "going_well": [],
+                    "to_improve": [{"point": "Could raise risks earlier in planning", "values": ["Ownership"]}],
+                    "context": []}
 PIECE = {"period": "Mid Year Review 2026", "date": "2026-06-30", "rating": "Meets",
          "going_well": [{"point": "Delivered the billing migration on time", "values": ["Ownership"]}],
-         "to_improve": [{"point": "Could lead a design review alone", "values": ["Teamwork"]}], "context": []}
-REVIEWS = {"pieces": [PIECE]}
+         "to_improve": [{"point": "Could lead a design review alone", "values": ["Teamwork"]},
+                        {"point": "Flagged delays only when asked", "values": ["Ownership"]}], "context": []}
+EARLIER_REVIEW = {"period": "Annual Review 2025", "date": "2025-12-31", "rating": "Meets", "going_well": [],
+                  "to_improve": [{"point": "Flagged delays only when asked", "values": ["Ownership"]}],
+                  "context": ["Joined the billing team in the autumn"]}
+REVIEWS = {"pieces": [REVIEW_IN_PERIOD, PIECE, EARLIER_REVIEW]}
 NOTE = {"period": "Q3 2026", "date": "2026-09-30",
         "going_well": [{"point": "Agreed to own the billing migration and has kept to its plan",
                         "values": ["Ownership"]}],
@@ -113,38 +123,52 @@ def weekly(*indexes):
     return [indexes.count(n) for n in range(len(WEEKS))]
 
 
-# The Observations section's points, worked out by hand from FEEDBACK, NOTES and
-# SLACK: going well, under Teamwork, which has the most, Slack's, of 3
-# September, before the notes', of 2 September, then under Ownership the Q3
-# piece's; to improve, under Ownership, the notes' point, its evidence the
-# most recent first; context, not grouped, the notes' point first, as its one
-# evidence, a page's, is undated, then the Q3 piece's, of 30 September, then
-# Slack's, of 20 August.
+# The Observations section's points, worked out by hand from FEEDBACK,
+# REVIEW_IN_PERIOD, NOTES and SLACK, each with its id by its place: going
+# well, under Teamwork, which has the most, Slack's, of 3 September, before
+# the notes', of 2 September, then under Ownership the Q3 piece's; to
+# improve, under Ownership, the review's, of 15 October, then the notes'
+# point, its evidence the most recent first; context, not grouped, the notes'
+# point first, as its one evidence, a page's, is undated, then the Q3
+# piece's, of 30 September, then Slack's, of 20 August.
 OBSERVATIONS = {
     "going_well": [
         {"value": "Teamwork", "points": [
-            {"point": "Explained the outage's cause in the incident channel, and colleagues thanked them", "also": None,
+            {"id": "G1", "point": "Explained the outage's cause in the incident channel, and colleagues thanked them", "also": None,
              "source": "slack", "date": "2026-09-03", "period": None,
              "evidence": [{"date": "2026-09-03", "link": "https://acme.slack.com/archives/C1/p1"}]},
-            {"point": "Presented the migration to the wider team", "also": "Ownership", "source": "notes", "date": "2026-09-02",
+            {"id": "G2", "point": "Presented the migration to the wider team", "also": "Ownership", "source": "notes", "date": "2026-09-02",
              "period": None,
              "evidence": [{"date": "2026-09-02", "link": "/vault/journals/2026_09_02.md"}]}]},
         {"value": "Ownership", "points": [
-            {"point": "Agreed to own the billing migration and has kept to its plan", "also": None, "source": "feedback",
+            {"id": "G3", "point": "Agreed to own the billing migration and has kept to its plan", "also": None, "source": "feedback",
              "date": "2026-09-30", "period": "Q3 2026", "evidence": []}]}],
     "to_improve": [
         {"value": "Ownership", "points": [
-            {"point": "Didn't flag delays until asked, many times", "also": None, "source": "notes", "date": "2026-10-01",
+            {"id": "I1", "point": "Could raise risks earlier in planning", "also": None, "source": "reviews",
+             "date": "2026-10-15", "period": "Q3 Check-in 2026", "evidence": []},
+            {"id": "I2", "point": "Didn't flag delays until asked, many times", "also": None, "source": "notes", "date": "2026-10-01",
              "period": None,
              "evidence": [{"date": "2026-10-01", "link": "/vault/journals/2026_10_01.md"},
                           {"date": "2026-08-20", "link": "/vault/journals/2026_08_20.md"}]}]}],
     "context": [
-        {"point": "Moved to the payments team in the summer", "source": "notes", "date": None, "period": None,
+        {"id": "C1", "point": "Moved to the payments team in the summer", "source": "notes", "date": None, "period": None,
          "evidence": [{"date": None, "link": "/vault/pages/Jane.md"}]},
-        {"point": "Is preparing a promotion case with the manager", "source": "feedback", "date": "2026-09-30",
+        {"id": "C2", "point": "Is preparing a promotion case with the manager", "source": "feedback", "date": "2026-09-30",
          "period": "Q3 2026", "evidence": []},
-        {"point": "Posted the billing rollout plan in a cross-team channel", "source": "slack", "date": "2026-08-20",
+        {"id": "C3", "point": "Posted the billing rollout plan in a cross-team channel", "source": "slack", "date": "2026-08-20",
          "period": None, "evidence": [{"date": "2026-08-20", "link": "https://acme.slack.com/archives/C2/p2"}]}]}
+# The previous reviews as data.json holds them: the latest, PIECE, its
+# points with their ids, and the earlier one's points as texts.
+PREVIOUS_REVIEWS = {
+    "latest": {"period": "Mid Year Review 2026", "date": "2026-06-30", "rating": "Meets",
+               "going_well": [{"id": "R-G1", "point": "Delivered the billing migration on time",
+                               "values": ["Ownership"]}],
+               "to_improve": [{"id": "R-I1", "point": "Could lead a design review alone", "values": ["Teamwork"]},
+                              {"id": "R-I2", "point": "Flagged delays only when asked", "values": ["Ownership"]}],
+               "context": []},
+    "earlier": [{"period": "Annual Review 2025", "date": "2025-12-31", "going_well": [],
+                 "to_improve": ["Flagged delays only when asked"], "context": ["Joined the billing team in the autumn"]}]}
 DATA = {"weeks": WEEKS,
         "jira": {**WORK_ITEMS["jira"], "counts": {"created": 1, "resolved": 1},
                  "epic_order": ["PROJ-1"],
@@ -183,7 +207,7 @@ DATA = {"weeks": WEEKS,
                                         "&type=pullrequests"}},
         "notion": {"created": [{**page, "week": ["2026-08-10", "2026-08-16"]} for page in WORK_ITEMS["notion"]["created"]],
                    "counts": {"created": 1}},
-        "observations": OBSERVATIONS}
+        "observations": OBSERVATIONS, "reviews": PREVIOUS_REVIEWS}
 # Two more Jira models, worked out by hand, each changing DATA's resolved
 # issues and the facts they give. In the first, the issues with no epic hold
 # the most, so the main focus lists them before the epic: PROJ-12 and PROJ-14
@@ -231,33 +255,62 @@ VALUE_NAMES = [value["value"] for value in VALUES]
 # which it writes relative to it.
 REPORT_FOLDER = "/vault/.out/perf-review-preps/Jane-Doe_26-11-10"
 # The summaries the Observations section is built from, by their source.
-SUMMARIES = {"feedback": FEEDBACK, "notes": NOTES, "slack": SLACK}
-# The agent's summaries of the three tables, and the brief it writes them
-# from, worked out by hand from DATA: the work's main focus, and each
-# table's points in its order, with the values each names, its source and
-# when it was seen.
+SUMMARIES = {"reviews": REVIEWS, "feedback": FEEDBACK,
+             "notes": NOTES, "slack": SLACK}
+# The agent's summaries of the three tables and its step change, and the
+# briefs it writes them from, worked out by hand from DATA: the work's main
+# focus, and each table's points in its order, with the values each names,
+# its source and when it was seen, and for the step change their ids and the
+# previous reviews.
 CONTENT = {"going_well": "Jane explains outages to the teams around them and presented the billing migration to the "
            "wider team, showing Teamwork, and has owned the migration and kept to its plan, reflecting Ownership.",
            "to_improve": "Jane flagged delays only when asked, many times, where Ownership calls for raising them "
            "early.",
            "context": "Jane moved to the payments team in the summer and is preparing a promotion case with the "
            "manager."}
+# The design review is no longer raised; flagging delays, raised in
+# both previous reviews, still is; the migration held; and the move to
+# payments, a period context point, is new since the review.
+STEP_CHANGE = {"summary": "Jane no longer needs support to lead a design review, but still flags delays only when "
+               "asked, as both previous reviews said.",
+               "rows": [{"review_point": "R-G1", "change": "held", "evidence": ["G3"]},
+                        {"review_point": "R-I2", "change": "still_to_improve",
+                            "evidence": ["I2", "I1"]},
+                        {"review_point": None, "change": "new_context",
+                            "evidence": ["C1"]},
+                        {"review_point": "R-I1", "change": "improved", "evidence": []}]}
+# A variant whose latest review has a context point, R-C1, that changed in
+# the period, C2: its row, context_change, comes before the new context's.
+CONTEXT_POINT = "Had no promotion case planned yet"
+CONTEXT_SUMMARIES = {**SUMMARIES, "reviews": {"pieces": [REVIEW_IN_PERIOD, {**PIECE, "context": [CONTEXT_POINT]},
+                                                         EARLIER_REVIEW]}}
+CONTEXT_DATA = {**DATA, "reviews": {**PREVIOUS_REVIEWS, "latest": {
+    **PREVIOUS_REVIEWS["latest"], "context": [{"id": "R-C1", "point": CONTEXT_POINT}]}}}
+CONTEXT_STEP_CHANGE = {**STEP_CHANGE, "rows": [
+    *STEP_CHANGE["rows"], {"review_point": "R-C1", "change": "context_change", "evidence": ["C2"]}]}
+STEP_CHANGE_BRIEF = {"person": "Jane Doe",
+                     "going_well": [{"id": "G1", "point": "Explained the outage's cause in the incident channel, and colleagues "
+                                     "thanked them", "values": ["Teamwork"], "source": "Slack", "when": "2026-09-03"},
+                                    {"id": "G2", "point": "Presented the migration to the wider team",
+                                     "values": ["Teamwork", "Ownership"], "source": "Manager's notes", "when": "2026-09-02"},
+                                    {"id": "G3", "point": "Agreed to own the billing migration and has kept to its plan",
+                                     "values": ["Ownership"], "source": "Feedback", "when": "Q3 2026"}],
+                     "to_improve": [{"id": "I1", "point": "Could raise risks earlier in planning", "values": ["Ownership"],
+                                     "source": "Review", "when": "Q3 Check-in 2026"},
+                                    {"id": "I2", "point": "Didn't flag delays until asked, many times", "values": ["Ownership"],
+                                     "source": "Manager's notes", "when": "2026-10-01"}],
+                     "context": [{"id": "C1", "point": "Moved to the payments team in the summer", "source": "Manager's notes",
+                                  "when": None},
+                                 {"id": "C2", "point": "Is preparing a promotion case with the manager", "source": "Feedback",
+                                  "when": "Q3 2026"},
+                                 {"id": "C3", "point": "Posted the billing rollout plan in a cross-team channel", "source": "Slack",
+                                  "when": "2026-08-20"}],
+                     "reviews": PREVIOUS_REVIEWS}
 BRIEF = {"person": "Jane Doe", "values": VALUES,
          "focus": {"github": [{"repo": "acme/billing", "prs": 1, "share": 100}],
                    "jira": [{"key": "PROJ-1", "title": "Billing", "issues": 1, "share": 100}]},
-         "going_well": [{"point": "Explained the outage's cause in the incident channel, and colleagues thanked them",
-                         "values": ["Teamwork"], "source": "Slack", "when": "2026-09-03"},
-                        {"point": "Presented the migration to the wider team", "values": ["Teamwork", "Ownership"],
-                         "source": "Manager's notes", "when": "2026-09-02"},
-                        {"point": "Agreed to own the billing migration and has kept to its plan",
-                         "values": ["Ownership"], "source": "Feedback", "when": "Q3 2026"}],
-         "to_improve": [{"point": "Didn't flag delays until asked, many times", "values": ["Ownership"],
-                         "source": "Manager's notes", "when": "2026-10-01"}],
-         "context": [{"point": "Moved to the payments team in the summer", "source": "Manager's notes", "when": None},
-                     {"point": "Is preparing a promotion case with the manager", "source": "Feedback",
-                      "when": "Q3 2026"},
-                     {"point": "Posted the billing rollout plan in a cross-team channel", "source": "Slack",
-                      "when": "2026-08-20"}]}
+         **{part: [{key: value for key, value in point.items() if key != "id"} for point in STEP_CHANGE_BRIEF[part]]
+            for part in ("going_well", "to_improve", "context")}}
 RATINGS = [{"rating": "Below", "meaning": "Misses most expectations"},
            {"rating": "Meets", "meaning": "Meets every expectation"},
            {"rating": "Exceeds", "meaning": "Goes beyond most expectations"}]
@@ -286,14 +339,17 @@ def temp_output(test):
 
 def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
                reviews=REVIEWS, feedback=FEEDBACK, notes=NOTES, data=DATA, slack=SLACK, raw_work=WORK_RAW,
-               brief=BRIEF, content=CONTENT, report=True):
+               brief=BRIEF, content=CONTENT, step_change_brief=STEP_CHANGE_BRIEF, step_change=STEP_CHANGE,
+               report=True):
     """Writes the prep `prep` in the output folder `folder`, holding `person`,
-    `orientation`, `reviews`, `feedback`, `notes`, `data`, `slack`, `brief`
-    and `content`, each left out when None, the _raw folder, with
-    `raw_work`, each source's raw file, unless None, and, with `report` and
-    both a person and data, the report as finish_report.py writes it, with its
-    charts, each an empty drawing, its summaries CONTENT's when `content` is
-    None, as if content.json went after the report was written."""
+    `orientation`, `reviews`, `feedback`, `notes`, `data`, `slack`, `brief`,
+    `content`, `step_change_brief` and `step_change`, each left out when
+    None, the _raw folder, with `raw_work`, each source's raw file, unless
+    None, and, with `report` and both a person and data, the report as
+    finish_report.py writes it, with its charts, each an empty drawing, its
+    summaries CONTENT's when `content` is None and its step change
+    STEP_CHANGE's when `step_change` is, as if they went after the report
+    was written."""
     os.makedirs(os.path.join(folder, prep, "_raw"), exist_ok=True)
     for source, lists in (raw_work or {}).items():
         with open(os.path.join(folder, prep, "_raw", f"{source}.json"), "w", encoding="utf-8") as f:
@@ -303,7 +359,9 @@ def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
                         ("feedback.json", feedback), ("notes.json", notes),
                         ("data.json", data), ("slack.json",
                                               slack), ("brief.json", brief),
-                        ("content.json", content)):
+                        ("content.json", content), ("step_change_brief.json",
+                                                    step_change_brief),
+                        ("step_change.json", step_change)):
         if value is not None:
             with open(os.path.join(folder, prep, name), "w", encoding="utf-8") as f:
                 json.dump(value, f)
@@ -315,4 +373,5 @@ def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
                 f.write("<svg/>")
         with open(os.path.join(folder, prep, common.report_name(prep)), "w", encoding="utf-8") as f:
             f.write(make_report.render(
-                person, data, os.path.join(folder, prep), content or CONTENT))
+                person, data, os.path.join(folder, prep), content or CONTENT,
+                step_change or STEP_CHANGE))

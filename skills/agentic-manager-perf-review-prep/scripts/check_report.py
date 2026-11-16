@@ -1,4 +1,4 @@
-"""Checks a prep's report against data.json: that it shows every GitHub and Jira figure, each main focus, the charts' series and the Notion pages created as the items give them, and the observations' points, going well, to improve and context, as the summaries give them, each table under content.json's summary of it.
+"""Checks a prep's report against data.json: that it shows every GitHub and Jira figure, each main focus, the charts' series and the Notion pages created as the items give them, the observations' points, going well, to improve and context, as the summaries give them, each table under content.json's summary of it, then the step change, step_change.json's, as it reads against the previous reviews and the period's points.
 
 It reads each figure back from the report and works it out again from the
 items, apart from data.json's facts and from make_report.py, with which it
@@ -10,13 +10,17 @@ from datetime import date, timedelta
 import html
 import re
 
-from common import (BINS_PER_DECADE, CHARTS_DIR, OBSERVATION_HEADINGS, OBSERVATION_SOURCES, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS, NO_VALUE,
-                    PAGES_HEADING, VALUED_PARTS, average_text, details_text, link_href, reference_text, project_of, repo_code, repos_text, size_text, types_text,
+from common import (BINS_PER_DECADE, CHARTS_DIR, NOT_APPLICABLE, NOT_RAISED, OBSERVATION_HEADINGS, OBSERVATION_SOURCES, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS, NO_VALUE,
+                    PAGES_HEADING, STEP_CHANGE_HEADING, STEP_CHANGES, SUMMARY_PARTS, VALUED_PARTS, ai_marked, average_text, details_text, link_href, point_id, reference_text, project_of, repo_code, repos_text, size_text, step_change_problems, types_text,
                     week_text)
 
-# The report's sections, in order, each where its heading starts it.
-SECTION_HEADINGS = ("\n## Observations\n", "\n## GitHub\n",
-                    "\n## Jira\n", "\n## Notion\n")
+# The report's sections, in order, each where its heading starts it, the
+# heading marked as the agent's when the agent wrote its text, as the step
+# change's is when there is a previous review.
+SECTION_HEADINGS = ("Observations", STEP_CHANGE_HEADING,
+                    "GitHub", "Jira", "Notion")
+SECTION = re.compile(
+    rf"\n## ({'|'.join(map(re.escape, SECTION_HEADINGS))})({re.escape(ai_marked(''))})?\n")
 # The start of a row of a table grouped as the Notion pages and the Observations
 # points are: its group's cell, on the group's first row only, with how many
 # rows it spans and the group's name.
@@ -33,9 +37,14 @@ OBSERVATION_PART = re.compile(r"<b>([^<]+)</b>((?:(?!<b>).)*)", re.S)
 DETAILS = re.compile(r"<details><summary>([^<]*)</summary>")
 OBSERVATION_ROW = re.compile(GROUP_CELL + r'<td>([^<]*)</td><td>([^<]*)</td><td>([^<]*)</td>'
                              r'<td>(.*?)</td></tr>')
-# A context point's row, not grouped: its text, its source and its reference.
+# A context point's row, not grouped: its text, its source and its reference;
+# a step change's row is read the same way: its review point, its change and
+# its evidence, each cited point's text, then its source and reference in
+# brackets, one to a line.
 CONTEXT_ROW = re.compile(
     r'<tr valign="top"><td>([^<]*)</td><td>([^<]*)</td><td>(.*?)</td></tr>')
+CITED = re.compile(
+    rf"(.*) \(({'|'.join(map(re.escape, OBSERVATION_SOURCES.values()))}): (.*)\)", re.S)
 LINK = re.compile(r'<a href="([^"]+)">([^<]*)</a>')
 # A Jira main focus entry as the report writes it: its epic's link, key and
 # title, or the link of the issues with no epic, or a project's key alone,
@@ -54,26 +63,28 @@ CHART = re.compile(
     rf'<td><a href="{CHARTS_DIR}/([^"]+)" target="_blank"><img src="{CHARTS_DIR}/\1"')
 
 
-def report_problems(report, data, summaries, values, folder, content):
+def report_problems(report, data, summaries, values, folder, content, step_change):
     """Why `report`, the report's text, doesn't show `data`, data.json, and
     `summaries`, the feedback's pieces, the notes' summary and Slack's, by
-    SUMMARY_FILES' names, with `values`, the company's, empty when it does:
+    SUMMARY_FILES' names, the reviews among them, with `values`, the
+    company's, empty when it does:
     each count, total, average and median, each
     breakdown and each link to its search, each main focus, the series the
     charts draw, the Notion pages created and the observations' points, a note's
     link relative to `folder`, the report's, each table under its summary in
-    `content`, content.json."""
-    sections = re.split(
-        "(" + "|".join(map(re.escape, SECTION_HEADINGS)) + ")", report)
-    if tuple(sections[1::2]) != SECTION_HEADINGS:
-        return ["the report must have its Observations section, then its GitHub one, its Jira one and its "
-                "Notion one: run finish_report.py again"]
-    observations_text, github_text, jira_text, notion_text = sections[2::2]
+    `content`, content.json, and the step change, `step_change`,
+    step_change.json."""
+    sections = SECTION.split(report)
+    if tuple(sections[1::3]) != SECTION_HEADINGS:
+        return ["the report must have its Observations section, then its Step change one, its GitHub one, its "
+                "Jira one and its Notion one: run finish_report.py again"]
+    observations_text, step_text, github_text, jira_text, notion_text = sections[3::3]
+    step_marked = sections[2::3][1] is not None
     return _jira_problems(jira_text, data["jira"], data["weeks"]) + \
         _github_problems(github_text, data["github"], data["weeks"]) + \
         _notion_problems(notion_text, data["notion"], (data["weeks"][0][0], data["weeks"][-1][1])) + \
-        _observations_problems(
-            observations_text, summaries, values, folder, content)
+        _observations_problems(observations_text, (step_text, step_marked), summaries, values,
+                               folder, content, step_change, (data["weeks"][0][0], data["weeks"][-1][1]), data)
 
 
 # Jira.
@@ -278,19 +289,25 @@ def _notion_problems(text, notion, period):
 
 # Observations.
 
-def _observations_problems(text, summaries, values, folder, content):
+def _observations_problems(text, step, summaries, values, folder, content, step_change, span, data):
     """Why `text`, the report's Observations section, doesn't show the points of
-    `summaries` going well and to improve, each part's table by the first of
+    `summaries` going well and to improve, the reviews dated in `span`,
+    its first and last day, among them, each part's table by the first of
     `values` each names, the second it names beside it, those with the most points first, in their order
     when as many, those naming none last, then those of context, not
     grouped, each part's the most recent first, by its piece's date or its
     latest dated evidence's, undated first, and its evidence too, those of a
     day in the order given, a note's link relative to `folder`, the
-    report's, each table folded under its summary in `content`, empty when
-    it does."""
+    report's, each table folded under its summary in `content`, then
+    `step`, the Step change section, showing `step_change` by
+    _step_change_problems(), empty when it does."""
+    reviews = summaries["reviews"]["pieces"]
+
     def rows(part):
-        found = [(piece["date"], value(point), text_of(point), also(point), "feedback", [], piece["period"] or "–")
-                 for piece in summaries["feedback"]["pieces"] for point in piece[part]]
+        pieces = [*(("feedback", piece) for piece in summaries["feedback"]["pieces"]),
+                  *(("reviews", piece) for piece in reviews if piece["date"] and span[0] <= piece["date"] <= span[1])]
+        found = [(piece["date"], value(point), text_of(point), also(point), source, [], piece["period"] or "–")
+                 for source, piece in pieces for point in piece[part]]
         for source in ("notes", "slack"):
             for point in summaries[source][part]:
                 days = sorted(point["evidence"], key=newest, reverse=True)
@@ -327,8 +344,13 @@ def _observations_problems(text, summaries, values, folder, content):
     def also(point):
         return named(point)[1] if len(named(point)) > 1 else ""
     parts = dict(OBSERVATION_PART.findall(text))
+    # Each period point by its id, (text, source, links, period), as a step
+    # change row cites it.
+    cited = {}
     for part, heading in OBSERVATION_HEADINGS.items():
         expected = rows(part)
+        cited |= {point_id(part, number): (row[1], *row[3:]) if part in VALUED_PARTS else row
+                  for number, row in enumerate(expected, 1)}
         table = parts.get(heading)
         if table is None:
             return [f"the report's {heading} points don't show the summaries': run finish_report.py again"]
@@ -347,7 +369,55 @@ def _observations_problems(text, summaries, values, folder, content):
             return [f"the report's {heading} points don't show the summaries': run finish_report.py again"]
         if expected and content[part].strip() not in table.split("<details>", 1)[0]:
             return [f"the report's {heading} summary isn't content.json's: run finish_report.py again"]
+    previous = sorted((piece for piece in reviews if not piece["date"] or piece["date"] < span[0]),
+                      key=lambda piece: piece["date"] or "~", reverse=True)
+    step_text, marked = step
+    return _step_change_problems(step_text, marked, previous, cited, step_change, data)
+
+
+def _step_change_problems(text, marked, previous, cited, step, data):
+    """Why `text`, the Step change section, its heading `marked` as the
+    agent's or not, doesn't show `step`, step_change.json, empty when it does:
+    with no `previous` review, its heading, unmarked, and N/A alone; else
+    its heading marked as the agent's, its summary, then its table, folded,
+    each row the latest review's point, the first of `previous`, after its
+    part, or – for none, its change's label and each point it cites, by its
+    id in `cited`, or NOT_RAISED, ordered by change, then by the review
+    point's order, those with none last. The step change must first follow
+    step_change_problems() against `data`, data.json."""
+    if problems := step_change_problems(step, data["observations"], data["reviews"]):
+        return problems
+    if not previous:
+        if marked or text.strip() != NOT_APPLICABLE:
+            return ["the report's step change must say N/A, as there is no previous review: run finish_report.py "
+                    "again"]
+        return []
+    review = {point_id(name, number, review=True): f"{OBSERVATION_HEADINGS[name]}: {point if isinstance(point, str) else point['point']}"
+              for name in SUMMARY_PARTS for number, point in enumerate(previous[0][name], 1)}
+    order = [*review, None]
+    expected = [(review[row["review_point"]] if row["review_point"] else "–", STEP_CHANGES[row["change"]],
+                 [cited[item] for item in row["evidence"]] or NOT_RAISED)
+                for row in sorted(step["rows"], key=lambda row: (list(STEP_CHANGES).index(row["change"]),
+                                                                 order.index(row["review_point"])))]
+    shown = [(html.unescape(point), change, _cited(evidence))
+             for point, change, evidence in CONTEXT_ROW.findall(text)]
+    details = DETAILS.search(text)
+    if not marked or step["summary"].strip() not in text.split("<details>", 1)[0]:
+        return ["the report's step change summary isn't step_change.json's: run finish_report.py again"]
+    if (details[1] if details else None, shown) != (
+            details_text(len(expected), ("change", "changes")) if expected else None, expected):
+        return ["the report's step change rows don't show step_change.json's: run finish_report.py again"]
     return []
+
+
+def _cited(evidence):
+    """A step change row's evidence cell, `evidence`, as the report writes
+    it: NOT_RAISED, or each point it cites, (text, source, links, period),
+    its reference read by _reference()."""
+    if evidence == NOT_RAISED:
+        return NOT_RAISED
+    return [(html.unescape(found[1]), found[2], *_reference(found[3])) if (found := CITED.fullmatch(item))
+            else (item,) for item in evidence.split("<br>")]
 
 
 def _reference(reference):

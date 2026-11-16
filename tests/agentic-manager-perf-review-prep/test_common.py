@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import (NOTE, NOTES, VALUE_NAMES, ORIENTATION, PERSON, PIECE, PREP, SLACK, NOTION_SEARCHES, PLAN_RESULT, DATA, WORK_ITEMS, WORK_RAW,  # noqa: E402
+from prep_fixture import (STEP_CHANGE, OBSERVATIONS, PREVIOUS_REVIEWS, NOTE, NOTES, VALUE_NAMES, ORIENTATION, PERSON, PIECE, PREP, SLACK, NOTION_SEARCHES, PLAN_RESULT, DATA, WORK_ITEMS, WORK_RAW,  # noqa: E402
                            temp_output, write_prep)  # noqa: E402
 
 TODAY = date(2026, 11, 10)
@@ -399,8 +399,10 @@ class CommonTest(unittest.TestCase):
                   (1, 1, 1), f"more than {common.OBSERVATIONS_WORDS['going_well']}: cut it"),
                  ("context too long", {**summaries, "context": "word " * (common.MAX_OBSERVATIONS_WORDS["context"] + 1)},
                   (1, 1, 1), f"more than {common.OBSERVATIONS_WORDS['context']}: cut it"),
-                 ("a field missing", {
-                  "going_well": "Good.", "to_improve": "Better."}, (1, 1, 1), 'must be {"going_well"'),
+                 ("a field missing", {"going_well": "Good.", "to_improve": "Better."}, (1, 1, 1),
+                  'must be {"going_well"'),
+                 ("a field too many", {**summaries, "step_change": None}, (1, 1, 1),
+                  'must be {"going_well"'),
                  ("a value not named", {**summaries, "going_well": "Good teamwork.", "to_improve": ""},
                   (["Teamwork", "Ownership", None], 0, 1), "doesn't name Ownership"),
                  ("context not summarised", {**summaries, "context": ""}, (1, 1, 1),
@@ -421,6 +423,96 @@ class CommonTest(unittest.TestCase):
                     self.assertEqual(problems, "")
                 else:
                     self.assertIn(expected, problems)
+
+    def test_step_change_problems(self):
+        # name: (a change to the fixture's step change, the previous
+        # reviews, expected in its problems, or None for none): against the
+        # latest review, each to-improve point has a row, improved,
+        # still_to_improve or worsened; a going-well point held or worsened;
+        # a review context point context_change; a row with no review point
+        # new_context, citing a period context point; each change but improved cites period
+        # points by id, each once; no review point twice; the summary not
+        # empty nor over its ceiling; null exactly when there is no review.
+        step = STEP_CHANGE
+        rows = step["rows"]
+
+        def row(review_point, change, *evidence):
+            return {"review_point": review_point, "change": change, "evidence": list(evidence)}
+        context_review = {**PREVIOUS_REVIEWS, "latest": {**PREVIOUS_REVIEWS["latest"],
+                                                         "context": [{"id": "R-C1", "point": "Was new to billing"}]}}
+        long = "word " * (common.MAX_OBSERVATIONS_WORDS["step_change"] + 1)
+        cases = [("as written", step, PREVIOUS_REVIEWS, None),
+                 ("only the to-improve rows", {**step, "rows": [row("R-I1", "improved"),
+                                                                row("R-I2", "worsened", "I2")]},
+                  PREVIOUS_REVIEWS, None),
+                 ("improved with evidence", {**step, "rows": [row("R-I1", "improved", "G2"),
+                                                              row("R-I2", "improved")]}, PREVIOUS_REVIEWS, None),
+                 ("a review context point", {**step, "rows": [*rows, row("R-C1", "context_change", "C2")]},
+                  context_review, None),
+                 ("a review context point new", {**step, "rows": [*rows, row("R-C1", "new_context", "C2")]},
+                  context_review, "row 5's change, 'new_context', must be context_change for a context point"),
+                 ("two rows with no review point", {**step, "rows": [*rows, row(None, "new_context", "C2")]},
+                  PREVIOUS_REVIEWS, None),
+                 ("no previous review, null", None, None, None),
+                 ("no previous review, a step change", step, None, "must be null"),
+                 ("a previous review, null", None,
+                  PREVIOUS_REVIEWS, "must be {\"summary\""),
+                 ("a to-improve point with no row", {**step, "rows": rows[:1]}, PREVIOUS_REVIEWS,
+                  "no row for R-I1, R-I2"),
+                 ("a to-improve point held", {**step, "rows": [*rows[:3], row("R-I1", "held", "G1")]},
+                  PREVIOUS_REVIEWS, "row 4's change, 'held', must be improved or still_to_improve or worsened"),
+                 ("a going-well point improved", {**step, "rows": [row("R-G1", "improved"), *rows[1:]]},
+                  PREVIOUS_REVIEWS, "row 1's change, 'improved', must be held or worsened"),
+                 ("a row with no review point not context", {**step, "rows": [*rows, row(None, "worsened", "I1")]},
+                  PREVIOUS_REVIEWS, "must be new_context for a row with no review_point"),
+                 ("a row with no review point changed", {**step, "rows": [*rows, row(None, "context_change", "C2")]},
+                  PREVIOUS_REVIEWS, "row 5's change, 'context_change', must be new_context for a row with no "
+                  "review_point"),
+                 ("a row with no review point citing no context",
+                  {**step, "rows": [*rows,
+                                    row(None, "new_context", "G1")]}, PREVIOUS_REVIEWS,
+                  "row 5 has no review_point, so its evidence must cite the period context point"),
+                 ("still to improve with no evidence", {**step, "rows": [*rows[:1], row("R-I2", "still_to_improve"),
+                                                                         *rows[2:]]},
+                  PREVIOUS_REVIEWS, "row 2's evidence is empty"),
+                 ("held with no evidence", {**step, "rows": [row("R-G1", "held"), *rows[1:]]},
+                  PREVIOUS_REVIEWS, "row 1's evidence is empty"),
+                 ("an id that isn't a period point", {**step, "rows": [row("R-G1", "held", "G9"), *rows[1:]]},
+                  PREVIOUS_REVIEWS, "row 1's evidence names G9, not points of the period"),
+                 ("an id cited twice", {**step, "rows": [row("R-G1", "held", "G3", "G3"), *rows[1:]]},
+                  PREVIOUS_REVIEWS, "row 1's evidence names a point more than once"),
+                 ("a review point that isn't one", {**step, "rows": [*rows, row("R-G2", "held", "G1")]},
+                  PREVIOUS_REVIEWS, "row 5's review_point, 'R-G2', must be one of the latest review's points"),
+                 ("a review point twice", {**step, "rows": [*rows, row("R-I1", "improved")]},
+                  PREVIOUS_REVIEWS, "row 5's review_point, R-I1, has a row already"),
+                 ("a row's field missing", {**step, "rows": [*rows, {"review_point": "R-I1", "change": "improved"}]},
+                  PREVIOUS_REVIEWS, "row 5 must be"),
+                 ("an empty summary", {**step, "summary": " "},
+                  PREVIOUS_REVIEWS, "summary is empty"),
+                 ("a summary too long", {**step, "summary": long}, PREVIOUS_REVIEWS,
+                  f"summary has {common.MAX_OBSERVATIONS_WORDS['step_change'] + 1} words, more than "
+                  f"{common.OBSERVATIONS_WORDS['step_change']}: cut it to about "
+                  f"{common.OBSERVATIONS_WORDS['step_change']}")]
+        for name, step_change, reviews, expected in cases:
+            with self.subTest(name):
+                problems = " ".join(common.step_change_problems(
+                    step_change, OBSERVATIONS, reviews))
+                if expected is None:
+                    self.assertEqual(problems, "")
+                else:
+                    self.assertIn(expected, problems)
+                    self.assertNotIn(
+                        str(common.MAX_OBSERVATIONS_WORDS["step_change"]), problems)
+
+    def test_point_ids(self):
+        # name: (part, place, review, id): by part and place, a review's
+        # prefixed.
+        cases = [("going well", "going_well", 1, False, "G1"), ("to improve", "to_improve", 2, False, "I2"),
+                 ("context", "context", 3, False, "C3"), ("a review's", "to_improve", 1, True, "R-I1")]
+        for name, part, number, review, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(common.point_id(
+                    part, number, review), expected)
 
 
 class ReferenceTextTest(unittest.TestCase):

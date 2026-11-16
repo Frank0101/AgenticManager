@@ -1,6 +1,7 @@
 ---
 name: agentic-manager-slides-deck
-description: Turns a conversation into an HTML slide deck - infers the kind of presentation (pitch, business review, townhall, report, roadmap, status update), asks a few qualifying questions one at a time, then builds a deck of fixed-size slides with zoom and PDF export, from a reference the user gives, from a library of described slide layouts or as plain slides to focus on the content, and iterates on it with the user. Use when the user asks for slides, a deck or a presentation, or to change the deck built in the same conversation.
+disable-model-invocation: true
+description: Turns a conversation into an HTML slide deck - infers the kind of presentation (pitch, business review, townhall, report, roadmap, status update), asks a few qualifying questions one at a time, then builds a deck of fixed-size slides with zoom and PDF export, from a reference the user gives, from a library of described slide layouts or as plain slides to focus on the content, and iterates on it with the user.
 allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_deck.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/add_asset.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/save_example.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_deck.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/snap_deck.py *)
 ---
 

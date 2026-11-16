@@ -13,7 +13,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Callable
 
-from common import (FOLDER_NAME, PERSON, POINT_LIMITS, PROTOCOL, json_text, RAW_DIR, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
+from common import (FOLDER_NAME, newest_key, PERSON, POINT_LIMITS, PROTOCOL, json_text, RAW_DIR, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
                     fill_protocol, is_point, library_command, point_fields, point_shape, prep_dir, script_command, read_json, stdin_json,
                     submit_section, summary_problems, task_line, word_count, work_folder, write_raw,
                     write_prep_file, write_task_file)
@@ -255,8 +255,7 @@ def newest_first(text):
     YYYY-MM-DD, from the latest, those that don't first, each kept in the
     order given."""
     day = text[:10]
-    dated = len(day) == 10 and day[4] == "-" and day[7] == "-"
-    return (not dated, day if dated else "")
+    return newest_key(day if len(day) == 10 and day[4] == "-" and day[7] == "-" else None)
 
 
 # Checking the answers.

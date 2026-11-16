@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import common  # noqa: E402
 import finish_report  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import PREP, temp_output, write_prep  # noqa: E402
+from prep_fixture import CONTENT, PREP, STEP_CHANGE, temp_output, write_prep  # noqa: E402
 
 
 class FinishReportTest(unittest.TestCase):
@@ -26,16 +26,30 @@ class FinishReportTest(unittest.TestCase):
                          ([], sorted(common.CHART_FILES)))
 
     def test_content_first(self):
-        # Nothing written while content.json is missing or breaks a rule,
-        # each problem naming its field.
-        folder = temp_output(self)
-        write_prep(folder, content=None, report=False)
-        self.assertEqual(finish_report.finish(PREP), {"report": None, "problems": [
-            "content.json is missing: write it, as step 8 says"]})
-        write_prep(folder, content={
-                   "going_well": "", "to_improve": "Better."}, report=False)
-        self.assertEqual((finish_report.finish(PREP)["report"], os.path.exists(os.path.join(folder, PREP, common.CHARTS_DIR))),
-                         (None, False))
+        # name: (content.json, step_change.json, expected problems, or a
+        # text in them): nothing written while either is missing or breaks a
+        # rule, each problem naming its file and field.
+        cases = [("both missing", None, None, ["content.json is missing: write it, as step 8's observations task says",
+                                               "step_change.json is missing: write it, as step 8's step-change task "
+                                               "says"]),
+                 ("the step change missing", CONTENT, None,
+                  ["step_change.json is missing: write it, as step 8's step-change task says"]),
+                 ("a summary breaking a rule", {
+                  **CONTENT, "going_well": ""}, STEP_CHANGE, "going_well is empty"),
+                 ("the step change breaking a rule", CONTENT, {**STEP_CHANGE, "rows": []},
+                  "step_change.json has no row for R-I1, R-I2")]
+        for name, content, step_change, expected in cases:
+            with self.subTest(name):
+                folder = temp_output(self)
+                write_prep(folder, content=content,
+                           step_change=step_change, report=False)
+                made = finish_report.finish(PREP)
+                self.assertEqual((made["report"], os.path.exists(os.path.join(folder, PREP, common.CHARTS_DIR))),
+                                 (None, False))
+                if isinstance(expected, list):
+                    self.assertEqual(made["problems"], expected)
+                else:
+                    self.assertIn(expected, " ".join(made["problems"]))
 
 
 if __name__ == "__main__":
