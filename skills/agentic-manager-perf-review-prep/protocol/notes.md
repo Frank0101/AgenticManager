@@ -21,6 +21,7 @@ Say what the note says about the person:
 | "Jane said in Slack 'on it', but didn't move the ticket - to check", with "-> all fine, in progress" nested under it | The manager wondered whether Jane had started a ticket that hadn't moved, then found it was in progress, all fine | What is nested under a note is how it ended: the synopsis says both                               |
 | "Jane, Sam and Alex in the planning sync"                                                                            | Jane is named only among the planning sync's attendees                                                            | A name in a list says nothing of what Jane did: the synopsis says so, and the merge leaves it out |
 | "Ask Jane about the rollout"                                                                                         | A to-do for the manager: ask Jane about the rollout                                                               | The manager's own to-do, not something Jane did                                                   |
+| "Jane is the only one who gave me the Q3 milestones I asked for, on time"                                            | Jane was the only one to send the manager the Q3 milestones the manager had asked for, on time                    | Jane handed over a plan, not the milestones met: the synopsis keeps the verb that says which      |
 
 ## Links and writing
 
