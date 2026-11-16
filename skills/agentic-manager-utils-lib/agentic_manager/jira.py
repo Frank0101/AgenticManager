@@ -106,6 +106,8 @@ class JiraClient:
         self._auth = "Basic " + base64.b64encode(credentials).decode()
         self.excluded = frozenset(settings[EXCLUDED])
         self._visible = None
+        # (the account's time zone,) once whoami() has read it.
+        self._time_zone = None
 
     def _is_excluded(self, key):
         """Whether issue `key`, or project `key`, is of an excluded project."""
@@ -156,8 +158,19 @@ class JiraClient:
         return f"{where} {ordering.strip()}".strip()
 
     def whoami(self):
-        """The authenticated user profile, including displayName and timeZone."""
-        return self._get("/rest/api/3/myself")
+        """The authenticated user profile, including displayName and timeZone,
+        which time_zone() keeps."""
+        profile = self._get("/rest/api/3/myself")
+        self._time_zone = (profile.get("timeZone"),)
+        return profile
+
+    def time_zone(self):
+        """The time zone the account's profile names, such as Europe/London,
+        or None when it names none: read from Jira once per client, by
+        whoami() unless it has already run."""
+        if self._time_zone is None:
+            return self.whoami().get("timeZone")
+        return self._time_zone[0]
 
     def users(self, query):
         """The people Jira's user search finds for `query`, a name or an email:
@@ -435,8 +448,7 @@ class JiraClient:
         same changes."""
         for issue in issues:
             self._refuse_excluded(issue["key"])
-        zone = ZoneInfo(self.whoami().get("timeZone")
-                        or "UTC") if issues else None
+        zone = ZoneInfo(self.time_zone() or "UTC") if issues else None
         keys = {str(issue["id"]): issue["key"] for issue in issues}
         histories = {issue_id: [] for issue_id in keys}
         logged = set()
@@ -662,6 +674,12 @@ def project_of(key):
     """The project key of issue `key`, up to its last hyphen: PROJ for
     PROJ-12; "" for a key without one, such as a project key."""
     return key.rpartition("-")[0]
+
+
+def is_sub_task(fields):
+    """Whether the issue whose fields are `fields`, as Jira gives them, is a
+    sub-task, by its issue type."""
+    return bool(nested(fields, ["issuetype", "subtask"]))
 
 
 def parse_ts(ts):

@@ -15,10 +15,10 @@ import json
 import os
 import re
 
-from common import (BLOCKED_BY, CONTENT, json_text, DESIGN_ORDER, FOLDER_NAME, LEDGER, SCOPE_QUESTION, TABLES,
+from common import (BLOCKED_BY, CONTENT, DESIGN_ORDER, FOLDER_NAME, LEDGER, SCOPE_QUESTION, TABLES,
                     clear_folder, ids, investigation_dir, plain, report_path, read_json, library_command, script_command,
-                    stdin_json, stops_on_failure, strip_anchors,
-                    topic_of, work_folder, write_output_file)
+                    stdin_json, stops_on_failure, submit_section, write_task,
+                    topic_of, work_folder, write_output_json)
 from init_investigation import init, usable_sources
 from ledger import (as_written, basis, brief, design_basis, depends_on, load, move_row, save, scope_decisions,
                     table_rows)
@@ -30,9 +30,6 @@ import protocol
 
 # A question's task, such as research:Q03.
 RESEARCH_TASK = re.compile(r"research:(Q\d+)")
-# Each task is written to a file in its own folder, which next prints, so an
-# agent is handed the task by its path and keeps its work beside it.
-TASK_FILE = "task.md"
 
 
 def start(topic):
@@ -107,14 +104,8 @@ def next_tasks(relative, maximum=1, resume=False):
 def write_tasks(relative, lines, tasks):
     """Write each of `tasks` to its file in its folder; returns a line for
     each, with the task's name and the file's path."""
-    out = []
-    for task in tasks:
-        path = os.path.join(task_folder(relative, task), TASK_FILE)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(render(relative, lines, task) + "\n")
-        out.append(f"Task {task}: {path}")
-    return "\n".join(out)
+    return "\n".join(write_task(task_folder(relative, task), task, render(relative, lines, task))
+                     for task in tasks)
 
 
 def submit(relative, task, data):
@@ -218,7 +209,7 @@ def render(relative, lines, task):
         if problems := report_problems(relative):
             body += ["## Problems with the last text submitted",
                      "", *(f"- {p}" for p in problems), ""]
-        body += ["## The brief", "", strip_anchors(brief(lines))]
+        body += ["## The brief", "", brief(lines)]
     else:
         folder, _, temporary = investigation_dir(relative)
         return "\n".join([*head, protocol.text("finished", **values), "",
@@ -230,14 +221,13 @@ def render(relative, lines, task):
     name = task.partition(":")[0]
     example = protocol.compact(protocol.example(name))
     if task == "write":
-        command = [f"{call()} submit --investigation {relative} --task write --input <your file>", "",
-                   "The file's shape:", example]
+        submit = ["## Submit", "", "Submit the answer with this command, the JSON replaced by yours; the example "
+                  "shows its fields:", "", f"{call()} submit --investigation {relative} --task write --input <your file>",
+                  "", "The file's shape:", example]
     else:
-        command = [
-            f"{call()} submit --investigation {relative} --task {task} <<'EOF'", example, "EOF"]
-    return "\n".join([*head, *body, "", "## Submit", "",
-                      "Submit the answer with this command, the JSON replaced by yours; the example shows its "
-                      "fields:", "", *command])
+        submit = [submit_section(
+            f"{call()} submit --investigation {relative} --task {task}", example)]
+    return "\n".join([*head, *body, "", *submit])
 
 
 def work_dir(relative):
@@ -303,14 +293,14 @@ def question_context(lines, ident):
     completed = {row[0]: row for row in table_rows(lines, "queue-completed")}
     out = ["## The question", "", f"{ident}: {plain(row[2])}", f"Raised by: {plain(row[1])}",
            "", "## The scope the user decided so far", "", *(scope_decisions(lines) or ["None yet."])]
-    raised = design_row_lines(lines, ids(strip_anchors(row[1]), "CBEIP"))
+    raised = design_row_lines(lines, ids(row[1], "CBEIP"))
     # Research never reads the ledger, so every finding the question, what
     # raised it or its design row names is shown.
-    named = " ".join([strip_anchors(row[1]), strip_anchors(row[2]), *raised])
+    named = " ".join([row[1], row[2], *raised])
     builds_on = [f for f in ids(named, "F") if f in findings]
     for need in depends_on(row):
-        builds_on += [f for f in ids(strip_anchors(
-            completed.get(need, [""])[-1]), "F") if f in findings]
+        builds_on += [f for f in ids(completed.get(need, [""])[-1], "F")
+                      if f in findings]
     if builds_on:
         out += ["", "It builds on these findings:"]
         out += [f"- {f}: {plain(findings[f][1])} ({plain(findings[f][2])})" for f in dict.fromkeys(builds_on)]
@@ -374,7 +364,7 @@ def report_problems(relative):
     folder, _, _ = investigation_dir(relative)
     report = report_path(folder)
     if os.path.isfile(report):
-        checked = check_report.check_report(report, handover=True)
+        checked = check_report.check_report(report)
         return [] if checked["ok"] else checked["errors"]
     if os.path.isfile(os.path.join(folder, CONTENT)):
         return make_report.content_problems(relative) or ["the report wasn't generated: submit the text again"]
@@ -388,8 +378,7 @@ def submit_report(relative, data):
     if not isinstance(data, dict):
         raise SystemExit(
             "the text is a JSON object, in the shape the write task shows")
-    write_output_file(FOLDER_NAME, f"{relative}/{CONTENT}",
-                      json_text(data).encode("utf-8"))
+    write_output_json(FOLDER_NAME, f"{relative}/{CONTENT}", data)
     return finish(relative)
 
 

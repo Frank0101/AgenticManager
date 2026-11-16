@@ -79,6 +79,11 @@ class ConfigTest(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIs(config.is_text_list(value), ok)
 
+    def test_is_number(self):
+        for value, ok in [(0, True), (2.5, True), (True, False), ("3", False), (None, False)]:
+            with self.subTest(value=value):
+                self.assertIs(config.is_number(value), ok)
+
     def test_has_filled_entry(self):
         # One field of one entry filled in is enough; placeholders and blanks
         # aren't values.

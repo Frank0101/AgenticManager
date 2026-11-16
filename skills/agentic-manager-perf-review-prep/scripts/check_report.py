@@ -1,4 +1,4 @@
-"""Checks a prep's report against data.json: that it shows every GitHub and Jira figure, each main focus, the charts' series and the Notion pages created as the items give them, and the observations' points as the summaries give them, each table under content.json's summary of it, and holds only its charts.
+"""Checks a prep's report against data.json: that it shows every GitHub and Jira figure, each main focus, the charts' series and the Notion pages created as the items give them, and the observations' points as the summaries give them, each table under content.json's summary of it.
 
 It reads each figure back from the report and works it out again from the
 items, apart from data.json's facts and from make_report.py, with which it
@@ -10,7 +10,7 @@ from datetime import date, timedelta
 import html
 import re
 
-from common import (BINS_PER_DECADE, CHART_FILES, CHARTS_DIR, OBSERVATION_HEADINGS, OBSERVATION_SOURCES, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS, NO_VALUE,
+from common import (BINS_PER_DECADE, CHARTS_DIR, OBSERVATION_HEADINGS, OBSERVATION_SOURCES, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS, NO_VALUE,
                     PAGES_HEADING, REFERENCE_NAMES, VALUED_PARTS, average_text, day_text, details_text, link_href, project_of, repo_code, repos_text, size_text, types_text,
                     week_text)
 
@@ -51,26 +51,22 @@ CHART = re.compile(
     rf'<td><a href="{CHARTS_DIR}/([^"]+)" target="_blank"><img src="{CHARTS_DIR}/\1"')
 
 
-def report_problems(report, data, charts, summaries, values, folder, content):
+def report_problems(report, data, summaries, values, folder, content):
     """Why `report`, the report's text, doesn't show `data`, data.json, and
     `summaries`, the feedback's pieces, the notes' summary and Slack's, by
-    SUMMARY_FILES' names, with `values`, the company's, or `charts`, the
-    files in the charts folder, those starting with a dot aside, aren't its
-    charts, empty when they are: each count, total, average and median, each
+    SUMMARY_FILES' names, with `values`, the company's, empty when it does:
+    each count, total, average and median, each
     breakdown and each link to its search, each main focus, the series the
     charts draw, the Notion pages created and the observations' points, a note's
     link relative to `folder`, the report's, each table under its summary in
     `content`, content.json."""
-    charts = [name for name in charts if not name.startswith(".")]
-    problems = [] if sorted(charts) == sorted(CHART_FILES) else [
-        f"the charts folder must hold only {', '.join(CHART_FILES)}: run finish_report.py again"]
     sections = re.split(
         "(" + "|".join(map(re.escape, SECTION_HEADINGS)) + ")", report)
     if tuple(sections[1::2]) != SECTION_HEADINGS:
-        return problems + ["the report must have its Observations section, then its GitHub one, its Jira one and its "
-                           "Notion one: run finish_report.py again"]
+        return ["the report must have its Observations section, then its GitHub one, its Jira one and its "
+                "Notion one: run finish_report.py again"]
     observations_text, github_text, jira_text, notion_text = sections[2::2]
-    return problems + _jira_problems(jira_text, data["jira"], data["weeks"]) + \
+    return _jira_problems(jira_text, data["jira"], data["weeks"]) + \
         _github_problems(github_text, data["github"], data["weeks"]) + \
         _notion_problems(notion_text, data["notion"], (data["weeks"][0][0], data["weeks"][-1][1])) + \
         _observations_problems(

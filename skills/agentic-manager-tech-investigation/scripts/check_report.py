@@ -1,6 +1,8 @@
 """Checks a report and its ledger, read-only: their structure, links and local
-files, and, at handover, the rules a finished investigation meets. It checks
-the form of the evidence, not whether it is true.
+files, and the rules a finished investigation meets. It checks the form of the
+evidence, not whether it is true. The ledger's structure is checked on its own
+too, since it holds while research is still open; the rules of a finished one
+only with the report.
 
 It recognizes the skill's ordinary Markdown output, not every Markdown
 extension.
@@ -17,15 +19,12 @@ from common import (folder_problem, CELL_PIPE, CITATION, DEFINITION, DESIGN_ORDE
                     unlinked_references, unrecorded_ids, without_code)
 
 
-def check_report(report, handover=False):
-    """The result of checking `report` and its ledger, {ok, errors, warnings};
-    with `handover`, the handover rules too."""
+def check_report(report):
+    """The result of checking `report` and its ledger, handed over together,
+    {ok, errors, warnings}."""
     report = Path(report)
     errors, warnings = [], []
     result = {"ok": False, "errors": errors, "warnings": warnings}
-    if not report.is_absolute():
-        errors.append("The report's path must be absolute.")
-        return result
     try:
         text = report.read_text(encoding="utf-8")
     except (OSError, UnicodeError):
@@ -69,13 +68,19 @@ def check_report(report, handover=False):
         if not path.exists():
             errors.append(
                 f"Line {line}: local link target is missing: {target}")
+    ledger_text = ""
     if not (report.parent / LEDGER).is_file():
         errors.append(f"Missing research artifact: {LEDGER}.")
     else:
-        ledger_errors, ledger_warnings = check_ledger(
-            report.parent / LEDGER, handover)
+        ledger_errors, ledger_warnings = check_ledger(report.parent / LEDGER)
         errors += ledger_errors
         warnings += ledger_warnings
+        try:
+            ledger_text = (report.parent / LEDGER).read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            pass
+        if ledger_text:
+            errors += handover_problems(markdown(ledger_text)[0])
     # Every table row carries its evidence: a source link or a ledger link.
     for line, row in report_table_rows(prose):
         citations = [target for _, _, image, target in links(
@@ -83,33 +88,24 @@ def check_report(report, handover=False):
         if not citations and not re.search(r"https?://[^\s<>]+", row):
             errors.append(
                 f"Line {line}: table row needs a point-of-use source link or a ledger link.")
-    if handover:
-        if problem := folder_problem(str(report.parent), expected_files(report.name)):
-            errors.append(problem)
-        try:
-            ledger_text = (report.parent / LEDGER).read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
-            ledger_text = ""
-        # The report's tickets are linked from the ledger's links, so those say
-        # which projects a ticket key can be linked to.
-        spans = unlinked_backticks(prose, ledger_text)
-        if spans:
-            errors.append(backtick_error(report.name, spans))
+    if problem := folder_problem(str(report.parent), expected_files(report.name)):
+        errors.append(problem)
+    # The report's tickets are linked from the ledger's links, so those say
+    # which projects a ticket key can be linked to.
+    spans = unlinked_backticks(prose, ledger_text)
+    if spans:
+        errors.append(backtick_error(report.name, spans))
     if unlinked := unlinked_references(prose):
         errors.append(reference_error(report.name, unlinked))
     result["ok"] = not errors
     return result
 
 
-def check_ledger(path, handover=False):
-    """(errors, warnings) of the ledger's structure, and at handover of its
-    rows. It checks its sections and the queue's in order, findings written
-    once and every one cited written, every ticket and pull request linked,
-    and, at handover, a queue with nothing left ready or in progress,
-    completed questions answered, blocked ones naming what blocks them, the
-    rows of scope boundaries, sources, findings, gaps, decisions, components
-    and the system design within their rules, code read for every component
-    claiming it, and linked sources."""
+def check_ledger(path):
+    """(errors, warnings) of the ledger's structure: its sections and the
+    queue's in order, findings written once, within their length, and every
+    one cited written, reference links defined, and every ticket and pull
+    request linked."""
     errors, warnings = [], []
     try:
         text = path.read_text(encoding="utf-8")
@@ -161,27 +157,37 @@ def check_ledger(path, handover=False):
             f"{LEDGER}: definitions in ## {LINKS} never used: " + ", ".join(unused_keys))
     if unlinked := unlinked_references(without_queries(body)):
         errors.append(reference_error(LEDGER, unlinked))
-    if handover:
-        errors += [f"{LEDGER}: {p}" for p in closing_problems(body)]
-        # Findings are checked against their own table above, once.
-        unrecorded = [i for i in unrecorded_ids(body) if not i.startswith("F")]
-        if unrecorded:
-            errors.append(
-                f"{LEDGER}: IDs cited but never recorded: " + ", ".join(unrecorded))
-        if any(row[0].startswith("Q") for table in ("queue-ready", "queue-in-progress")
-               for row in ledger_rows(body, TABLE_HEADINGS[table])):
-            errors.append(
-                f"{LEDGER}: questions are still ready or in progress; answer or block them before handover")
-        mismatched = source_finding_problems(
-            body) + derived_state_problems(body)
-        if mismatched:
-            errors.append(f"{LEDGER}: a column the script writes differs from what it is written from ("
-                          + "; ".join(mismatched) + "). The ledger was edited by hand: change it only through investigate.py submit, "
-                          "which keeps them in step")
-        spans = unlinked_backticks(without_queries(body))
-        if spans:
-            errors.append(backtick_error(LEDGER, spans))
     return errors, warnings
+
+
+def handover_problems(body):
+    """The errors of the ledger `body` that a finished investigation can't
+    have: a queue with a question left ready or in progress, completed
+    questions not answered, blocked ones not naming what blocks them, rows of
+    scope boundaries, sources, findings, gaps, decisions and the system design
+    outside their rules, IDs cited but not recorded, columns the script writes
+    edited by hand, and references in backticks without a link."""
+    errors = [f"{LEDGER}: {p}" for p in closing_problems(body)]
+    # Findings are checked against their own table by check_ledger, once.
+    unrecorded = [i for i in unrecorded_ids(body) if not i.startswith("F")]
+    if unrecorded:
+        errors.append(
+            f"{LEDGER}: IDs cited but never recorded: " + ", ".join(unrecorded))
+    if any(row[0].startswith("Q") for table in ("queue-ready", "queue-in-progress")
+           for row in ledger_rows(body, TABLE_HEADINGS[table])):
+        errors.append(
+            f"{LEDGER}: questions are still ready or in progress; answer or block them before handover")
+    mismatched = source_finding_problems(
+        body) + derived_state_problems(body)
+    if mismatched:
+        errors.append(f"{LEDGER}: a column the script writes differs from what it is written from ("
+                      + "; ".join(mismatched) +
+                      "). The ledger was edited by hand: change it only through investigate.py submit, "
+                      "which keeps them in step")
+    spans = unlinked_backticks(without_queries(body))
+    if spans:
+        errors.append(backtick_error(LEDGER, spans))
+    return errors
 
 
 def report_table_rows(prose):

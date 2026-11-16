@@ -18,15 +18,16 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.commands import library_command, script_command, stdin_json  # noqa: E402,F401
-from agentic_manager.config import company_setting  # noqa: E402,F401
+from agentic_manager.config import company_setting, is_number  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
 from agentic_manager.github import commit_authors, gh_json, gh_orgs, profile_name, dated_query, pull_search_url, require_gh, search_pulls, selection  # noqa: E402,F401
-from agentic_manager.jira import JiraClient, browse_url, plain_text, project_of, search_url as jira_search_url  # noqa: E402,F401
+from agentic_manager.jira import JiraClient, browse_url, is_sub_task, plain_text, project_of, search_url as jira_search_url  # noqa: E402,F401
 from agentic_manager.logseq import graph_path, links, notes, page_aliases  # noqa: E402,F401
-from agentic_manager.output_file import json_text, read_json, target, write_output_file  # noqa: E402,F401
+from agentic_manager.output_file import json_text, read_json, write_output_file, write_output_json  # noqa: E402,F401
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
-from agentic_manager.output_folder import CHARTS_DIR, DAY_FOLDER, RAW_DIR, clear_folder, day_folder, document_name, folder_problem, folder_subject, output_folder, work_folder  # noqa: E402,F401
+from agentic_manager.output_folder import CHARTS_DIR, RAW_DIR, clear_folder, document_name, folder_problem, folder_subject, new_run, output_folder, run_folder, work_folder  # noqa: E402,F401
 from agentic_manager.period import add_period_arguments, days, is_day, period_problem, shown  # noqa: E402,F401
+from agentic_manager.tasks import submit_section, task_line, write_task as write_task_file  # noqa: E402,F401
 from agentic_manager.svg import GRID, SURFACE, INK, MUTED, arc_segment, esc, legend, nice_step, svg, text, text_width  # noqa: E402,F401
 from agentic_manager.text import SMALL_TYPE, ai_marked, as_name, number, plural, word_count  # noqa: E402,F401
 
@@ -201,11 +202,14 @@ REFERENCE_NAMES = {"notes": "Journal", "slack": "Slack"}
 SUMMARY_FILES = {"feedback": FEEDBACK, "notes": NOTES, "slack": SLACK}
 # What the agent reads to summarise each table of observations, made from
 # data.json, and the summaries it writes, one per table, a few flowing
-# paragraphs above it: about SUMMARY_WORDS words at most, a length that is
-# room, not a quota, so only more is refused.
+# paragraphs above it: about OBSERVATIONS_WORDS words, fewer for a table of
+# few points, MAX_OBSERVATIONS_WORDS only for one of many themes. An agent
+# given a ceiling alone writes up to it, so the target is what it aims for,
+# and only more than the ceiling is refused.
 BRIEF = "brief.json"
 CONTENT = "content.json"
-SUMMARY_WORDS = 200
+OBSERVATIONS_WORDS = 200
+MAX_OBSERVATIONS_WORDS = 300
 # The chart of the resolved issues by epic, beside the main focus.
 EPICS_CHART = "jira_epics.svg"
 # The GitHub cells of the report, in order, as the Jira ones, and the chart
@@ -221,8 +225,9 @@ def expected_files(prep):
     """Every file the prep folder `prep` holds, and nothing else: the person,
     the period and who they are in each source, the manager's view of them,
     their previous reviews, the period's feedback, the manager's notes on
-    them, what their Slack messages show, the report's data, the _raw folder
-    of what each source gave, and the report with its _charts folder."""
+    them, what their Slack messages show, the report's data, the brief of
+    its observations and the agent's summaries of them, the _raw folder of
+    what each source gave, and the report with its _charts folder."""
     return {PERSON, ORIENTATION, REVIEWS, FEEDBACK, NOTES, SLACK, DATA, BRIEF, CONTENT, RAW_DIR, report_name(prep),
             CHARTS_DIR}
 
@@ -400,7 +405,7 @@ def epic_of(fields, parents):
     it, or None: its parent, or for a sub-task, whose parent is a story, the
     story's parent, from `parents`, {key: story}."""
     parent = fields.get("parent")
-    if fields["issuetype"].get("subtask") and parent:
+    if is_sub_task(fields) and parent:
         return ((parents.get(parent["key"]) or {}).get("fields") or {}).get("parent")
     return parent
 
@@ -439,8 +444,7 @@ def _is_work_item(source, name, item, days):
                 and isinstance(item.get("between"), list) and len(item["between"]) == 2
                 and all(day in days for day in item["between"]))
     points = item.get("points") if isinstance(item, dict) else None
-    return _is_item(item, days, dated=True) and (source != "jira" or points is None or (
-        isinstance(points, (int, float)) and not isinstance(points, bool)))
+    return _is_item(item, days, dated=True) and (source != "jira" or points is None or is_number(points))
 
 
 def _is_item(item, days, dated):
@@ -457,21 +461,13 @@ def prep_dir(prep):
     """The absolute path of the prep folder `prep` inside the skill's output
     folder. Exits if `prep` isn't a prep folder name, <Person>_<YY-MM-DD>,
     would lead outside it or doesn't exist."""
-    if not DAY_FOLDER.fullmatch(prep):
-        raise SystemExit(f"{prep!r} is not a prep folder, <Person>_<YY-MM-DD>")
-    folder, _ = output_folder(FOLDER_NAME)
-    path = target(folder, prep)
-    if not os.path.isdir(path):
-        raise SystemExit(
-            f"{prep} doesn't exist in {folder}: run init_prep.py first")
-    return path
+    return run_folder(FOLDER_NAME, prep, "prep", "Person", "init_prep.py")
 
 
 def write_prep_file(prep, name, value):
     """Writes `value` as indented JSON to the file `name` of the prep folder
     `prep`, through the shared writer; returns the file's path."""
-    path, _ = write_output_file(FOLDER_NAME, f"{prep}/{name}",
-                                json_text(value).encode("utf-8"))
+    path, _ = write_output_json(FOLDER_NAME, f"{prep}/{name}", value)
     return path
 
 
@@ -630,7 +626,7 @@ def pieces_problems(value, names, fields, values, rules):
 def content_problems(content, observations):
     """Why `content` isn't the agent's summaries of `observations`,
     data.json's, empty when it is: {going_well, to_improve}, each a text of
-    at most SUMMARY_WORDS words, empty exactly when its table holds no
+    at most MAX_OBSERVATIONS_WORDS words, empty exactly when its table holds no
     point, naming every company value its table groups points under; one a
     point names only second is the agent's to weigh, so it isn't checked."""
     if not (isinstance(content, dict) and sorted(content) == sorted(VALUED_PARTS)):
@@ -646,9 +642,9 @@ def content_problems(content, observations):
         elif not points and text.strip():
             problems.append(
                 f"content.json's {part} must be empty, as its table holds no point")
-        elif word_count(text) > SUMMARY_WORDS:
+        elif word_count(text) > MAX_OBSERVATIONS_WORDS:
             problems.append(f"content.json's {part} has {word_count(text)} words: keep it to about "
-                            f"{SUMMARY_WORDS} at most")
+                            f"{OBSERVATIONS_WORDS}, at most {MAX_OBSERVATIONS_WORDS} for a table of many themes")
         elif missing := [group["value"] for group in points
                          if group["value"] and group["value"].casefold() not in text.casefold()]:
             problems.append(f"content.json's {part} doesn't name {', '.join(missing)}: say, even briefly, how "

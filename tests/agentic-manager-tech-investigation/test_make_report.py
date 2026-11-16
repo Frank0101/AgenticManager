@@ -19,6 +19,12 @@ import make_report  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from investigation_fixture import (INVESTIGATION, LEDGER, content,  # noqa: E402
                                    temp_output)
+from common import ai_marked as ai  # noqa: E402
+
+# A decisions table's header: the agent writes every column.
+DECISIONS = "| {} | " + \
+    " | ".join(ai(c) for c in ("Why it matters",
+               "Established position", "Evidence")) + " |"
 
 
 class MakeReportTest(unittest.TestCase):
@@ -65,21 +71,23 @@ class MakeReportTest(unittest.TestCase):
         for expected in [
             "# Acme Search\n\nEvidence snapshot: 05/10/2026. Code links pin inspected commits;",
             "These items describe implications of the linked evidence.\n\n"
-            "| Decision or risk | Why it matters | Established position | Evidence |\n| --- | --- | --- | --- |\n"
+            + DECISIONS.format(ai("Decision or risk")) +
+            "\n| --- | --- | --- | --- |\n"
             "| Index choice | Affects cost | Unresolved | [proposal](https://example.com/p)",
-            "## Architect summary\n\n### How it works today\n\n",
-            "### Target design\n\n",
+            f"## Architect summary\n\n### {ai('How it works today')}\n\n",
+            f"### {ai('Target design')}\n\n",
             "[code](ledger.md#f01)",
             "[gap](ledger.md#g01)",
             "### Open technical choices and gaps\n\nThe table records source-backed decisions and evidence gaps. It does "
-            "not select an option.\n\n| Decision or gap | Why it matters | Established position | Evidence |\n"
+            "not select an option.\n\n" +
+                DECISIONS.format(ai("Decision or gap")) + "\n"
             "| --- | --- | --- | --- |\n| Index | Sets the cost | Unresolved | [gap](ledger.md#g01) |",
             "recorded in the [Research ledger](ledger.md).",
         ]:
             with self.subTest(expected=expected[:40]):
                 self.assertIn(expected, text)
-        for heading in ("### Current status\n", "### Direction\n", "### How it works today\n",
-                        "### Target design\n"):
+        for heading in (f"### {ai(title)}\n" for title in ("Current status", "Direction", "How it works today",
+                                                           "Target design")):
             self.assertEqual(text.count(heading), 1, heading)
         # The ledger lists the sources; the report links it, not them.
         self.assertNotIn("## References", text)
@@ -182,7 +190,7 @@ class MakeReportTest(unittest.TestCase):
         # (field, its items, expected in the report)
         cases = [
             ("key_decisions", [decision],
-             "These items describe implications of the linked evidence.\n\n| Decision or risk | Why it matters |"),
+             "These items describe implications of the linked evidence.\n\n" + DECISIONS.format(ai("Decision or risk"))),
             ("key_decisions", [],
              "No decision, blocker or risk in the inspected evidence warrants technical-leadership attention."),
             ("open_choices_and_gaps", [],

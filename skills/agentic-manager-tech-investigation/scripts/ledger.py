@@ -14,7 +14,7 @@ from common import (CITATION, DESIGN, DESIGN_ORDER, FOLDER_NAME, INLINE_LINK, JI
                     TABLES, UNUSED, anchored, autolink, backtick_error, citation, cited_sources, claim_length_problem,
                     design_evidence, finding_problem, flow_states, free_name, id_order, identity_states, ids,
                     inline_links, investigation_dir, is_enabled, JiraClient, ledger_rows, link_definitions, link_text,
-                    links, plain, read_in_part, row_problem, same_document, section_span, slug, strip_anchors, table,
+                    links, plain, read_in_part, row_problem, same_document, section_span, slug, table,
                     table_cells, table_row, ticket_sites, unlinked_backticks, unrecorded_citations,
                     unresolved_message, upgraded_tickets, write_output_file)
 
@@ -96,11 +96,11 @@ def table_rows(lines, name):
     return ledger_rows("\n".join(lines), TABLES[name][0])
 
 
-def as_written(lines, text):
-    """`text` in the form a submission writes it: citations as [[F07]] and
-    links inline. Submitting it back stores it unchanged, so an edit needs no
-    undoing of the stored form by hand."""
-    return inline_links(CITATION.sub(r"[[\1]]", strip_anchors(text)), links_section(lines))
+def as_written(lines, cell):
+    """A `cell`, as table_rows() reads it, in the form a submission writes it:
+    citations as [[F07]] and links inline. Submitting it back stores it
+    unchanged, so an edit needs no undoing of the stored form by hand."""
+    return inline_links(CITATION.sub(r"[[\1]]", cell), links_section(lines))
 
 
 def links_section(lines):

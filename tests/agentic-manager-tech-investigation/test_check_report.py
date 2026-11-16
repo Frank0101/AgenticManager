@@ -39,7 +39,10 @@ class CheckReportTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.folder = Path(self.temp.name)
+        # The investigation's folder, which holds only the skill's files: a
+        # local file the report links sits beside it.
+        self.folder = Path(self.temp.name) / "Acme_26-10-05"
+        self.folder.mkdir()
         self.report = self.folder / "Acme_Report.md"
         (self.folder / "ledger.md").write_text(LEDGER, encoding="utf-8")
         (self.folder / "content.json").write_text("{}", encoding="utf-8")
@@ -70,7 +73,7 @@ class CheckReportTest(unittest.TestCase):
         # nothing.
         proposal = "[Proposal](https://example.com/proposal)"
         row = "| Storage | Cache or index | Open | [Proposal](https://example.com/proposal) |"
-        (self.folder / "extra evidence.md").write_text("Evidence", encoding="utf-8")
+        (self.folder.parent / "extra evidence.md").write_text("Evidence", encoding="utf-8")
         cases = [
             ("the complete report", self.text, 0),
             ("a shortcut reference link citing a table row",
@@ -78,7 +81,7 @@ class CheckReportTest(unittest.TestCase):
             ("a row citing a ledger finding", self.text.replace(
                 row, "| Storage | Cache or index | Open | [F01](ledger.md#f01) |"), 0),
             ("reference links, encoded paths and fences", self.text.replace(proposal, "[Proposal][proof]")
-             + "\n[proof]: https://example.com/proposal\n[Local](<extra%20evidence.md>)\n"
+             + "\n[proof]: https://example.com/proposal\n[Local](<../extra%20evidence.md>)\n"
              "```text\n## Fake heading\n[Not a link](missing.md)\n```\n", 0),
             ("a summary with its own subheading", self.text.replace(
                 "Architect text with", "#### Entry paths\n\nArchitect text with", 1), 0),
@@ -157,23 +160,20 @@ class CheckReportTest(unittest.TestCase):
 
     def test_unreadable_ledger_fails(self):
         ledger = self.folder / "ledger.md"
-        for handover in (False, True):
-            with self.subTest(handover=handover, cause="UTF-8"):
-                ledger.write_bytes(b"\xff")
-                result = check_report.check_report(
-                    self.report, handover=handover)
-                self.assertFalse(result["ok"])
-                self.assertIn("cannot read research ledger",
-                              " ".join(result["errors"]))
-            with self.subTest(handover=handover, cause="I/O"):
-                with mock.patch.object(Path, "read_text", side_effect=OSError("unreadable")):
-                    errors, _ = check_report.check_ledger(
-                        ledger, handover=handover)
-                self.assertIn("cannot read research ledger", " ".join(errors))
+        with self.subTest(cause="UTF-8"):
+            ledger.write_bytes(b"\xff")
+            result = check_report.check_report(self.report)
+            self.assertFalse(result["ok"])
+            self.assertIn("cannot read research ledger",
+                          " ".join(result["errors"]))
+        with self.subTest(cause="I/O"):
+            with mock.patch.object(Path, "read_text", side_effect=OSError("unreadable")):
+                errors, _ = check_report.check_ledger(ledger)
+            self.assertIn("cannot read research ledger", " ".join(errors))
 
     def test_handover_rules(self):
-        # Rules only the handover check applies: the check before it passes
-        # every case. A gap needs a blocker, and evidence that traces it (the
+        # Rules of a finished ledger, beyond its structure, which every case
+        # meets. A gap needs a blocker, and evidence that traces it (the
         # blocker's own cases are in test_common.py); nothing is left ready or
         # in progress; a source links its reference, and a search is recorded
         # by its exact query between backticks instead.
@@ -209,8 +209,9 @@ class CheckReportTest(unittest.TestCase):
         for name, text, expected in cases:
             with self.subTest(name):
                 (self.folder / "ledger.md").write_text(text, encoding="utf-8")
-                self.assertTrue(check_report.check_report(self.report)["ok"])
-                result = check_report.check_report(self.report, handover=True)
+                self.assertEqual(check_report.check_ledger(
+                    self.folder / "ledger.md")[0], [])
+                result = check_report.check_report(self.report)
                 assert_problem(self, " ".join(
                     result["errors"]) or None, expected)
 
@@ -218,13 +219,11 @@ class CheckReportTest(unittest.TestCase):
         (self.folder / "ledger.md").write_text(LEDGER, encoding="utf-8")
         for name in ("content.json", ".DS_Store"):
             (self.folder / name).write_text("{}", encoding="utf-8")
-        self.assertTrue(check_report.check_report(
-            self.report, handover=True)["ok"])
+        self.assertTrue(check_report.check_report(self.report)["ok"])
         for stray in ("notes.md", "draft.json", "diagram.mmd", "exec-summary.md"):
             with self.subTest(stray):
                 (self.folder / stray).write_text("x", encoding="utf-8")
-                self.assertTrue(check_report.check_report(self.report)["ok"])
-                result = check_report.check_report(self.report, handover=True)
+                result = check_report.check_report(self.report)
                 self.assertFalse(result["ok"])
                 self.assertIn(f"move {stray} to your own scratch folder", " ".join(
                     result["errors"]))
@@ -232,13 +231,13 @@ class CheckReportTest(unittest.TestCase):
 
     def test_unlinked_references_fail(self):
         # In the ledger and the report alike: a backticked reference is a link
-        # to its revision, checked at handover; a ticket or a pull request the
-        # scripts link, so one left bare fails every check. Plain words and the
-        # text of a link are fine.
+        # to its revision; a ticket or a pull request the scripts link, so one
+        # left bare fails the ledger's structure check too. Plain words and
+        # the text of a link are fine.
         backticks = "references in backticks without a link: "
         bare = "tickets and pull requests written without a link: "
-        # name: (the sentence, the error expected, or None, and whether only
-        # the handover check finds it)
+        # name: (the sentence, the error expected, or None, and whether the
+        # ledger's structure check misses it)
         cases = [
             ("a linked reference",
              "[`app.py`](https://github.com/acme/app/blob/abc1234/app.py) holds it.", None, False),
@@ -257,20 +256,21 @@ class CheckReportTest(unittest.TestCase):
              "See acme/app#3.", bare + "acme/app#3", False),
             ("a heading is left alone", "#### Flow for PROJ-1", None, False),
         ]
-        for name, sentence, expected, handover_only in cases:
+        for name, sentence, expected, finished_only in cases:
             (self.folder / "ledger.md").write_text(with_prose(LEDGER,
                                                               sentence), encoding="utf-8")
             self.report.write_text(
                 self.text + "\n" + sentence + "\n", encoding="utf-8")
-            for handover in (False, True):
-                with self.subTest(name, handover=handover):
-                    found = expected if handover or not handover_only else None
-                    result = check_report.check_report(
-                        self.report, handover=handover)
-                    self.assertEqual(result["ok"], found is None, result)
-                    if found:
-                        self.assertEqual(
-                            sum(found in e for e in result["errors"]), 2, result)
+            with self.subTest(name):
+                result = check_report.check_report(self.report)
+                self.assertEqual(result["ok"], expected is None, result)
+                if expected:
+                    self.assertEqual(
+                        sum(expected in e for e in result["errors"]), 2, result)
+                structure = " ".join(check_report.check_ledger(
+                    self.folder / "ledger.md")[0])
+                self.assertEqual(bool(expected) and not finished_only and expected in structure,
+                                 bool(expected) and not finished_only, structure)
 
     def test_handover_rechecks_blocked_questions_sources_and_findings(self):
         # A ledger edited without the script is checked again at handover:
@@ -352,7 +352,7 @@ class CheckReportTest(unittest.TestCase):
                         .replace(FINDING_ROW, finding)
                         .replace("## Links\n\nNone yet.", f"## Links\n\n[search]: {tree}"))
                 (self.folder / "ledger.md").write_text(text, encoding="utf-8")
-                result = check_report.check_report(self.report, handover=True)
+                result = check_report.check_report(self.report)
                 assert_problem(self, " ".join(
                     result["errors"]) or None, expected)
 
@@ -447,7 +447,7 @@ class CheckReportTest(unittest.TestCase):
         text = with_prose(LEDGER, sentence)
         text = text.replace("## Links\n\nNone yet.", "## Links\n\n" + links)
         (self.folder / "ledger.md").write_text(text, encoding="utf-8")
-        result = check_report.check_report(self.report, handover=True)
+        result = check_report.check_report(self.report)
         self.assertTrue(result["ok"], result)
 
     def test_long_claims_and_unrecorded_ids_fail(self):
@@ -461,22 +461,20 @@ class CheckReportTest(unittest.TestCase):
         ledger.write_text(with_prose(LEDGER, "See [S07](#s07) and [Q03](#q03); P95 is a latency and the F150 a "
                                      "truck."),
                           encoding="utf-8")
-        self.assertEqual(check_report.check_ledger(
-            ledger, handover=False)[0], [])
-        errors, _ = check_report.check_ledger(ledger, handover=True)
+        self.assertEqual(check_report.check_ledger(ledger)[0], [])
+        errors = check_report.check_report(self.report)["errors"]
         self.assertIn("IDs cited but never recorded: Q03, S07",
                       " ".join(errors))
         # A finding cited but never written is reported once, by its own check.
         ledger.write_text(with_prose(LEDGER, "See [F07](#f07)."),
                           encoding="utf-8")
-        errors, _ = check_report.check_ledger(ledger, handover=True)
+        errors = check_report.check_report(self.report)["errors"]
         self.assertEqual([e for e in errors if "F07" in e], [
                          "ledger.md: findings cited but never written: F07"])
 
-    def test_unreadable_missing_and_relative_report(self):
-        for path in ("relative.md", self.folder / "missing.md"):
-            with self.subTest(path=str(path)):
-                self.assertFalse(check_report.check_report(path)["ok"])
+    def test_unreadable_and_missing_report(self):
+        self.assertFalse(check_report.check_report(
+            self.folder / "missing.md")["ok"])
         self.report.write_bytes(b"\xff")
         self.assertIn("UTF-8", " ".join(self.check()["errors"]))
 

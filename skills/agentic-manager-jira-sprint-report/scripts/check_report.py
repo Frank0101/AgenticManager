@@ -313,8 +313,7 @@ def ticket_event_problems(events, zone, cutoff):
         if kind not in TICKET_EVENT_TYPES.get(e.get("source"), ()):
             problems.append(f"{e.get('source')} {kind}")
             continue
-        fields = TICKET_EVENT_FIELDS.get(
-            kind, ("from", "to") if kind != "created" else ())
+        fields = TICKET_EVENT_FIELDS.get(kind, ("from", "to"))
         missing = [f for f in ("at", "date", *fields) if f not in e]
         if missing:
             problems.append(f"{kind} without {', '.join(missing)}")
@@ -377,18 +376,9 @@ def in_sprint(events, sprint_id, instant):
 
 
 def ticket_state(events, instant):
-    """(Done, estimate) of the ticket at `instant`: its creation's, then as
-    each status and points change up to the instant leaves them."""
-    created = next(e for e in events if e["type"] == "created")["values"]
-    done, points = created["statusCategory"] == "done", created["points"]
-    for e in events:
-        if parse_ts(e["at"]) > instant:
-            continue
-        if e["type"] == "status_changed":
-            done = e["toCategory"] == "done"
-        elif e["type"] == "points_changed":
-            points = e["to"]
-    return done, points
+    """(Done, estimate) of the ticket at `instant`, from its fields then."""
+    fields = ticket_fields(events, instant)
+    return fields["statusCategory"] == "done", fields["points"]
 
 
 def check_pull_requests(c, data):
@@ -819,7 +809,9 @@ def check_epics(c, table, data):
         row = next((r for r in rows_of(table) if title in r), None)
         if not c.check(row is not None, "epics", f"{epic['key']} has a row"):
             continue
-        cells = cells_of(row)[1:3]
+        cells = [content for _, content in cells_with_attributes(row)]
+        commentary = cells[3]
+        cells = cells[1:3]
         expected = []
         for kind in ("original", "extra"):
             done, total, done_pts, total_pts = figures.get(
@@ -829,7 +821,7 @@ def check_epics(c, table, data):
                             total_pts) if total else "–")
         c.check(cells == expected, "epics",
                 f"{epic['key']} shows {' '.join(expected)} (got {' '.join(cells)})")
-        check_epic_commentary(c, epic, cells_of(row)[3], data["sprint_status"])
+        check_epic_commentary(c, epic, commentary, data["sprint_status"])
 
 
 def epic_figures(data):
@@ -862,10 +854,6 @@ def check_epic_commentary(c, epic, cell, status):
     found = [m.group(1) if m else None for m in lines]
     c.check(found == labels, "epics",
             f"{epic['key']} commentary has {', '.join(labels)} (got {found})")
-
-
-def cells_of(row):
-    return re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S)
 
 
 def check_status_section(c, md, table, data):
@@ -913,8 +901,8 @@ def check_status_section(c, md, table, data):
 
 
 def cells_with_attributes(row):
-    """[(attributes, content)] of a row's <td> cells."""
-    return re.findall(r"<td([^>]*)>(.*?)</td>", row, re.S)
+    """[(attributes, content)] of a row's <td> or <th> cells."""
+    return re.findall(r"<t[dh]\b([^>]*)>(.*?)</t[dh]>", row, re.S)
 
 
 def check_style(c, md, data):

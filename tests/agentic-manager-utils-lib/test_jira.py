@@ -77,6 +77,13 @@ class HelpersTest(unittest.TestCase):
             with self.subTest(key=key):
                 self.assertEqual(jira.project_of(key), expected)
 
+    def test_is_sub_task(self):
+        cases = [({"issuetype": {"subtask": True}}, True), ({"issuetype": {"subtask": False}}, False),
+                 ({"issuetype": {}}, False), ({}, False), (None, False)]
+        for fields, expected in cases:
+            with self.subTest(fields=fields):
+                self.assertIs(jira.is_sub_task(fields), expected)
+
     def test_issue_key(self):
         self.assertEqual(jira.ISSUE_KEY.findall("PROJ-1, A2B-30 and proj-4 or X-1a"),
                          ["PROJ-1", "A2B-30"])
@@ -179,6 +186,28 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(self.client.whoami(), profile)
         self.assertEqual(FakeJira.authorizations, [
                          "Basic bWVAYWNtZS50ZXN0OnMzY3JldC10b2tlbg=="])
+
+    def test_time_zone(self):
+        # Read once per client, by whoami() when it has run; None when the
+        # profile names none.
+        cases = [("named", {"timeZone": "Europe/London"}, "Europe/London"),
+                 ("none named", {"displayName": "Alex Example"}, None)]
+        for name, profile, expected in cases:
+            with self.subTest(name):
+                self.reset_jira()
+                FakeJira.routes["/rest/api/3/myself"] = profile
+                client = self.make_client(self.base_url)
+                self.assertEqual(
+                    [client.time_zone(), client.time_zone()], [expected, expected])
+                self.assertEqual(len(FakeJira.requests), 1)
+        with self.subTest("after whoami"):
+            self.reset_jira()
+            FakeJira.routes["/rest/api/3/myself"] = {
+                "timeZone": "Europe/Berlin"}
+            client = self.make_client(self.base_url)
+            client.whoami()
+            self.assertEqual(client.time_zone(), "Europe/Berlin")
+            self.assertEqual(len(FakeJira.requests), 1)
 
     def test_users(self):
         # People only, by the query, in one page; an app's account is left out.

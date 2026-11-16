@@ -12,11 +12,10 @@ import html
 import json
 import re
 from html.parser import HTMLParser
-from typing import TypeIs
 
 from common import (CHART_JS, ELEMENT_ID, FOLDER_NAME, PAGE, SLIDE_HEIGHT, SLIDE_WIDTH, TOKEN, URL_ATTRIBUTES, VOID,
-                    arc_segment, asset_link, coordinate, credit_line, deck_file, link_kind, placed_images,
-                    write_output_file)
+                    arc_segment, asset_link, coordinate, credit_line, deck_file, is_number, link_kind,
+                    placed_images, write_output_file)
 
 FIELDS = {"title", "style", "slides", "charts", "rings"}
 SLIDE_FIELDS = {"html", "class"}
@@ -396,11 +395,6 @@ def check_ring(ring, where, errors):
         if narrowest <= gap:
             errors.append(f"{where}.gap: {gap}° leaves nothing of the narrowest segment, "
                           f"{narrowest:g}° wide")
-
-
-def is_number(value) -> TypeIs[int | float]:
-    """Whether `value` is a JSON number, not a boolean."""
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def read_slide(text):

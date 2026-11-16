@@ -18,18 +18,25 @@ if not __package__:
     sys.path.insert(0, os.path.dirname(
         os.path.dirname(os.path.realpath(__file__))))
 from agentic_manager.json_path import nested  # noqa: E402
-from agentic_manager.output_folder import add_name_argument, output_folder  # noqa: E402
+from agentic_manager.output_folder import add_name_argument, output_folder, target  # noqa: E402
 
 # Commands to copy, shown by --help and by an error for a malformed patch: the
 # input goes in a quoted here-document, so nothing in it needs escaping.
-_WRITE_EXAMPLE = """  python3 <lib>/output_file.py --name <folder name> --path '<subject>/content.json' <<'EOF'
+_WRITE_EXAMPLE = """  python3 <lib>/output_file.py --name <folder name> --path '<subject>/content.json' <<'END_OF_INPUT'
   {"title": "..."}
-  EOF"""
-_PATCH_EXAMPLE = """  python3 <lib>/output_file.py --name <folder name> --path '<subject>/content.json' --patch <<'EOF'
+  END_OF_INPUT"""
+_PATCH_EXAMPLE = """  python3 <lib>/output_file.py --name <folder name> --path '<subject>/content.json' --patch <<'END_OF_INPUT'
   [{"old": "unique text in the file", "new": "its replacement"}]
-  EOF"""
+  END_OF_INPUT"""
 _SET_EXAMPLE = ("  python3 <lib>/output_file.py --name <folder name> --path '<subject>/content.json' \\\n"
                 '    --set "architecture.current.summary.0=The new first paragraph." --set "title=Search API"')
+
+
+def write_output_json(name, relative, value):
+    """(path, temporary): writes `value` as json_text() writes it to
+    `relative` inside the skill's output folder `name`, as
+    write_output_file() does."""
+    return write_output_file(name, relative, json_text(value).encode("utf-8"))
 
 
 def write_output_file(name, relative, content):
@@ -140,22 +147,6 @@ def read_json(path):
     except (OSError, UnicodeError, ValueError) as error:
         raise SystemExit(
             f"{os.path.basename(path)} is not readable JSON: {error}")
-
-
-def target(folder, relative):
-    """The absolute path of `relative` inside `folder`. Exits if it would lead
-    outside the folder."""
-    if not relative or os.path.isabs(relative) or os.pardir in relative.replace("\\", "/").split("/"):
-        raise SystemExit(
-            f"{relative!r} must be a relative path inside the output folder, without ..")
-    path = os.path.join(folder, relative)
-    root, resolved = os.path.realpath(folder), os.path.realpath(path)
-    if resolved == root:
-        raise SystemExit(
-            f"{relative!r} must name a file inside the output folder")
-    if os.path.commonpath([root, resolved]) != root:
-        raise SystemExit(f"{relative!r} leads outside the output folder")
-    return path
 
 
 def parse_args(argv=None):

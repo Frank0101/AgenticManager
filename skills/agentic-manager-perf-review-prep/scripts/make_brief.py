@@ -12,7 +12,7 @@ import json
 import os
 
 from common import (BRIEF, DATA, OBSERVATION_SOURCES, PERSON, VALUED_PARTS, VALUES, company_setting, prep_dir,
-                    read_json, stops_on_failure, write_prep_file)
+                    read_json, write_prep_file)
 
 
 def write_brief(prep):
@@ -54,9 +54,7 @@ def main(argv=None):
     parser.add_argument("--prep", required=True,
                         help="the prep's folder, <Person>_<YY-MM-DD>, as init_prep.py printed it")
     args = parser.parse_args(argv)
-    with stops_on_failure():
-        print(json.dumps(
-            {"brief": write_brief(args.prep)}, ensure_ascii=False))
+    print(json.dumps({"brief": write_brief(args.prep)}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

@@ -13,8 +13,8 @@ import subprocess
 
 from common import (DESIGN, citation, DESIGN_SUBSECTIONS, GITHUB_CLI, GROUPS, JIRA_API, QUEUE,
                     FOLDER_NAME, LEDGER, LEDGER_SECTIONS, QUEUE_HEADER,
-                    QUEUE_SUBSECTIONS, TOPIC, anchored, clear_folder, day_folder,
-                    enabled_sources, output_folder, require_gh, table, write_output_file)
+                    QUEUE_SUBSECTIONS, TOPIC, anchored, enabled_sources, new_run, require_gh, table,
+                    write_output_file)
 
 # The first questions, as (kind of source, question), X the topic in words. The
 # first orients: what the topic is and what sits next to it, so the user decides
@@ -49,10 +49,9 @@ def init(topic, today=None, run=subprocess.run):
                          "check_config.py shows, then run investigate.py start again")
     if GITHUB_CLI in sources["source_control"]:
         require_gh(run, "the code is read", "investigate.py start")
-    folder, temporary = output_folder(FOLDER_NAME)
-    relative = day_folder(topic, today or date.today())
+    folder, temporary, relative, replaced = new_run(
+        FOLDER_NAME, topic, today or date.today())
     path = os.path.join(folder, relative)
-    replaced = clear_folder(path)
     write_output_file(FOLDER_NAME, f"{relative}/{LEDGER}",
                       ledger_skeleton(topic, first_questions(topic)).encode("utf-8"))
     return {"folder": folder, "temporary": temporary, "investigation": relative,

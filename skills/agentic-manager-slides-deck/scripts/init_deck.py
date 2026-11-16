@@ -11,7 +11,7 @@ from datetime import date
 import json
 import os
 
-from common import ASSETS, FOLDER_NAME, NAME, SLIDES, KEPT_EXAMPLES, assets, clear_folder, day_folder, examples, output_folder
+from common import ASSETS, FOLDER_NAME, NAME, SLIDES, KEPT_EXAMPLES, assets, examples, new_run
 
 
 OUTPUT = """Prints one line of JSON:
@@ -33,11 +33,9 @@ def init(name, today=None):
     if not NAME.fullmatch(name):
         raise SystemExit(f"{name!r} must be words of letters and digits joined by hyphens, "
                          "such as Acme-Q3-Review")
-    folder, temporary = output_folder(FOLDER_NAME)
-    deck = day_folder(name, today or date.today())
+    folder, temporary, deck, replaced = new_run(
+        FOLDER_NAME, name, today or date.today())
     path = os.path.join(folder, deck)
-    replaced = clear_folder(path)
-    os.makedirs(path)
     for shared in (KEPT_EXAMPLES, ASSETS):
         os.makedirs(os.path.join(folder, shared), exist_ok=True)
     return {"folder": folder, "temporary": temporary, "deck": deck, "deck_dir": path,

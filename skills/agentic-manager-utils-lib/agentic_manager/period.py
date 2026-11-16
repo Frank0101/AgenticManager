@@ -57,12 +57,6 @@ def last_months(months, today):
     return months_before(today, months), today
 
 
-def days(first, last):
-    """Every day from the date `first` to the date `last`, both included, as
-    dates."""
-    return [first + timedelta(days=n) for n in range((last - first).days + 1)]
-
-
 def months_before(day, months):
     """The same day `months` months before `day`, or that month's last day
     when it is shorter."""
@@ -113,6 +107,15 @@ def add_period_arguments(parser, required=True):
                         help=f"the period's last day, as YYYY-MM-DD, today at the latest{with_start}")
 
 
+def day_argument(text):
+    """`text` as a date, if it is one as YYYY-MM-DD; else an argparse error,
+    so --start and --end can use it as their type."""
+    if not is_day(text.strip()):
+        raise argparse.ArgumentTypeError(
+            f"{text!r} must be a date as YYYY-MM-DD, such as 2026-08-10")
+    return date.fromisoformat(text.strip())
+
+
 def is_day(value):
     """Whether `value` is a day written as YYYY-MM-DD, and only so."""
     try:
@@ -121,14 +124,10 @@ def is_day(value):
         return False
 
 
-def day_argument(text):
-    """`text` as a date, if it is one as YYYY-MM-DD; else an argparse error,
-    so --start and --end can use it as their type."""
-    try:
-        return date.fromisoformat(text.strip())
-    except ValueError:
-        raise argparse.ArgumentTypeError(
-            f"{text!r} must be a date as YYYY-MM-DD, such as 2026-08-10")
+def days(first, last):
+    """Every day from the date `first` to the date `last`, both included, as
+    dates."""
+    return [first + timedelta(days=n) for n in range((last - first).days + 1)]
 
 
 def main():

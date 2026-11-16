@@ -84,14 +84,6 @@ def as_name(text):
     return re.sub(r"[^A-Za-z0-9]+", "-", plain).strip("-")
 
 
-def display_date(day):
-    """A day as reports show it, DD/MM/YYYY, such as 02/03/2026: `day` is a
-    date or a datetime, or an ISO date as text, such as 2026-03-02."""
-    if isinstance(day, str):
-        day = date.fromisoformat(day)
-    return day.strftime(DISPLAY_DATE)
-
-
 def free_name(base, taken, separator="-"):
     """`base`, or the first numbered name after it for which `taken(name)` is
     false: base-2, base-3 and so on, with `separator` before the number, the
@@ -233,6 +225,14 @@ def number(value):
 def plural(count, one, many):
     """The word for `count` things: `one` for exactly 1, else `many`."""
     return one if count == 1 else many
+
+
+def display_date(day):
+    """A day as reports show it, DD/MM/YYYY, such as 02/03/2026: `day` is a
+    date or a datetime, or an ISO date as text, such as 2026-03-02."""
+    if isinstance(day, str):
+        day = date.fromisoformat(day)
+    return day.strftime(DISPLAY_DATE)
 
 
 def table(header, rows):

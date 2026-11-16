@@ -27,7 +27,8 @@ class CheckTest(unittest.TestCase):
     def test_a_prep_the_scripts_wrote_passes(self):
         write_prep(self.folder)
         # Names starting with a dot, such as .DS_Store, aren't the prep's.
-        open(os.path.join(self.folder, PREP, ".DS_Store"), "w").close()
+        for folder in ("", common.CHARTS_DIR):
+            open(os.path.join(self.folder, PREP, folder, ".DS_Store"), "w").close()
         self.assertEqual(check_prep.check_prep(
             PREP, today=TODAY), {"ok": True, "errors": []})
 
@@ -78,7 +79,7 @@ class CheckTest(unittest.TestCase):
                  ("no report", {"report": False},
                   None, "_Review_Prep.md, _charts"),
                  ("a chart more", {}, "_charts/extra.svg",
-                  "_Review_Prep.md: the charts folder must hold only"),
+                  "_charts: the folder must hold only"),
                  ("a figure changed by hand", {}, ("{report}", '">1</a> (1 Task)', '">2</a> (1 Task)'),
                   "_Review_Prep.md: the report's Jira cell for created doesn't show data.json"),
                  ("a Slack point with no evidence", {"slack": {**SLACK, "going_well": [

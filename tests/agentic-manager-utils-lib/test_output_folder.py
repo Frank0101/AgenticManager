@@ -104,6 +104,47 @@ class OutputFolderTest(unittest.TestCase):
         self.assertEqual(sorted(os.listdir(self.temp_root)),
                          ["reports", "tech-investigations"])
 
+    def test_new_run(self):
+        # A run starts empty: the same subject's folder of that day is
+        # replaced, another day's stays.
+        self.write({})
+        folder = os.path.join(self.temp_root, "slides-decks")
+        os.makedirs(os.path.join(folder, "Acme_26-03-05"))
+        for name, expected_replaced in (("first run", False), ("rerun the same day", True)):
+            with self.subTest(name):
+                result = output_folder.new_run(
+                    "slides-decks", "Acme", date(2026, 3, 6))
+                self.assertEqual(
+                    result, (folder, True, "Acme_26-03-06", expected_replaced))
+                path = os.path.join(folder, "Acme_26-03-06")
+                self.assertEqual(os.listdir(path), [])
+                with open(os.path.join(path, "slides.json"), "w", encoding="utf-8") as f:
+                    f.write("{}")
+        self.assertEqual(sorted(os.listdir(folder)), [
+                         "Acme_26-03-05", "Acme_26-03-06"])
+
+    def test_run_folder(self):
+        # name: (run, the path expected, or the message an exit gives)
+        self.write({})
+        folder = os.path.join(self.temp_root, "slides-decks")
+        os.makedirs(os.path.join(folder, "Acme_26-03-06"))
+        cases = [("an existing run", "Acme_26-03-06", os.path.join(folder, "Acme_26-03-06")),
+                 ("not a run's name", "Acme",
+                  "'Acme' is not a deck folder, <Name>_<YY-MM-DD>"),
+                 ("leading outside", "../Acme_26-03-06",
+                  "leads outside|without \\.\\."),
+                 ("missing", "Acme_26-03-07",
+                  f"Acme_26-03-07 doesn't exist in {folder}: run init_deck.py first")]
+        for name, run, expected in cases:
+            with self.subTest(name):
+                def call(): return output_folder.run_folder(
+                    "slides-decks", run, "deck", "Name", "init_deck.py")
+                if os.path.isabs(expected):
+                    self.assertEqual(call(), expected)
+                else:
+                    with self.assertRaisesRegex(SystemExit, expected):
+                        call()
+
 
 class DayFolderTest(unittest.TestCase):
     def test_day_folder(self):

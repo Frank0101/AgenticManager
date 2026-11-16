@@ -27,6 +27,16 @@ One synopsis for each conversation: a thread, or the messages in a row on one to
 - who it was for or helped, and what changed because of it, such as a new way of working, another team unblocked or a process improved, as far as the conversation says;
 - how others responded, such as thanks, praise, follow-up questions or a problem raised with the person's work, and how many people reacted to the person's messages, from the search result or, when it doesn't show them, the message's reactions; and how the conversation ended.
 
+## Examples
+
+| Conversation                                                                                                       | Synopsis                                                                                                    | Why                                                            |
+| ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| In the squad channel, Sam asked why the deploy failed; Jane replied with the cause and a fix, and Sam thanked Jane | In the squad channel, Jane diagnosed Sam's failed deploy and gave the fix; Sam thanked Jane                 | What Jane did, who it helped and how it was received           |
+| A long thread in a cross-team channel about the release date, where Jane replied once to confirm the API was ready | In a cross-team release thread, Jane confirmed the API was ready                                            | In a long thread, only what Jane did                           |
+| In the incident channel, Alex wrote "thanks to Jane for the quick rollback last night", and 12 people reacted      | In the incident channel, Alex thanked Jane by name for a quick rollback the night before; 12 people reacted | Others' words about Jane count, with how many reacted          |
+| Jane posted the weekly migration update in a cross-team channel; nobody replied, 5 reactions                       | In a cross-team channel, Jane posted the weekly migration update; no replies, 5 reactions                   | A post with no replies still gets its synopsis                 |
+| Jane asked in the squad channel who could cover standup on Friday                                                  | Jane asked the squad who could cover Friday's standup                                                       | Described as it is: whether it matters is the merge's to judge |
+
 ## Links and writing
 
 {{reading}}

@@ -9,7 +9,6 @@ names from here, never from agentic_manager directly, so they don't depend on
 the order of their imports."""
 import os
 import re
-import subprocess
 import sys
 from datetime import tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -17,13 +16,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
-from agentic_manager.output_file import json_text, read_json, write_output_file  # noqa: E402,F401
+from agentic_manager.output_file import json_text, read_json, write_output_file, write_output_json  # noqa: E402,F401
 from agentic_manager.text import HEADING, INLINE_LINK, SMALL_TYPE, ai_marked, table, table_cells, as_name, display_date, link_text, number, plural, word_count  # noqa: E402,F401
 from agentic_manager.svg import GRID, INK, MUTED, SURFACE, legend, nice_step, svg, text, text_width  # noqa: E402,F401
 from agentic_manager.output_folder import CHARTS_DIR, RAW_DIR, clear_folder, day_folder, document_name, folder_problem, output_folder  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order,  # noqa: E402,F401
-                                  parse_ts, plain_text, project_of)
+                                  is_sub_task, parse_ts, plain_text, project_of)
 from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.period import days  # noqa: E402,F401
 from agentic_manager.failures import GITHUB_FAILED, stops_on_failure  # noqa: E402,F401
@@ -184,25 +183,20 @@ def report_file(label):
 
 def write_json(path, payload):
     """Writes a value as indented JSON inside the skill's output folder."""
-    write_report_file(path, json_text(payload))
+    write_output_json(REPORTS_FOLDER, _relative(path), payload)
 
 
 def write_report_file(path, text):
     """Writes `text` to `path`, creating missing folders, through the shared
     writer, which exits, writing nothing, if `path` isn't inside the skill's
     output folder."""
+    write_output_file(REPORTS_FOLDER, _relative(path), text.encode("utf-8"))
+
+
+def _relative(path):
+    """`path` relative to the skill's output folder, for the shared writer."""
     folder, _ = output_folder(REPORTS_FOLDER)
-    relative = os.path.relpath(
-        os.path.realpath(path), os.path.realpath(folder))
-    write_output_file(REPORTS_FOLDER, relative, text.encode("utf-8"))
-
-
-def run_script(script, *args, **kwargs):
-    """Runs a script of this skill with the current Python and returns the
-    finished process, its stdout captured as text; `kwargs` go to
-    subprocess.run, such as stderr=subprocess.STDOUT to capture both."""
-    return subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.realpath(__file__)), script),
-                           *args], stdout=subprocess.PIPE, text=True, **kwargs)
+    return os.path.relpath(os.path.realpath(path), os.path.realpath(folder))
 
 
 def report_timezone(name):
@@ -487,7 +481,7 @@ TICKET_EVENT_TYPES = {"jira": (
 def standard_issues(issues):
     """The issues that aren't sub-tasks: Jira's sprint report and board totals
     count only these, with sub-task work rolled into the parent."""
-    return [i for i in issues if not nested(i.get("fields"), ["issuetype", "subtask"])]
+    return [i for i in issues if not is_sub_task(i.get("fields"))]
 
 
 def as_of(sprint, fetched_at):

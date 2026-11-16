@@ -52,8 +52,11 @@ class HelpersTest(unittest.TestCase):
         table = ("<table><tr><th>Date</th><th>Events</th><th>End of day</th></tr>"
                  "<tr><td>a<br>b</td><td>c</td><td>d</td></tr></table>")
         self.assertEqual(check_report.html_tables(f"x {table} y"), [table])
-        self.assertEqual([check_report.cells_of(r) for r in check_report.rows_of(table)],
-                         [["Date", "Events", "End of day"], ["a<br>b", "c", "d"]])
+        self.assertEqual([check_report.cells_with_attributes(r) for r in check_report.rows_of(table)],
+                         [[("", "Date"), ("", "Events"), ("", "End of day")],
+                          [("", "a<br>b"), ("", "c"), ("", "d")]])
+        self.assertEqual(check_report.cells_with_attributes('<tr><td rowspan="2">a</td></tr>'),
+                         [(' rowspan="2"', "a")])
         self.assertEqual(check_report.strip_tags("<b>a</b><br>b"), "a  b")
         self.assertEqual(check_report.table_kind(table), "timeline")
         self.assertIsNone(check_report.table_kind(

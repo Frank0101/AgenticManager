@@ -22,7 +22,7 @@ def finish(relative):
     if os.path.isfile(old):
         os.remove(old)
     made = make_report.make_report(relative)
-    checked = check_report.check_report(made["path"], handover=True)
+    checked = check_report.check_report(made["path"])
     if not checked["ok"]:
         raise SystemExit("the report doesn't pass its final check; fix each of these and submit again:\n- "
                          + "\n- ".join(checked["errors"]))

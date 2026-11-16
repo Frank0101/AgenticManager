@@ -16,9 +16,10 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.batch import gather  # noqa: E402,F401
-from agentic_manager.output_file import json_text, read_json, target, write_output_file  # noqa: E402,F401
+from agentic_manager.config import is_number  # noqa: E402,F401
+from agentic_manager.output_file import json_text, read_json, write_output_file  # noqa: E402,F401
 from agentic_manager.svg import arc_segment, coordinate  # noqa: E402,F401
-from agentic_manager.output_folder import DESCRIPTION, folder_problem, folder_subject, KEPT_EXAMPLES, document_name, description, read_description, clear_folder, day_folder, output_folder, work_folder  # noqa: E402,F401
+from agentic_manager.output_folder import DESCRIPTION, folder_problem, folder_subject, KEPT_EXAMPLES, document_name, description, read_description, clear_folder, new_run, output_folder, run_folder, work_folder  # noqa: E402,F401
 from agentic_manager.text import NAME, SLUG, free_name, slug  # noqa: E402,F401
 from agentic_manager.web import ssl_context  # noqa: E402,F401
 
@@ -107,13 +108,7 @@ def deck_dir(deck):
     """The absolute path of the deck folder `deck` inside the skill's output
     folder. Exits if `deck` isn't a deck folder name, would lead outside it or
     doesn't exist."""
-    deck_file(deck)
-    folder, _ = output_folder(FOLDER_NAME)
-    path = target(folder, deck)
-    if not os.path.isdir(path):
-        raise SystemExit(
-            f"{deck} doesn't exist in {folder}: run init_deck.py first")
-    return path
+    return run_folder(FOLDER_NAME, deck, "deck", "Name", "init_deck.py")
 
 
 def examples():

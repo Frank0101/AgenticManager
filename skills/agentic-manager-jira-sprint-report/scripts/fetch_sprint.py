@@ -43,8 +43,141 @@ folder is temporary; progress goes to stderr. Only an active or closed sprint ca
 be reported."""
 
 
-def parse_args():
-    parser = selector_parser((__doc__ or "").split("\n\n")[0], PRINTS)
+def fetch_sprint(args):
+    """Fetch the sprint `args` names, the selectors parse_args gives, into
+    a new report folder: {sprint_id, sprint_name, sprint_state, label,
+    report_dir, temporary}. Exits, leaving any earlier report in place, when
+    Jira or gh fails or the sprint can't be reported."""
+    # GitHub is required: without it every ticket would seem to have no pull
+    # requests, and the report's status checks would pass by finding none.
+    require_gh(subprocess.run, "the tickets' pull requests are read",
+               "prepare_report.py")
+    with stops_on_failure(NO_REPORT):
+        client = JiraClient()
+        profile = client.whoami()
+        me = profile.get("displayName")
+        reporting_zone = report_timezone(client.time_zone())
+        log(f"authenticated as {me}")
+
+        sprint = client.find_sprint(sprint_id=args.sprint_id, board_id=args.board, project=args.project,
+                                    name=args.sprint_name, active=args.active, log=log)
+        state = (sprint.get("state") or "").lower()
+        log(f"sprint: {sprint.get('name')} (id {sprint['id']}, {state})")
+        if state not in {"active", "closed"}:
+            raise SystemExit(
+                f"sprint {sprint.get('name')!r} is {state!r}; only active or closed sprints can be reported")
+        sprint_id = str(sprint["id"])
+
+        # An explicit --board wins over the sprint's originBoardId: the origin board's
+        # sprint report can come back empty while another board of the same project
+        # serves the sprint correctly.
+        board_id = args.board or sprint.get("originBoardId")
+        if not board_id:
+            raise SystemExit(
+                "can't tell the sprint's board, which Jira's sprint report needs; pass --board")
+
+        previous = previous_sprint(
+            sprint, client.sprints_for_board(board_id, state="closed"))
+        log(f"previous sprint: {previous.get('name')} (id {previous['id']})" if previous
+            else "no previous sprint on the board")
+
+        flagged_field, points_field = client.flagged_and_points_fields(
+            board_id)
+        if not points_field:
+            log("warning: no story points field found; no ticket will have an estimate, so every ticket and total shows – pts")
+        fields = BASE_FIELDS + [f for f in (flagged_field, points_field) if f]
+
+        sprint_issues = client.sprint_issues(sprint_id, fields)
+        log(f"{len(sprint_issues)} issue(s) in the sprint")
+        report = client.sprint_report(board_id, sprint_id)
+        punted_keys = [i["key"] for i in report["contents"]["puntedIssues"]]
+        log(f"{len(punted_keys)} issue(s) removed from the sprint")
+        # Fetched again through the issue API so they have the same shape as
+        # sprint_issues; the sprint report uses an internal one.
+        punted_issues = client.issues_by_keys(punted_keys, fields)
+        missing = set(punted_keys) - {i["key"] for i in punted_issues}
+        if missing:
+            raise SystemExit(
+                f"removed issue(s) could not be fetched: {sorted(missing)}")
+
+        fetched_at = datetime.now(timezone.utc).isoformat()
+        moment = as_of(sprint, fetched_at)
+        statuses = client.statuses()
+        categories = status_categories(statuses)
+        issues = sprint_issues + punted_issues
+        standard = standard_issues(issues)
+        # Read in batches: a request for many issues, not one each. Sub-tasks
+        # are left out, as the report leaves them out; a sub-task's parent is
+        # its story, not an epic.
+        changelogs = read_changelogs(client, standard,
+                                     history_fields(flagged_field, points_field))
+
+        # Every epic: the tickets' current parents, whose descriptions their own
+        # fields don't carry, and those they belonged to before a change of
+        # parent, which their fields no longer name.
+        parent_ids = sorted({str(parent_id) for i in standard
+                             if (parent_id := nested(i.get("fields"), ["parent", "id"]))}
+                            | {str(c[side]) for changes in changelogs.values() for c in changes
+                               if c["field"] == "parent" for side in ("from", "to") if c[side]})
+        parents = client.issues_by_ids(parent_ids, ["summary", "description"])
+
+        # Comments are fetched only for the tickets that were blocker candidates
+        # at the moment the report describes, worked out from the tickets'
+        # events, as build_data.py works out data.json's. The events
+        # need neither the epics' names nor the previous sprint.
+        context = Context(sprint_id, sprint.get("startDate"), categories, (flagged_field, points_field), {},
+                          reporting_zone, None)
+        blocker_keys = blocker_candidates({issue["key"]: ticket_events(issue, changelogs[issue["key"]], context,
+                                                                       moment)
+                                           for issue in standard},
+                                          sprint_id, moment)
+        comments = dict(
+            zip(blocker_keys, gather(blocker_keys, client.comments)))
+
+        pulls = pull_requests(client, standard)
+        log(f"{sum(map(len, pulls['tickets'].values()))} pull request(s) found")
+
+        project_key = project_key_of(args, issues)
+        label = report_label(project_key, sprint.get("name"))
+        out_root, temporary = output_folder(REPORTS_FOLDER)
+        report_dir = os.path.join(out_root, day_folder(
+            label, parse_ts(fetched_at).astimezone(reporting_zone)))
+        raw_dir = prepare_report_dir(report_dir, sprint_id)
+
+        write_json(os.path.join(raw_dir, SPRINT_FILE), sprint)
+        write_json(os.path.join(raw_dir, PREVIOUS_SPRINT_FILE), previous)
+        write_json(os.path.join(raw_dir, SPRINT_ISSUES_FILE), sprint_issues)
+        write_json(os.path.join(raw_dir, SPRINT_REPORT_FILE), report)
+        write_json(os.path.join(raw_dir, PUNTED_ISSUES_FILE), punted_issues)
+        write_json(os.path.join(raw_dir, STATUSES_FILE), statuses)
+        write_json(os.path.join(raw_dir, PARENTS_FILE), parents)
+        write_json(os.path.join(raw_dir, PULL_REQUESTS_FILE), pulls)
+        for key, changes in changelogs.items():
+            write_json(os.path.join(
+                raw_dir, CHANGELOGS_DIR, f"{key}.json"), changes)
+        for key, values in comments.items():
+            write_json(os.path.join(
+                raw_dir, COMMENTS_DIR, f"{key}.json"), values)
+        write_json(os.path.join(raw_dir, META_FILE), {
+            "fetched_at": fetched_at,
+            "report_timezone": reporting_zone.key,
+            "base_url": client.base_url,
+            "label": label,
+            "flagged_field": flagged_field,
+            "story_points_field": points_field,
+        })
+        log(f"raw data written to {raw_dir}")
+        return {"sprint_id": sprint["id"], "sprint_name": sprint.get("name"),
+                "sprint_state": state, "label": label, "report_dir": report_dir,
+                "temporary": temporary}
+
+
+def parse_args(parser=None):
+    """The selectors on the command line, checked: `parser`'s, by default
+    this script's, so another script naming the sprint the same way shows
+    its own --help."""
+    parser = parser or selector_parser(
+        (__doc__ or "").split("\n\n")[0], PRINTS)
     args = parser.parse_args()
 
     # Conflicting selectors fail rather than one silently winning.
@@ -179,129 +312,7 @@ def log(message):
 
 
 def main():
-    args = parse_args()
-    # GitHub is required: without it every ticket would seem to have no pull
-    # requests, and the report's status checks would pass by finding none.
-    require_gh(subprocess.run, "the tickets' pull requests are read",
-               "prepare_report.py")
-    with stops_on_failure(NO_REPORT):
-        client = JiraClient()
-        profile = client.whoami()
-        me = profile.get("displayName")
-        reporting_zone = report_timezone(profile.get("timeZone"))
-        log(f"authenticated as {me}")
-
-        sprint = client.find_sprint(sprint_id=args.sprint_id, board_id=args.board, project=args.project,
-                                    name=args.sprint_name, active=args.active, log=log)
-        state = (sprint.get("state") or "").lower()
-        log(f"sprint: {sprint.get('name')} (id {sprint['id']}, {state})")
-        if state not in {"active", "closed"}:
-            raise SystemExit(
-                f"sprint {sprint.get('name')!r} is {state!r}; only active or closed sprints can be reported")
-        sprint_id = str(sprint["id"])
-
-        # An explicit --board wins over the sprint's originBoardId: the origin board's
-        # sprint report can come back empty while another board of the same project
-        # serves the sprint correctly.
-        board_id = args.board or sprint.get("originBoardId")
-        if not board_id:
-            raise SystemExit(
-                "can't tell the sprint's board, which Jira's sprint report needs; pass --board")
-
-        previous = previous_sprint(
-            sprint, client.sprints_for_board(board_id, state="closed"))
-        log(f"previous sprint: {previous.get('name')} (id {previous['id']})" if previous
-            else "no previous sprint on the board")
-
-        flagged_field, points_field = client.flagged_and_points_fields(
-            board_id)
-        if not points_field:
-            log("warning: no story points field found; no ticket will have an estimate, so every ticket and total shows – pts")
-        fields = BASE_FIELDS + [f for f in (flagged_field, points_field) if f]
-
-        sprint_issues = client.sprint_issues(sprint_id, fields)
-        log(f"{len(sprint_issues)} issue(s) in the sprint")
-        report = client.sprint_report(board_id, sprint_id)
-        punted_keys = [i["key"] for i in report["contents"]["puntedIssues"]]
-        log(f"{len(punted_keys)} issue(s) removed from the sprint")
-        # Fetched again through the issue API so they have the same shape as
-        # sprint_issues; the sprint report uses an internal one.
-        punted_issues = client.issues_by_keys(punted_keys, fields)
-        missing = set(punted_keys) - {i["key"] for i in punted_issues}
-        if missing:
-            raise SystemExit(
-                f"removed issue(s) could not be fetched: {sorted(missing)}")
-
-        fetched_at = datetime.now(timezone.utc).isoformat()
-        moment = as_of(sprint, fetched_at)
-        statuses = client.statuses()
-        categories = status_categories(statuses)
-        issues = sprint_issues + punted_issues
-        standard = standard_issues(issues)
-        # Read in batches: a request for many issues, not one each. Sub-tasks
-        # are left out, as the report leaves them out; a sub-task's parent is
-        # its story, not an epic.
-        changelogs = read_changelogs(client, standard,
-                                     history_fields(flagged_field, points_field))
-
-        # Every epic: the tickets' current parents, whose descriptions their own
-        # fields don't carry, and those they belonged to before a change of
-        # parent, which their fields no longer name.
-        parent_ids = sorted({str(parent_id) for i in standard
-                             if (parent_id := nested(i.get("fields"), ["parent", "id"]))}
-                            | {str(c[side]) for changes in changelogs.values() for c in changes
-                               if c["field"] == "parent" for side in ("from", "to") if c[side]})
-        parents = client.issues_by_ids(parent_ids, ["summary", "description"])
-
-        # Comments are fetched only for the tickets that were blocker candidates
-        # at the moment the report describes, worked out from the tickets'
-        # events, as build_data.py works out data.json's. The events
-        # need neither the epics' names nor the previous sprint.
-        context = Context(sprint_id, sprint.get("startDate"), categories, (flagged_field, points_field), {},
-                          reporting_zone, None)
-        blocker_keys = blocker_candidates({issue["key"]: ticket_events(issue, changelogs[issue["key"]], context,
-                                                                       moment)
-                                           for issue in standard},
-                                          sprint_id, moment)
-        comments = dict(
-            zip(blocker_keys, gather(blocker_keys, client.comments)))
-
-        pulls = pull_requests(client, standard)
-        log(f"{sum(map(len, pulls['tickets'].values()))} pull request(s) found")
-
-        project_key = project_key_of(args, issues)
-        label = report_label(project_key, sprint.get("name"))
-        out_root, temporary = output_folder(REPORTS_FOLDER)
-        report_dir = os.path.join(out_root, day_folder(
-            label, parse_ts(fetched_at).astimezone(reporting_zone)))
-        raw_dir = prepare_report_dir(report_dir, sprint_id)
-
-        write_json(os.path.join(raw_dir, SPRINT_FILE), sprint)
-        write_json(os.path.join(raw_dir, PREVIOUS_SPRINT_FILE), previous)
-        write_json(os.path.join(raw_dir, SPRINT_ISSUES_FILE), sprint_issues)
-        write_json(os.path.join(raw_dir, SPRINT_REPORT_FILE), report)
-        write_json(os.path.join(raw_dir, PUNTED_ISSUES_FILE), punted_issues)
-        write_json(os.path.join(raw_dir, STATUSES_FILE), statuses)
-        write_json(os.path.join(raw_dir, PARENTS_FILE), parents)
-        write_json(os.path.join(raw_dir, PULL_REQUESTS_FILE), pulls)
-        for key, changes in changelogs.items():
-            write_json(os.path.join(
-                raw_dir, CHANGELOGS_DIR, f"{key}.json"), changes)
-        for key, values in comments.items():
-            write_json(os.path.join(
-                raw_dir, COMMENTS_DIR, f"{key}.json"), values)
-        write_json(os.path.join(raw_dir, META_FILE), {
-            "fetched_at": fetched_at,
-            "report_timezone": reporting_zone.key,
-            "base_url": client.base_url,
-            "label": label,
-            "flagged_field": flagged_field,
-            "story_points_field": points_field,
-        })
-        log(f"raw data written to {raw_dir}")
-        print(json.dumps({"sprint_id": sprint["id"], "sprint_name": sprint.get("name"),
-                          "sprint_state": state, "label": label, "report_dir": report_dir,
-                          "temporary": temporary}))
+    print(json.dumps(fetch_sprint(parse_args())))
 
 
 if __name__ == "__main__":

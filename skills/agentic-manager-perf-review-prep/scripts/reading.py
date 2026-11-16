@@ -15,11 +15,10 @@ from typing import Callable
 
 from common import (FOLDER_NAME, PERSON, POINT_LIMITS, PROTOCOL, json_text, RAW_DIR, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
                     fill_protocol, is_point, library_command, point_fields, point_shape, prep_dir, script_command, read_json, stdin_json,
-                    summary_problems, word_count, work_folder, write_raw,
-                    write_prep_file)
+                    submit_section, summary_problems, task_line, word_count, work_folder, write_raw,
+                    write_prep_file, write_task_file)
 
 MATERIAL = "material.json"
-TASK_FILE = "task.md"
 ANSWER = "answer.json"
 MERGE = "merge"
 SYNOPSIS_WORDS = 60
@@ -110,7 +109,7 @@ def start(source, prep):
         return {**result, **finished(source, prep)}
     return {**result, "tasks": [write_task(source, prep, task, reading_task(source, prep, task, material))
                                 for task in material["tasks"]],
-            "merge": f"Task {MERGE}: {task_path(work, MERGE)}"}
+            "merge": task_line(MERGE, task_folder(work, MERGE))}
 
 
 def submit(source, prep, task, answer):
@@ -214,14 +213,6 @@ def values_section():
                                                      for entry in company_setting(VALUES))
 
 
-def submit_section(command, answer):
-    """How a task submits its answer: the command `command` that takes it,
-    and `answer`, its shape."""
-    return (f"## Submit\n\nSubmit your answer, as JSON in a quoted here-document:\n\n```bash\n"
-            f"{command} <<'END_OF_INPUT'\n{answer}\nEND_OF_INPUT\n```\n\nIf the script refuses it, fix every "
-            "problem it names and submit again, until it is accepted.")
-
-
 def merge_answer(link, item):
     """The shape of a merge's answer, for a source whose evidence is linked
     as `link`, such as "/path/to/note.md", and whose items are each an `item`,
@@ -242,9 +233,7 @@ def answer_shape(source, task):
 def write_task(source, prep, task, text):
     """Write the task `task`'s text to its file in the working folder;
     returns the line that hands it out, 'Task <name>: <path>'."""
-    path = task_path(work_dir(source, prep), task)
-    write_work_file(path, text)
-    return f"Task {task}: {path}"
+    return write_task_file(task_folder(work_dir(source, prep), task), task, text)
 
 
 # The order.
@@ -367,9 +356,10 @@ def raw_dir(source, prep):
     return os.path.join(prep_dir(prep), RAW_DIR, source.name)
 
 
-def task_path(work, task):
-    """The file of `task` in the working folder `work`."""
-    return os.path.join(work, *task.split(":"), TASK_FILE)
+def task_folder(work, task):
+    """The folder of `task` in the working folder `work`, which holds its
+    file."""
+    return os.path.join(work, *task.split(":"))
 
 
 def answer_path(source, prep, task):
@@ -405,10 +395,10 @@ def read_answer(source, prep, task):
 
 
 def write_work_file(path, value):
-    """Write `value`, a text or JSON, to the working folder's file `path`."""
+    """Write `value` as JSON to the working folder's file `path`."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        f.write(value if isinstance(value, str) else json_text(value))
+        f.write(json_text(value))
 
 
 def load_material(source, prep):

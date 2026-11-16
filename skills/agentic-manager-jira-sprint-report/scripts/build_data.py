@@ -35,6 +35,182 @@ NON_DELIVERY_MARKERS = {
 CHANGE_ORDER = {"points": 0, "status": 1, "move": 2}
 
 
+def build_data(report_dir):
+    """Build `report_dir`'s data.json from its raw files: (its path, the
+    summary of the spells, one line each). Exits, writing nothing, when the
+    raw files disagree with each other or with Jira's sprint report."""
+    raw_dir = os.path.join(report_dir, RAW_DIR)
+    meta = read_json(os.path.join(raw_dir, META_FILE))
+    fields = (meta.get("flagged_field"), meta.get("story_points_field"))
+    sprint = read_json(os.path.join(raw_dir, SPRINT_FILE))
+    sprint_id = str(sprint["id"])
+    report = read_json(os.path.join(raw_dir, SPRINT_REPORT_FILE))
+
+    # Sub-tasks are left out, as Jira's sprint report leaves them out; the raw
+    # files keep them.
+    current_raw = standard_issues(
+        read_json(os.path.join(raw_dir, SPRINT_ISSUES_FILE)))
+    removed_raw = standard_issues(read_json(
+        os.path.join(raw_dir, PUNTED_ISSUES_FILE)))
+    if not current_raw and not removed_raw:
+        raise SystemExit("the sprint has no issues; nothing to report")
+
+    status = sprint["state"].lower()
+    zone = report_timezone(meta.get("report_timezone"))
+    previous = read_json(os.path.join(raw_dir, PREVIOUS_SPRINT_FILE))
+    start = sprint_date(sprint.get("startDate"), zone)
+    end = sprint_date(sprint.get("endDate"), zone)
+    complete = sprint_date(sprint.get("completeDate"), zone)
+
+    parents = read_json(os.path.join(raw_dir, PARENTS_FILE))
+    pull_requests = read_json(os.path.join(raw_dir, PULL_REQUESTS_FILE))
+    changes = load_changelogs(os.path.join(
+        raw_dir, CHANGELOGS_DIR), current_raw + removed_raw)
+    context = Context(sprint_id, sprint["startDate"],
+                      status_categories(read_json(os.path.join(
+                          raw_dir, STATUSES_FILE))), fields,
+                      epic_names(current_raw + removed_raw, parents), zone, previous)
+    moment = as_of(sprint, meta["fetched_at"])
+    today = sprint_date(meta["fetched_at"], zone)
+    overlap = {i["key"] for i in current_raw} & {i["key"] for i in removed_raw}
+    if overlap:
+        raise SystemExit(
+            f"{sorted(overlap)} are both in the sprint and in Jira's removed list")
+
+    all_raw = current_raw + removed_raw
+    # Moves after the end, which the events leave out: Jira's sprint report
+    # shows today's membership, so it can't vouch for these tickets. These
+    # moves, and the check that Jira's removed tickets were removed, are the
+    # only reads of the changelogs: membership and blocker candidates come
+    # from the ticket events, like the spells.
+    later_moves = sorted({raw["key"] for raw in all_raw
+                          for events in add_and_remove_events(changes[raw["key"]], sprint_id)
+                          for ts in events if parse_ts(ts) > parse_ts(moment)},
+                         key=key_order)
+    events_of = {raw["key"]: ticket_events(raw, changes[raw["key"]], context, moment)
+                 for raw in all_raw}
+    for raw in current_raw:
+        moves = sprint_moves_of(events_of[raw["key"]], sprint_id)
+        if raw["key"] not in later_moves and not in_sprint_at(moves, parse_ts(moment)):
+            raise SystemExit(f"{raw['key']} is in the sprint but its changelog says it isn't; "
+                             "fetch the sprint again")
+    for raw in removed_raw:
+        if not add_and_remove_events(changes[raw["key"]], sprint_id)[1]:
+            raise SystemExit(f"{raw['key']} is in Jira's removed list but its changelog has no removal "
+                             f"from sprint {sprint_id}; inspect it before reporting")
+
+    # Cross-checked against Jira's own sprint report, which buckets the same
+    # issues independently: nothing is written on a discrepancy.
+    in_scope, completed, removed = membership_sets(
+        events_of, sprint_id, moment)
+    problems = cross_check(report, in_scope, completed, removed, later_moves)
+    if problems is None:
+        raise SystemExit("Jira's sprint report is missing, so the scope can't be cross-checked; "
+                         "no data written. Fetch the sprint again.")
+    if problems:
+        raise SystemExit("data differs from Jira's sprint report; no data written. Unless said otherwise "
+                         "below, the sprint changed during the fetch: fetch it again.\n  - "
+                         + "\n  - ".join(problems))
+
+    spells, left_before_start, with_spells = [], [], []
+    for raw in all_raw:
+        events = events_of[raw["key"]]
+        found = spells_from_events(raw, events, context, moment)
+        if found:
+            with_spells.append(raw["key"])
+        spells += found
+        if not found and any(move < 0 and when <= parse_ts(context.start_ts)
+                             for when, move, _ in sprint_moves_of(events, sprint_id)):
+            left_before_start.append(raw["key"])
+    blocker_keys = blocker_candidates(events_of, sprint_id, moment)
+    spells.sort(key=lambda t: (
+        key_order(t["key"]), parse_ts(t["events"][0]["at"])))
+    counted = [t for t in spells if t["counted"]]
+    counts, points = outcome_breakdown(spells)
+    epics = build_epics(spells, epic_descriptions(parents))
+    # The pull requests of each ticket in the sprint at the end, the only
+    # tickets whose status the report checks.
+    pulls_of = {t["key"]: ticket_pulls(pull_requests, t["key"], moment) for t in counted
+                if t["outcome"] != "descoped"}
+    baseline, last_day = burndown_baseline(spells), sprint_date(moment, zone)
+    ideal = burndown_ideal(start, end, last_day, baseline)
+    goal = sprint.get("goal") or ""
+    data = {
+        "sprint_id": sprint["id"],
+        "sprint_name": sprint.get("name"),
+        "label": meta.get("label"),
+        "base_url": meta.get("base_url"),
+        "sprint_status": status,
+        "sprint_goal": goal,
+        "sprint_start": start,
+        "sprint_end": end,
+        "sprint_complete_date": complete,
+        # The moment the spells' events and fields run to: the close, or the fetch.
+        "as_of_instant": moment,
+        "report_timezone": zone.key,
+        "today": today,
+        # What the goal may be judged as, and how long a running sprint has left.
+        "goal_verdicts": goal_verdicts(goal, status, start, end, today),
+        "days_left": days_left(status, end, today),
+        "previous_sprint": previous and {
+            "id": previous["id"], "name": previous.get("name"),
+            "complete_instant": previous["completeDate"],
+            "complete_date": sprint_date(previous["completeDate"], zone)},
+        "spells": spells,
+        # Each ticket's history as at the end: the spells are worked out from it.
+        "ticket_events": {key: events_of[key] for key in sorted(with_spells, key=key_order)},
+        # Issues that joined and left before the start: in no part of the report.
+        "left_before_start_keys": sorted(left_before_start, key=key_order),
+        "outcome_breakdown_counts": counts,
+        "outcome_breakdown_points": points,
+        "non_delivery_closures": non_delivery_closures(spells),
+        "points_estimated_issue_count": sum(1 for t in counted if t["points"] is not None),
+        "points_total_issue_count": len(counted),
+        # Jira's current buckets cannot independently verify these issues'
+        # historical membership, which is reconstructed from their changes.
+        "membership_cross_check_excluded_keys": later_moves,
+        "blocker_candidate_keys": blocker_keys,
+        # Their comments as at the end, as plain text and without authors.
+        "blocker_comments": blocker_comments(os.path.join(raw_dir, COMMENTS_DIR), blocker_keys, moment, zone),
+        "target_completion": target_completion(spells),
+        "epics": epics,
+        # Each ticket's pull requests as at the end, as ticket_pulls() gives
+        # them, and the rows of the Status to Verify section, worked out from
+        # them.
+        "ticket_pull_requests": {key: pulls_of[key] for key in sorted(pulls_of, key=key_order)},
+        "status_checks": build_status_checks(spells, pulls_of, epics),
+        "timeline": build_timeline(spells, status, start, end, complete, today),
+        "burndown_baseline": baseline,
+        "burndown": with_spread(build_burndown(spells, start, last_day, moment, zone), ideal),
+        "burndown_weekdays": burndown_weekdays(start, end),
+        "burndown_ideal": ideal,
+    }
+    out = os.path.join(report_dir, DATA_FILE)
+    write_json(out, data)
+
+    summary = [f"original commitment: {outcome_total(counts, 'original')} spell(s), "
+               f"{counts['original_completed']} completed, {counts['original_not_completed']} not completed, "
+               f"{counts['original_descoped']} descoped; extra: {outcome_total(counts, 'extra')} spell(s), "
+               f"{counts['extra_completed']} completed "
+               + ("[matches Jira's sprint report for comparable issues]" if later_moves
+                  else "[matches Jira's sprint report]")]
+    if later_moves:
+        summary.append("membership reconstructed from history, excluded from Jira bucket comparison: "
+                       + ", ".join(later_moves))
+    if previous:
+        summary.append(f"carried over from {previous.get('name')}: {outcome_total(counts, 'carried_in')}"
+                       f" of {outcome_total(counts, 'original')} original spell(s)")
+    else:
+        summary.append(
+            "no previous sprint on the board, so nothing carried over")
+    uncounted = [t["key"] for t in spells if not t["counted"]]
+    summary.append("extra spells that ended descoped, shown but not counted: " +
+                   (", ".join(uncounted) or "none"))
+    summary.append("left before the start, not reported: " +
+                   (", ".join(left_before_start) or "none"))
+    return out, summary
+
+
 def epic_names(raw_issues, parents):
     """{epic id: (key, summary)} from the issues' current parents and the
     epics fetched because an issue belonged to them before."""
@@ -590,175 +766,9 @@ def main():
     parser.add_argument("--report-dir", required=True,
                         help="report folder created by fetch_sprint.py")
     args = parser.parse_args()
-
-    raw_dir = os.path.join(args.report_dir, RAW_DIR)
-    meta = read_json(os.path.join(raw_dir, META_FILE))
-    fields = (meta.get("flagged_field"), meta.get("story_points_field"))
-    sprint = read_json(os.path.join(raw_dir, SPRINT_FILE))
-    sprint_id = str(sprint["id"])
-    report = read_json(os.path.join(raw_dir, SPRINT_REPORT_FILE))
-
-    # Sub-tasks are left out, as Jira's sprint report leaves them out; the raw
-    # files keep them.
-    current_raw = standard_issues(
-        read_json(os.path.join(raw_dir, SPRINT_ISSUES_FILE)))
-    removed_raw = standard_issues(read_json(
-        os.path.join(raw_dir, PUNTED_ISSUES_FILE)))
-    if not current_raw and not removed_raw:
-        raise SystemExit("the sprint has no issues; nothing to report")
-
-    status = sprint["state"].lower()
-    zone = report_timezone(meta.get("report_timezone"))
-    previous = read_json(os.path.join(raw_dir, PREVIOUS_SPRINT_FILE))
-    start = sprint_date(sprint.get("startDate"), zone)
-    end = sprint_date(sprint.get("endDate"), zone)
-    complete = sprint_date(sprint.get("completeDate"), zone)
-
-    parents = read_json(os.path.join(raw_dir, PARENTS_FILE))
-    pull_requests = read_json(os.path.join(raw_dir, PULL_REQUESTS_FILE))
-    changes = load_changelogs(os.path.join(
-        raw_dir, CHANGELOGS_DIR), current_raw + removed_raw)
-    context = Context(sprint_id, sprint["startDate"],
-                      status_categories(read_json(os.path.join(
-                          raw_dir, STATUSES_FILE))), fields,
-                      epic_names(current_raw + removed_raw, parents), zone, previous)
-    moment = as_of(sprint, meta["fetched_at"])
-    today = sprint_date(meta["fetched_at"], zone)
-    overlap = {i["key"] for i in current_raw} & {i["key"] for i in removed_raw}
-    if overlap:
-        raise SystemExit(
-            f"{sorted(overlap)} are both in the sprint and in Jira's removed list")
-
-    all_raw = current_raw + removed_raw
-    # Moves after the end, which the events leave out: Jira's sprint report
-    # shows today's membership, so it can't vouch for these tickets. These
-    # moves, and the check that Jira's removed tickets were removed, are the
-    # only reads of the changelogs: membership and blocker candidates come
-    # from the ticket events, like the spells.
-    later_moves = sorted({raw["key"] for raw in all_raw
-                          for events in add_and_remove_events(changes[raw["key"]], sprint_id)
-                          for ts in events if parse_ts(ts) > parse_ts(moment)},
-                         key=key_order)
-    events_of = {raw["key"]: ticket_events(raw, changes[raw["key"]], context, moment)
-                 for raw in all_raw}
-    for raw in current_raw:
-        moves = sprint_moves_of(events_of[raw["key"]], sprint_id)
-        if raw["key"] not in later_moves and not in_sprint_at(moves, parse_ts(moment)):
-            raise SystemExit(f"{raw['key']} is in the sprint but its changelog says it isn't; "
-                             "fetch the sprint again")
-    for raw in removed_raw:
-        if not add_and_remove_events(changes[raw["key"]], sprint_id)[1]:
-            raise SystemExit(f"{raw['key']} is in Jira's removed list but its changelog has no removal "
-                             f"from sprint {sprint_id}; inspect it before reporting")
-
-    # Cross-checked against Jira's own sprint report, which buckets the same
-    # issues independently: nothing is written on a discrepancy.
-    in_scope, completed, removed = membership_sets(
-        events_of, sprint_id, moment)
-    problems = cross_check(report, in_scope, completed, removed, later_moves)
-    if problems is None:
-        raise SystemExit("Jira's sprint report is missing, so the scope can't be cross-checked; "
-                         "no data written. Fetch the sprint again.")
-    if problems:
-        raise SystemExit("data differs from Jira's sprint report; no data written. Unless said otherwise "
-                         "below, the sprint changed during the fetch: fetch it again.\n  - "
-                         + "\n  - ".join(problems))
-
-    spells, left_before_start, with_spells = [], [], []
-    for raw in all_raw:
-        events = events_of[raw["key"]]
-        found = spells_from_events(raw, events, context, moment)
-        if found:
-            with_spells.append(raw["key"])
-        spells += found
-        if not found and any(move < 0 and when <= parse_ts(context.start_ts)
-                             for when, move, _ in sprint_moves_of(events, sprint_id)):
-            left_before_start.append(raw["key"])
-    blocker_keys = blocker_candidates(events_of, sprint_id, moment)
-    spells.sort(key=lambda t: (
-        key_order(t["key"]), parse_ts(t["events"][0]["at"])))
-    counted = [t for t in spells if t["counted"]]
-    counts, points = outcome_breakdown(spells)
-    epics = build_epics(spells, epic_descriptions(parents))
-    # The pull requests of each ticket in the sprint at the end, the only
-    # tickets whose status the report checks.
-    pulls_of = {t["key"]: ticket_pulls(pull_requests, t["key"], moment) for t in counted
-                if t["outcome"] != "descoped"}
-    baseline, last_day = burndown_baseline(spells), sprint_date(moment, zone)
-    ideal = burndown_ideal(start, end, last_day, baseline)
-    goal = sprint.get("goal") or ""
-    data = {
-        "sprint_id": sprint["id"],
-        "sprint_name": sprint.get("name"),
-        "label": meta.get("label"),
-        "base_url": meta.get("base_url"),
-        "sprint_status": status,
-        "sprint_goal": goal,
-        "sprint_start": start,
-        "sprint_end": end,
-        "sprint_complete_date": complete,
-        # The moment the spells' events and fields run to: the close, or the fetch.
-        "as_of_instant": moment,
-        "report_timezone": zone.key,
-        "today": today,
-        # What the goal may be judged as, and how long a running sprint has left.
-        "goal_verdicts": goal_verdicts(goal, status, start, end, today),
-        "days_left": days_left(status, end, today),
-        "previous_sprint": previous and {
-            "id": previous["id"], "name": previous.get("name"),
-            "complete_instant": previous["completeDate"],
-            "complete_date": sprint_date(previous["completeDate"], zone)},
-        "spells": spells,
-        # Each ticket's history as at the end: the spells are worked out from it.
-        "ticket_events": {key: events_of[key] for key in sorted(with_spells, key=key_order)},
-        # Issues that joined and left before the start: in no part of the report.
-        "left_before_start_keys": sorted(left_before_start, key=key_order),
-        "outcome_breakdown_counts": counts,
-        "outcome_breakdown_points": points,
-        "non_delivery_closures": non_delivery_closures(spells),
-        "points_estimated_issue_count": sum(1 for t in counted if t["points"] is not None),
-        "points_total_issue_count": len(counted),
-        # Jira's current buckets cannot independently verify these issues'
-        # historical membership, which is reconstructed from their changes.
-        "membership_cross_check_excluded_keys": later_moves,
-        "blocker_candidate_keys": blocker_keys,
-        # Their comments as at the end, as plain text and without authors.
-        "blocker_comments": blocker_comments(os.path.join(raw_dir, COMMENTS_DIR), blocker_keys, moment, zone),
-        "target_completion": target_completion(spells),
-        "epics": epics,
-        # Each ticket's pull requests as at the end, as ticket_pulls() gives
-        # them, and the rows of the Status to Verify section, worked out from
-        # them.
-        "ticket_pull_requests": {key: pulls_of[key] for key in sorted(pulls_of, key=key_order)},
-        "status_checks": build_status_checks(spells, pulls_of, epics),
-        "timeline": build_timeline(spells, status, start, end, complete, today),
-        "burndown_baseline": baseline,
-        "burndown": with_spread(build_burndown(spells, start, last_day, moment, zone), ideal),
-        "burndown_weekdays": burndown_weekdays(start, end),
-        "burndown_ideal": ideal,
-    }
-    out = os.path.join(args.report_dir, DATA_FILE)
-    write_json(out, data)
-
-    print(f"original commitment: {outcome_total(counts, 'original')} spell(s), "
-          f"{counts['original_completed']} completed, {counts['original_not_completed']} not completed, "
-          f"{counts['original_descoped']} descoped; extra: {outcome_total(counts, 'extra')} spell(s), "
-          f"{counts['extra_completed']} completed "
-          + ("[matches Jira's sprint report for comparable issues]" if later_moves
-             else "[matches Jira's sprint report]"))
-    if later_moves:
-        print("membership reconstructed from history, excluded from Jira bucket comparison: "
-              + ", ".join(later_moves))
-    if previous:
-        print(f"carried over from {previous.get('name')}: {outcome_total(counts, 'carried_in')}"
-              f" of {outcome_total(counts, 'original')} original spell(s)")
-    else:
-        print("no previous sprint on the board, so nothing carried over")
-    uncounted = [t["key"] for t in spells if not t["counted"]]
-    print("extra spells that ended descoped, shown but not counted: " +
-          (", ".join(uncounted) or "none"))
-    print("left before the start, not reported: " +
-          (", ".join(left_before_start) or "none"))
+    out, summary = build_data(args.report_dir)
+    for line in summary:
+        print(line)
     print("wrote", out)
 
 

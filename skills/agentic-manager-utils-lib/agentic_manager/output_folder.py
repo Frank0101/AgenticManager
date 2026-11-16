@@ -2,11 +2,11 @@
 config sets (output.root), or in <system temp>/agentic-manager if it sets none.
 
 As a script it prints the folder, so the agent knows it without reading the
-config. A skill keeping a folder per subject names it with day_folder() and
-empties its place with clear_folder(), so a rerun for the same day starts from
-scratch and earlier days' folders stay. A _ folder beside the runs, such as the
-kept examples, is the user's own: runs read it and none deletes it, and the
-description.md saying what it holds is named, written and read here.
+config. A run of a folder per subject starts with new_run(), which names it by
+day and empties its place, so a rerun the same day starts from scratch and
+earlier days' folders stay; later steps find it with run_folder(). A _ folder
+beside the runs, such as the kept examples, is the user's own: runs read it and
+none deletes it; the description.md saying what it holds is handled here.
 """
 import argparse
 import json
@@ -44,6 +44,35 @@ DAY_FOLDER = re.compile(r"(?P<subject>.+)_(?P<date>\d\d-\d\d-\d\d)")
 DAY_FORMAT = "%y-%m-%d"
 
 
+def new_run(name, subject, day):
+    """(folder, temporary, run, replaced) of a run starting from scratch: the
+    folder `run`, <subject>_<YY-MM-DD> for `day`, created empty inside the
+    skill's output folder `name`, as output_folder() gives it, after deleting
+    the same subject's folder of that day, which `replaced` says was there."""
+    folder, temporary = output_folder(name)
+    run = day_folder(subject, day)
+    path = target(folder, run)
+    replaced = clear_folder(path)
+    os.makedirs(path)
+    return folder, temporary, run, replaced
+
+
+def run_folder(name, run, kind, subject, init_script):
+    """The absolute path of the existing run folder `run` inside the skill's
+    output folder `name`, the folder of a `kind`, such as "deck", named
+    <`subject`>_<YY-MM-DD> and made by `init_script`. Exits if `run` isn't
+    such a name, would lead outside the folder or doesn't exist."""
+    if folder_subject(run) is None:
+        raise SystemExit(
+            f"{run!r} is not a {kind} folder, <{subject}>_<YY-MM-DD>")
+    folder, _ = output_folder(name)
+    path = target(folder, run)
+    if not os.path.isdir(path):
+        raise SystemExit(
+            f"{run} doesn't exist in {folder}: run {init_script} first")
+    return path
+
+
 def output_folder(name):
     """(folder, temporary): the absolute folder a skill writes its files to,
     `name` in the user's output root, or in TEMP_ROOT if the config doesn't set
@@ -58,22 +87,6 @@ def output_folder(name):
     folder = os.path.abspath(os.path.join(folder, name))
     os.makedirs(folder, exist_ok=True)
     return folder, temporary
-
-
-def document_name(subject, kind):
-    """The file name of a run's document, <subject>_<kind>, such as
-    "Jane-Doe_Review_Prep.md" for "Jane-Doe" and "Review_Prep.md": the
-    subject its folder is named after, so every skill's documents read
-    alike."""
-    return f"{subject}_{kind}"
-
-
-def work_folder(name, *parts):
-    """The folder `parts` of the working files of the skill whose output
-    folder is `name`, in the system's temporary folder: files only a run
-    needs, such as subagents' tasks, kept out of the output folder so it
-    holds only the skill's own files."""
-    return os.path.join(tempfile.gettempdir(), name, *parts)
 
 
 def output_root():
@@ -94,6 +107,38 @@ def folder_name(value):
         raise argparse.ArgumentTypeError(
             f"{value!r} must be a single folder name, not a path")
     return name
+
+
+def document_name(subject, kind):
+    """The file name of a run's document, <subject>_<kind>, such as
+    "Jane-Doe_Review_Prep.md" for "Jane-Doe" and "Review_Prep.md": the
+    subject its folder is named after, so every skill's documents read
+    alike."""
+    return f"{subject}_{kind}"
+
+
+def work_folder(name, *parts):
+    """The folder `parts` of the working files of the skill whose output
+    folder is `name`, in the system's temporary folder: files only a run
+    needs, such as subagents' tasks, kept out of the output folder so it
+    holds only the skill's own files."""
+    return os.path.join(tempfile.gettempdir(), name, *parts)
+
+
+def target(folder, relative):
+    """The absolute path of `relative` inside `folder`. Exits if it would lead
+    outside the folder."""
+    if not relative or os.path.isabs(relative) or os.pardir in relative.replace("\\", "/").split("/"):
+        raise SystemExit(
+            f"{relative!r} must be a relative path inside the output folder, without ..")
+    path = os.path.join(folder, relative)
+    root, resolved = os.path.realpath(folder), os.path.realpath(path)
+    if resolved == root:
+        raise SystemExit(
+            f"{relative!r} must name a file inside the output folder")
+    if os.path.commonpath([root, resolved]) != root:
+        raise SystemExit(f"{relative!r} leads outside the output folder")
+    return path
 
 
 def day_folder(subject, day):

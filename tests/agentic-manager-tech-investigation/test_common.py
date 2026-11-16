@@ -28,10 +28,14 @@ def api(path):
 
 class StructureTest(unittest.TestCase):
     def test_report_headings(self):
-        # Every section is always in the report, in this order.
+        # Every section is always in the report, in this order; one whose
+        # body the agent writes is marked as such.
+        ai = common.ai_marked
         self.assertEqual([title for _, title in common.report_headings()], [
-            "Executive / product summary", "Problem and purpose", "Current status", "Direction",
-            "Key decisions and risks", "Architect summary", "How it works today", "Target design",
+            "Executive / product summary", ai("Problem and purpose"), ai(
+                "Current status"), ai("Direction"),
+            "Key decisions and risks", "Architect summary", ai(
+                "How it works today"), ai("Target design"),
             "Open technical choices and gaps"])
 
     def test_expected_files(self):

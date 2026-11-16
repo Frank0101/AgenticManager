@@ -191,7 +191,7 @@ class InvestigateTest(unittest.TestCase):
         self.assertTrue(text.startswith("# Task scope"), text[:80])
         for expected in ("- Q07: Should the investigation cover the payments gateway", "- Q08: Should the "
                          "investigation cover billing? (raised by F02)", "## Decided so far\n\nNone yet.",
-                         f"--task scope <<'EOF'"):
+                         f"--task scope <<'END_OF_INPUT'"):
             with self.subTest(expected):
                 self.assertIn(expected, text)
         self.assertNotIn("# Task answer", text)
@@ -263,7 +263,7 @@ class InvestigateTest(unittest.TestCase):
                          "1a2b3c4; coverage: partial",
                          "### Reading the tracker",
                          f"python3 {os.path.join(SCRIPTS, 'tickets.py')}",
-                         f"submit --investigation {INVESTIGATION} --task research:Q06 <<'EOF'"):
+                         f"submit --investigation {INVESTIGATION} --task research:Q06 <<'END_OF_INPUT'"):
             with self.subTest(expected):
                 self.assertIn(expected, text)
         self.assertNotIn("{{", text)

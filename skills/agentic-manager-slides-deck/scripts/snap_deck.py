@@ -42,8 +42,7 @@ PAGE_TIME_MS = 5000
 def snap(deck):
     """(sheet, pictures): the sheet of the deck `deck` and the picture of every
     slide, in order, in the deck's working folder, replaced on every run;
-    exits if Chrome isn't
-    installed or a picture fails."""
+    exits if Chrome isn't installed or a picture fails."""
     chrome = find_chrome()
     if not chrome:
         raise SystemExit(
@@ -139,8 +138,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Picture each slide of the deck with headless Chrome. Prints one line of JSON: the "
         "`sheet`, every slide numbered at a third of its size, then `slides`, the picture of each slide in "
-        "order, all in the deck's working folder in the system temp folder, replaced on every run. Exits 1 if Chrome makes no picture, saying to skip the check "
-        "when it isn't installed or takes over 60 seconds on a picture.")
+        "order, all in the deck's working folder in the system temp folder, replaced on every run. Exits 1 if "
+        "Chrome makes no picture, saying to skip the check when it isn't installed or takes over 60 seconds "
+        "on a picture.")
     parser.add_argument("--deck", required=True,
                         help="the deck's folder, <Name>_<YY-MM-DD>, inside slides-decks")
     sheet, pictures = snap(parser.parse_args(argv).deck)

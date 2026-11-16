@@ -52,8 +52,7 @@ WORK_SCRIPT = os.path.join(SCRIPTS, "fetch_work.py")
 NOTION_SCRIPT = os.path.join(SCRIPTS, "set_notion.py")
 REPORT_SCRIPT = os.path.join(SCRIPTS, "finish_report.py")
 PREPARE_SCRIPT = os.path.join(SCRIPTS, "prepare_report.py")
-OUTPUT_FILE_SCRIPT = os.path.join(REPO_ROOT, "skills", "agentic-manager-utils-lib", "agentic_manager",
-                                  "output_file.py")
+CONTENT_SCRIPT = os.path.join(SCRIPTS, "set_content.py")
 SLACK_SCRIPT = os.path.join(SCRIPTS, "read_slack.py")
 TOKEN = "s3cret-token"
 JANE = {"accountId": "5b10ac8d82e05b22cc7d4ef5", "accountType": "atlassian", "displayName": "Jane Doe",
@@ -290,8 +289,12 @@ class ScriptsTest(unittest.TestCase):
         content = {part: " ".join(["Jane did well, showing", *sorted({point["values"][0] for point in brief[part]
                                                                       if point["values"]})])
                    if brief[part] else "" for part in ("going_well", "to_improve")}
-        self.run_ok(OUTPUT_FILE_SCRIPT, "--name", "perf-review-preps", "--path", prepared["content_path"],
-                    stdin=json.dumps(content))
+        self.assertTrue(prepared["task"].startswith("Task observations: "))
+        code, _, err = self.run_script(CONTENT_SCRIPT, "--prep", prep, stdin=json.dumps(
+            {**content, "going_well": "Jane did well."}))
+        self.assertEqual(code, 1)
+        self.assertIn("doesn't name", err)
+        self.run_ok(CONTENT_SCRIPT, "--prep", prep, stdin=json.dumps(content))
         made = self.run_ok(REPORT_SCRIPT, "--prep", prep)
         with open(made["report"], encoding="utf-8") as f:
             report = f.read()

@@ -17,7 +17,7 @@ from collections import Counter
 from datetime import date, timedelta
 
 from common import (BINS_PER_DECADE, DATA, FOCUS_SHARE, MAX_GROUPS, SUMMARY_FILES, VALUED_PARTS, VALUES, project_of, PERSON, WORK_LISTS, company_names, epic_of, jira_search_url, pull_search_url, period_days, prep_dir, raw_work_problems,
-                    read_json, read_raw_work, stops_on_failure, work_items, write_prep_file)
+                    is_sub_task, read_json, read_raw_work, work_items, write_prep_file)
 
 # The searches data.json links to, by what they find: each list's, and the
 # resolved issues that are estimated, whose points are summed.
@@ -414,7 +414,7 @@ def epic_search_urls(raw):
         fields = issue["fields"]
         if not (epic := epic_of(fields, parents)):
             continue
-        if fields["issuetype"].get("subtask"):
+        if is_sub_task(fields):
             stories.setdefault(epic["key"], set()).add(fields["parent"]["key"])
         else:
             children.add(epic["key"])
@@ -436,8 +436,7 @@ def main(argv=None):
     parser.add_argument("--prep", required=True,
                         help="the prep's folder, <Person>_<YY-MM-DD>, as init_prep.py printed it")
     args = parser.parse_args(argv)
-    with stops_on_failure():
-        print(json.dumps({"data": build_data(args.prep)}, ensure_ascii=False))
+    print(json.dumps({"data": build_data(args.prep)}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

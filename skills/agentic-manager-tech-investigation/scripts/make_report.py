@@ -13,12 +13,7 @@ import os
 import re
 
 from common import (CONTENT, folder_day, is_day, display_date, FENCE, backtick_error, TABLE_HEADINGS, ledger_rows, FOLDER_NAME, HEADING, HEADINGS, LEDGER,
-                    anchor_tag, autolink, investigation_dir, report_path, link_definitions, markdown, read_json, table, topic_of, unlinked_backticks, unresolved_message, word_count, write_output_file)
-
-# Approximate prose lengths, in words: room to articulate, not quotas. Warn above
-# one and a half times, or far below, under a third, which is a stub.
-TARGETS = {"purpose": 150, "current_status": 200,
-           "direction": 200, "summary": 300}
+                    WORD_TARGETS, ai_marked, anchor_tag, autolink, investigation_dir, report_path, link_definitions, markdown, read_json, table, topic_of, unlinked_backticks, unresolved_message, word_count, write_output_file)
 
 # content.json's fields, and those of each architecture stage: any other is an
 # error naming it, as a field the report doesn't show would be dropped silently.
@@ -27,9 +22,10 @@ FIELDS = ("purpose", "current_status", "direction", "key_decisions",
 STAGE_FIELDS = ("summary",)
 LEDGER_LINK = re.compile(r"\]\(ledger:([A-Za-z]+\d+)?\)")
 # A decisions table's fields in content.json, and its columns after the first,
-# which names the decision.
+# which names the decision: the agent writes every cell, so each is marked.
 DECISION_FIELDS = ("decision", "why", "position", "evidence")
-DECISION_COLUMNS = ["Why it matters", "Established position", "Evidence"]
+DECISION_COLUMNS = [ai_marked(column) for column in (
+    "Why it matters", "Established position", "Evidence")]
 # Each of the template's headings as written, by its id.
 HEADING_LINE = {ident: "#" * level + " " +
                 title for level, title, ident in HEADINGS}
@@ -135,6 +131,8 @@ class Content:
         return LEDGER_LINK.sub(resolve, text)
 
     def length(self, texts, target, where):
+        # Warn above one and a half times the target, or far below, under a
+        # third, which is a stub.
         count = sum(word_count(t) for t in texts)
         if count < target / 3 or count > target * 1.5:
             self.warnings.append(
@@ -166,13 +164,13 @@ def build(content):
     data = content.data
     content.unknown(data, FIELDS)
     purpose = content.paragraphs(data.get("purpose"), "purpose")
-    content.length(purpose, TARGETS["purpose"], "purpose")
+    content.length(purpose, WORD_TARGETS["purpose"], "purpose")
     current_status = content.paragraphs(
         data.get("current_status"), "current_status")
     content.length(current_status,
-                   TARGETS["current_status"], "current_status")
+                   WORD_TARGETS["current_status"], "current_status")
     direction = content.paragraphs(data.get("direction"), "direction")
-    content.length(direction, TARGETS["direction"], "direction")
+    content.length(direction, WORD_TARGETS["direction"], "direction")
     decisions = data.get("open_choices_and_gaps")
     if not isinstance(decisions, list):
         content.errors.append(
@@ -206,7 +204,7 @@ def build(content):
         parts += sections.get(key, [])
     parts.append(HEADING_LINE["arch.decisions"])
     parts += ["The table records source-backed decisions and evidence gaps. It does not select an option.",
-              table(["Decision or gap"] + DECISION_COLUMNS,
+              table([ai_marked("Decision or gap")] + DECISION_COLUMNS,
                     decision_rows(content, "open_choices_and_gaps", decisions))] if decisions else [
         "No technical choice or evidence gap is open in the inspected evidence."]
     return "\n\n".join(parts) + "\n"
@@ -229,7 +227,7 @@ def architect_section(content, key, stage):
     where = f"architecture.{key}"
     content.unknown(stage, STAGE_FIELDS, f"{where}.")
     summary = content.paragraphs(stage.get("summary"), f"{where}.summary")
-    content.length(summary, TARGETS["summary"], f"{where}.summary")
+    content.length(summary, WORD_TARGETS["summary"], f"{where}.summary")
     return summary
 
 
@@ -257,4 +255,4 @@ def key_decisions(content):
     if not items:
         return ["No decision, blocker or risk in the inspected evidence warrants technical-leadership attention."]
     return ["These items describe implications of the linked evidence.",
-            table(["Decision or risk"] + DECISION_COLUMNS, decision_rows(content, "key_decisions", items))]
+            table([ai_marked("Decision or risk")] + DECISION_COLUMNS, decision_rows(content, "key_decisions", items))]

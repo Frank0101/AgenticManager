@@ -15,12 +15,12 @@ Say what the note says about the person:
 
 ## Examples
 
-| Note                                                                                                                 | Synopsis                                                                                                          |
-| -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| "Jane has already done it instead - well done!", under a line saying Sam set personal objectives unprompted          | Jane had already set personal objectives without being asked, unlike Sam; the manager wrote "well done"           |
-| "Jane said in Slack 'on it', but didn't move the ticket - to check", with "-> all fine, in progress" nested under it | The manager wondered whether Jane had started a ticket that hadn't moved, then found it was in progress, all fine |
-| "Jane, Sam and Alex in the planning sync"                                                                            | Jane is named only among the planning sync's attendees                                                            |
-| "Ask Jane about the rollout"                                                                                         | A to-do for the manager: ask Jane about the rollout                                                               |
+| Note                                                                                                                 | Synopsis                                                                                                          | Why                                                                                               |
+| -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| "Jane has already done it instead - well done!", under a line saying Sam set personal objectives unprompted          | Jane had already set personal objectives without being asked, unlike Sam; the manager wrote "well done"           | "It" is read from the line above: a note says what its context gives it                           |
+| "Jane said in Slack 'on it', but didn't move the ticket - to check", with "-> all fine, in progress" nested under it | The manager wondered whether Jane had started a ticket that hadn't moved, then found it was in progress, all fine | What is nested under a note is how it ended: the synopsis says both                               |
+| "Jane, Sam and Alex in the planning sync"                                                                            | Jane is named only among the planning sync's attendees                                                            | A name in a list says nothing of what Jane did: the synopsis says so, and the merge leaves it out |
+| "Ask Jane about the rollout"                                                                                         | A to-do for the manager: ask Jane about the rollout                                                               | The manager's own to-do, not something Jane did                                                   |
 
 ## Links and writing
 

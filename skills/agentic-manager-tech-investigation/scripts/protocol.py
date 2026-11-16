@@ -10,8 +10,8 @@ printed; they are printed one record per line, which costs fewer tokens.
 import json
 import os
 
-from common import (BLOCKERS, BOUNDARY_KINDS, COMPONENT_TYPES, CONNECTION_KINDS, COVERAGE, GROUPS, IDENTITY_KINDS,
-                    READ_COVERAGE, STATUS_MEANINGS, WAITS, fill_protocol, read_json)
+from common import (BLOCKERS, BOUNDARY_KINDS, CLAIM_WORDS, COMPONENT_TYPES, CONNECTION_KINDS, COVERAGE, GROUPS,
+                    IDENTITY_KINDS, READ_COVERAGE, STATUS_MEANINGS, WAITS, WORD_TARGETS, fill_protocol, read_json)
 
 FOLDER = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "..", "protocol")
@@ -27,6 +27,8 @@ VALUES = {
     "identity_kinds": ", ".join(IDENTITY_KINDS),
     "waits": ", ".join(WAITS),
     "statuses": STATUS_MEANINGS,
+    "claim_words": CLAIM_WORDS,
+    **{f"{section}_words": words for section, words in WORD_TARGETS.items()},
 }
 
 

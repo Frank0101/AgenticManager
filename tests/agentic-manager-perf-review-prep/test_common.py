@@ -378,30 +378,12 @@ class CommonTest(unittest.TestCase):
             with self.subTest(name), self.assertRaisesRegex(SystemExit, expected):
                 common.prep_dir(prep)
 
-
-class WeekTextTest(unittest.TestCase):
-    def test_week_text(self):
-        # The month named once within it, twice across two.
-        cases = [(["2026-07-13", "2026-07-19"], "13–19 Jul"), (["2026-07-13", "2026-07-13"], "13 Jul"),
-                 (["2026-07-27", "2026-08-02"], "27 Jul–2 Aug")]
-        for between, expected in cases:
-            with self.subTest(expected):
-                self.assertEqual(common.week_text(between), expected)
-
-
-class RepoCodeTest(unittest.TestCase):
-    def test_repo_code(self):
-        # A letter by the repository's place in the order, none beyond it.
-        order = ["acme/api", "acme/web"]
-        self.assertEqual([common.repo_code(repo, order) for repo in ("acme/api", "acme/web", "acme/docs")],
-                         ["A", "B", None])
-
     def test_content_problems(self):
         # name: (content.json, the tables' points, expected in its problems,
         # or None for none): each table's summary, empty exactly when the
-        # table holds no point, not longer than SUMMARY_WORDS words, and
+        # table holds no point, not longer than MAX_OBSERVATIONS_WORDS words, and
         # naming each value its table groups points under.
-        long = "word " * (common.SUMMARY_WORDS + 1)
+        long = "word " * (common.MAX_OBSERVATIONS_WORDS + 1)
         cases = [("both summarised", {"going_well": "Good.", "to_improve": "Better."}, (1, 1), None),
                  ("no point to improve", {
                   "going_well": "Good.", "to_improve": ""}, (1, 0), None),
@@ -426,6 +408,26 @@ class RepoCodeTest(unittest.TestCase):
                 else:
                     self.assertIn(expected, problems)
 
+
+class WeekTextTest(unittest.TestCase):
+    def test_week_text(self):
+        # The month named once within it, twice across two.
+        cases = [(["2026-07-13", "2026-07-19"], "13–19 Jul"), (["2026-07-13", "2026-07-13"], "13 Jul"),
+                 (["2026-07-27", "2026-08-02"], "27 Jul–2 Aug")]
+        for between, expected in cases:
+            with self.subTest(expected):
+                self.assertEqual(common.week_text(between), expected)
+
+
+class RepoCodeTest(unittest.TestCase):
+    def test_repo_code(self):
+        # A letter by the repository's place in the order, none beyond it.
+        order = ["acme/api", "acme/web"]
+        self.assertEqual([common.repo_code(repo, order) for repo in ("acme/api", "acme/web", "acme/docs")],
+                         ["A", "B", None])
+
+
+class LinkHrefTest(unittest.TestCase):
     def test_link_href(self):
         # A web address as it is; a file's path relative to the report's
         # folder, escaped, so a space doesn't break the link.

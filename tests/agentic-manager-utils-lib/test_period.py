@@ -82,7 +82,7 @@ class PeriodTest(unittest.TestCase):
     def test_day_argument(self):
         self.assertEqual(period.day_argument(
             " 2026-08-10 "), date(2026, 8, 10))
-        for text in ("10/08/2026", "2026-02-30", ""):
+        for text in ("10/08/2026", "2026-02-30", "20260810", ""):
             with self.subTest(text), self.assertRaisesRegex(argparse.ArgumentTypeError, "YYYY-MM-DD"):
                 period.day_argument(text)
 

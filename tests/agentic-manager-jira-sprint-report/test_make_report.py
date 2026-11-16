@@ -16,7 +16,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import make_report  # noqa: E402
-from check_report import Checker, cells_of, check_commentary, rows_of, text_of  # noqa: E402
+from check_report import Checker, cells_with_attributes, check_commentary, rows_of, text_of  # noqa: E402
 from common import CHART_FILES, INLINE_LINK, NO_EPIC, ai_marked, link_text  # noqa: E402
 from make_report import Report  # noqa: E402
 
@@ -133,7 +133,7 @@ class HeaderTest(unittest.TestCase):
 
 class TablesTest(unittest.TestCase):
     def rows(self, table):
-        return [" | ".join(text_of(c) for c in cells_of(row)) for row in rows_of(table)]
+        return [" | ".join(text_of(c) for _, c in cells_with_attributes(row)) for row in rows_of(table)]
 
     def test_timeline_table(self):
         table = report().timeline_table()
@@ -419,7 +419,7 @@ class BuildTest(unittest.TestCase):
         # other tickets; and a line instead of the table when no ticket needs
         # checking.
         r = report()
-        rows = [[text_of(cell) for cell in cells_of(row)]
+        rows = [[text_of(cell) for _, cell in cells_with_attributes(row)]
                 for row in rows_of(r.status_table())]
         self.assertEqual(rows, [
             ["Epic", "Ticket", "Status", "What its pull requests show"],
@@ -447,7 +447,7 @@ class BuildTest(unittest.TestCase):
             with self.subTest(name):
                 data = sprint_data()
                 data["status_checks"][0].update(changes)
-                cell = cells_of(
+                _, cell = cells_with_attributes(
                     rows_of(Report(data, CONTENT).status_table())[1])[-1]
                 self.assertEqual(text_of(cell), text)
         with self.subTest("nothing to verify"):

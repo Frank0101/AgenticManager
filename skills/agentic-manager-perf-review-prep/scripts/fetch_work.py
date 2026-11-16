@@ -13,7 +13,7 @@ import json
 import os
 import subprocess
 
-from common import (JIRA_SOURCE, PARENT_FIELDS, PERSON, RAW_ITEM_FIELDS, dated_query, fetched, JiraClient, gh_orgs, period_days,
+from common import (JIRA_SOURCE, PARENT_FIELDS, PERSON, RAW_ITEM_FIELDS, dated_query, fetched, JiraClient, gh_orgs, is_sub_task, period_days,
                     prep_dir, read_json, require_gh, search_pulls, selection, stops_on_failure, WORK_LISTS,
                     write_raw_work)
 
@@ -71,7 +71,7 @@ def jira_raw(client, account, person):
              for name, jql in jqls.items()}
     # A sub-task's parent is a story: its epic is the story's parent.
     stories = sorted({issue["fields"]["parent"]["key"] for issues in lists.values() for issue in issues
-                      if issue["fields"]["issuetype"].get("subtask") and issue["fields"].get("parent")})
+                      if is_sub_task(issue["fields"]) and issue["fields"].get("parent")})
     parents = client.search(
         f"key in ({', '.join(stories)})", STORY_FIELDS) if stories else []
     return {"start": person["start"], "end": person["end"], "base_url": client.base_url,

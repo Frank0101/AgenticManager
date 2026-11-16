@@ -35,7 +35,7 @@ class MakeReportTest(unittest.TestCase):
                       '<a href="https://www.notion.so/billing-plan">Billing plan</a></td><td>'
                       'Engineering</td></tr>', report)
         self.assertEqual(check_report.report_problems(
-            report, DATA, common.CHART_FILES, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT), [])
+            report, DATA, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT), [])
 
     def test_observations_section(self):
         # Each part's heading, marked as the agent's, its summary, then its
@@ -66,7 +66,8 @@ class MakeReportTest(unittest.TestCase):
         self.assertIn(
             "Period: 10/08/2026 to 10/11/2026\n\n## Observations\n", report)
         self.assertIn(
-            f'<th width="10%">Value</th><th width="10%">Also</th><th width="50%">{common.ai_marked("Point")}</th>', report)
+            f'<th width="10%">{common.ai_marked("Value")}</th><th width="10%">{common.ai_marked("Also")}</th>'
+            f'<th width="50%">{common.ai_marked("Point")}</th>', report)
         # A point naming two values sits under the first, the second next to
         # the value's column.
         self.assertIn(
@@ -83,7 +84,7 @@ class MakeReportTest(unittest.TestCase):
                       f'<li><a href="{html.escape(jira["epic_search_urls"]["PROJ-1"])}">PROJ-1</a> Billing (2)</li>'
                       '</ol>', report)
         self.assertEqual(check_report.report_problems(
-            report, DATA_NO_EPIC_FIRST, common.CHART_FILES, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT), [])
+            report, DATA_NO_EPIC_FIRST, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT), [])
 
     def test_notion_pages_by_calendar_week(self):
         # Pages found by a week's search split in two share that week's row.
@@ -97,7 +98,7 @@ class MakeReportTest(unittest.TestCase):
         self.assertEqual(report.count(
             '<td rowspan="2">10–16 Aug</td>'), 1)
         self.assertEqual(check_report.report_problems(
-            report, data, common.CHART_FILES, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT), [])
+            report, data, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT), [])
 
 
 if __name__ == "__main__":

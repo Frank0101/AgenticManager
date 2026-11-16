@@ -1,6 +1,6 @@
 Make the person the subject of a point: what they did, or what happened because of them. When it is someone's judgement, say whose, such as "Jane's review saved the release, as Sam put it", not "Sam praised Jane's review".
 
-A point is one sentence in your words, about {{point_words}} words, up to {{max_point_words}} only for a point that sums up a contribution over weeks or months, a ceiling, not a target, never copied, that stands on its own: say what it is about, such as a promotion, so it reads without its source.
+A point is one sentence in your words, never copied, that stands on its own: say what it is about, such as a promotion, so it reads without its source. It is about {{point_words}} words, up to {{max_point_words}} only for a point that sums up a contribution over weeks or months: a ceiling, not a target.
 
 A reminder or a to-do about the review's process, such as updating objectives before a deadline or keeping evidence for a promotion case, says nothing about the person's work: it isn't a point.
 

@@ -6,15 +6,15 @@ Link each claim to the ledger, such as [F03](ledger:F03); the script writes the 
 
 The executive layer:
 
-- purpose (about 150 words): the problem, who it affects, why it matters and the intended outcome, in plain language. End with each topic the brief's Scope boundaries mark mention only, in one line on how it connects.
-- current_status (about 200 words): what is done, what is in progress, and the gap between them, keeping live, in development and planned apart. Name the evidence limits that matter, such as a source that couldn't be read.
-- direction (about 200 words): what comes next, in the order the sources give, separating what the tracker plans from what only the documentation proposes. Give timing only where a source commits to it.
+- purpose (about {{purpose_words}} words): the problem, who it affects, why it matters and the intended outcome, in plain language. End with each topic the brief's Scope boundaries mark mention only, in one line on how it connects.
+- current_status (about {{current_status_words}} words): what is done, what is in progress, and the gap between them, keeping live, in development and planned apart. Name the evidence limits that matter, such as a source that couldn't be read.
+- direction (about {{direction_words}} words): what comes next, in the order the sources give, separating what the tracker plans from what only the documentation proposes. Give timing only where a source commits to it.
 - key_decisions: only the decisions, blockers and risks that need a leader's attention, each with why it matters and its evidence. An empty list is fine.
 
 The architect layer cites the system design's rows, such as a component, [C03](ledger:C03), or a connection, [E05](ledger:E05), as well as findings, so an engineer can go from a sentence to what it describes:
 
-- architecture.today.summary (about 300 words): the system design as the ledger records it, saying why each main component exists, not only its name. Cover the entry points, the boundaries of trust, data and identity, and the technical limits, and mark what is only in development.
-- architecture.target.summary (about 300 words): what the target keeps, adds, changes or removes compared with today, and why. Keep what the tracker plans apart from what only the documentation proposes, and name the technical choices still open.
+- architecture.today.summary (about {{summary_words}} words): the system design as the ledger records it, saying why each main component exists, not only its name. Cover the entry points, the boundaries of trust, data and identity, and the technical limits, and mark what is only in development.
+- architecture.target.summary (about {{summary_words}} words): what the target keeps, adds, changes or removes compared with today, and why. Keep what the tracker plans apart from what only the documentation proposes, and name the technical choices still open.
 - open_choices_and_gaps: the choices and evidence gaps that matter to the target, each with why it matters and its evidence. Look where the sources disagree: vision with no ticket, a ticket with no code, code the design doesn't mention, and a ticket status the code contradicts.
 
 While writing, check the ledger for consistency at a high level: compare the findings, the system design, the decisions and the gaps with each other, without reading the sources again, which would be research. Look for findings that contradict each other, a design state the findings don't support, one of the aims, {{aims}}, that the ledger leaves uncovered, and a decision treated as settled elsewhere. Report each inconsistency, never resolving it by choosing a side: in current_status when it concerns the status, otherwise in open_choices_and_gaps.

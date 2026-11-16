@@ -35,6 +35,12 @@ class ProtocolTest(unittest.TestCase):
         # Every task reads a repository from the run's one clone of it.
         self.assertIn("use the run's shared clone of it, /r/<owner>-<repo>",
                       protocol.text("research", **FILLS))
+        # Lengths are the scripts' values, written once.
+        self.assertIn("of about 80 words at most",
+                      protocol.text("research", **FILLS))
+        for expected in ("purpose (about 150 words)", "current_status (about 200 words)",
+                         "architecture.target.summary (about 300 words)"):
+            self.assertIn(expected, protocol.text("write", **FILLS))
 
     def test_examples_print_one_record_per_line(self):
         for name in sorted(os.listdir(os.path.join(protocol.FOLDER, "examples"))):

@@ -2,7 +2,7 @@
 name: agentic-manager-perf-review-prep
 disable-model-invocation: true
 description: Helps a manager prepare a performance review of one person over a review period, from the evidence of their work in Jira, GitHub, the documentation, the team's messages and the manager's own notes. In development; not ready to use.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_content.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *)
 ---
 
 # Performance Review Prep
@@ -36,8 +36,8 @@ perf-review-preps/
     │                     requests' lines changed, the series the charts draw and the link to each search; and
     │                     the points of the feedback, the notes and Slack, going well and to improve, by company
     │                     value)
-    ├── brief.json        prepare_report.py writes (each table of observations' points, which you summarise)
-    ├── content.json      you write, step 8 (your summary of each table of observations)
+    ├── brief.json        prepare_report.py writes (each table of observations' points, which the observations task summarises)
+    ├── content.json      set_content.py writes (the summary of each table of observations)
     └── Jane-Doe_Review_Prep.md
                           finish_report.py writes (the report for the manager, from the files above: for now,
                           what is going well and what to improve, by company value, then the person's GitHub
@@ -138,30 +138,9 @@ The person's work in Jira, GitHub and Notion, in the period. It and step 6 don't
 
 ## 8. Summarise the observations
 
-Once steps 6 and 7 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py --prep <prep>`: it builds `data.json`, the model the report reads, from the raw files and the feedback, notes and Slack summaries, with no network, then `brief.json`, which holds all you need to write. The report opens with two tables of observations, what is going well and what to improve, each point under the company value it shows most; read `brief.json`, at the `brief` path it prints, and write a summary of each table, which the report shows above it, the table folded below as the detail:
+Once steps 6 and 7 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py --prep <prep>`: it builds `data.json`, the model the report reads, from the raw files and the feedback, notes and Slack summaries, with no network, then `brief.json`, and prints `task`, the line of the task that summarises each table of observations, what is going well and what to improve, from the brief. Give it to a fresh subagent, with your own model, as it judges, only its path, with: "Do the task in <path> exactly as written there, then reply in one line." The task holds its own instructions and records the summaries in `content.json` with `set_content.py`, which checks them as they're written. Once it has replied, go on to step 9.
 
-- Say what the person did, as behaviours, from the table's points alone, and how they show the company values: name a value inside the sentence, as the brief names it, such as "reflecting Ownership", never as a label or a list.
-- Touch on every company value the table groups points under, the first of a point's `values`, even in a few words for one with few points: the script checks each is named. A value a point names second is a weaker signal: name it only where it adds something.
-- Open with the person's main contribution, then go down to the rest. Judge it by how often a theme comes back across the points and by the brief's `focus`, where most of their pull requests and resolved issues went: a measure of volume, not of impact, so it orders what the points say and adds nothing they don't.
-- Write in the third person, with the person's name as the brief gives it, as [Writing to the manager](#writing-to-the-manager) says.
-- Write flowing paragraphs, no lists or headings, of about 200 words at most, fewer when the table holds few points. Say once what several points, or several sources, show together.
-- Leave a summary empty when its table holds no point.
-
-For example, going well, opening with the main contribution:
-
-> Jane has owned the billing migration from its design to its launch, keeping the plan visible to the teams around it and answering their questions with figures, which reflects Ownership. Beyond the squad, Jane became the person others turn to for the payments API, helping colleagues in three teams, who thanked Jane by name, an example of Teamwork. Since September Jane has also questioned how the squad estimates, proposing a lighter process the squad then adopted.
-
-And to improve:
-
-> Jane's main development area is making the reporting work visible. Jane delivers the tasks picked up, but the squad often learns where the work stands only by asking, and Sam usually presents it in reviews. Jane should own the reporting rollout end to end, setting its plan, sharing progress every week and raising risks early, which reflects Ownership; progress would show in the squad knowing what Jane owns and what comes next without chasing. Jane rarely speaks in planning: bringing ideas and questions there would show Teamwork.
-
-Write `content.json` through the shared writer, with the `content_path` `prepare_report.py` printed, and the same way for every revision, never with your own file tools; its `--help` shows how to change part of it later:
-
-```bash
-python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py --name perf-review-preps --path '<content_path>' <<'END_OF_FILE'
-{"going_well": "One or more paragraphs.", "to_improve": "One or more paragraphs."}
-END_OF_FILE
-```
+To change a summary later, as the manager asks, edit it yourself and record both summaries again with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_content.py --prep <prep>`, whose `--help` shows the input, then run step 9 again.
 
 ## 9. Finish
 
@@ -169,7 +148,7 @@ Run `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py --prep <prep>`: it che
 
 ## 10. Tell the manager
 
-Say the prep is ready, with a Markdown link to its report, and that the rest of the report, from what else was gathered, isn't built yet. If step 1's `temporary` is `true`, add that the folder is temporary and setting `output.root` in the config keeps preps.
+Say the prep is ready, with a Markdown link to its report, and that the rest of the report, from what else was gathered, isn't built yet. Don't recap the report; add only a doubt about your own judgment that it doesn't show, such as a summary you weren't sure how to weigh. If step 1's `temporary` is `true`, add that the folder is temporary and setting `output.root` in the config keeps preps.
 
 ## Summaries
 
@@ -177,4 +156,4 @@ What the manager tells you in steps 3 to 5, their view, the previous reviews and
 
 Once the manager answers, summarise what they gave, without showing them the summary: one summary for their view, and one for each review and each piece of the period's feedback, such as a document or a 1:1's notes. If something isn't clear, such as a word you can't read for sure or a document you couldn't open, ask them about it, all in one message, and wait for their answer. Then record it with the step's `set_summary.py` command, whose `--help` shows the input, tell them in one line that it's recorded, with a Markdown link to the `path` the script printed, and go on to the next step: that line can open the next step's message, as "a message of its own" means one with no other question in it.
 
-Each part is a list of points, written as `rules` says. Keep what the source says about the person and their work, once even when it says it more than once, add nothing it doesn't, and put each in the part it belongs to; leave a part empty when the source says nothing of it. When the source judges the person's character or intentions and describes no behaviour behind it, ask the manager what was observed; if they don't know, the point stays as the source puts it.
+Each part is a list of points, written as `rules` says. Keep what the source says about the person and their work, once even when it says it more than once, add nothing it doesn't, and put each in the part it belongs to; leave a part empty when the source says nothing of it. When `rules` would keep a judgement of the person's character as the source puts it, ask the manager first what was observed.

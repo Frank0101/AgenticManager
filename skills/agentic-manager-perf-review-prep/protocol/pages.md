@@ -6,6 +6,13 @@ A manager is preparing a performance review of the person named below. These are
 
 Say what the page says about the person: the facts about them, and what kind of content it holds when that isn't plain, such as to-dos for the manager or the status of the work.
 
+## Examples
+
+| Page                                                           | Synopsis                                                                                       | Why                                                                                                                              |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| "Promotion case: led the migration, mentors Sam, owns on-call" | The manager's promotion case for Jane lists the migration, mentoring Sam and on-call ownership | The page is the manager's case, undated: the synopsis says so, so the merge keeps it as context, not as behaviours of the period |
+| A page on Jane's leave, with the medical details behind it     | Jane was away for a personal matter from June to August                                        | Only what the review must take into account: the personal details stay out                                                       |
+
 ## Links and writing
 
 {{reading}}

@@ -1,4 +1,4 @@
-"""Checks a prep folder, read-only: that it holds only the prep's files, and that each follows the rules it was written by, the report included.
+"""Checks a prep folder, read-only: that it holds only the prep's files, its charts folder only the report's charts, and that each follows the rules it was written by, the report included.
 
 It reads each file back, as a later step does, and applies its rules through
 the same function the script that writes it checks it with first, so the two
@@ -9,7 +9,7 @@ import os
 
 from build_data import data_problems
 from check_report import report_problems
-from common import (CHARTS_DIR, CONTENT, FEEDBACK, content_problems, folder_problem, NOTES, ORIENTATION, PERSON, RATINGS, RAW_DIR, REVIEWS, SLACK, SOURCES,
+from common import (CHART_FILES, CHARTS_DIR, CONTENT, FEEDBACK, content_problems, folder_problem, NOTES, ORIENTATION, PERSON, RATINGS, RAW_DIR, REVIEWS, SLACK, SOURCES,
                     SUMMARY_FILES, VALUES, DATA, company_names, expected_files, feedback_problems, notes_problems,
                     orientation_problems, period_days, person_problems, prep_dir, read_json, read_raw_work,
                     report_name, reviews_problems, slack_problems, sources_problems)
@@ -18,13 +18,15 @@ from common import (CHARTS_DIR, CONTENT, FEEDBACK, content_problems, folder_prob
 def check_prep(prep, today=None):
     """{"ok", "errors"} of the prep folder `prep`."""
     folder = prep_dir(prep)
-    errors = []
-    files = {name for name in os.listdir(folder) if not name.startswith(".")}
     wanted, report = expected_files(prep), report_name(prep)
-    if problem := folder_problem(folder, wanted):
-        errors.append(problem)
+    errors = [problem] if (problem := folder_problem(folder, wanted)) else []
+    files = {name for name in wanted if os.path.exists(
+        os.path.join(folder, name))}
+    if CHARTS_DIR in files and (problem := folder_problem(os.path.join(folder, CHARTS_DIR), set(CHART_FILES))):
+        errors.append(
+            f"{CHARTS_DIR}: {problem}, then run finish_report.py again")
     read = {name: read_json(os.path.join(folder, name))
-            for name in (wanted & files) - {RAW_DIR, report, CHARTS_DIR}}
+            for name in files - {RAW_DIR, report, CHARTS_DIR}}
     person = read.get(PERSON)
     person_errors = person_problems(
         person, today or date.today()) if PERSON in read else []
@@ -68,5 +70,5 @@ def check_prep(prep, today=None):
             error.startswith(CONTENT) for error in errors):
         with open(os.path.join(folder, report), encoding="utf-8") as f:
             errors += [f"{report}: {problem}" for problem in report_problems(
-                f.read(), read[DATA], os.listdir(os.path.join(folder, CHARTS_DIR)), summaries, values, folder, read[CONTENT])]
+                f.read(), read[DATA], summaries, values, folder, read[CONTENT])]
     return {"ok": not errors, "errors": errors}

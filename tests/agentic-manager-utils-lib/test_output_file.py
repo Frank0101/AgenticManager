@@ -55,6 +55,14 @@ class OutputFileTest(unittest.TestCase):
                 self.assertEqual(self.read(path), content)
         self.output_folder.assert_called_with("reports")
 
+    def test_write_output_json(self):
+        # As json_text() writes it: indented, its characters as they are.
+        path, temporary = output_file.write_output_json(
+            "reports", "Jane-Doe_26-03-29/person.json", {"person": "José"})
+        self.assertEqual((path, temporary), (os.path.join(
+            self.folder, "Jane-Doe_26-03-29", "person.json"), True))
+        self.assertEqual(self.read(path), '{\n  "person": "José"\n}\n')
+
     def test_refusals(self):
         # Nothing is written outside the folder, through a link out of it, or
         # from content that isn't UTF-8 text.
@@ -121,7 +129,7 @@ class OutputFileTest(unittest.TestCase):
         for content in (b"not json", b"{}", b'[{"old":"unique"}]'):
             with self.subTest(shape=content), self.assertRaises(SystemExit) as raised:
                 output_file.patch_output_file("reports", "doc.md", content)
-            self.assertIn("--patch <<'EOF'", str(raised.exception))
+            self.assertIn("--patch <<'END_OF_INPUT'", str(raised.exception))
 
     def test_set_changes_one_field(self):
         # A field is named by its path, list positions included; what isn't
@@ -174,7 +182,7 @@ class OutputFileTest(unittest.TestCase):
         out = io.StringIO()
         with self.assertRaises(SystemExit), contextlib.redirect_stdout(out):
             output_file.parse_args(["--help"])
-        self.assertEqual(out.getvalue().count("<<'EOF'"), 2)
+        self.assertEqual(out.getvalue().count("<<'END_OF_INPUT'"), 2)
         for argv in (["--name", "../x", "--path", "a.md"], ["--name", "reports"], ["--path", "a.md"],
                      ["--name", "reports", "--path", "a.md", "--patch", "--set", "a=1"]):
             with self.subTest(argv=argv), self.assertRaises(SystemExit), mock.patch("sys.stderr"):

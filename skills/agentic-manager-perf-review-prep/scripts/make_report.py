@@ -1,4 +1,4 @@
-"""Writes a prep's report, <Person>_Review_Prep.md, from data.json: for now, the person's GitHub, Jira and Notion figures, and the observations, by company value.
+"""Writes a prep's report, <Person>_Review_Prep.md, from data.json and content.json: the observations, by company value, each table under its summary, then the person's GitHub, Jira and Notion figures.
 
 Every figure is one of data.json's facts, and every link one of its search
 addresses, so the report can't count differently from the model; the charts
@@ -162,7 +162,7 @@ def observations_section(observations, folder, content):
                               f'<td>{reference(point, folder)}</td>' for point in group["points"]])
                             for group in groups)
         heads = "".join(f'<th width="{width}%">{head}</th>' for head, width in (
-            ("Value", 10), ("Also", 10), (ai_marked("Point"), 50), ("Source", 10), ("References", 20)))
+            (ai_marked("Value"), 10), (ai_marked("Also"), 10), (ai_marked("Point"), 50), ("Source", 10), ("References", 20)))
         count = sum(len(group["points"]) for group in groups)
         lines += [*(["", "---", ""] if lines else []), ai_marked(f"<b>{heading}</b>") if rows else f"<b>{heading}</b>",
                   *(["", content[part].strip(), "", f"<details><summary>{details_text(count)}</summary>", "",

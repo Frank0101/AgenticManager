@@ -15,6 +15,14 @@ from common import (BRIEF_FILE, DATA_FILE, SCOPE_GROUPS, chunks, display_date,
 from make_report import Report
 
 
+def write_brief(report_dir):
+    """Write `report_dir`'s brief.json from its data.json; returns its path."""
+    out = os.path.join(report_dir, BRIEF_FILE)
+    write_json(out, build_brief(
+        read_json(os.path.join(report_dir, DATA_FILE))))
+    return out
+
+
 def build_brief(data):
     """The brief: the sprint, each epic's tickets, goal_tickets, report_facts
     and ticket_events. Tickets are grouped by epic, each with its commentary
@@ -113,10 +121,7 @@ def main():
     parser.add_argument("--report-dir", required=True,
                         help="report folder holding data.json")
     args = parser.parse_args()
-    data = read_json(os.path.join(args.report_dir, DATA_FILE))
-    out = os.path.join(args.report_dir, BRIEF_FILE)
-    write_json(out, build_brief(data))
-    print("wrote", out)
+    print("wrote", write_brief(args.report_dir))
 
 
 if __name__ == "__main__":

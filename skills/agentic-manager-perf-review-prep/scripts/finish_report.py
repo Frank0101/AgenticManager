@@ -11,7 +11,7 @@ import json
 import os
 
 from check_prep import check_prep
-from common import CONTENT, DATA, PERSON, content_problems, prep_dir, read_json, stops_on_failure
+from common import CONTENT, DATA, PERSON, content_problems, prep_dir, read_json
 from make_charts import write_charts
 from make_report import write_report
 
@@ -47,8 +47,7 @@ def main(argv=None):
     parser.add_argument("--prep", required=True,
                         help="the prep's folder, <Person>_<YY-MM-DD>, as init_prep.py printed it")
     args = parser.parse_args(argv)
-    with stops_on_failure():
-        result = finish(args.prep)
+    result = finish(args.prep)
     print(json.dumps(result, ensure_ascii=False))
     return 1 if result["problems"] else 0
 
