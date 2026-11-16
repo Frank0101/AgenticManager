@@ -58,10 +58,21 @@ class MakeReportTest(unittest.TestCase):
                       '</td></tr>', report)
         self.assertIn('<a href="../../../journals/2026_10_01.md">Journal 1 Oct</a>, '
                       '<a href="../../../journals/2026_08_20.md">Journal 20 Aug</a>', report)
-        empty = {**DATA, "observations": {**
-                                          DATA["observations"], "to_improve": []}}
-        self.assertIn("<b>To improve</b>\n\n## GitHub",
-                      make_report.render(PERSON, empty, REPORT_FOLDER, CONTENT))
+        # Context last, not grouped: its point, source and references, a
+        # page's undated evidence named by its title.
+        self.assertIn('</details>\n\n---\n\n<b>Context</b>', report)
+        self.assertIn(
+            f'<tr valign="top"><th width="70%">{common.ai_marked("Point")}</th><th width="10%">Source</th>'
+            '<th width="20%">References</th></tr>\n<tr valign="top"><td>Moved to the payments team in the summer</td>'
+            '<td>Manager\'s notes</td><td><a href="../../../pages/Jane.md">Page Jane</a></td></tr>\n'
+            '<tr valign="top"><td>Is preparing a promotion case with the manager</td><td>Feedback</td>'
+            '<td>Q3 2026</td></tr>', report)
+        for part, heading in (("to_improve", "To improve"), ("context", "Context")):
+            with self.subTest(part):
+                empty = {**DATA, "observations": {**
+                                                  DATA["observations"], part: []}}
+                self.assertIn(f"<b>{heading}</b>\n\n{'---' if part == 'to_improve' else '## GitHub'}",
+                              make_report.render(PERSON, empty, REPORT_FOLDER, CONTENT))
         # The Observations first, its Point column marked as the agent's.
         self.assertIn(
             "Period: 10/08/2026 to 10/11/2026\n\n## Observations\n", report)

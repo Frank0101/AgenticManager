@@ -12,7 +12,7 @@ import argparse
 import json
 
 from build_data import build_data
-from common import (FOLDER_NAME, MAX_OBSERVATIONS_WORDS, PROTOCOL, OBSERVATIONS_WORDS, fill_protocol, script_command,
+from common import (FOLDER_NAME, PROTOCOL, OBSERVATIONS_WORDS, fill_protocol, script_command,
                     submit_section, work_folder, write_task_file)
 from make_brief import write_brief
 from reading import person_section
@@ -36,10 +36,9 @@ def summary_task(prep, brief):
     the brief at `brief`: its protocol, the person, the brief and how to
     submit."""
     command = f"{script_command(__file__, 'set_content.py')} --prep {prep}"
-    return "\n\n".join([fill_protocol(PROTOCOL, OBSERVATIONS_TASK, {"observations_words": OBSERVATIONS_WORDS,
-                                                                    "max_observations_words": MAX_OBSERVATIONS_WORDS}), person_section(prep),
+    return "\n\n".join([fill_protocol(PROTOCOL, OBSERVATIONS_TASK, {"observations_words": OBSERVATIONS_WORDS["going_well"], "context_words": OBSERVATIONS_WORDS["context"]}), person_section(prep),
                         f"## The brief\n\n{brief}",
-                        submit_section(command, '{"going_well": "...", "to_improve": "..."}')])
+                        submit_section(command, '{"going_well": "...", "to_improve": "...", "context": "..."}')])
 
 
 def main(argv=None):

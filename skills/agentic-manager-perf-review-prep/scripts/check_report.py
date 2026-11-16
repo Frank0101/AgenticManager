@@ -1,4 +1,4 @@
-"""Checks a prep's report against data.json: that it shows every GitHub and Jira figure, each main focus, the charts' series and the Notion pages created as the items give them, and the observations' points as the summaries give them, each table under content.json's summary of it.
+"""Checks a prep's report against data.json: that it shows every GitHub and Jira figure, each main focus, the charts' series and the Notion pages created as the items give them, and the observations' points, going well, to improve and context, as the summaries give them, each table under content.json's summary of it.
 
 It reads each figure back from the report and works it out again from the
 items, apart from data.json's facts and from make_report.py, with which it
@@ -11,7 +11,7 @@ import html
 import re
 
 from common import (BINS_PER_DECADE, CHARTS_DIR, OBSERVATION_HEADINGS, OBSERVATION_SOURCES, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS, NO_VALUE,
-                    PAGES_HEADING, REFERENCE_NAMES, VALUED_PARTS, average_text, day_text, details_text, link_href, project_of, repo_code, repos_text, size_text, types_text,
+                    PAGES_HEADING, VALUED_PARTS, average_text, details_text, link_href, reference_text, project_of, repo_code, repos_text, size_text, types_text,
                     week_text)
 
 # The report's sections, in order, each where its heading starts it.
@@ -27,12 +27,15 @@ PAGES_COUNT = re.compile(rf"<b>{re.escape(PAGES_HEADING)}</b> \((\d+)\)")
 PAGE_ROW = re.compile(GROUP_CELL + r'<td><a href="([^"]+)">([^<]*)</a></td>'
                       r'<td>([^<]*)</td></tr>')
 # An Observations part: its heading and what follows it, up
-# to the next part; and each point's row: its value's cell, then the second
-# value it names, its text, its source and its reference.
+# to the next part; and each valued point's row: its value's cell, then the
+# second value it names, its text, its source and its reference.
 OBSERVATION_PART = re.compile(r"<b>([^<]+)</b>((?:(?!<b>).)*)", re.S)
 DETAILS = re.compile(r"<details><summary>([^<]*)</summary>")
 OBSERVATION_ROW = re.compile(GROUP_CELL + r'<td>([^<]*)</td><td>([^<]*)</td><td>([^<]*)</td>'
                              r'<td>(.*?)</td></tr>')
+# A context point's row, not grouped: its text, its source and its reference.
+CONTEXT_ROW = re.compile(
+    r'<tr valign="top"><td>([^<]*)</td><td>([^<]*)</td><td>(.*?)</td></tr>')
 LINK = re.compile(r'<a href="([^"]+)">([^<]*)</a>')
 # A Jira main focus entry as the report writes it: its epic's link, key and
 # title, or the link of the issues with no epic, or a project's key alone,
@@ -279,56 +282,81 @@ def _observations_problems(text, summaries, values, folder, content):
     """Why `text`, the report's Observations section, doesn't show the points of
     `summaries` going well and to improve, each part's table by the first of
     `values` each names, the second it names beside it, those with the most points first, in their order
-    when as many, those naming none last, the most
-    recent first, by its piece's date or its latest evidence's, undated
-    first, and its evidence too, those of a day in the order given, a note's
-    link relative to `folder`, the report's, each table folded under its
-    summary in `content`, empty when it does."""
+    when as many, those naming none last, then those of context, not
+    grouped, each part's the most recent first, by its piece's date or its
+    latest dated evidence's, undated first, and its evidence too, those of a
+    day in the order given, a note's link relative to `folder`, the
+    report's, each table folded under its summary in `content`, empty when
+    it does."""
     def rows(part):
-        found = [(piece["date"], value(point), point["point"], also(point), "feedback", [], piece["period"] or "–")
+        found = [(piece["date"], value(point), text_of(point), also(point), "feedback", [], piece["period"] or "–")
                  for piece in summaries["feedback"]["pieces"] for point in piece[part]]
         for source in ("notes", "slack"):
             for point in summaries[source][part]:
-                days = sorted(point["evidence"],
-                              key=lambda item: item["date"], reverse=True)
-                found.append((days[0]["date"], value(point), point["point"], also(point), source,
-                              [(link_href(item["link"], folder), f"{REFERENCE_NAMES[source]} {day_text(item['date'])}")
-                               for item in days],
+                days = sorted(point["evidence"], key=newest, reverse=True)
+                found.append((max((item["date"] for item in days if item["date"]), default=None), value(point),
+                              point["point"], also(point), source,
+                              [(link_href(item["link"], folder), reference_text(
+                                  source, item)) for item in days],
                               ""))
-        ordered = sorted(
-            found, key=lambda row: "~" if row[0] is None else row[0], reverse=True)
+        ordered = sorted(found, key=lambda row: newest(
+            {"date": row[0]}), reverse=True)
+        if part not in VALUED_PARTS:
+            return [(point, OBSERVATION_SOURCES[source], links, period)
+                    for _, _, point, _, source, links, period in ordered]
         counts = Counter(row[1] for row in ordered)
         ranked = sorted(
             (name for name in values if counts[name]), key=lambda name: -counts[name])
-        return [(name, *row[2:]) for name in [*ranked, NO_VALUE] for row in ordered if row[1] == name]
+        return [(name, point, second, OBSERVATION_SOURCES[source], links, period)
+                for name in [*ranked, NO_VALUE] for _, group, point, second, source, links, period in ordered
+                if group == name]
+
+    def newest(item):
+        return "~" if item["date"] is None else item["date"]
+
+    # A piece's context point is a sentence alone, and names no value.
+    def text_of(point):
+        return point if isinstance(point, str) else point["point"]
+
+    def named(point):
+        return point.get("values", []) if isinstance(point, dict) else []
 
     def value(point):
-        return point["values"][0] if point["values"] else NO_VALUE
+        return named(point)[0] if named(point) else NO_VALUE
 
     def also(point):
-        return point["values"][1] if len(point["values"]) > 1 else ""
-    shown_parts = {}
-    for heading, table in OBSERVATION_PART.findall(text):
-        found, spans = _grouped_rows(OBSERVATION_ROW, table)
-        shown = []
-        for named, second, point, source, reference in found:
-            links = [(html.unescape(link), day)
-                     for link, day in LINK.findall(reference)]
-            shown.append((named, html.unescape(point), html.unescape(second), source,
-                         links, "" if links else html.unescape(reference)))
-        details = DETAILS.search(table)
-        shown_parts[heading] = (details[1] if details else None, shown, spans,
-                                table.split("<details>", 1)[0])
-    for part in VALUED_PARTS:
-        expected = [(name, point, second, OBSERVATION_SOURCES[source], links, period)
-                    for name, point, second, source, links, period in rows(part)]
-        heading = OBSERVATION_HEADINGS[part]
-        if shown_parts.get(heading, ())[:3] != (details_text(len(expected)) if expected else None, expected,
-                                                _spans(expected)):
+        return named(point)[1] if len(named(point)) > 1 else ""
+    parts = dict(OBSERVATION_PART.findall(text))
+    for part, heading in OBSERVATION_HEADINGS.items():
+        expected = rows(part)
+        table = parts.get(heading)
+        if table is None:
             return [f"the report's {heading} points don't show the summaries': run finish_report.py again"]
-        if expected and content[part].strip() not in shown_parts[heading][3]:
+        details = DETAILS.search(table)
+        if part in VALUED_PARTS:
+            found, spans = _grouped_rows(OBSERVATION_ROW, table)
+            shown = [(group, html.unescape(point), html.unescape(second), source, *_reference(reference))
+                     for group, second, point, source, reference in found]
+            grouped = spans == _spans(expected)
+        else:
+            shown = [(html.unescape(point), source, *_reference(reference))
+                     for point, source, reference in CONTEXT_ROW.findall(table)]
+            grouped = True
+        if not grouped or (details[1] if details else None, shown) != (
+                details_text(len(expected)) if expected else None, expected):
+            return [f"the report's {heading} points don't show the summaries': run finish_report.py again"]
+        if expected and content[part].strip() not in table.split("<details>", 1)[0]:
             return [f"the report's {heading} summary isn't content.json's: run finish_report.py again"]
     return []
+
+
+def _reference(reference):
+    """(links, period): a row's reference cell, `reference`, as the report
+    writes it: its links, each (address, what it says), or, with none, its
+    piece's period."""
+    links = [(html.unescape(link), html.unescape(label))
+             for link, label in LINK.findall(reference)]
+    return links, "" if links else html.unescape(reference)
 
 
 # Shared.

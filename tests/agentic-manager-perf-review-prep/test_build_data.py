@@ -183,6 +183,35 @@ class BuildDataTest(unittest.TestCase):
                 self.assertEqual([(group["value"], point["point"]) for group in groups for point in group["points"]],
                                  expected)
 
+    def test_context(self):
+        # name: (the feedback's pieces, the notes' context points, the
+        # context's points, in order, each (point, source, date, period, the
+        # days of its evidence)): a piece's context a sentence alone; a
+        # reading's dated by its latest dated evidence, a page's undated;
+        # the most recent first, undated first of all, its evidence too.
+        def piece(date, *points):
+            return {"period": "Q3 2026", "date": date, "going_well": [], "to_improve": [], "context": list(points)}
+
+        def note(point, *days):
+            return {"point": point, "evidence": [{"date": day, "link": f"/vault/{day or 'pages/Jane'}.md"}
+                                                 for day in days]}
+        cases = [("a piece's sentences", [piece("2026-09-30", "a", "b")], [],
+                  [("a", "feedback", "2026-09-30", "Q3 2026", []), ("b", "feedback", "2026-09-30", "Q3 2026", [])]),
+                 ("a page undated, first", [piece("2026-09-30", "a")], [note("b", None)],
+                  [("b", "notes", None, None, [None]), ("a", "feedback", "2026-09-30", "Q3 2026", [])]),
+                 ("dated by the latest dated evidence", [piece("2026-09-30", "a")],
+                  [note("b", "2026-08-01", None, "2026-10-02")],
+                  [("b", "notes", "2026-10-02", None, [None, "2026-10-02", "2026-08-01"]),
+                   ("a", "feedback", "2026-09-30", "Q3 2026", [])])]
+        for name, pieces, notes, expected in cases:
+            with self.subTest(name):
+                summaries = {"feedback": {"pieces": pieces},
+                             "notes": {"going_well": [], "to_improve": [], "context": notes},
+                             "slack": {"going_well": [], "to_improve": [], "context": []}}
+                points = build_data.observations(summaries, [])["context"]
+                self.assertEqual([(point["point"], point["source"], point["date"], point["period"],
+                                   [item["date"] for item in point["evidence"]]) for point in points], expected)
+
     def test_model_fixtures(self):
         # name: (a model the report's tests use, worked out by hand): its
         # Jira facts are those its items give.

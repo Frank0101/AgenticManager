@@ -379,34 +379,66 @@ class CommonTest(unittest.TestCase):
                 common.prep_dir(prep)
 
     def test_content_problems(self):
-        # name: (content.json, the tables' points, expected in its problems,
-        # or None for none): each table's summary, empty exactly when the
-        # table holds no point, not longer than MAX_OBSERVATIONS_WORDS words, and
-        # naming each value its table groups points under.
-        long = "word " * (common.MAX_OBSERVATIONS_WORDS + 1)
-        cases = [("both summarised", {"going_well": "Good.", "to_improve": "Better."}, (1, 1), None),
+        # name: (content.json, the tables' points, going well's and to
+        # improve's groups and context's points, expected in its problems, or
+        # None for none): each table's summary, empty exactly when the table
+        # holds no point, not longer than MAX_OBSERVATIONS_WORDS words, and a
+        # valued table's naming each value it groups points under; context
+        # names none, so none is checked.
+        long = "word " * (common.MAX_OBSERVATIONS_WORDS["going_well"] + 1)
+        summaries = {"going_well": "Good.",
+                     "to_improve": "Better.", "context": "Moved team."}
+        cases = [("all summarised", summaries, (1, 1, 1), None),
                  ("no point to improve", {
-                  "going_well": "Good.", "to_improve": ""}, (1, 0), None),
-                 ("a table not summarised", {"going_well": " ", "to_improve": "Better."}, (1, 1),
+                  **summaries, "to_improve": ""}, (1, 0, 1), None),
+                 ("a table not summarised", {**summaries, "going_well": " "}, (1, 1, 1),
                   "going_well is empty"),
-                 ("a summary of no point", {"going_well": "Good.", "to_improve": "Better."}, (1, 0),
+                 ("a summary of no point", summaries, (1, 0, 1),
                   "to_improve must be empty"),
-                 ("too long", {"going_well": long,
-                  "to_improve": ""}, (1, 0), "keep it to about"),
+                 ("too long", {**summaries, "going_well": long},
+                  (1, 1, 1), f"more than {common.OBSERVATIONS_WORDS['going_well']}: cut it"),
+                 ("context too long", {**summaries, "context": "word " * (common.MAX_OBSERVATIONS_WORDS["context"] + 1)},
+                  (1, 1, 1), f"more than {common.OBSERVATIONS_WORDS['context']}: cut it"),
                  ("a field missing", {
-                  "going_well": "Good."}, (1, 0), 'must be {"going_well"'),
-                 ("a value not named", {"going_well": "Good teamwork.", "to_improve": ""},
-                  (["Teamwork", "Ownership", None], 0), "doesn't name Ownership")]
+                  "going_well": "Good.", "to_improve": "Better."}, (1, 1, 1), 'must be {"going_well"'),
+                 ("a value not named", {**summaries, "going_well": "Good teamwork.", "to_improve": ""},
+                  (["Teamwork", "Ownership", None], 0, 1), "doesn't name Ownership"),
+                 ("context not summarised", {**summaries, "context": ""}, (1, 1, 1),
+                  "context is empty"),
+                 ("context of no point", summaries, (1, 1, 0),
+                  "context must be empty"),
+                 ("no context", {**summaries, "context": ""}, (1, 1, 0), None)]
         for name, content, counts, expected in cases:
             with self.subTest(name):
+                *valued, context = counts
                 groups = [[{"value": value} for value in n] if isinstance(n, list) else [{"value": None}] * n
-                          for n in counts]
+                          for n in valued]
+                observations = {**dict(zip(("going_well", "to_improve"), groups)),
+                                "context": [{"point": "Moved team"}] * context}
                 problems = " ".join(common.content_problems(
-                    content, dict(zip(("going_well", "to_improve"), groups))))
+                    content, observations))
                 if expected is None:
                     self.assertEqual(problems, "")
                 else:
                     self.assertIn(expected, problems)
+
+
+class ReferenceTextTest(unittest.TestCase):
+    def test_reference_text(self):
+        # name: (source, evidence, what its reference says): a dated one by
+        # its source and day, an undated page by its title, its file's name
+        # unquoted.
+        cases = [("a message", "slack", {"date": "2026-10-14", "link": "https://acme.slack.com/archives/C1/p1"},
+                  "Slack 14 Oct"),
+                 ("a journal", "notes", {"date": "2026-07-02", "link": "/vault/journals/2026_07_02.md"},
+                  "Journal 2 Jul"),
+                 ("a page", "notes", {
+                  "date": None, "link": "/vault/pages/Jane.md"}, "Page Jane"),
+                 ("a page's quoted name", "notes", {"date": None, "link": "/vault/pages/Jane%20Promotion.md"},
+                  "Page Jane Promotion")]
+        for name, source, item, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(common.reference_text(source, item), expected)
 
 
 class WeekTextTest(unittest.TestCase):

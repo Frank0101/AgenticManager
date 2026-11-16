@@ -1,11 +1,11 @@
-"""Writes a prep's report, <Person>_Review_Prep.md, from data.json and content.json: the observations, by company value, each table under its summary, then the person's GitHub, Jira and Notion figures.
+"""Writes a prep's report, <Person>_Review_Prep.md, from data.json and content.json: the observations, going well and to improve by company value, then the context, each table under its summary, then the person's GitHub, Jira and Notion figures.
 
 Every figure is one of data.json's facts, and every link one of its search
 addresses, so the report can't count differently from the model; the charts
 it shows are make_charts.py's.
 """
-from common import (CHARTS_DIR, EPICS_CHART, OBSERVATION_HEADINGS, OBSERVATION_SOURCES, FOCUS_SHARE, FOLDER_NAME, GITHUB_CELLS, HEADINGS, JIRA_CELLS, NO_VALUE, PAGES_HEADING, REFERENCE_NAMES, REPOS_CHART,
-                    SMALL_TYPE, ai_marked, average_text, day_text, details_text, esc, link_href, number, prep_dir, report_name, repo_code, repos_text, shown, size_text, types_text, week_text,
+from common import (CHARTS_DIR, EPICS_CHART, OBSERVATION_HEADINGS, OBSERVATION_SOURCES, FOCUS_SHARE, FOLDER_NAME, GITHUB_CELLS, HEADINGS, JIRA_CELLS, NO_VALUE, PAGES_HEADING, REPOS_CHART,
+                    SMALL_TYPE, VALUED_PARTS, ai_marked, average_text, details_text, esc, link_href, reference_text, number, prep_dir, report_name, repo_code, repos_text, shown, size_text, types_text, week_text,
                     write_output_file)
 
 
@@ -21,8 +21,8 @@ def write_report(prep, person, data, content):
 
 def render(person, data, folder, content):
     """The report's text: the person and the period, then the Observations,
-    what is going well and what to improve, first, as what the review is
-    about, each summarised as `content`, content.json, says, a note it cites
+    what is going well, what to improve and the context, first, as what the
+    review is about, each summarised as `content`, content.json, says, a note it cites
     linked relative to `folder`, the report's, then
     their GitHub work and their Jira work, each its main focus,
     then its figures, then the Notion pages they created. GitHub comes before
@@ -40,18 +40,57 @@ def render(person, data, folder, content):
                       *notion_section(data["notion"])]) + "\n"
 
 
-def jira_section(jira):
-    """The Jira section's lines: a table of the issues created, the issues
-    resolved and their story points, in the order of JIRA_CELLS, as
-    cells_table() lays it out."""
-    points = jira["resolved_points"]
-    figures = {"created": (HEADINGS["created"], jira["counts"]["created"], types_text(jira["created_by_type"]),
-                           "Issues created over time"),
-               "resolved": (HEADINGS["resolved"], jira["counts"]["resolved"], types_text(jira["resolved_by_type"]),
-                            "Issues resolved over time"),
-               "resolved_points": (HEADINGS["resolved_points"], points["total"], average_text(points["average"]),
-                                   "Story points of the resolved issues")}
-    return cells_table(JIRA_CELLS, figures, jira)
+def observations_section(observations, folder, content):
+    """The Observations section's lines: for each part of OBSERVATION_HEADINGS,
+    a divider apart from the one before, its heading, marked as the agent's, as
+    its summary, `content`'s, follows, then, folded under it as the detail,
+    with how many points it holds, a table of them, in small type, by
+    observation_rows(), the most recent first, each with its source and its
+    reference: a piece's period, as the source names it, or a reading's
+    evidence, the most recent first, each linked to its note or message."""
+    lines = []
+    for part, heading in OBSERVATION_HEADINGS.items():
+        heads, rows, count = observation_rows(part, observations[part], folder)
+        lines += [*(["", "---", ""] if lines else []), ai_marked(f"<b>{heading}</b>") if rows else f"<b>{heading}</b>",
+                  *(["", content[part].strip(), "", f"<details><summary>{details_text(count)}</summary>", "",
+                     *table(heads, *rows, small=True), "", "</details>"] if rows else [])]
+    return lines
+
+
+def observation_rows(part, points, folder):
+    """(heads, rows, count): the headings, rows and number of points of the
+    table of `part`, whose `points` are data.json's. A part of VALUED_PARTS
+    is grouped by company value, each value named once beside its points,
+    the second value a point names beside it, its columns as wide in both, so
+    the two read alike; context names none, so it is its points alone, its
+    point given the room the values take."""
+    if part not in VALUED_PARTS:
+        rows = [f'<td>{esc(point["point"])}</td><td>{OBSERVATION_SOURCES[point["source"]]}</td>'
+                f'<td>{reference(point, folder)}</td>' for point in points]
+        return observation_heads(((ai_marked("Point"), 70), ("Source", 10), ("References", 20))), rows, len(rows)
+    rows = grouped_rows((esc(group["value"] or NO_VALUE),
+                         [f'<td>{esc(point["also"] or "")}</td><td>{esc(point["point"])}</td>'
+                          f'<td>{OBSERVATION_SOURCES[point["source"]]}</td>'
+                          f'<td>{reference(point, folder)}</td>' for point in group["points"]])
+                        for group in points)
+    return observation_heads(((ai_marked("Value"), 10), (ai_marked("Also"), 10), (ai_marked("Point"), 50),
+                              ("Source", 10), ("References", 20))), rows, len(rows)
+
+
+def observation_heads(columns):
+    """A table of observations' row of headings, each of `columns`, (heading,
+    width as a percentage)."""
+    return "".join(f'<th width="{width}%">{head}</th>' for head, width in columns)
+
+
+def reference(point, folder):
+    """Where an observation comes from, as its row writes it: its piece's
+    period, – when the piece names none, or its evidence, each by
+    reference_text(), such as "Slack 14 Oct", linked to its message or note."""
+    if point["source"] == "feedback":
+        return esc(point["period"] or "–")
+    return ", ".join(f'<a href="{esc(link_href(item["link"], folder))}">{esc(reference_text(point["source"], item))}</a>'
+                     for item in point["evidence"])
 
 
 def github_section(github):
@@ -68,6 +107,67 @@ def github_section(github):
                                 "Size of the merged pull requests")}
     return cells_table(GITHUB_CELLS, figures, github)
 
+
+def repos_section(github):
+    """The GitHub main focus's lines: the chart of the merged pull requests
+    by repository, and beside it, numbered, the repositories that hold most
+    of them, each with its code, as the charts name it, and how many it
+    holds, linked to the search of those pull requests."""
+    entries = "".join(f'<li>{code + " " if (code := repo_code(entry["repo"], github["repo_order"])) else ""}'
+                      f'<a href="{esc(github["repo_search_urls"][entry["repo"]])}">{esc(entry["repo"])}</a> '
+                      f'({entry["prs"]})</li>' for entry in github["focus"])
+    note = (f"the repositories with the most merged pull requests, which together hold at least "
+            f"{round(FOCUS_SHARE * 100)}% of them")
+    return focus_table(REPOS_CHART, "Merged pull requests by repository", note, entries)
+
+
+def jira_section(jira):
+    """The Jira section's lines: a table of the issues created, the issues
+    resolved and their story points, in the order of JIRA_CELLS, as
+    cells_table() lays it out."""
+    points = jira["resolved_points"]
+    figures = {"created": (HEADINGS["created"], jira["counts"]["created"], types_text(jira["created_by_type"]),
+                           "Issues created over time"),
+               "resolved": (HEADINGS["resolved"], jira["counts"]["resolved"], types_text(jira["resolved_by_type"]),
+                            "Issues resolved over time"),
+               "resolved_points": (HEADINGS["resolved_points"], points["total"], average_text(points["average"]),
+                                   "Story points of the resolved issues")}
+    return cells_table(JIRA_CELLS, figures, jira)
+
+
+def focus_section(jira):
+    """The main focus's lines: the chart of the resolved issues by epic, and
+    beside it, numbered, the epics, and the issues with no epic, that hold
+    most of them, each with its title and how many it holds, linked to the
+    search of those issues."""
+    entries = "".join(f'<li><a href="{esc(jira["epic_search_urls"][entry["key"]])}">{esc(entry["key"])}</a> '
+                      f'{esc(entry["title"] or "")} ({entry["issues"]})</li>' if entry["url"] else
+                      f'<li><a href="{esc(jira["no_epic_search_url"])}">no epic</a> ({entry["issues"]})</li>'
+                      if entry["key"] is None else f'<li>{esc(entry["key"])} ({entry["issues"]})</li>'
+                      for entry in jira["focus"])
+    note = (f"the epics with the most resolved issues, the issues with no epic counted as one, which together "
+            f"hold at least {round(FOCUS_SHARE * 100)}% of them" if any(entry["url"] for entry in jira["focus"])
+            else f"no resolved issue has an epic: the projects with the most of them, which together hold at least "
+            f"{round(FOCUS_SHARE * 100)}% of them")
+    return focus_table(EPICS_CHART, "Resolved issues by epic", note, entries)
+
+
+def notion_section(notion):
+    """The Notion section's lines: how many pages were created, then a table
+    of them, in small type, by their calendar week, the most recent first, each week named once beside its pages, each page
+    linked, with its area. Notion gives no search to link the count to."""
+    weeks = {}
+    for page in reversed(notion["created"]):
+        weeks.setdefault(week_text(page["week"]), []).append(page)
+    rows = grouped_rows((week, [f'<td><a href="{esc(page["url"])}">{esc(page["title"])}</a></td>'
+                                f'<td>{esc(page["space"] or "")}</td>' for page in pages])
+                        for week, pages in weeks.items())
+    heads = "".join(
+        f"<th>{head}</th>" for head in ("Week", "Page", "Area"))
+    return [f'<b>{PAGES_HEADING}</b> ({notion["counts"]["created"]})', "", *table(heads, *rows, small=True)]
+
+
+# Shared by the sections.
 
 def cells_table(cells, figures, facts):
     """A source's table of `cells`, (name, chart): a row of headings, a row
@@ -98,96 +198,6 @@ def figure(value, url):
     return f'<a href="{esc(url)}">{number(value)}</a>' if url else number(value)
 
 
-def focus_section(jira):
-    """The main focus's lines: the chart of the resolved issues by epic, and
-    beside it, numbered, the epics, and the issues with no epic, that hold
-    most of them, each with its title and how many it holds, linked to the
-    search of those issues."""
-    entries = "".join(f'<li><a href="{esc(jira["epic_search_urls"][entry["key"]])}">{esc(entry["key"])}</a> '
-                      f'{esc(entry["title"] or "")} ({entry["issues"]})</li>' if entry["url"] else
-                      f'<li><a href="{esc(jira["no_epic_search_url"])}">no epic</a> ({entry["issues"]})</li>'
-                      if entry["key"] is None else f'<li>{esc(entry["key"])} ({entry["issues"]})</li>'
-                      for entry in jira["focus"])
-    note = (f"the epics with the most resolved issues, the issues with no epic counted as one, which together "
-            f"hold at least {round(FOCUS_SHARE * 100)}% of them" if any(entry["url"] for entry in jira["focus"])
-            else f"no resolved issue has an epic: the projects with the most of them, which together hold at least "
-            f"{round(FOCUS_SHARE * 100)}% of them")
-    return focus_table(EPICS_CHART, "Resolved issues by epic", note, entries)
-
-
-def repos_section(github):
-    """The GitHub main focus's lines: the chart of the merged pull requests
-    by repository, and beside it, numbered, the repositories that hold most
-    of them, each with its code, as the charts name it, and how many it
-    holds, linked to the search of those pull requests."""
-    entries = "".join(f'<li>{code + " " if (code := repo_code(entry["repo"], github["repo_order"])) else ""}'
-                      f'<a href="{esc(github["repo_search_urls"][entry["repo"]])}">{esc(entry["repo"])}</a> '
-                      f'({entry["prs"]})</li>' for entry in github["focus"])
-    note = (f"the repositories with the most merged pull requests, which together hold at least "
-            f"{round(FOCUS_SHARE * 100)}% of them")
-    return focus_table(REPOS_CHART, "Merged pull requests by repository", note, entries)
-
-
-def notion_section(notion):
-    """The Notion section's lines: how many pages were created, then a table
-    of them, in small type, by their calendar week, the most recent first, each week named once beside its pages, each page
-    linked, with its area. Notion gives no search to link the count to."""
-    weeks = {}
-    for page in reversed(notion["created"]):
-        weeks.setdefault(week_text(page["week"]), []).append(page)
-    rows = grouped_rows((week, [f'<td><a href="{esc(page["url"])}">{esc(page["title"])}</a></td>'
-                                f'<td>{esc(page["space"] or "")}</td>' for page in pages])
-                        for week, pages in weeks.items())
-    heads = "".join(
-        f"<th>{head}</th>" for head in ("Week", "Page", "Area"))
-    return [f'<b>{PAGES_HEADING}</b> ({notion["counts"]["created"]})', "", *table(heads, *rows, small=True)]
-
-
-def observations_section(observations, folder, content):
-    """The Observations section's lines: for each part of OBSERVATION_HEADINGS,
-    a divider apart from the one before, its heading, marked as the agent's, as
-    its summary, `content`'s, follows, then, folded under it as the detail,
-    with how many points it holds, a table of them, in small type, its columns
-    as wide in both, so the two read alike, by company
-    value, each value named once beside its points, the most recent first,
-    each with its source and its reference: a piece's period, as the source
-    names it, or the days of a reading's evidence, the most recent first,
-    each linked to its note or message."""
-    lines = []
-    for part, heading in OBSERVATION_HEADINGS.items():
-        groups = observations[part]
-        rows = grouped_rows((esc(group["value"] or NO_VALUE),
-                             [f'<td>{esc(point["also"] or "")}</td><td>{esc(point["point"])}</td>'
-                              f'<td>{OBSERVATION_SOURCES[point["source"]]}</td>'
-                              f'<td>{reference(point, folder)}</td>' for point in group["points"]])
-                            for group in groups)
-        heads = "".join(f'<th width="{width}%">{head}</th>' for head, width in (
-            (ai_marked("Value"), 10), (ai_marked("Also"), 10), (ai_marked("Point"), 50), ("Source", 10), ("References", 20)))
-        count = sum(len(group["points"]) for group in groups)
-        lines += [*(["", "---", ""] if lines else []), ai_marked(f"<b>{heading}</b>") if rows else f"<b>{heading}</b>",
-                  *(["", content[part].strip(), "", f"<details><summary>{details_text(count)}</summary>", "",
-                     *table(heads, *rows, small=True), "", "</details>"] if rows else [])]
-    return lines
-
-
-def reference(point, folder):
-    """Where an observation comes from, as its row writes it: its piece's
-    period, – when the piece names none, or its evidence, each its source
-    and day, such as "Slack 14 Oct", linked to its message or note."""
-    if point["source"] == "feedback":
-        return esc(point["period"] or "–")
-    return ", ".join(f'<a href="{esc(link_href(item["link"], folder))}">{REFERENCE_NAMES[point["source"]]} {day_text(item["date"])}</a>'
-                     for item in point["evidence"])
-
-
-def grouped_rows(groups):
-    """A grouped table's rows, each group (name, rows), its name written as
-    HTML and each row its cells: the name in a cell beside the group's first
-    row, spanning all of them."""
-    return [(f'<td rowspan="{len(rows)}">{name}</td>' if index == 0 else "") + cells
-            for name, rows in groups for index, cells in enumerate(rows)]
-
-
 def focus_table(chart, description, note, entries):
     """A main focus's lines: `chart`, described as `description`, and beside
     it the main focus, with its `note`, its `entries` numbered."""
@@ -200,3 +210,11 @@ def image(chart, description):
     and linked to itself, so a click opens it full size in a new tab."""
     return (f'<a href="{CHARTS_DIR}/{chart}" target="_blank"><img src="{CHARTS_DIR}/{chart}" width="100%" '
             f'alt="{description}"></a>')
+
+
+def grouped_rows(groups):
+    """A grouped table's rows, each group (name, rows), its name written as
+    HTML and each row its cells: the name in a cell beside the group's first
+    row, spanning all of them."""
+    return [(f'<td rowspan="{len(rows)}">{name}</td>' if index == 0 else "") + cells
+            for name, rows in groups for index, cells in enumerate(rows)]

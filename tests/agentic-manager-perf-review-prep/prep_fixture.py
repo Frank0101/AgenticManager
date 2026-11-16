@@ -31,7 +31,7 @@ REVIEWS = {"pieces": [PIECE]}
 NOTE = {"period": "Q3 2026", "date": "2026-09-30",
         "going_well": [{"point": "Agreed to own the billing migration and has kept to its plan",
                         "values": ["Ownership"]}],
-        "to_improve": [], "context": []}
+        "to_improve": [], "context": ["Is preparing a promotion case with the manager"]}
 FEEDBACK = {"pieces": [NOTE]}
 NOTES = {"going_well": [{"point": "Presented the migration to the wider team", "values": ["Teamwork", "Ownership"],
                          "evidence": [{"date": "2026-09-02", "link": "/vault/journals/2026_09_02.md"}]}],
@@ -117,7 +117,9 @@ def weekly(*indexes):
 # SLACK: going well, under Teamwork, which has the most, Slack's, of 3
 # September, before the notes', of 2 September, then under Ownership the Q3
 # piece's; to improve, under Ownership, the notes' point, its evidence the
-# most recent first.
+# most recent first; context, not grouped, the notes' point first, as its one
+# evidence, a page's, is undated, then the Q3 piece's, of 30 September, then
+# Slack's, of 20 August.
 OBSERVATIONS = {
     "going_well": [
         {"value": "Teamwork", "points": [
@@ -135,7 +137,14 @@ OBSERVATIONS = {
             {"point": "Didn't flag delays until asked, many times", "also": None, "source": "notes", "date": "2026-10-01",
              "period": None,
              "evidence": [{"date": "2026-10-01", "link": "/vault/journals/2026_10_01.md"},
-                          {"date": "2026-08-20", "link": "/vault/journals/2026_08_20.md"}]}]}]}
+                          {"date": "2026-08-20", "link": "/vault/journals/2026_08_20.md"}]}]}],
+    "context": [
+        {"point": "Moved to the payments team in the summer", "source": "notes", "date": None, "period": None,
+         "evidence": [{"date": None, "link": "/vault/pages/Jane.md"}]},
+        {"point": "Is preparing a promotion case with the manager", "source": "feedback", "date": "2026-09-30",
+         "period": "Q3 2026", "evidence": []},
+        {"point": "Posted the billing rollout plan in a cross-team channel", "source": "slack", "date": "2026-08-20",
+         "period": None, "evidence": [{"date": "2026-08-20", "link": "https://acme.slack.com/archives/C2/p2"}]}]}
 DATA = {"weeks": WEEKS,
         "jira": {**WORK_ITEMS["jira"], "counts": {"created": 1, "resolved": 1},
                  "epic_order": ["PROJ-1"],
@@ -223,14 +232,16 @@ VALUE_NAMES = [value["value"] for value in VALUES]
 REPORT_FOLDER = "/vault/.out/perf-review-preps/Jane-Doe_26-11-10"
 # The summaries the Observations section is built from, by their source.
 SUMMARIES = {"feedback": FEEDBACK, "notes": NOTES, "slack": SLACK}
-# The agent's summaries of the two tables, and the brief it writes them
+# The agent's summaries of the three tables, and the brief it writes them
 # from, worked out by hand from DATA: the work's main focus, and each
 # table's points in its order, with the values each names, its source and
 # when it was seen.
 CONTENT = {"going_well": "Jane explains outages to the teams around them and presented the billing migration to the "
            "wider team, showing Teamwork, and has owned the migration and kept to its plan, reflecting Ownership.",
            "to_improve": "Jane flagged delays only when asked, many times, where Ownership calls for raising them "
-           "early."}
+           "early.",
+           "context": "Jane moved to the payments team in the summer and is preparing a promotion case with the "
+           "manager."}
 BRIEF = {"person": "Jane Doe", "values": VALUES,
          "focus": {"github": [{"repo": "acme/billing", "prs": 1, "share": 100}],
                    "jira": [{"key": "PROJ-1", "title": "Billing", "issues": 1, "share": 100}]},
@@ -241,7 +252,12 @@ BRIEF = {"person": "Jane Doe", "values": VALUES,
                         {"point": "Agreed to own the billing migration and has kept to its plan",
                          "values": ["Ownership"], "source": "Feedback", "when": "Q3 2026"}],
          "to_improve": [{"point": "Didn't flag delays until asked, many times", "values": ["Ownership"],
-                         "source": "Manager's notes", "when": "2026-10-01"}]}
+                         "source": "Manager's notes", "when": "2026-10-01"}],
+         "context": [{"point": "Moved to the payments team in the summer", "source": "Manager's notes", "when": None},
+                     {"point": "Is preparing a promotion case with the manager", "source": "Feedback",
+                      "when": "Q3 2026"},
+                     {"point": "Posted the billing rollout plan in a cross-team channel", "source": "Slack",
+                      "when": "2026-08-20"}]}
 RATINGS = [{"rating": "Below", "meaning": "Misses most expectations"},
            {"rating": "Meets", "meaning": "Meets every expectation"},
            {"rating": "Exceeds", "meaning": "Goes beyond most expectations"}]

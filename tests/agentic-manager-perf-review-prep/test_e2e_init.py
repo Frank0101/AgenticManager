@@ -285,10 +285,11 @@ class ScriptsTest(unittest.TestCase):
         code, out, _ = self.run_script(REPORT_SCRIPT, "--prep", prep)
         self.assertEqual((code, json.loads(out)["report"]), (1, None))
         self.assertIn("content.json is missing", out)
-        # Each summary names the values its table groups points under.
+        # Each valued summary names the values its table groups points under.
         content = {part: " ".join(["Jane did well, showing", *sorted({point["values"][0] for point in brief[part]
                                                                       if point["values"]})])
                    if brief[part] else "" for part in ("going_well", "to_improve")}
+        content["context"] = "Jane moved team." if brief["context"] else ""
         self.assertTrue(prepared["task"].startswith("Task observations: "))
         code, _, err = self.run_script(CONTENT_SCRIPT, "--prep", prep, stdin=json.dumps(
             {**content, "going_well": "Jane did well."}))

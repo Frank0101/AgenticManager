@@ -48,6 +48,16 @@ class CheckReportTest(unittest.TestCase):
                   ">Journal 21 Aug</a>"), "To improve points"),
                  ("a summary changed", ("Jane explains outages",
                   "Jane fixes outages"), "Going well summary"),
+                 ("a context point's text changed", ("Moved to the payments team",
+                  "Moved to the billing team"), "Context points"),
+                 ("a context point's source changed", ('<td>Slack</td><td><a href="https://acme.slack.com/archives/C2',
+                  '<td>Feedback</td><td><a href="https://acme.slack.com/archives/C2'), "Context points"),
+                 ("a page's reference changed",
+                  (">Page Jane</a>", ">Page Sam</a>"), "Context points"),
+                 ("a context point dropped", ('<tr valign="top"><td>Is preparing a promotion case with the manager'
+                                              '</td><td>Feedback</td><td>Q3 2026</td></tr>\n', ""), "Context points"),
+                 ("the context summary changed", ("Jane moved to the payments team",
+                  "Jane moved to the data team"), "Context summary"),
                  ("a value's span changed", ('rowspan="2">Teamwork',
                   'rowspan="1">Teamwork'), "Going well points"),
                  ("a count changed", ('">1</a> (1 Task)',
@@ -126,6 +136,17 @@ class CheckReportTest(unittest.TestCase):
             report.replace(">Teamwork<",
                            ">Ownership<", 1), DATA,
             SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT)))
+
+    def test_context_order(self):
+        # Two context points swapped, the undated page's after a dated one:
+        # the check orders them again from the summaries, undated first.
+        report = make_report.render(PERSON, DATA, REPORT_FOLDER, CONTENT)
+        page, piece = (point["point"]
+                       for point in DATA["observations"]["context"][:2])
+        swapped = report.replace(page, "\0").replace(
+            piece, page).replace("\0", piece)
+        self.assertIn("Context points", " ".join(check_report.report_problems(
+            swapped, DATA, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT)))
 
     def test_observations_same_day(self):
         # Evidence of the same day keeps the order the summary gives it, in

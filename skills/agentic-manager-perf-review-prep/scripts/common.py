@@ -22,7 +22,7 @@ from agentic_manager.config import company_setting, is_number  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
 from agentic_manager.github import commit_authors, gh_json, gh_orgs, profile_name, dated_query, pull_search_url, require_gh, search_pulls, selection  # noqa: E402,F401
 from agentic_manager.jira import JiraClient, browse_url, is_sub_task, plain_text, project_of, search_url as jira_search_url  # noqa: E402,F401
-from agentic_manager.logseq import graph_path, links, notes, page_aliases  # noqa: E402,F401
+from agentic_manager.logseq import graph_path, links, notes, page_aliases, page_title  # noqa: E402,F401
 from agentic_manager.output_file import json_text, read_json, write_output_file, write_output_json  # noqa: E402,F401
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
 from agentic_manager.output_folder import CHARTS_DIR, RAW_DIR, clear_folder, document_name, folder_problem, folder_subject, new_run, output_folder, run_folder, work_folder  # noqa: E402,F401
@@ -188,28 +188,34 @@ HEADINGS = {"created": "Issues created", "resolved": "Issues resolved", "resolve
             "opened": "PRs created", "merged": "PRs merged", "merged_lines": "PRs size"}
 # The Notion section's heading of its table of the pages created.
 PAGES_HEADING = "Pages created"
-# The Observations section: a table for each valued part, by its heading, each
-# point under the first company value it names, the one it shows most, so it
-# shows once, the second value it names beside it, the values with the most points first, those naming none under
-# NO_VALUE, last, as it is no value; each point's source, by the summary file
-# it comes from, as the report names it; and what a reading's reference
-# names, by its source, beside the day it was seen on.
-OBSERVATION_HEADINGS = {"going_well": "Going well", "to_improve": "To improve"}
+# The Observations section: a table for each part, by its heading, in order.
+# A valued part's puts each point under the first company value it names, the
+# one it shows most, so it shows once, the second value it names beside it,
+# the values with the most points first, those naming none under NO_VALUE,
+# last, as it is no value; context names no value, so its table isn't
+# grouped. Each point's source, by the summary file it comes from, as the
+# report names it; and what a reading's reference names, by its source,
+# beside the day it was seen on, or a page, which has no day, by its title.
+OBSERVATION_HEADINGS = {"going_well": "Going well",
+                        "to_improve": "To improve", "context": "Context"}
 NO_VALUE = "No value"
 OBSERVATION_SOURCES = {"feedback": "Feedback",
                        "notes": "Manager's notes", "slack": "Slack"}
 REFERENCE_NAMES = {"notes": "Journal", "slack": "Slack"}
+PAGE_REFERENCE = "Page"
 SUMMARY_FILES = {"feedback": FEEDBACK, "notes": NOTES, "slack": SLACK}
 # What the agent reads to summarise each table of observations, made from
 # data.json, and the summaries it writes, one per table, a few flowing
-# paragraphs above it: about OBSERVATIONS_WORDS words, fewer for a table of
-# few points, MAX_OBSERVATIONS_WORDS only for one of many themes. An agent
-# given a ceiling alone writes up to it, so the target is what it aims for,
-# and only more than the ceiling is refused.
+# paragraphs above it: about OBSERVATIONS_WORDS words, by part, fewer for a
+# table of few points, the context half as long, as it says facts once
+# rather than weighing themes. An agent writes up to any number it is told and a little over
+# a target, so it is told the target alone, in the protocol, the help and the
+# error, and only more than MAX_OBSERVATIONS_WORDS, a margin it never sees,
+# is refused.
 BRIEF = "brief.json"
 CONTENT = "content.json"
-OBSERVATIONS_WORDS = 200
-MAX_OBSERVATIONS_WORDS = 300
+OBSERVATIONS_WORDS = {"going_well": 150, "to_improve": 150, "context": 75}
+MAX_OBSERVATIONS_WORDS = {"going_well": 200, "to_improve": 200, "context": 100}
 # The chart of the resolved issues by epic, beside the main focus.
 EPICS_CHART = "jira_epics.svg"
 # The GitHub cells of the report, in order, as the Jira ones, and the chart
@@ -623,35 +629,6 @@ def pieces_problems(value, names, fields, values, rules):
     return problems
 
 
-def content_problems(content, observations):
-    """Why `content` isn't the agent's summaries of `observations`,
-    data.json's, empty when it is: {going_well, to_improve}, each a text of
-    at most MAX_OBSERVATIONS_WORDS words, empty exactly when its table holds no
-    point, naming every company value its table groups points under; one a
-    point names only second is the agent's to weigh, so it isn't checked."""
-    if not (isinstance(content, dict) and sorted(content) == sorted(VALUED_PARTS)):
-        return [f"content.json must be {{{', '.join(f'\"{part}\": \"...\"' for part in VALUED_PARTS)}}}"]
-    problems = []
-    for part in VALUED_PARTS:
-        text, points = content[part], observations[part]
-        if not isinstance(text, str):
-            problems.append(f"content.json's {part} must be a text")
-        elif points and not text.strip():
-            problems.append(
-                f"content.json's {part} is empty: summarise its table's points")
-        elif not points and text.strip():
-            problems.append(
-                f"content.json's {part} must be empty, as its table holds no point")
-        elif word_count(text) > MAX_OBSERVATIONS_WORDS:
-            problems.append(f"content.json's {part} has {word_count(text)} words: keep it to about "
-                            f"{OBSERVATIONS_WORDS}, at most {MAX_OBSERVATIONS_WORDS} for a table of many themes")
-        elif missing := [group["value"] for group in points
-                         if group["value"] and group["value"].casefold() not in text.casefold()]:
-            problems.append(f"content.json's {part} doesn't name {', '.join(missing)}: say, even briefly, how "
-                            "its table's points show each value they are grouped under")
-    return problems
-
-
 def notes_problems(notes, values, days):
     """Why `notes` aren't the summary of the manager's notes, empty when they
     are: summary_problems() with `days`, every day of the period, a context
@@ -758,6 +735,36 @@ def _is_evidence(item):
             and isinstance(item["link"], str) and (item["link"].startswith(WEB_LINK) or os.path.isabs(item["link"])))
 
 
+def content_problems(content, observations):
+    """Why `content` isn't the agent's summaries of `observations`,
+    data.json's, empty when it is: one for each part of OBSERVATION_HEADINGS,
+    each a text of at most its MAX_OBSERVATIONS_WORDS words, empty exactly when
+    its table holds no point, a valued part's naming every company value its
+    table groups points under; one a point names only second is the agent's
+    to weigh, so it isn't checked, and context names none."""
+    if not (isinstance(content, dict) and sorted(content) == sorted(OBSERVATION_HEADINGS)):
+        return [f"content.json must be {{{', '.join(f'\"{part}\": \"...\"' for part in OBSERVATION_HEADINGS)}}}"]
+    problems = []
+    for part in OBSERVATION_HEADINGS:
+        text, points = content[part], observations[part]
+        if not isinstance(text, str):
+            problems.append(f"content.json's {part} must be a text")
+        elif points and not text.strip():
+            problems.append(
+                f"content.json's {part} is empty: summarise its table's points")
+        elif not points and text.strip():
+            problems.append(
+                f"content.json's {part} must be empty, as its table holds no point")
+        elif word_count(text) > MAX_OBSERVATIONS_WORDS[part]:
+            problems.append(f"content.json's {part} has {word_count(text)} words, more than "
+                            f"{OBSERVATIONS_WORDS[part]}: cut it to about {OBSERVATIONS_WORDS[part]}, keeping what matters most")
+        elif part in VALUED_PARTS and (missing := [group["value"] for group in points
+                                                   if group["value"] and group["value"].casefold() not in text.casefold()]):
+            problems.append(f"content.json's {part} doesn't name {', '.join(missing)}: say, even briefly, how "
+                            "its table's points show each value they are grouped under")
+    return problems
+
+
 def types_text(by_type):
     """A breakdown by type, [{type, issues}], as the report writes it, such
     as "2 Task, 1 Bug": how the report and its check write it, so they
@@ -816,6 +823,15 @@ def day_text(day):
     axes name it: "13 Jul"."""
     value = date.fromisoformat(day)
     return f"{value.day} {value:%b}"
+
+
+def reference_text(source, item):
+    """What a reading's reference to `item`, an evidence of `source`, says: its
+    source and day, such as "Slack 14 Oct", or, undated, as a page has no day,
+    the page's title, its file's name without .md, such as "Page Jane"."""
+    if item["date"] is None:
+        return f"{PAGE_REFERENCE} {page_title(os.path.basename(item['link']).removesuffix('.md'))}"
+    return f"{REFERENCE_NAMES[source]} {day_text(item['date'])}"
 
 
 def link_href(link, folder):

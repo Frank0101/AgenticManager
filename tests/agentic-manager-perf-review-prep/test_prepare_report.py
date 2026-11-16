@@ -29,8 +29,8 @@ class PrepareReportTest(unittest.TestCase):
         with open(prepared["task"].removeprefix("Task observations: "), encoding="utf-8") as f:
             task = f.read()
         self.assertNotIn("{{", task)
-        for part in (f"about {common.OBSERVATIONS_WORDS} words",
-                     f"up to {common.MAX_OBSERVATIONS_WORDS} only", "## The person\n\nJane Doe", prepared[
+        for part in (f"about {common.OBSERVATIONS_WORDS['going_well']} words", f"about {common.OBSERVATIONS_WORDS['context']} words",
+                     "## The person\n\nJane Doe", prepared[
                          "brief"],
                      f"set_content.py --prep {PREP} <<'END_OF_INPUT'"):
             self.assertIn(part, task)

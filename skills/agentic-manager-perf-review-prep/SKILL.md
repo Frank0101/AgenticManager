@@ -35,12 +35,12 @@ perf-review-preps/
     │                     repository, each main focus, the resolved issues' story points, the merged pull
     │                     requests' lines changed, the series the charts draw and the link to each search; and
     │                     the points of the feedback, the notes and Slack, going well and to improve, by company
-    │                     value)
-    ├── brief.json        prepare_report.py writes (each table of observations' points, which the observations task summarises)
+    │                     value, and context)
+    ├── brief.json        prepare_report.py writes (each table of observations' points, going well, to improve and context, which the observations task summarises)
     ├── content.json      set_content.py writes (the summary of each table of observations)
     └── Jane-Doe_Review_Prep.md
                           finish_report.py writes (the report for the manager, from the files above: for now,
-                          what is going well and what to improve, by company value, then the person's GitHub
+                          what is going well and what to improve, by company value, and the context, then the person's GitHub
                           and Jira figures, each with its main focus, and the Notion pages they created)
 ```
 
@@ -138,9 +138,9 @@ The person's work in Jira, GitHub and Notion, in the period. It and step 6 don't
 
 ## 8. Summarise the observations
 
-Once steps 6 and 7 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py --prep <prep>`: it builds `data.json`, the model the report reads, from the raw files and the feedback, notes and Slack summaries, with no network, then `brief.json`, and prints `task`, the line of the task that summarises each table of observations, what is going well and what to improve, from the brief. Give it to a fresh subagent, only its path, with: "Do the task in <path> exactly as written there, then reply in one line." The task holds its own instructions and records the summaries in `content.json` with `set_content.py`, which checks them as they're written. Once it has replied, go on to step 9.
+Once steps 6 and 7 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py --prep <prep>`: it builds `data.json`, the model the report reads, from the raw files and the feedback, notes and Slack summaries, with no network, then `brief.json`, and prints `task`, the line of the task that summarises each table of observations, what is going well, what to improve and the context, from the brief. Give it to a fresh subagent, only its path, with: "Do the task in <path> exactly as written there, then reply in one line." The task holds its own instructions and records the summaries in `content.json` with `set_content.py`, which checks them as they're written. Once it has replied, go on to step 9.
 
-To change a summary later, as the manager asks, edit it yourself and record both summaries again with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_content.py --prep <prep>`, whose `--help` shows the input, then run step 9 again.
+To change a summary later, as the manager asks, edit it yourself and record every summary again with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_content.py --prep <prep>`, whose `--help` shows the input, then run step 9 again.
 
 ## 9. Finish
 

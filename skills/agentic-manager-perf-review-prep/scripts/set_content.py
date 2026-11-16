@@ -4,24 +4,27 @@ The summaries are checked against data.json, the tables they summarise,
 before anything is written, by the rule the final check applies, so a
 summary that misses a value or runs too long is refused while it is being
 written, not at the end. It is written whole each time, so a correction is
-one more call with both summaries.
+one more call with every summary.
 """
 import argparse
 import json
 import os
 
-from common import CONTENT, DATA, MAX_OBSERVATIONS_WORDS, OBSERVATIONS_WORDS, content_problems, prep_dir, read_json, stdin_json, write_prep_file
+from common import CONTENT, DATA, OBSERVATIONS_WORDS, content_problems, prep_dir, read_json, stdin_json, write_prep_file
 
 INPUT = f"""Input, on stdin: the summary of each table, such as:
 
   python3 set_content.py --prep Jane-Doe_26-11-10 <<'END_OF_INPUT'
-  {{"going_well": "One or more paragraphs.", "to_improve": "One or more paragraphs."}}
+  {{"going_well": "One or more paragraphs.", "to_improve": "One or more paragraphs.",
+   "context": "A paragraph."}}
   END_OF_INPUT
 
-  going_well  the summary of what is going well, about {OBSERVATIONS_WORDS} words, at most
-              {MAX_OBSERVATIONS_WORDS} for a table of many themes,
+  going_well  the summary of what is going well, about {OBSERVATIONS_WORDS["going_well"]} words, fewer
+              for a table of few points,
               naming every company value its table groups points under
   to_improve  the same, of what to improve
+  context     the same, of the context, about {OBSERVATIONS_WORDS["context"]} words, naming
+              no company value
 
 A summary is empty, "", exactly when its table holds no point.
 

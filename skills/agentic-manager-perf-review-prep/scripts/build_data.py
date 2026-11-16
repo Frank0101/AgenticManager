@@ -16,7 +16,7 @@ import statistics
 from collections import Counter
 from datetime import date, timedelta
 
-from common import (BINS_PER_DECADE, DATA, FOCUS_SHARE, MAX_GROUPS, SUMMARY_FILES, VALUED_PARTS, VALUES, project_of, PERSON, WORK_LISTS, company_names, epic_of, jira_search_url, pull_search_url, period_days, prep_dir, raw_work_problems,
+from common import (BINS_PER_DECADE, DATA, FOCUS_SHARE, MAX_GROUPS, OBSERVATION_HEADINGS, SUMMARY_FILES, VALUED_PARTS, VALUES, project_of, PERSON, WORK_LISTS, company_names, epic_of, jira_search_url, pull_search_url, period_days, prep_dir, raw_work_problems,
                     is_sub_task, read_json, read_raw_work, work_items, write_prep_file)
 
 # The searches data.json links to, by what they find: each list's, and the
@@ -25,6 +25,9 @@ SEARCH_URLS = {"jira": ("created", "resolved",
                         "resolved_points"), "github": ("opened", "merged")}
 EPOCH_MONDAY = date(2001, 1, 1)
 MAX_POINTS = 20
+# Sorts after every day, so an undated point or evidence comes first, the most
+# recent first.
+UNDATED = "9999-12-31"
 
 
 def build_data(prep):
@@ -94,41 +97,61 @@ def data_problems(data, raws, person, summaries, values):
 
 def observations(summaries, values):
     """The points of `summaries`, the feedback's pieces, the notes' summary
-    and Slack's, for each part of VALUED_PARTS: a group for each of `values`
-    that a point names first, those with the most points first, in their
-    order when as many, then one, its value null, of the points that name
-    none; each group's points the most recent first,
-    those with no date first, as the most recent of all, by their date, a
-    piece's or the latest of their evidence's. Each point is {point, also,
-    source, date, period, evidence}: also the second value it names, null
-    when it names one or none, so it shows though the point sits under its
-    first; its source a key of SUMMARY_FILES, its period
-    its piece's, null for a reading's, and its evidence a reading's, the most
-    recent first, those of a day in the order given, empty for a piece's."""
+    and Slack's, for each part of OBSERVATION_HEADINGS, by part_points(): a
+    part of VALUED_PARTS as a group for each of `values` that a point names
+    first, those with the most points first, in their order when as many,
+    then one, its value null, of the points that name none, each point
+    {point, also, source, date, period, evidence}, also the second value it
+    names, null when it names one or none, so it shows though the point sits
+    under its first; context, which names no value, as its points alone."""
     result = {}
-    for part in VALUED_PARTS:
-        points = [{"point": point["point"], "also": also(point), "source": "feedback", "date": piece["date"], "period": piece["period"],
-                   "evidence": [], "value": next(iter(point["values"]), None)}
-                  for piece in summaries["feedback"]["pieces"] for point in piece[part]]
-        points += [{"point": point["point"], "also": also(point), "source": source,
-                    "date": max(item["date"] for item in point["evidence"]), "period": None,
-                    "evidence": sorted(point["evidence"], key=lambda item: item["date"], reverse=True),
-                    "value": next(iter(point["values"]), None)}
-                   for source in ("notes", "slack") for point in summaries[source][part]]
-        newest = sorted(
-            points, key=lambda point: point["date"] or "9999-12-31", reverse=True)
-        counts = Counter(point["value"] for point in newest)
+    for part in OBSERVATION_HEADINGS:
+        points = part_points(summaries, part)
+        if part not in VALUED_PARTS:
+            result[part] = points
+            continue
+        counts = Counter(point["value"] for point in points)
         ranked = sorted(
             (value for value in values if counts[value]), key=lambda value: -counts[value])
         result[part] = [{"value": value, "points": [{key: field for key, field in point.items() if key != "value"}
-                                                    for point in newest if point["value"] == value]}
+                                                    for point in points if point["value"] == value]}
                         for value in [*ranked, *([None] if counts[None] else [])]]
     return result
 
 
-def also(point):
-    """The second company value `point` names, null when it names fewer."""
-    return point["values"][1] if len(point["values"]) > 1 else None
+def part_points(summaries, part):
+    """The points of `part` in `summaries`, the most recent first, those with
+    no date first, as the most recent of all, by their date, a piece's or the
+    latest of their dated evidence's, null when none is dated: each {point,
+    source, date, period, evidence}, and in VALUED_PARTS its also and its
+    value, the first it names or null; its source a key of SUMMARY_FILES,
+    its period its piece's, null for a reading's, and its evidence a
+    reading's, the most recent first the same way, those of a day in the
+    order given, empty for a piece's."""
+    points = [{**point_text(point, part), "source": "feedback", "date": piece["date"], "period": piece["period"],
+               "evidence": []}
+              for piece in summaries["feedback"]["pieces"] for point in piece[part]]
+    points += [{**point_text(point, part), "source": source,
+                "date": max((item["date"] for item in point["evidence"] if item["date"]), default=None),
+                "period": None, "evidence": newest(point["evidence"])}
+               for source in ("notes", "slack") for point in summaries[source][part]]
+    return newest(points)
+
+
+def point_text(point, part):
+    """{point}, the text of `point`, a point of `part`, and in VALUED_PARTS
+    {also, value}: the second company value it names and the first, each
+    null when it names fewer. A piece's context point is a sentence alone."""
+    if part not in VALUED_PARTS:
+        return {"point": point if isinstance(point, str) else point["point"]}
+    return {"point": point["point"], "also": point["values"][1] if len(point["values"]) > 1 else None,
+            "value": next(iter(point["values"]), None)}
+
+
+def newest(dated):
+    """`dated`, each with a date, the most recent first, those with none
+    first, as the most recent of all, those of a day in the order given."""
+    return sorted(dated, key=lambda item: item["date"] or UNDATED, reverse=True)
 
 
 # The facts.
