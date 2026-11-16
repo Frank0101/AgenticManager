@@ -26,7 +26,7 @@ sys.path.insert(0, TEST_DIR)
 from sprint_fixture import PR, moved  # noqa: E402
 from ticket_fixture import (CATEGORIES, CLOSE, PLUS_ONE, PREVIOUS, START, START_DATE, at, carried, changed,  # noqa: E402
                             context, done, events, joined, left, points, raw)
-from report_fixture import ev, pull, ticket  # noqa: E402
+from report_fixture import PROJ_KEYS, ev, pull, ticket  # noqa: E402
 
 
 def spells_of(issue, changes, ctx=None, moment=CLOSE):
@@ -413,11 +413,13 @@ class StatusChecksTest(unittest.TestCase):
                   "PROJ-5-cache", "PROJ-1", False),
                  ("names another ticket and this one",
                   "PROJ-5 and PROJ-1 together", "", "PROJ-1", True),
-                 ("a lower-case key isn't one", "proj-5 cache", "", "PROJ-1", True)]
+                 ("a lower-case key isn't one", "proj-5 cache", "", "PROJ-1", True),
+                 ("a word shaped like a key isn't one", "Fix UTF-8 handling",
+                  "fix/utf-8", "PROJ-1", True)]
         for name, title, branch, via, own in cases:
             with self.subTest(name):
                 self.assertEqual(build.is_own_pull(
-                    {"title": title, "branch": branch, "via": via}, "PROJ-1"), own)
+                    {"title": title, "branch": branch, "via": via}, "PROJ-1", PROJ_KEYS), own)
 
     def test_pull_state(self):
         # name: (mergedAt, closedAt, state)
@@ -441,15 +443,16 @@ class StatusChecksTest(unittest.TestCase):
                                        "closedAt": at("03-12")},
                        PR.format(42): {"createdAt": at("03-03"), "mergedAt": None, "closedAt": at("03-04")},
                        PR.format(43): {"createdAt": at("03-12"), "mergedAt": None, "closedAt": None}}}
-        found = build.ticket_pulls(raw, "PROJ-1", at("03-10"))
+        found = build.ticket_pulls(raw, "PROJ-1", at("03-10"), PROJ_KEYS)
         self.assertEqual([(pr["url"][-2:], pr["title"], pr["branch"], pr["mergedAt"], pr["closedAt"], pr["own"],
                            pr["state"]) for pr in found],
                          [("41", "PROJ-1 import", "PROJ-1", None, None, True, "open"),
                           ("42", "PROJ-5 cache", "", None, at("03-04"), False, "declined")])
-        self.assertEqual(build.ticket_pulls(raw, "PROJ-2", at("03-10")), [])
+        self.assertEqual(build.ticket_pulls(
+            raw, "PROJ-2", at("03-10"), PROJ_KEYS), [])
         del raw["events"][PR.format(42)]
         with self.assertRaisesRegex(SystemExit, f"PROJ-1: no GitHub times for {PR.format(42)}"):
-            build.ticket_pulls(raw, "PROJ-1", at("03-10"))
+            build.ticket_pulls(raw, "PROJ-1", at("03-10"), PROJ_KEYS)
 
     def test_status_flag(self):
         # Each status category with its own pull requests' states, the

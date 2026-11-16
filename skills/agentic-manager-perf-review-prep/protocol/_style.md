@@ -1,0 +1,1 @@
+Write in the third person, with the person's name as the brief gives it, never "he", "she" or "they", which could be anyone the summary names, and anyone else by their name or role, never "he" or "she". Write flowing paragraphs, no lists or headings.

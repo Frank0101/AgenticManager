@@ -10,7 +10,7 @@ only when there is none.
 import re
 
 from common import (DESIGN_ORDER, COVERAGE, coverage_fields, OUTSIDE_SCOPE, SCOPE_ANSWERS, SCOPE_QUESTION, TABLES, USER_DECIDED,
-                    citation, ids, read_in_part, recorded_ids)
+                    RECORD_ID, citation, ids, read_in_part, recorded_ids)
 from ledger import (as_written, input_columns, basis, duplicate_of, finish_write, find_row,
                     header_of, move_row, next_id, put_row, refuse_cited, search_reference, set_design_basis,
                     table_rows, write_rows)
@@ -39,7 +39,6 @@ KEY_REFERENCE = re.compile(r"\[\[([A-Za-z]\d+)\]\]")
 # A word shaped like an ID, but not part of an address such as s3://bucket, a
 # dotted name such as s3.amazonaws.com or a hyphenated one such as kb-s3.
 BARE_REFERENCE = re.compile(r"(?<![-./\w])\b[A-Za-z]\d+\b(?![-:/]|\.\w)")
-RECORD_ID = re.compile(r"[A-Z]\d{2,}")
 # The fields that only cite other records, where the name of a record written
 # bare, not as [[s1]], is refused: it would be left as prose, its citation
 # lost. Any other word shaped like an ID, such as V2, is prose.

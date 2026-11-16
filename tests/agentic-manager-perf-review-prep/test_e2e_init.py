@@ -53,7 +53,7 @@ NOTION_SCRIPT = os.path.join(SCRIPTS, "set_notion.py")
 REPORT_SCRIPT = os.path.join(SCRIPTS, "finish_report.py")
 PREPARE_SCRIPT = os.path.join(SCRIPTS, "prepare_report.py")
 CONTENT_SCRIPT = os.path.join(SCRIPTS, "set_content.py")
-STEP_CHANGE_SCRIPT = os.path.join(SCRIPTS, "set_step_change.py")
+COMPARISON_SCRIPT = os.path.join(SCRIPTS, "set_comparison.py")
 SLACK_SCRIPT = os.path.join(SCRIPTS, "read_slack.py")
 TOKEN = "s3cret-token"
 JANE = {"accountId": "5b10ac8d82e05b22cc7d4ef5", "accountType": "atlassian", "displayName": "Jane Doe",
@@ -273,9 +273,9 @@ class ScriptsTest(unittest.TestCase):
         for path in prepared["briefs"]:
             with open(path, encoding="utf-8") as f:
                 briefs.append(json.load(f))
-        brief, step_change_brief = briefs
+        brief, step_change_brief, view_check_brief = briefs
         self.assertEqual([line.split(":", 1)[0] for line in prepared["tasks"]],
-                         ["Task observations", "Task step-change"])
+                         ["Task observations", "Task step-change", "Task view-check"])
         self.assertEqual(work["jira"]["resolved"], [
             {"key": "PROJ-12", "title": "Migrate invoices", "type": "Story",
              "epic": {"key": "PROJ-1", "title": "Billing migration", "url": f"{self.base_url}/browse/PROJ-1"},
@@ -286,13 +286,15 @@ class ScriptsTest(unittest.TestCase):
                 "url": f"{self.base_url}/browse/PROJ-1", "issues": 1, "share": 100}],
             [{"repo": "acme/billing", "number": 7, "title": PR["title"], "url": PR["url"], "date": TODAY.isoformat(),
               "lines": 48, "files": 3}]))
-        # No report until content.json and step_change.json are written,
+        # No report until content.json, step_change.json and view_check.json
+        # are written,
         # then the report, from data.json: one resolved issue of 5 points,
         # one created, each linked to its search.
         code, out, _ = self.run_script(REPORT_SCRIPT, "--prep", prep)
         self.assertEqual((code, json.loads(out)["report"]), (1, None))
         self.assertIn("content.json is missing", out)
         self.assertIn("step_change.json is missing", out)
+        self.assertIn("view_check.json is missing", out)
         # Each valued summary names the values its table groups points under.
         content: dict[str, object] = {part: " ".join(["Jane did well, showing", *sorted({point["values"][0] for point in brief[part]
                                                                                          if point["values"]})])
@@ -308,11 +310,24 @@ class ScriptsTest(unittest.TestCase):
         self.assertEqual(
             step_change_brief["reviews"]["latest"]["period"], PIECE["period"])
         code, _, err = self.run_script(
-            STEP_CHANGE_SCRIPT, "--prep", prep, stdin="null")
+            COMPARISON_SCRIPT, "--of", "step-change", "--prep", prep, stdin="null")
         self.assertEqual(code, 1)
         self.assertIn("step_change.json must be {", err)
-        self.run_ok(STEP_CHANGE_SCRIPT, "--prep", prep, stdin=json.dumps(
+        self.run_ok(COMPARISON_SCRIPT, "--of", "step-change", "--prep", prep, stdin=json.dumps(
             {"summary": "Jane kept delivering on time.", "rows": []}))
+        # The manager's view, as step 3 recorded it, each point with its id:
+        # every one needs a row, so one left out is refused.
+        view = [point["id"] for part in ("going_well", "to_improve", "context")
+                for point in view_check_brief["view"][part]]
+        self.assertEqual(view, ["V-G1", "V-C1"])
+        rows = [{"view_point": point, "check": "little_support",
+                 "evidence": []} for point in view]
+        code, _, err = self.run_script(COMPARISON_SCRIPT, "--of", "view-check", "--prep", prep, stdin=json.dumps(
+            {"summary": "The manager's view finds little support.", "rows": rows[1:]}))
+        self.assertEqual(code, 1)
+        self.assertIn("view_check.json has no row for V-G1", err)
+        self.run_ok(COMPARISON_SCRIPT, "--of", "view-check", "--prep", prep, stdin=json.dumps(
+            {"summary": "The manager's view finds little support.", "rows": rows}))
         made = self.run_ok(REPORT_SCRIPT, "--prep", prep)
         with open(made["report"], encoding="utf-8") as f:
             report = f.read()

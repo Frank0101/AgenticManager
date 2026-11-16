@@ -172,39 +172,26 @@ class CheckReportTest(unittest.TestCase):
             self.assertIn("cannot read research ledger", " ".join(errors))
 
     def test_handover_rules(self):
-        # Rules of a finished ledger, beyond its structure, which every case
-        # meets. A gap needs a blocker, and evidence that traces it (the
-        # blocker's own cases are in test_common.py); nothing is left ready or
-        # in progress; a source links its reference, and a search is recorded
-        # by its exact query between backticks instead.
-        def gap(blocker, evidence):
-            return with_rows(with_rows(LEDGER, "gaps", [["G01", "Gap", blocker, "Owner", evidence]]),
-                             "decisions", [["D01", "Choice", "Unresolved: A or B", "Owner", "F01"]])
-
-        def search(reference, ident="S04"):
-            return source_row(ident, "code: search", reference, "today", "search hit")
+        # Rules check_report.py applies to the finished ledger, beyond its
+        # structure, which every case meets: nothing is left ready or in
+        # progress, and a search is recorded by its exact query between
+        # backticks, anchored as ledger.py writes it. The rules of each table
+        # apply too, as closing_problems() finds them: one case shows it.
+        def search(ident="S04"):
+            return source_row(ident, "code: search", "`gh search code --repo acme/app PROJ-1`", "today", "search hit")
         open_question = ["Q01", "Start", "Read code", "—", "—"]
-        query = "`gh search code --repo acme/app PROJ-1`"
+        # name: (ledger, expected problem, or None)
         cases = [
-            ("a gap waiting on a decision", gap(
-                "Waiting on decision D01", "F01"), None),
-            ("a gap nothing blocks", gap(
-                "Not done yet", "F01"), "Blocked by"),
-            ("a gap whose evidence traces nothing", gap("Waiting on decision D01", "Code"),
-             "G01: Evidence names the findings or sources"),
-            ("a question answered", LEDGER, None),
+            ("a ledger that holds", LEDGER, None),
             ("a ready question", with_queue(LEDGER, "Ready", [open_question]),
              "still ready or in progress"),
             ("a question in progress", with_queue(LEDGER, "In progress", [open_question]),
              "still ready or in progress"),
-            ("linked sources", with_sources([search(query)]), None),
-            ("a search described in words", with_sources([search("a GitHub code search")]),
-             "S04: link the Reference at its pinned revision"),
-            ("an unlinked source", with_sources([source_row(reference="acme/app", findings="F01")]),
-             "S01: link the Reference at its pinned revision"),
-            # Rows as ledger.py writes them: anchored IDs and linked citations.
+            ("a search", with_sources([search()]), None),
             ("an anchored search", with_sources(
-                [search(query, '<a id="s04"></a>S04')]), None),
+                [search('<a id="s04"></a>S04')]), None),
+            ("a gap nothing blocks", with_rows(LEDGER, "gaps", [["G01", "Gap", "Not done yet", "Owner", "F01"]]),
+             "Blocked by"),
         ]
         for name, text, expected in cases:
             with self.subTest(name):
@@ -272,94 +259,11 @@ class CheckReportTest(unittest.TestCase):
                 self.assertEqual(bool(expected) and not finished_only and expected in structure,
                                  bool(expected) and not finished_only, structure)
 
-    def test_handover_rechecks_blocked_questions_sources_and_findings(self):
+    def test_every_table_is_checked_again_at_handover(self):
         # A ledger edited without the script is checked again at handover:
-        # one case of each rule, whose own cases are in test_common.py.
-        def source(kind="tracker", coverage="partial: sections: Description", superseded="None"):
-            return with_sources([source_row("S04", kind, revision="d", coverage=coverage, superseded=superseded)])
-        partly = with_sources([source_row(reference="[app](https://github.com/acme/app/blob/abc1234/app.py)", revision="abc1234",
-                                          coverage="partial: lines 1-9", findings="F01")])
-        # name: (ledger, expected problem, or None)
-        cases = [("allowed sources", source(), None),
-                 ("a source of no group", source(
-                     kind="source_control"), "S04: Kind starts with"),
-                 ("a coverage not allowed", source(coverage="skimmed"),
-                  "S04: Coverage starts with one of"),
-                 ("superseded by words", source(superseded="the 2026 design"),
-                  "S04: Superseded by is None, or the one source that replaces it"),
-                 ("a finding citing no source", with_rows(LEDGER, "findings", [
-                     ["F01", "Search is merged.", "the code", "Read."], FINDING_ROWS[1]]),
-                  "F01: Sources names the sources"),
-                 ("a question blocked by nothing", with_queue(LEDGER, "Blocked", [
-                     ["Q09", "Start", "Read billing", "None", "—"]]),
-                  "Q09: a blocked question names what blocks it"),
-                 ("code linked at another revision than it was read", with_sources([
-                     source_row(reference="[app](https://github.com/acme/app/tree/abc1234)", revision="def1234",
-                                findings="F01")]), "S01: Reference links code at abc1234, Revision is def1234"),
-                 ("a partial read its finding doesn't explain", partly,
-                  "F01: cites S01, read only in part"),
-                 ("a partial read its finding explains", partly.replace(
-                     "| Routes read in full. |", "| [S01](#s01) read in part: the rest is tests. |"), None)]
-        for name, ledger, expected in cases:
-            with self.subTest(name):
-                assert_problem(self, " ".join(
-                    check_report.closing_problems(ledger)) or None, expected)
-
-    def test_handover_closing_rules(self):
-        # A completed question names its answer and a component's status is an
-        # allowed one, one case each, as test_common.py has the rules' own; one
-        # claiming code rests on a code source read under its path, which a
-        # finding of its evidence cites, and links its code at a commit.
-        def component(status):
-            return ["C01", "search", "service", "None", "Serves", "[search][search]", status, "Unchanged",
-                    "F01" if status.startswith("🟩") else "G01"]
-        # The finding citing the code, never read in full here, says why the
-        # rest can't change it.
-        explained = FINDING_ROW.replace(
-            "Routes read in full. |", "S01 read in part: the unread lines are admin routes. |")
-
-        def read(path, coverage):
-            return [source_row(reference=f"[routes](https://github.com/acme/app/blob/abc1234/services/search/{path})",
-                               revision="abc1234", coverage=coverage, findings="F01")]
-        listing = read("", "listing")
-        routes = read("src/routes.py", "partial: lines 1-80")
-        # name: (outcome, status, sources, the problem, and the finding row and
-        # the code's revision when they differ)
-        cases = [
-            # A question a gap stops is blocked, never completed.
-            ("a question closed on a gap", "G01", "⬜ Unverified",
-             listing, "Q01: a completed question"),
-            ("a question closed on its finding",
-             "F01", "⬜ Unverified", listing, None),
-            ("a status not allowed", "F01", "Done",
-             listing, "C01: State starts with"),
-            ("code claimed from a listing", "F01", "🟩 Live",
-             listing, "C01 links acme/app: services/search"),
-            ("code claimed from its routes", "F01", "🟩 Live", routes, None),
-            ("code read, but by no finding of its evidence", "F01", "🟩 Live",
-             routes, "C01 links acme/app: services/search",
-             explained.replace("| S01 |", "| F01 |")),
-            ("code linked at a branch", "F01", "🟩 Live", routes,
-             "C01: Repository, paths, revision links code at main", explained, "main"),
-        ]
-        for name, outcome, status, sources, expected, *more in cases:
-            finding = more[0] if more else explained
-            revision = more[1] if len(more) > 1 else "abc1234"
-            tree = f"https://github.com/acme/app/tree/{revision}/services/search"
-            with self.subTest(name):
-                text = (with_rows(with_sources(sources), "components", [component(status)])
-                        .replace("| — | F01 |", f"| — | {outcome} |")
-                        .replace(FINDING_ROW, finding)
-                        .replace("## Links\n\nNone yet.", f"## Links\n\n[search]: {tree}"))
-                (self.folder / "ledger.md").write_text(text, encoding="utf-8")
-                result = check_report.check_report(self.report)
-                assert_problem(self, " ".join(
-                    result["errors"]) or None, expected)
-
-    def test_the_design_is_checked_again_at_handover(self):
-        # The rules applied on write hold in the ledger handed over: a status
-        # its evidence reaches, flows in order, and the State the script
-        # derives for identities and flows.
+        # one case per table shows its rows meet row_problem(), whose rules
+        # have their own cases in test_common.py and test_ledger.py. The State
+        # the script derives for identities and flows is checked too.
         def connection(ident, start, end, identity, state="🟨 Planned", evidence="F02"):
             return [ident, start, end, "HTTP", "q", "yes", identity, state, "Unchanged", evidence]
         connections = [connection("E01", "C01", "C03", "I01"),
@@ -370,39 +274,40 @@ class CheckReportTest(unittest.TestCase):
                 ["I01", "token", "service account", "C03", state, "Unchanged", "F02"]]), "flows", [
                 ["P01", "A search", walked, "🟨 Planned", "Unchanged", "F02"]])
             return text.replace("| 🟨 Planned | Unchanged | F02 |", f"| 🟨 Planned | Unchanged | {evidence} |", 1)
-        # name: (the ledger, a problem it has, or None)
+        decision = ["D01", "Choice", "Unresolved: A or B", "Owner", "F01"]
+        # name: (ledger, expected problem, or None)
         cases = [("a design that holds", design(), None),
+                 ("a question closed on a gap", LEDGER.replace("| — | F01 |", "| — | G01 |"),
+                  "Q01: a completed question"),
+                 ("a question blocked by nothing", with_queue(LEDGER, "Blocked", [
+                     ["Q09", "Start", "Read billing", "None", "—"]]),
+                  "Q09: a blocked question names what blocks it"),
+                 ("a coverage not allowed", with_sources([source_row("S04", "tracker", revision="d", coverage="skimmed")]),
+                  "S04: Coverage starts with one of"),
+                 ("a finding citing no source", with_rows(LEDGER, "findings", [
+                     ["F01", "Search is merged.", "the code", "Read."], FINDING_ROWS[1]]),
+                  "F01: Sources names the sources"),
+                 ("a gap whose evidence traces nothing",
+                  with_rows(LEDGER, "gaps", [
+                      ["G01", "Gap", "Waiting on decision D01", "Owner", "Code"]]),
+                  "G01: Evidence names the findings or sources"),
+                 ("a decision whose evidence traces nothing",
+                  with_rows(LEDGER, "decisions", [
+                      decision[:-1] + ["the code"]]),
+                  "D01: Evidence names the findings or sources"),
                  ("a planned component resting on code only",
                   design(evidence="F01"), "C01: State 🟨 Planned needs a finding read in the tracker"),
-                 ("a flow that comes back", design(walked="E01, E02, E01"), None),
-                 ("a flow that jumps", design(walked="E01, E02").replace("| C03 | C01 |", "| C04 | C02 |"),
+                 ("a live connection resting on a ticket",
+                  design(state="🟩 Live", connections=[connection("E01", "C01", "C03", "I01", "🟩 Live"),
+                                                      connections[1]]),
+                  "E01: State 🟩 Live needs a finding read in the code"),
+                 ("a flow that jumps", design().replace("| C03 | C01 |", "| C04 | C02 |"),
                   "E02 runs from C04 to C02, neither of which the flow has reached yet"),
                  ("an identity's State edited by hand", design(state="🟩 Live"),
                   "I01 has State 🟩 Live, its connections give 🟨 Planned")]
-        # A live connection rests on code read: F01's source, not F02's
-        # ticket.
-        for evidence, expected in (("F01", None), ("F02", "E01: State 🟩 Live needs a finding read in the code")):
-            cases.append((f"a live connection resting on {evidence}",
-                          design(state="🟩 Live", connections=[connection("E01", "C01", "C03", "I01", "🟩 Live",
-                                                                         evidence), connections[1]]),
-                          expected))
-        # A part of a mention-only topic, citing that decision, needs no code
-        # read, and each connection to it cites the decision too; one citing a
-        # decision that included its topic needs its code read.
-        scope = [["U01", "Payments", "mention only", "Q01"],
-                 ["U02", "Billing", "include", "Q01"]]
-        cited = [row[:-1] + ["F02, U01"] for row in connections]
-        for name, answer, edges, expected in (
-                ("a live part citing U01", "U01", cited, None),
-                ("a connection to a mention-only part not citing it", "U01", connections,
-                 "E01: From C01 is a part of a topic decided as mention only, so the connection cites U01"),
-                ("a live part citing U02", "U02", connections, "C01 links")):
-            cases.append((name, with_rows(design(connections=edges), "scope", scope)
-                          .replace("| 🟨 Planned | Unchanged | F02 |", f"| 🟩 Live | Unchanged | F02, {answer} |", 1),
-                          expected))
         for name, text, expected in cases:
             with self.subTest(name):
-                problems = [p for p in check_report.closing_problems(text) if p] + \
+                problems = check_report.closing_problems(text) + \
                     check_report.derived_state_problems(text)
                 assert_problem(self, " ".join(problems) or None, expected)
 

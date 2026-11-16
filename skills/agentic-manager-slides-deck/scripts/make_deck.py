@@ -9,12 +9,13 @@ the deck's own CSS, each slide's HTML and the data of its charts and rings,
 which `problems` checks field by field.
 """
 import html
+import itertools
 import json
 import re
 from html.parser import HTMLParser
 
 from common import (CHART_JS, ELEMENT_ID, FOLDER_NAME, PAGE, SLIDE_HEIGHT, SLIDE_WIDTH, TOKEN, URL_ATTRIBUTES, VOID,
-                    arc_segment, asset_link, coordinate, credit_line, deck_file, is_number, link_kind,
+                    arc_segment, asset_link, coordinate, credit_line, deck_file, is_number, is_text_list, link_kind,
                     placed_images, write_output_file)
 
 FIELDS = {"title", "style", "slides", "charts", "rings"}
@@ -39,6 +40,24 @@ IMAGE_IN_IMG = "an image goes in <img src='{{asset:<name>}}'>"
 # one place the page's links, and so the check, can see it.
 PLACED_ASSET = re.compile(
     rf"""\b(?:{"|".join(URL_ATTRIBUTES)})\s*=\s*(["'])\{{\{{asset:[^{{}}]*\}}\}}\1""", re.I)
+# A shadow with a blur, its third length, comes out of the PDF export as a
+# dark rectangle, though the browser shows it fine: box-shadow, text-shadow
+# and a filter's drop-shadow(), with a custom property read through its var().
+# One with no blur, a solid offset copy, prints as it shows.
+SHADOW_PROPERTY = re.compile(r"(?:-webkit-|-moz-)?(?:box|text)-shadow", re.I)
+FILTER_PROPERTY = re.compile(r"(?:-webkit-)?(?:backdrop-)?filter", re.I)
+DECLARATION = re.compile(
+    r"(?:^|(?<=[{;]))\s*(--[\w-]+|-?[A-Za-z][\w-]*)\s*:\s*([^;{}]*)")
+VARIABLE = re.compile(
+    r"var\(\s*(--[\w-]+)\s*(?:,\s*([^()]*(?:\([^()]*\)[^()]*)*))?\)", re.I)
+LENGTH = re.compile(r"([-+]?(?:\d+\.?\d*|\.\d+))[a-z]*", re.I)
+BLURRED = ("draws a blurred shadow, which the PDF export draws as a dark rectangle: lift it with a "
+           "lighter fill, a 1px border or a backing shape offset with no blur")
+# The page around the deck, which make_deck.py styles and the deck must not:
+# a selector naming any of them, even as an ancestor, restyles it.
+PAGE_SELECTOR = re.compile(
+    r"(?<![-\w.#])body(?![-\w])|\.(?:slides-wrapper|toolbar)(?![-\w])", re.I)
+RULE_PRELUDE = re.compile(r"([^{};]*)\{")
 
 
 BASE_CSS = f"""      * {{
@@ -229,6 +248,12 @@ def problems(content, assets=frozenset()):
     if style and TOKEN.search(style):
         errors.append(
             "style: holds a {{...}} token, which only a slide's html can")
+    variables = css_variables(style or "")
+    for line, selector in page_selectors(style or ""):
+        errors.append(f"style: line {line}: `{selector}` restyles the page around the deck: never style "
+                      "body, .slides-wrapper or .toolbar")
+    for line, declaration in blurred_shadows(style or "", variables):
+        errors.append(f"style: line {line}: `{declaration}` {BLURRED}")
     elements = {}
     for kind, check in (("chart", check_chart), ("ring", check_ring)):
         field = kind + "s"
@@ -280,7 +305,7 @@ def problems(content, assets=frozenset()):
             errors.append(
                 f"{where}.html: `{{{{` starts no token: write {{{{chart:<id>}}}}, {{{{ring:<id>}}}}, "
                 "{{asset:<name>}} or {{page}}")
-        problem = read_slide(bare)
+        problem = read_slide(bare, variables)
         if problem:
             errors.append(f"{where}.html: {problem}")
     for (kind, ident), count in elements.items():
@@ -297,6 +322,94 @@ def css_loads_file(css):
         not target.startswith("#") and link_kind(target) for target in CSS_URL.findall(css))
 
 
+def css_variables(css):
+    """{name: [values]} of the custom properties, such as --shadow, the CSS
+    `css` declares."""
+    variables = {}
+    for match in DECLARATION.finditer(uncommented(css)):
+        if match[1].startswith("--"):
+            variables.setdefault(match[1], []).append(match[2].strip())
+    return variables
+
+
+def page_selectors(css):
+    """(line, selector) of each rule of the CSS `css` whose selector names
+    body, .slides-wrapper or .toolbar."""
+    text = uncommented(css)
+    for match in RULE_PRELUDE.finditer(text):
+        selector = match[1].strip()
+        if selector and not selector.startswith("@") and PAGE_SELECTOR.search(selector):
+            start = match.start(1) + len(match[1]) - len(match[1].lstrip())
+            yield text.count("\n", 0, start) + 1, " ".join(selector.split())
+
+
+def blurred_shadows(css, variables):
+    """(line, declaration) of each declaration of the CSS `css`, a style
+    sheet or a style attribute, that draws a shadow with a blur, reading a
+    var() as any value `variables` (from css_variables()) gives it."""
+    text = uncommented(css)
+    for match in DECLARATION.finditer(text):
+        name, value = match[1], match[2].strip()
+        if SHADOW_PROPERTY.fullmatch(name):
+            def shadows(v): return split_top(v, ",")
+        elif FILTER_PROPERTY.fullmatch(name):
+            def shadows(v): return function_arguments(v, "drop-shadow")
+        else:
+            continue
+        if any(is_blurred(shadow) for v in resolved(value, variables) for shadow in shadows(v)):
+            yield text.count("\n", 0, match.start(1)) + 1, f"{name}: {' '.join(value.split())}"
+
+
+def is_blurred(shadow):
+    """Whether one shadow, such as `0 2px 8px rgba(0, 0, 0, 0.1)`, has a blur
+    other than 0: its third length."""
+    lengths = [float(match[1]) for token in split_top(shadow, " ")
+               if (match := LENGTH.fullmatch(token))]
+    return len(lengths) >= 3 and lengths[2] != 0
+
+
+def resolved(value, variables):
+    """Every reading of the CSS `value` with each var() replaced by a value
+    `variables` declares for it, or else by its fallback."""
+    parts = VARIABLE.split(value)
+    choices = [variables.get(name) or [fallback or ""]
+               for name, fallback in zip(parts[1::3], parts[2::3])]
+    for picked in itertools.product(*choices):
+        yield "".join(text + option for text, option in zip(parts[::3], list(picked) + [""]))
+
+
+def function_arguments(value, function):
+    """The text inside each call of the CSS function `function` in `value`."""
+    found = []
+    for match in re.finditer(rf"(?<![-\w]){function}\(", value, re.I):
+        depth, start = 1, match.end()
+        for end in range(start, len(value)):
+            depth += {"(": 1, ")": -1}.get(value[end], 0)
+            if not depth:
+                found.append(value[start:end])
+                break
+    return found
+
+
+def split_top(text, separator):
+    """The parts of the CSS `text` between each `separator` (a comma, or a
+    space for any whitespace) outside parentheses."""
+    parts, depth, current = [], 0, ""
+    for char in text:
+        depth += {"(": 1, ")": -1}.get(char, 0)
+        if not depth and (char == separator or (separator == " " and char.isspace())):
+            parts.append(current)
+            current = ""
+        else:
+            current += char
+    return [part.strip() for part in parts + [current] if part.strip()]
+
+
+def uncommented(css):
+    """The CSS `css` with its comments blanked, keeping every line where it is."""
+    return re.sub(r"/\*.*?\*/", lambda match: re.sub(r"[^\n]", " ", match[0]), css, flags=re.S)
+
+
 def unknown(item, allowed, where, errors):
     """Adds to `errors` the fields of `item`, at `where`, that aren't in `allowed`."""
     extra = sorted(set(item) - allowed)
@@ -307,7 +420,7 @@ def unknown(item, allowed, where, errors):
 
 def lines(value, where, errors, required=True):
     """The text of a field written as a list of lines, or None."""
-    if not isinstance(value, list) or not all(isinstance(line, str) for line in value):
+    if not is_text_list(value):
         errors.append(f"{where}: must be a list of lines (strings)")
         return None
     text = "\n".join(value)
@@ -397,10 +510,11 @@ def check_ring(ring, where, errors):
                           f"{narrowest:g}° wide")
 
 
-def read_slide(text):
-    """The first problem with one slide's HTML, or None. Every tag it opens
-    must close, since one unclosed tag would swallow every slide after it."""
-    parser = SlideParser()
+def read_slide(text, variables=None):
+    """The first problem with one slide's HTML, or None, `variables` being the
+    deck's custom properties (from css_variables()). Every tag it opens must
+    close, since one unclosed tag would swallow every slide after it."""
+    parser = SlideParser(variables or {})
     parser.feed(text)
     parser.finish()
     return parser.problem
@@ -409,9 +523,9 @@ def read_slide(text):
 class SlideParser(HTMLParser):
     """Reads one slide's HTML: the first problem with it."""
 
-    def __init__(self):
+    def __init__(self, variables):
         super().__init__(convert_charrefs=True)
-        self.open, self.problem = [], None
+        self.open, self.problem, self.variables = [], None, variables
 
     def fail(self, message):
         if not self.problem:
@@ -446,6 +560,9 @@ class SlideParser(HTMLParser):
                           "and write {{asset:<name>}}")
             elif name == "style" and css_loads_file(value):
                 self.fail(f"<{tag} style> loads a file: {IMAGE_IN_IMG}")
+            elif name == "style" and (shadow := next(blurred_shadows(
+                    value, self.variables | css_variables(value)), None)):
+                self.fail(f"<{tag} style> `{shadow[1]}` {BLURRED}")
             elif name == "class" and "mermaid" in value.split():
                 self.fail(
                     f"<{tag} class='mermaid'>: draw a diagram as inline SVG, in the deck's look")

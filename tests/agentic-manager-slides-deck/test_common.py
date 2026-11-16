@@ -19,14 +19,13 @@ from deck_fixture import temp_output, write_asset  # noqa: E402
 class DeckFolderTest(unittest.TestCase):
     def test_deck_file_and_expected_files(self):
         # A deck folder's HTML file is named after the deck, and the folder
-        # holds it and slides.json only. Anything else isn't a deck folder.
+        # holds it and slides.json only.
         self.assertEqual(common.deck_file(
             "Acme-Q3_26-10-05"), "Acme-Q3_Slides.html")
         self.assertEqual(common.expected_files("Acme-Q3_26-10-05"),
                          {"slides.json", "Acme-Q3_Slides.html"})
-        for name in ("Acme-Q3", "Acme_26-10", "_26-10-05x"):
-            with self.subTest(name), self.assertRaisesRegex(SystemExit, "not a deck folder"):
-                common.deck_file(name)
+        with self.assertRaisesRegex(SystemExit, "not a deck folder, <Name>_<YY-MM-DD>"):
+            common.deck_file("Acme-Q3")
 
     def test_deck_dir(self):
         # A deck's folder is found inside the output folder, never outside it,

@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import (STEP_CHANGE, OBSERVATIONS, PREVIOUS_REVIEWS, NOTE, NOTES, VALUE_NAMES, ORIENTATION, PERSON, PIECE, PREP, SLACK, NOTION_SEARCHES, PLAN_RESULT, DATA, WORK_ITEMS, WORK_RAW,  # noqa: E402
+from prep_fixture import (STEP_CHANGE, VIEW, VIEW_CHECK, OBSERVATIONS, PREVIOUS_REVIEWS, NOTE, NOTES, VALUE_NAMES, ORIENTATION, PERSON, PIECE, PREP, SLACK, NOTION_SEARCHES, PLAN_RESULT, DATA, WORK_ITEMS, WORK_RAW,  # noqa: E402
                            temp_output, write_prep)  # noqa: E402
 
 TODAY = date(2026, 11, 10)
@@ -365,6 +365,12 @@ class CommonTest(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(common.name_words(name), words)
 
+    def test_report_name(self):
+        # The report is named after the prep's person.
+        self.assertEqual(common.report_name(PREP), "Jane-Doe_Review_Prep.md")
+        with self.assertRaisesRegex(SystemExit, "not a prep folder, <Person>_<YY-MM-DD>"):
+            common.report_name("Jane-Doe")
+
     def test_prep_dir(self):
         folder = temp_output(self)
         write_prep(folder)
@@ -504,15 +510,86 @@ class CommonTest(unittest.TestCase):
                     self.assertNotIn(
                         str(common.MAX_OBSERVATIONS_WORDS["step_change"]), problems)
 
+    def test_view_check_problems(self):
+        # name: (a change to the fixture's view check, the manager's view,
+        # expected in its problems, or None for none): every point of the
+        # view, context too, has one row, confirmed, little_support or
+        # contradicted; a row with no view point not_in_view; each check but
+        # little_support cites period points by id, each once; no view
+        # point twice; the summary not empty nor over its ceiling; never
+        # null, as the view always has points.
+        check = VIEW_CHECK
+        rows = check["rows"]
+
+        def row(view_point, kind, *evidence):
+            return {"view_point": view_point, "check": kind, "evidence": list(evidence)}
+        long = "word " * (common.MAX_OBSERVATIONS_WORDS["view_check"] + 1)
+        cases = [("as written", check, VIEW, None),
+                 ("an id in the summary", {**check, "summary": "Jane's ownership is confirmed (G1, G3)."}, VIEW,
+                  "summary names G1, G3"),
+                 ("little support citing the little there is", {**check, "rows": [
+                     *rows[:2], row("V-C1", "little_support", "C2"), *rows[3:]]}, VIEW, None),
+                 ("no theme missing from the view", {
+                  **check, "rows": [rows[0], *rows[2:]]}, VIEW, None),
+                 ("null", None,
+                  VIEW, 'must be {"summary"'),
+                 ("a context point with no row", {**check, "rows": [*rows[:2], rows[3]]}, VIEW,
+                  "no row for V-C1: give every point of the manager's view one"),
+                 ("a point of the view not_in_view", {**check, "rows": [*rows[:3], row("V-G1", "not_in_view", "G3")]},
+                  VIEW, "row 4's check, 'not_in_view', must be confirmed or little_support or contradicted for a "
+                  "going_well point of the view"),
+                 ("a row with no view point confirmed", {**check, "rows": [*rows, row(None, "confirmed", "G1")]},
+                  VIEW, "row 5's check, 'confirmed', must be not_in_view for a row with no view_point"),
+                 ("confirmed with no evidence", {**check, "rows": [*rows[:3], row("V-G1", "confirmed")]},
+                  VIEW, "row 4's evidence is empty"),
+                 ("contradicted with no evidence", {**check, "rows": [row("V-I1", "contradicted"), *rows[1:]]},
+                  VIEW, "row 1's evidence is empty"),
+                 ("not in view with no evidence", {**check, "rows": [rows[0], row(None, "not_in_view"), *rows[2:]]},
+                  VIEW, "row 2's evidence is empty"),
+                 ("an id that isn't a period point", {**check, "rows": [row("V-I1", "contradicted", "G9"), *rows[1:]]},
+                  VIEW, "row 1's evidence names G9, not points of the period"),
+                 ("a view point cited as evidence", {**check, "rows": [row("V-I1", "contradicted", "V-G1"),
+                                                                       *rows[1:]]},
+                  VIEW, "row 1's evidence names V-G1, not points of the period"),
+                 ("an id cited twice", {**check, "rows": [row("V-I1", "contradicted", "G2", "G2"), *rows[1:]]},
+                  VIEW, "row 1's evidence names a point more than once"),
+                 ("a view point that isn't one", {**check, "rows": [*rows, row("V-G2", "confirmed", "G1")]},
+                  VIEW, "row 5's view_point, 'V-G2', must be one of the view's points: V-G1, V-I1, V-C1"),
+                 ("a review point", {**check, "rows": [*rows, row("R-I1", "confirmed", "G1")]},
+                  VIEW, "row 5's view_point, 'R-I1', must be one of the view's points"),
+                 ("a view point twice", {**check, "rows": [*rows, row("V-C1", "little_support")]},
+                  VIEW, "row 5's view_point, V-C1, has a row already"),
+                 ("a row's field missing", {**check, "rows": [*rows, {"view_point": "V-I1", "check": "confirmed"}]},
+                  VIEW, "row 5 must be"),
+                 ("an empty summary", {
+                  **check, "summary": " "}, VIEW, "summary is empty"),
+                 ("a summary too long", {**check, "summary": long}, VIEW,
+                  f"summary has {common.MAX_OBSERVATIONS_WORDS['view_check'] + 1} words, more than "
+                  f"{common.OBSERVATIONS_WORDS['view_check']}: cut it to about "
+                  f"{common.OBSERVATIONS_WORDS['view_check']}")]
+        for name, view_check, view, expected in cases:
+            with self.subTest(name):
+                problems = " ".join(common.view_check_problems(
+                    view_check, OBSERVATIONS, view))
+                if expected is None:
+                    self.assertEqual(problems, "")
+                else:
+                    self.assertIn(expected, problems)
+                    self.assertTrue(problems.startswith("view_check.json"))
+                    self.assertNotIn(
+                        str(common.MAX_OBSERVATIONS_WORDS["view_check"]), problems)
+
     def test_point_ids(self):
-        # name: (part, place, review, id): by part and place, a review's
-        # prefixed.
-        cases = [("going well", "going_well", 1, False, "G1"), ("to improve", "to_improve", 2, False, "I2"),
-                 ("context", "context", 3, False, "C3"), ("a review's", "to_improve", 1, True, "R-I1")]
-        for name, part, number, review, expected in cases:
+        # name: (part, place, prefix, id): by part and place, a review's
+        # and a view's prefixed.
+        cases = [("going well", "going_well", 1, "", "G1"), ("to improve", "to_improve", 2, "", "I2"),
+                 ("context", "context", 3, "", "C3"), ("a review's",
+                                                       "to_improve", 1, common.REVIEW_ID, "R-I1"),
+                 ("a view's", "context", 1, common.VIEW_ID, "V-C1")]
+        for name, part, number, prefix, expected in cases:
             with self.subTest(name):
                 self.assertEqual(common.point_id(
-                    part, number, review), expected)
+                    part, number, prefix), expected)
 
 
 class ReferenceTextTest(unittest.TestCase):

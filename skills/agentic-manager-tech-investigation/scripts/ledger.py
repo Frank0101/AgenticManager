@@ -10,7 +10,7 @@ import os
 import re
 
 from common import (CITATION, DESIGN, DESIGN_ORDER, FOLDER_NAME, INLINE_LINK, JIRA_API, LEDGER, LINKS,
-                    QUERY, QUEUE_HEADER, QUEUE_TABLES, ROW_START, RULED_OUT, SOURCE_FINDINGS_COLUMN, SOURCE_HEADER,
+                    CODE_SPAN, QUEUE_HEADER, QUEUE_TABLES, ROW_START, RULED_OUT, SOURCE_FINDINGS_COLUMN, SOURCE_HEADER,
                     TABLES, UNUSED, anchored, autolink, backtick_error, citation, cited_sources, claim_length_problem,
                     design_evidence, finding_problem, flow_states, free_name, id_order, identity_states, ids,
                     inline_links, investigation_dir, is_enabled, JiraClient, ledger_rows, link_definitions, link_text,
@@ -250,9 +250,9 @@ def set_row(lines, name, row_id, cells):
 
 
 def check_cells(lines, name, row):
-    """Exit if a row breaks a rule of its table: the ones check_report applies
-    to the ledger, a finding's claim length on every check and the others at
-    handover (row_problem)."""
+    """Exit if a row breaks a rule of its table, as row_problem() and, for a
+    finding, claim_length_problem() find it; check_report applies the same at
+    handover."""
     # A finding's claim length comes right after its own rules, before the
     # rules on what it cites.
     problem = name == "findings" and (finding_problem(row)
@@ -335,7 +335,7 @@ def duplicate_of(lines, row):
 
     def held(cells):
         targets = [same_document(url) for _, _, _, url in links(
-            cells[2], definitions) if url] or QUERY.findall(cells[2])
+            cells[2], definitions) if url] or CODE_SPAN.findall(cells[2])
         return tuple(targets), " ".join(link_text(cells[3]).split()).casefold()
     return next((r[0] for r in table_rows(lines, "sources") if r[0] != row[0] and held(r) == held(row)), None)
 

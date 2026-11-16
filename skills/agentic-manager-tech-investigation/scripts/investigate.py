@@ -221,9 +221,9 @@ def render(relative, lines, task):
     name = task.partition(":")[0]
     example = protocol.compact(protocol.example(name))
     if task == "write":
-        submit = ["## Submit", "", "Submit the answer with this command, the JSON replaced by yours; the example "
-                  "shows its fields:", "", f"{call()} submit --investigation {relative} --task write --input <your file>",
-                  "", "The file's shape:", example]
+        submit = ["## Submit", "", "Submit your file with this command:", "",
+                  f"{call()} submit --investigation {relative} --task write --input <your file>",
+                  "", "The file's shape; the example shows its fields:", example]
     else:
         submit = [submit_section(
             f"{call()} submit --investigation {relative} --task {task}", example)]

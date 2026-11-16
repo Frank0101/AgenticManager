@@ -169,6 +169,11 @@ PREVIOUS_REVIEWS = {
                "context": []},
     "earlier": [{"period": "Annual Review 2025", "date": "2025-12-31", "going_well": [],
                  "to_improve": ["Flagged delays only when asked"], "context": ["Joined the billing team in the autumn"]}]}
+# The manager's view as data.json holds it: ORIENTATION, each point with its
+# id by its part and place.
+VIEW = {"going_well": [{"id": "V-G1", "point": "Has led the billing migration well since May", "values": ["Ownership"]}],
+        "to_improve": [{"id": "V-I1", "point": "Could share progress with the wider team more often", "values": []}],
+        "context": [{"id": "V-C1", "point": "Came back from a long leave in May"}]}
 DATA = {"weeks": WEEKS,
         "jira": {**WORK_ITEMS["jira"], "counts": {"created": 1, "resolved": 1},
                  "epic_order": ["PROJ-1"],
@@ -207,7 +212,7 @@ DATA = {"weeks": WEEKS,
                                         "&type=pullrequests"}},
         "notion": {"created": [{**page, "week": ["2026-08-10", "2026-08-16"]} for page in WORK_ITEMS["notion"]["created"]],
                    "counts": {"created": 1}},
-        "observations": OBSERVATIONS, "reviews": PREVIOUS_REVIEWS}
+        "observations": OBSERVATIONS, "reviews": PREVIOUS_REVIEWS, "view": VIEW}
 # Two more Jira models, worked out by hand, each changing DATA's resolved
 # issues and the facts they give. In the first, the issues with no epic hold
 # the most, so the main focus lists them before the epic: PROJ-12 and PROJ-14
@@ -254,14 +259,14 @@ VALUE_NAMES = [value["value"] for value in VALUES]
 # Where the report is written, beside the vault, for the links to notes,
 # which it writes relative to it.
 REPORT_FOLDER = "/vault/.out/perf-review-preps/Jane-Doe_26-11-10"
-# The summaries the Observations section is built from, by their source.
-SUMMARIES = {"reviews": REVIEWS, "feedback": FEEDBACK,
+# The summaries data.json is built from, by their name.
+SUMMARIES = {"orientation": ORIENTATION, "reviews": REVIEWS, "feedback": FEEDBACK,
              "notes": NOTES, "slack": SLACK}
-# The agent's summaries of the three tables and its step change, and the
-# briefs it writes them from, worked out by hand from DATA: the work's main
-# focus, and each table's points in its order, with the values each names,
-# its source and when it was seen, and for the step change their ids and the
-# previous reviews.
+# The agent's summaries of the three tables, its step change and its view
+# check, and the briefs it writes them from, worked out by hand from DATA:
+# the work's main focus, and each table's points in its order, with the
+# values each names, its source and when it was seen, and for the step
+# change and the view check their ids and the previous reviews or the view.
 CONTENT = {"going_well": "Jane explains outages to the teams around them and presented the billing migration to the "
            "wider team, showing Teamwork, and has owned the migration and kept to its plan, reflecting Ownership.",
            "to_improve": "Jane flagged delays only when asked, many times, where Ownership calls for raising them "
@@ -306,6 +311,20 @@ STEP_CHANGE_BRIEF = {"person": "Jane Doe",
                                  {"id": "C3", "point": "Posted the billing rollout plan in a cross-team channel", "source": "Slack",
                                   "when": "2026-08-20"}],
                      "reviews": PREVIOUS_REVIEWS}
+# The view's leading the migration is borne out; its sharing progress is
+# contradicted by the presentation and the rollout plan; the long leave has
+# no support in the period; and flagging delays only when asked, a theme of
+# two points, is missing from it.
+VIEW_CHECK = {"summary": "The manager's view that Jane has led the billing migration well is confirmed, but Jane "
+              "presenting it to the wider team contradicts the view that Jane could share progress more often. The "
+              "view doesn't mention that Jane flagged delays only when asked, many times.",
+              "rows": [{"view_point": "V-I1", "check": "contradicted", "evidence": ["G2", "C3"]},
+                       {"view_point": None, "check": "not_in_view",
+                           "evidence": ["I2", "I1"]},
+                       {"view_point": "V-C1", "check": "little_support", "evidence": []},
+                       {"view_point": "V-G1", "check": "confirmed", "evidence": ["G3", "G2"]}]}
+VIEW_CHECK_BRIEF = {**{key: value for key,
+                       value in STEP_CHANGE_BRIEF.items() if key != "reviews"}, "view": VIEW}
 BRIEF = {"person": "Jane Doe", "values": VALUES,
          "focus": {"github": [{"repo": "acme/billing", "prs": 1, "share": 100}],
                    "jira": [{"key": "PROJ-1", "title": "Billing", "issues": 1, "share": 100}]},
@@ -340,16 +359,17 @@ def temp_output(test):
 def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
                reviews=REVIEWS, feedback=FEEDBACK, notes=NOTES, data=DATA, slack=SLACK, raw_work=WORK_RAW,
                brief=BRIEF, content=CONTENT, step_change_brief=STEP_CHANGE_BRIEF, step_change=STEP_CHANGE,
-               report=True):
+               view_check_brief=VIEW_CHECK_BRIEF, view_check=VIEW_CHECK, report=True):
     """Writes the prep `prep` in the output folder `folder`, holding `person`,
     `orientation`, `reviews`, `feedback`, `notes`, `data`, `slack`, `brief`,
-    `content`, `step_change_brief` and `step_change`, each left out when
-    None, the _raw folder, with `raw_work`, each source's raw file, unless
-    None, and, with `report` and both a person and data, the report as
-    finish_report.py writes it, with its charts, each an empty drawing, its
-    summaries CONTENT's when `content` is None and its step change
-    STEP_CHANGE's when `step_change` is, as if they went after the report
-    was written."""
+    `content`, `step_change_brief`, `step_change`, `view_check_brief` and
+    `view_check`, each left out when None, the _raw folder, with
+    `raw_work`, each source's raw file, unless None, and, with `report` and
+    both a person and data, the report as finish_report.py writes it, with
+    its charts, each an empty drawing, its summaries CONTENT's when
+    `content` is None, its step change STEP_CHANGE's when `step_change` is
+    and its view check VIEW_CHECK's when `view_check` is, as if they went
+    after the report was written."""
     os.makedirs(os.path.join(folder, prep, "_raw"), exist_ok=True)
     for source, lists in (raw_work or {}).items():
         with open(os.path.join(folder, prep, "_raw", f"{source}.json"), "w", encoding="utf-8") as f:
@@ -361,7 +381,8 @@ def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
                                               slack), ("brief.json", brief),
                         ("content.json", content), ("step_change_brief.json",
                                                     step_change_brief),
-                        ("step_change.json", step_change)):
+                        ("step_change.json", step_change),
+                        ("view_check_brief.json", view_check_brief), ("view_check.json", view_check)):
         if value is not None:
             with open(os.path.join(folder, prep, name), "w", encoding="utf-8") as f:
                 json.dump(value, f)
@@ -374,4 +395,4 @@ def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
         with open(os.path.join(folder, prep, common.report_name(prep)), "w", encoding="utf-8") as f:
             f.write(make_report.render(
                 person, data, os.path.join(folder, prep), content or CONTENT,
-                step_change or STEP_CHANGE))
+                step_change or STEP_CHANGE, view_check or VIEW_CHECK))

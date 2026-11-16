@@ -188,7 +188,7 @@ BOUNDARY_KINDS = ("network", "cluster", "namespace", "cloud account", "environme
                   "workstation", "external service")
 # The kind of source a status other than code rests on: what is planned is in
 # the tracker, a vision in the documentation. 🟩 and 🟦 have their own checks,
-# unread_components and connection_code_problem, and ⬜ rests on what explains
+# unread_paths and connection_code_problem, and ⬜ rests on what explains
 # it. Only a source read full or partial (READ_COVERAGE) counts: a search hit or
 # a listing says where to look, not what a page says.
 STATUS_GROUPS = {"🟨": "workflow", "🟪": "documentation"}
@@ -257,9 +257,6 @@ REPO_PR = re.compile(
 BARE_PR = re.compile(r"(?<![\w/&#\[])#\d{1,6}\b")
 # The code host, as code_host() found it: asked of gh once per run.
 CODE_HOST = {}
-# What a reference inside them is already part of: code, links and bare URLs.
-PROTECTED = re.compile(
-    r"`[^`\n]*`|!?\[[^\]\n]*\]\([^)\n]*\)|!?\[[^\]\n]+\]\[[^\]\n]*\]|https?://\S+")
 ANY_REFERENCE = re.compile(
     rf"{REPO_PR.pattern}|{TICKET.pattern}|{BARE_PR.pattern}")
 # How to fix a row that breaks a rule, worded once for ledger.py's refusal and
@@ -270,8 +267,14 @@ GAP_FIX = ("Blocked by starts with one of: " + "; ".join(BLOCKERS) + ", naming t
            "nothing blocks is a ready question in the queue: do it")
 # A link, inline or by reference, or a bare URL: where a claim's trail ends.
 LINK = re.compile(r"\]\(https?://[^)\s]+\)|\]\[[^\]]*\]|https?://\S+")
-# A search has no URL to pin, so its exact query, between backticks, stands in.
-QUERY = re.compile(r"`[^`\n]+`")
+# A code span: a reference to code, or a search's exact query, which stands in
+# for the URL a search has none of to pin.
+CODE_SPAN = re.compile(r"`[^`\n]+`")
+# What a reference inside them is already part of: code, links and bare URLs.
+PROTECTED = re.compile(
+    rf"{CODE_SPAN.pattern}|{INLINE_LINK.pattern}|{REFERENCE_LINK.pattern}|https?://\S+")
+# The ID a citation names: a capital letter and two or more digits.
+RECORD_ID = re.compile(r"[A-Z]\d{2,}")
 # The letters of the recorded IDs: S sources, Q questions, U scope boundaries,
 # F findings, C components, D decisions, G gaps, B design boundaries,
 # E connections, I identities and P flows.
@@ -295,7 +298,7 @@ RECORD_DEFINITION = re.compile(rf"{ROW_START}({ID.pattern})", re.M)
 # anchor, which the script writes from a submission's [[F07]]. Only a citation
 # refers to a record: an ID-shaped word written bare, such as P95 in "P95
 # latency", is prose.
-CITATION = re.compile(r"\[([A-Z]\d{2,})\]\(#[a-z]+\d+\)")
+CITATION = re.compile(rf"\[({RECORD_ID.pattern})\]\(#{ANCHOR_ID}\)")
 
 
 def report_headings():
@@ -447,7 +450,7 @@ def unlinked_backticks(prose, linked_text=""):
     project: with no site to link it to, it stays as code."""
     urls = [m[0] for m in TICKET_URL.finditer(prose + "\n" + linked_text)]
     projects = ticket_sites(urls)
-    spans = [span[1:-1] for span in QUERY.findall(_strip_links(prose))]
+    spans = [span[1:-1] for span in CODE_SPAN.findall(_strip_links(prose))]
     return [s for s in spans if not (TICKET.fullmatch(s) and project_of(s) not in projects)]
 
 
@@ -682,7 +685,7 @@ def source_reference_missing(row):
     """Whether a source row's Reference holds no link and isn't a search's
     query: a search, the one source whose Coverage is a search hit, is its
     query between backticks; any other text in backticks links nothing."""
-    is_query = QUERY.fullmatch(
+    is_query = CODE_SPAN.fullmatch(
         row[2].strip()) and row[4].strip().startswith("search hit")
     return not LINK.search(without_code(row[2])) and not is_query
 
@@ -691,7 +694,7 @@ def without_code(text):
     """`text` with its code spans blanked, for a check that looks for links:
     brackets between backticks, such as a query's `PROJ-6[0-9][0-9]`, are code,
     as a Markdown renderer shows them, never a link."""
-    return QUERY.sub(" ", text)
+    return CODE_SPAN.sub(" ", text)
 
 
 # The findings' rules.
@@ -817,7 +820,7 @@ def design_row_problem(name, row, evidence):
                                                                        mention_only_ids(evidence["scope"]))
                                            or connection_ruled_out_problem(row, evidence["components"])))
             or (name == "flows" and (flow_ruled_out_problem(row, evidence["connections"])
-                                     or flow_order_problem(row, list(evidence["connections"].values()))))
+                                     or flow_order_problem(row, evidence["connections"])))
             or None)
 
 
@@ -1032,13 +1035,12 @@ def flow_order_problem(row, connections):
     first starts from or ends at a component the flow has already reached.
     Either end will do, since a part that fetches, such as a consumer reading
     a queue or a controller watching resources, joins the flow by calling a
-    component it has reached."""
-    rows = {row[0]: row for row in connections}
+    component it has reached. `connections` is {ID: row}."""
     reached = set()
     for ident in ids(row[2], "E"):
-        if ident not in rows:
+        if ident not in connections:
             continue
-        cell = dict(zip(CONNECTION_HEADER, rows[ident]))
+        cell = dict(zip(CONNECTION_HEADER, connections[ident]))
         start, end = ids(cell["From"], "C"), ids(cell["To"], "C")
         if reached and not set(start + end) & reached:
             return (f"{row[0]}: {ident} runs from {', '.join(start)} to {', '.join(end)}, neither of which the flow "
@@ -1062,11 +1064,10 @@ def component_pin_problem(row, definitions):
 
 def unread_problem(row, evidence):
     """Why a component claiming code has none of it read, or None: the rule
-    unread_components() applies, to one row, given `evidence` as
-    design_evidence() reads it."""
-    unread = unread_components([row], evidence["findings"], evidence["sources"], evidence["definitions"],
-                               mention_only_ids(evidence["scope"]))
-    return f"{row[0]}: {unread_message(unread)}" if unread else None
+    unread_paths() applies, given `evidence` as design_evidence() reads it."""
+    paths = unread_paths(row, evidence["findings"], evidence["sources"], evidence["definitions"],
+                         mention_only_ids(evidence["scope"]))
+    return f"{row[0]}: {unread_message(row[0], paths)}" if paths is not None else None
 
 
 def mention_only_ids(scope):
@@ -1075,32 +1076,29 @@ def mention_only_ids(scope):
     return {ident for ident, decision in scope.items() if decision == SCOPE_ANSWERS[1]}
 
 
-def unread_components(components, findings, sources, definitions, mention_only=()):
-    """{component ID: the paths it links} of the components claiming code
-    whose code wasn't read. A component claims code when its State is 🟩 or
+def unread_paths(row, findings, sources, definitions, mention_only=()):
+    """The paths a component row links when it claims code and its code
+    wasn't read, or None. A component claims code when its State is 🟩 or
     🟦, and its code is read when a code source among those its Evidence's
     findings rest on read, at READ_COVERAGE, one of those paths, a file or
     folder under it, or, read in full, a folder above it; a README or other
     DOC_FILE isn't code. An external part, a person or a role has no code
     the design reads, and a part of a mention-only topic, citing its scope
     decision, one of `mention_only`, has its code left unread: a finding
-    shows it exists. `components` are the table's rows, `findings` and
-    `sources` {ID: row}."""
-    found = {}
+    shows it exists. `findings` and `sources` are {ID: row}."""
     state, code = COMPONENT_HEADER.index("State"), COMPONENT_HEADER.index(
         "Repository, paths, revision")
     kind, evidence = COMPONENT_HEADER.index(
         "Kind"), COMPONENT_HEADER.index("Evidence")
-    for row in components:
-        if not row[state].startswith(CODE_STATUSES) or starts_with_one(row[kind], OUTSIDE_KINDS) \
-                or set(ids(row[evidence], "U")) & set(mention_only):
-            continue
-        read = [entry for source in sources_reached(ids(row[evidence], "F"), findings, sources)
-                for entry in code_read(source, definitions)]
-        paths = link_urls(row[code], definitions)
-        if not any(_covers(entry, path) for path in paths for entry in read):
-            found[row[0]] = [_shown_path(p) for p in paths]
-    return found
+    if not row[state].startswith(CODE_STATUSES) or starts_with_one(row[kind], OUTSIDE_KINDS) \
+            or set(ids(row[evidence], "U")) & set(mention_only):
+        return None
+    read = [entry for source in sources_reached(ids(row[evidence], "F"), findings, sources)
+            for entry in code_read(source, definitions)]
+    paths = link_urls(row[code], definitions)
+    if any(_covers(entry, path) for path in paths for entry in read):
+        return None
+    return [_shown_path(p) for p in paths]
 
 
 def code_read(row, definitions):
@@ -1160,14 +1158,13 @@ def _shown_path(path):
     return f"{match[1].split('/', 3)[-1]}: {match[4] or '/'}" if match else path
 
 
-def unread_message(found):
-    """What to do about components claiming code with no code read. `found`
-    is as unread_components returns it."""
+def unread_message(ident, paths):
+    """What to do about the component `ident`, claiming code with none of it
+    read: `paths` are the paths it links, as unread_paths() returns them."""
     return (f"a component marked {' or '.join(CODE_STATUSES)} needs its code read, with Coverage "
             f"{' or '.join(READ_COVERAGE)}, in a code source its Evidence's findings cite, at the commit it links, of the path it "
-            "links, of a file under it or, read in full, of a folder above it: " + "; ".join(f"{ident} links {', '.join(paths) or 'no code'}"
-                                                                                             for ident, paths in found.items())
-            + ". Leave the row out and raise a question for research to read it; draw it once research answers")
+            "links, of a file under it or, read in full, of a folder above it: "
+            f"{ident} links {', '.join(paths) or 'no code'}. Leave the row out and raise a question for research to read it; draw it once research answers")
 
 
 # The State of identities and flows, which the script derives from their

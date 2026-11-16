@@ -376,7 +376,7 @@ class Report:
         names its tickets when it has up to 3 and otherwise counts them: more
         keys would crowd a paragraph meant for execs, and the table lists every
         ticket. If the text is still over COMMENTARY_WORDS, every kind is
-        counted. The caveats (Duplicate or Won't Do, and membership that
+        counted. The caveats (resolved without delivery, and membership that
         couldn't be checked against Jira) always name their tickets and are
         never cut, as they qualify the figures."""
         text = self.commentary_text(name_up_to=3)
@@ -497,8 +497,11 @@ class Report:
         non_delivery = [{"key": i["key"], "points": i["storyPoints"]}
                         for i in d["non_delivery_closures"]["issues"]]
         if non_delivery:
-            caveats.append(self.mentioned(non_delivery, "was resolved as Duplicate or Won't Do and counts as completed",
-                                          "were resolved as Duplicate or Won't Do and count as completed", len(non_delivery)) + ".")
+            caveats.append(self.mentioned(non_delivery,
+                                          "was resolved without delivery, such as Duplicate or Won't Do, and counts as "
+                                          "completed",
+                                          "were resolved without delivery{keys}, such as Duplicate or Won't Do, and count as "
+                                          "completed", len(non_delivery)) + ".")
         excluded = d["membership_cross_check_excluded_keys"]
         if excluded:
             latest = latest_points(d["spells"])

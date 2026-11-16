@@ -62,15 +62,31 @@ def run_folder(name, run, kind, subject, init_script):
     output folder `name`, the folder of a `kind`, such as "deck", named
     <`subject`>_<YY-MM-DD> and made by `init_script`. Exits if `run` isn't
     such a name, would lead outside the folder or doesn't exist."""
-    if folder_subject(run) is None:
-        raise SystemExit(
-            f"{run!r} is not a {kind} folder, <{subject}>_<YY-MM-DD>")
+    _run_subject(run, kind, subject)
     folder, _ = output_folder(name)
     path = target(folder, run)
     if not os.path.isdir(path):
         raise SystemExit(
             f"{run} doesn't exist in {folder}: run {init_script} first")
     return path
+
+
+def run_document(run, document_kind, kind, subject):
+    """The file name of the run `run`'s document, as document_name() gives it
+    for the subject its folder is named after and `document_kind`, such as
+    "Slides.html". Exits, as run_folder() does, if `run` isn't the name of
+    the folder of a `kind`, <`subject`>_<YY-MM-DD>."""
+    return document_name(_run_subject(run, kind, subject), document_kind)
+
+
+def _run_subject(run, kind, subject):
+    """The subject of the run folder `run`, or an exit naming the form of
+    the folder of a `kind`, <`subject`>_<YY-MM-DD>."""
+    found = folder_subject(run)
+    if found is None:
+        raise SystemExit(
+            f"{run!r} is not a {kind} folder, <{subject}>_<YY-MM-DD>")
+    return found
 
 
 def output_folder(name):

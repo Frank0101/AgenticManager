@@ -15,9 +15,9 @@ from datetime import date, datetime, time
 from common import (days, CHANGELOGS_DIR, COMMENTS_DIR, DATA_FILE, GOAL_VERDICTS, META_FILE, OUTCOME_ROWS, OUTCOMES, PARENTS_FILE,
                     PREVIOUS_SPRINT_FILE, PUNTED_ISSUES_FILE, RAW_DIR, SPRINT_FILE,
                     SPRINT_ISSUES_FILE, SPRINT_REPORT_FILE, STATUSES_FILE, SCOPE_GROUPS, Context, add_and_remove_events,
-                    as_of, blocker_candidates, PULL_REQUESTS_FILE, PULL_STATES, ISSUE_KEY, in_sprint_at, key_order, known_sum,
+                    as_of, blocker_candidates, PULL_REQUESTS_FILE, PULL_STATES, in_sprint_at, key_order, known_sum,
                     read_json, nested, outcome_total, parse_ts, plain_text, report_timezone, spell_epic, sprint_date,
-                    sprint_moves_of, standard_issues, state_at, status_categories, ticket_events, write_json)
+                    sprint_key, sprint_moves_of, standard_issues, state_at, status_categories, ticket_events, write_json)
 
 # Terms meaning an issue was closed without delivering it (duplicate, won't do,
 # cancelled...), matched against both the status and the resolution: a
@@ -130,7 +130,8 @@ def build_data(report_dir):
     epics = build_epics(spells, epic_descriptions(parents))
     # The pull requests of each ticket in the sprint at the end, the only
     # tickets whose status the report checks.
-    pulls_of = {t["key"]: ticket_pulls(pull_requests, t["key"], moment) for t in counted
+    keys = sprint_key({"spells": spells, "epics": epics})
+    pulls_of = {t["key"]: ticket_pulls(pull_requests, t["key"], moment, keys) for t in counted
                 if t["outcome"] != "descoped"}
     baseline, last_day = burndown_baseline(spells), sprint_date(moment, zone)
     ideal = burndown_ideal(start, end, last_day, baseline)
@@ -251,6 +252,58 @@ def load_changelogs(changelog_dir, raw_issues):
         raise SystemExit("missing changelogs for " + ", ".join(sorted(missing)) +
                          "; fetch the sprint again rather than guessing when they joined")
     return changes
+
+
+def membership_sets(events_of, sprint_id, moment):
+    """(in scope, completed, removed) keys as Jira's sprint report buckets
+    them, from each ticket's events (`events_of`, {key: ticket_events()}) at
+    the cutoff: removed is every ticket that left before it, including extra
+    work and work that left before the start."""
+    in_scope, completed, removed = [], [], []
+    cutoff = parse_ts(moment)
+    for key, events in events_of.items():
+        moves = sprint_moves_of(events, sprint_id)
+        if in_sprint_at(moves, cutoff):
+            in_scope.append(key)
+            if state_at(key, events, cutoff)["statusCategory"] == "done":
+                completed.append(key)
+        elif any(move < 0 and when <= cutoff for when, move, _ in moves):
+            removed.append(key)
+    return in_scope, completed, removed
+
+
+def cross_check(report, in_scope, completed, removed, later_moves=()):
+    """Compare our in-scope, completed and removed key sets with Jira's
+    sprint report, which buckets the same issues independently. Returns None
+    if the report has no contents, else a list of discrepancies (empty when
+    they agree). Issues moved after the cutoff are excluded from this
+    comparison: Jira's current membership buckets cannot verify their
+    historical membership."""
+    contents = (report or {}).get("contents")
+    if not contents:
+        return None
+    if not any(contents.get(bucket) for bucket in ("completedIssues", "issuesNotCompletedInCurrentSprint",
+                                                   "issuesCompletedInAnotherSprint", "puntedIssues")):
+        return ["Jira's sprint report is empty: this board doesn't serve it. Fetch the sprint again "
+                "with --sprint-id and --board, using another scrum board of the project"]
+
+    def keys_in(bucket):
+        return {i["key"] for i in contents.get(bucket) or []} - set(later_moves)
+
+    jira_done = keys_in("completedIssues") | keys_in(
+        "issuesCompletedInAnotherSprint")
+    jira_in = jira_done | keys_in("issuesNotCompletedInCurrentSprint")
+    problems = []
+    for name, ours, theirs in (("in-scope", set(in_scope), jira_in), ("completed", set(completed), jira_done),
+                               ("removed", set(removed), keys_in("puntedIssues"))):
+        ours -= set(later_moves)
+        if ours - theirs:
+            problems.append(
+                f"{name}: {sorted(ours - theirs)} in our data but not in Jira's sprint report")
+        if theirs - ours:
+            problems.append(
+                f"{name}: {sorted(theirs - ours)} in Jira's sprint report but not in our data")
+    return problems
 
 
 def spells_from_events(raw, events, context, moment):
@@ -478,13 +531,13 @@ def scope_group(spell):
     return "completed", None
 
 
-def ticket_pulls(raw, key, moment):
+def ticket_pulls(raw, key, moment, keys):
     """The pull requests of ticket `key` as at `moment`, from
     pull_requests.json (`raw`): those opened by then, each with the panel's
     title and source branch, the issue it was found through and GitHub's
     times, a merge or closing after `moment` left out, as for the ticket's
-    events; then, from those, whether it is the ticket's own and its state
-    then. Fails on one GitHub gave no times for, as its state can't be told."""
+    events; then, from those, whether it is the ticket's own, by the keys
+    `keys` matches (sprint_key()), and its state then. Fails on one GitHub gave no times for, as its state can't be told."""
     pulls, cutoff = [], parse_ts(moment)
     for pr in raw["tickets"].get(key, []):
         times = raw["events"].get(pr["url"])
@@ -497,18 +550,18 @@ def ticket_pulls(raw, key, moment):
                   "via": pr["via"], "createdAt": times["createdAt"],
                   **{field: times[field] if times.get(field) and parse_ts(times[field]) <= cutoff else None
                      for field in ("mergedAt", "closedAt")}}
-        pulls.append({**record, "own": is_own_pull(record, key),
+        pulls.append({**record, "own": is_own_pull(record, key, keys),
                      "state": pull_state(record)})
     return pulls
 
 
-def is_own_pull(pr, key):
+def is_own_pull(pr, key, keys):
     """Whether a pull request is the ticket's own work: its title and branch
-    name the ticket or the sub-task it was found through, or no ticket at all.
-    One that names only other tickets was linked by a mention, such as
-    groundwork another ticket owns, so it says nothing of this one's status."""
-    named = set(ISSUE_KEY.findall(pr["title"])) | set(
-        ISSUE_KEY.findall(pr["branch"]))
+    name the ticket or the sub-task it was found through, or no ticket at all,
+    a ticket being a key `keys` matches (sprint_key()). One that names only
+    other tickets was linked by a mention, such as groundwork another ticket
+    owns, so it says nothing of this one's status."""
+    named = set(keys.findall(pr["title"])) | set(keys.findall(pr["branch"]))
     return not named or bool(named & {key, pr["via"]})
 
 
@@ -677,58 +730,6 @@ def days_left(status, end_date, today):
     if status != "active":
         return None
     return (date.fromisoformat(end_date) - date.fromisoformat(today)).days
-
-
-def cross_check(report, in_scope, completed, removed, later_moves=()):
-    """Compare our in-scope, completed and removed key sets with Jira's
-    sprint report, which buckets the same issues independently. Returns None
-    if the report has no contents, else a list of discrepancies (empty when
-    they agree). Issues moved after the cutoff are excluded from this
-    comparison: Jira's current membership buckets cannot verify their
-    historical membership."""
-    contents = (report or {}).get("contents")
-    if not contents:
-        return None
-    if not any(contents.get(bucket) for bucket in ("completedIssues", "issuesNotCompletedInCurrentSprint",
-                                                   "issuesCompletedInAnotherSprint", "puntedIssues")):
-        return ["Jira's sprint report is empty: this board doesn't serve it. Fetch the sprint again "
-                "with --sprint-id and --board, using another scrum board of the project"]
-
-    def keys_in(bucket):
-        return {i["key"] for i in contents.get(bucket) or []} - set(later_moves)
-
-    jira_done = keys_in("completedIssues") | keys_in(
-        "issuesCompletedInAnotherSprint")
-    jira_in = jira_done | keys_in("issuesNotCompletedInCurrentSprint")
-    problems = []
-    for name, ours, theirs in (("in-scope", set(in_scope), jira_in), ("completed", set(completed), jira_done),
-                               ("removed", set(removed), keys_in("puntedIssues"))):
-        ours -= set(later_moves)
-        if ours - theirs:
-            problems.append(
-                f"{name}: {sorted(ours - theirs)} in our data but not in Jira's sprint report")
-        if theirs - ours:
-            problems.append(
-                f"{name}: {sorted(theirs - ours)} in Jira's sprint report but not in our data")
-    return problems
-
-
-def membership_sets(events_of, sprint_id, moment):
-    """(in scope, completed, removed) keys as Jira's sprint report buckets
-    them, from each ticket's events (`events_of`, {key: ticket_events()}) at
-    the cutoff: removed is every ticket that left before it, including extra
-    work and work that left before the start."""
-    in_scope, completed, removed = [], [], []
-    cutoff = parse_ts(moment)
-    for key, events in events_of.items():
-        moves = sprint_moves_of(events, sprint_id)
-        if in_sprint_at(moves, cutoff):
-            in_scope.append(key)
-            if state_at(key, events, cutoff)["statusCategory"] == "done":
-                completed.append(key)
-        elif any(move < 0 and when <= cutoff for when, move, _ in moves):
-            removed.append(key)
-    return in_scope, completed, removed
 
 
 def blocker_comments(comment_dir, keys, moment, zone):

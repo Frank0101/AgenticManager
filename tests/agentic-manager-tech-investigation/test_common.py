@@ -173,10 +173,11 @@ class DesignTest(unittest.TestCase):
                  ("out of order", "E06, E01",
                   "E01 runs from C01 to C02, neither of which the flow has reached yet"),
                  ("a jump", "E01, E04", "E04 runs from C05 to C06")]
+        by_id = {row[0]: row for row in connections}
         for name, walked, expected in cases:
             with self.subTest(name):
                 assert_problem(self, common.flow_order_problem(
-                    ["P01", "x", walked, "", "Unchanged", "F01"], connections), expected)
+                    ["P01", "x", walked, "", "Unchanged", "F01"], by_id), expected)
 
     def test_nothing_connects_to_or_flows_through_what_is_ruled_out(self):
         # A part shown not to exist has no live connection, and a flow lists
@@ -474,7 +475,7 @@ class DesignTest(unittest.TestCase):
                 problem = common.status_problem("X01", status)
                 self.assertEqual(problem is None, accepted, problem)
 
-    def test_unread_components(self):
+    def test_unread_paths(self):
         # A component claiming code needs a code source, read in full or in
         # part, that its Evidence's findings cite, of its path, a file under
         # it, or a folder above it read in full, which covers its files; a
@@ -485,8 +486,8 @@ class DesignTest(unittest.TestCase):
         # of that link.
         definitions = {"search": f"{API}tree/abc/services/search", "client": f"{API}blob/abc/app/plugins/client.ts",
                        "page": "https://code.example/acme/tool", "pull": f"{API}pull/7"}
-        unread = {"C01": ["acme/api: services/search"]}
-        client_unread = {"C01": ["acme/api: app/plugins/client.ts"]}
+        unread = ["acme/api: services/search"]
+        client_unread = ["acme/api: app/plugins/client.ts"]
 
         def source(path, coverage, kind="code", revision="abc"):
             return source_row(kind=kind, reference=api(path), revision=revision, coverage=coverage)
@@ -504,63 +505,63 @@ class DesignTest(unittest.TestCase):
                  ("a document at its path", "[search][search]",
                   [source("blob/abc/services/search/main.py", "full", "documentation")], unread),
                  ("a file under it", "[search][search]",
-                  [source("blob/abc/services/search/main.py", "Full")], {}),
+                  [source("blob/abc/services/search/main.py", "Full")], None),
                  ("lines of it", "[search][search]",
-                  [source("blob/abc/services/search/main.py", "partial: lines 1-80")], {}),
+                  [source("blob/abc/services/search/main.py", "partial: lines 1-80")], None),
                  ("a file under it, through a conclusion", "[search][search]",
-                  [source("blob/abc/services/search/main.py", "full")], {}, "F02"),
+                  [source("blob/abc/services/search/main.py", "full")], None, "F02"),
                  ("a file under it no finding of its evidence cites", "[search][search]",
                   [source("blob/abc/services/search/main.py", "full")], unread, "F08"),
                  ("a folder above it", "[client][client]",
-                  [source("tree/abc/app/plugins", "full")], {}),
+                  [source("tree/abc/app/plugins", "full")], None),
                  ("a folder above it, read in part", "[client][client]",
                   [source("tree/abc/app/plugins", "partial: files: server.ts")], client_unread),
                  ("a folder above it, naming its file", "[client][client]",
-                  [source("tree/abc/app", "partial: files: plugins/client.ts")], {}),
+                  [source("tree/abc/app", "partial: files: plugins/client.ts")], None),
                  ("a folder naming a file under it", "[search][search]",
-                  [source("tree/abc/services", "partial: files: search/main.py, other/x.py")], {}),
+                  [source("tree/abc/services", "partial: files: search/main.py, other/x.py")], None),
                  ("a folder naming only its README", "[search][search]",
                   [source("tree/abc/services", "partial: files: search/README.md")], unread),
                  ("a pull request naming its file", "[client][client]",
-                  [source("pull/7", "partial: files: app/plugins/client.ts")], {}),
+                  [source("pull/7", "partial: files: app/plugins/client.ts")], None),
                  ("a pull request at another revision", "[client][client]",
                   [source("pull/7", "partial: files: app/plugins/client.ts", revision="def")], client_unread),
                  ("a pull request naming other files", "[client][client]",
                   [source("pull/7", "partial: files: app/main.ts")], client_unread),
                  ("a page read in full at its link", "[tool][page]",
-                  [source_row(reference="[t](https://code.example/acme/tool)")], {}),
+                  [source_row(reference="[t](https://code.example/acme/tool)")], None),
                  ("a pull request it links, read",
-                  "[pull][pull]", [source("pull/7", "full")], {}),
+                  "[pull][pull]", [source("pull/7", "full")], None),
                  ("a pull request it links, naming files of it", "[pull][pull]",
-                  [source("pull/7", "partial: files: app/main.ts")], {}),
+                  [source("pull/7", "partial: files: app/main.ts")], None),
                  ("a pull request it links, naming no file of its code", "[pull][pull]",
-                  [source("pull/7", "partial: files: README.md")], {"C01": [f"{API}pull/7"]})]
+                  [source("pull/7", "partial: files: README.md")], [f"{API}pull/7"])]
         findings = {"F01": ["F01", "c", "S01", "None"], "F02": ["F02", "c", "F01", "None"],
                     "F08": ["F08", "c", "S99", "None"]}
         for name, repository, sources, expected, *evidence in cases:
             with self.subTest(name):
                 component = ["C01", "n", "service", "None", "r",
                              repository, "🟩 Live", "Unchanged", (evidence or ["F01"])[0]]
-                self.assertEqual(common.unread_components(
-                    [component], findings, {row[0]: row for row in sources}, definitions), expected)
+                self.assertEqual(common.unread_paths(
+                    component, findings, {row[0]: row for row in sources}, definitions), expected)
         # No code is asked of an unverified row, of an external part, or of
         # a part of a mention-only topic citing that decision (U02 here, not
         # U01, which included its topic).
         # name: (kind, state, evidence, unread)
-        cases = [("unverified", "service", "⬜ Unverified", "G01", {}),
+        cases = [("unverified", "service", "⬜ Unverified", "G01", None),
                  ("an external part", "external",
-                  "🟩 Live", "F01", {}),
-                 ("a mention-only part", "store", "🟩 Live", "F01, U02", {}),
+                  "🟩 Live", "F01", None),
+                 ("a mention-only part", "store", "🟩 Live", "F01, U02", None),
                  ("a part of an included topic", "store", "🟩 Live", "F01, U01", unread)]
         for name, kind, state, evidence, expected in cases:
             with self.subTest(name):
-                self.assertEqual(common.unread_components(
-                    [["C01", "n", kind, "None", "r", "[search][search]",
-                        state, "Unchanged", evidence]], findings, {},
+                self.assertEqual(common.unread_paths(
+                    ["C01", "n", kind, "None", "r", "[search][search]",
+                     state, "Unchanged", evidence], findings, {},
                     definitions, {"U02"}), expected)
         # The message names the path to read.
         self.assertIn("C01 links acme/api: services/search",
-                      common.unread_message(unread))
+                      common.unread_message("C01", unread))
 
 
 class LedgerRulesTest(unittest.TestCase):

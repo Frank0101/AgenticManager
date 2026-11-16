@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import build_data  # noqa: E402
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import (DATA, DATA_BY_PROJECT, DATA_NO_EPIC_FIRST, PERSON, PREP, SUMMARIES, VALUE_NAMES, WEEKS, WORK_RAW,  # noqa: E402
+from prep_fixture import (DATA, DATA_BY_PROJECT, DATA_NO_EPIC_FIRST, ORIENTATION, PERSON, PREP, SUMMARIES, VALUE_NAMES, VIEW, WEEKS, WORK_RAW,  # noqa: E402
                           temp_output, write_prep)
 
 
@@ -258,6 +258,12 @@ class BuildDataTest(unittest.TestCase):
              "earlier": [{"period": "H1", "date": "2026-06-30", "going_well": [], "to_improve": ["c"],
                           "context": ["c context"]}]})
         self.assertIsNone(build_data.previous_reviews([]))
+
+    def test_manager_view(self):
+        # The manager's view the view check compares with the period: its
+        # points with ids by part and place, prefixed V-, a context point's
+        # text alone.
+        self.assertEqual(build_data.manager_view(ORIENTATION), VIEW)
 
     def test_model_fixtures(self):
         # name: (a model the report's tests use, worked out by hand): its

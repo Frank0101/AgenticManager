@@ -19,7 +19,7 @@ sys.path.insert(0, LIB_DIR)
 from agentic_manager.output_file import json_text, read_json, write_output_file, write_output_json  # noqa: E402,F401
 from agentic_manager.text import HEADING, INLINE_LINK, SMALL_TYPE, ai_marked, table, table_cells, as_name, display_date, link_text, number, plural, word_count  # noqa: E402,F401
 from agentic_manager.svg import GRID, INK, MUTED, SURFACE, legend, nice_step, svg, text, text_width  # noqa: E402,F401
-from agentic_manager.output_folder import CHARTS_DIR, RAW_DIR, clear_folder, day_folder, document_name, folder_problem, output_folder  # noqa: E402,F401
+from agentic_manager.output_folder import CHARTS_DIR, RAW_DIR, document_name, folder_problem, new_run, output_folder  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order,  # noqa: E402,F401
                                   is_sub_task, parse_ts, plain_text, project_of)

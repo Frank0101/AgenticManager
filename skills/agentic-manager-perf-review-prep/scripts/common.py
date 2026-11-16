@@ -8,9 +8,11 @@ figure. The rules of each file are one function, applied when it is written
 and by the final check, so the two can't differ. Scripts import the shared
 library's names from here, so they don't depend on the order of their imports.
 """
+from dataclasses import dataclass
 from datetime import date, timedelta
 from urllib.parse import quote
 import os
+import re
 import sys
 
 # The agentic-manager-utils-lib skill, installed next to this one.
@@ -18,18 +20,19 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.commands import library_command, script_command, stdin_json  # noqa: E402,F401
-from agentic_manager.config import company_setting, is_number  # noqa: E402,F401
+from agentic_manager.config import company_setting  # noqa: E402,F401
+from agentic_manager.json_path import is_number  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
 from agentic_manager.github import commit_authors, gh_json, gh_orgs, profile_name, dated_query, pull_search_url, require_gh, search_pulls, selection  # noqa: E402,F401
 from agentic_manager.jira import JiraClient, browse_url, is_sub_task, plain_text, project_of, search_url as jira_search_url  # noqa: E402,F401
-from agentic_manager.logseq import graph_path, links, notes, page_aliases, page_title  # noqa: E402,F401
+from agentic_manager.logseq import descendants, graph_path, journal_day, links, notes, page_aliases, page_title, parse_blocks  # noqa: E402,F401
 from agentic_manager.output_file import json_text, read_json, write_output_file, write_output_json  # noqa: E402,F401
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
-from agentic_manager.output_folder import CHARTS_DIR, RAW_DIR, clear_folder, document_name, folder_problem, folder_subject, new_run, output_folder, run_folder, work_folder  # noqa: E402,F401
+from agentic_manager.output_folder import CHARTS_DIR, RAW_DIR, clear_folder, folder_problem, new_run, output_folder, run_document, run_folder, work_folder  # noqa: E402,F401
 from agentic_manager.period import add_period_arguments, days, is_day, period_problem, shown  # noqa: E402,F401
 from agentic_manager.tasks import submit_section, task_line, write_task as write_task_file  # noqa: E402,F401
 from agentic_manager.svg import GRID, SURFACE, INK, MUTED, arc_segment, esc, legend, nice_step, svg, text, text_width  # noqa: E402,F401
-from agentic_manager.text import SMALL_TYPE, ai_marked, as_name, number, plural, word_count  # noqa: E402,F401
+from agentic_manager.text import SMALL_TYPE, ai_marked, as_name, display_date, number, plural, word_count  # noqa: E402,F401
 
 # How to write a point and pick its values, with their examples, lives in the
 # protocol's shared part _point.md, the one place for them: the merges' tasks
@@ -92,8 +95,8 @@ SUMMARY_HELP = "\n".join(
     + ('{"point": "...", "values": ["..."]}, values every company value it clearly shows or calls for, as rules.py prints '
        f'them, at most {MAX_VALUES}, or [] when none fits' if part in VALUED_PARTS else "a sentence")
     for part, meaning in SUMMARY_PARTS.items())
-# The manager's overall view of the person, summarised: guidance for the
-# writing step, the only one that reads it.
+# The manager's overall view of the person, summarised: the report checks it
+# against the period's evidence, so the manager can revisit it.
 ORIENTATION = "orientation.json"
 # What the manager gives, previous reviews or the period's feedback, is a
 # list of pieces, each a summary with its period as the source names it, such
@@ -188,7 +191,9 @@ HEADINGS = {"created": "Issues created", "resolved": "Issues resolved", "resolve
             "opened": "PRs created", "merged": "PRs merged", "merged_lines": "PRs size"}
 # The Notion section's heading of its table of the pages created.
 PAGES_HEADING = "Pages created"
-# The Observations section: a table for each part, by its heading, in order.
+# The Observations section: under its heading, OBSERVATIONS_SUBTITLE, the
+# script's, so not marked as the agent's, then a table for each part, by its
+# heading, in order.
 # A valued part's puts each point under the first company value it names, the
 # one it shows most, so it shows once, the second value it names beside it,
 # the values with the most points first, those naming none under NO_VALUE,
@@ -198,12 +203,15 @@ PAGES_HEADING = "Pages created"
 # beside the day it was seen on, or a page, which has no day, by its title.
 OBSERVATION_HEADINGS = {"going_well": "Going well",
                         "to_improve": "To improve", "context": "Context"}
+OBSERVATIONS_SUBTITLE = "*What the period's feedback, the manager's notes and Slack show, by company value.*"
 NO_VALUE = "No value"
 OBSERVATION_SOURCES = {"feedback": "Feedback", "reviews": "Review",
                        "notes": "Manager's notes", "slack": "Slack"}
 REFERENCE_NAMES = {"notes": "Journal", "slack": "Slack"}
 PAGE_REFERENCE = "Page"
-SUMMARY_FILES = {"reviews": REVIEWS, "feedback": FEEDBACK,
+# The summaries data.json is built from, by name: the manager's view, and
+# those the observations' points come from.
+SUMMARY_FILES = {"orientation": ORIENTATION, "reviews": REVIEWS, "feedback": FEEDBACK,
                  "notes": NOTES, "slack": SLACK}
 # A review dated within the period is what the person heard in it, as the
 # feedback is, so its points join the observations; one dated before it, or
@@ -211,12 +219,18 @@ SUMMARY_FILES = {"reviews": REVIEWS, "feedback": FEEDBACK,
 # with. Pieces, the feedback's and those reviews', are referred to
 # by their period, a reading's points by their evidence.
 PIECE_SOURCES = ("feedback", "reviews")
-# Every point of the period and of the latest previous review has an id, by
-# its part and its place in the table's order, the review's prefixed, such as
-# G1 and R-I2: the step change cites them, so it can name a point the report
-# then shows as the tables do, never a text the agent retyped.
+# Every point of the period, of the latest previous review and of the
+# manager's view has an id, by its part and its place in the table's order,
+# the review's and the view's prefixed, such as G1, R-I2 and V-C1: the step
+# change and the view check cite them, so they name a point the report then
+# shows as the tables do, never a text the agent retyped.
 POINT_IDS = {"going_well": "G", "to_improve": "I", "context": "C"}
 REVIEW_ID = "R-"
+VIEW_ID = "V-"
+# A point's id written in a text, which only the rows' evidence may hold: the
+# report shows a cited point by its text, so an id in a summary means nothing.
+POINT_ID_TEXT = re.compile(
+    rf"\b(?:{REVIEW_ID}|{VIEW_ID})?[{''.join(POINT_IDS.values())}]\d+\b")
 # The step change: how the period compares with the latest previous review,
 # the baseline, a review point to a row, each change one of STEP_CHANGES, in
 # the report's order, with its label. A to-improve point of the review always
@@ -235,10 +249,29 @@ STEP_CHANGE_ROW = ("review_point", "change", "evidence")
 STEP_CHANGE_SHAPE = ('{"summary": "...", "rows": [{"review_point": "R-I1", "change": "improved", '
                      '"evidence": ["I2", ...]}, ...]}')
 NOT_RAISED = "Not raised again in the period"
+# The manager view check: the manager's view, the baseline, against the
+# period's evidence, so the manager can revisit it. Every point of the view,
+# context too, has a row, as the manager needs to know where each stands:
+# confirmed or contradicted by the points it cites, or with little support,
+# citing what little there is or nothing; and, a row with no view point, by
+# the None key, a strong theme of the period the view doesn't mention.
+VIEW_CHECK_HEADING = "Manager view check"
+VIEW_CHECKS = {"confirmed": "Confirmed", "little_support": "Little support", "contradicted": "Contradicted",
+               "not_in_view": "Not in the manager's view"}
+VIEW_CHECK_PARTS = {**{part: ("confirmed", "little_support", "contradicted") for part in SUMMARY_PARTS},
+                    None: ("not_in_view",)}
+VIEW_CHECK_ROW = ("view_point", "check", "evidence")
+VIEW_CHECK_SHAPE = ('{"summary": "...", "rows": [{"view_point": "V-I1", "check": "confirmed", '
+                    '"evidence": ["I2", ...]}, ...]}')
+NO_SUPPORT = "No support in the period"
+# A section with nothing to compare, with no previous review, says so alone,
+# and why, by its Comparison's not_applicable, without its subtitle, which
+# describes a comparison that isn't there. The manager's view always has
+# points, as its summary is refused without one, so it has none.
 NOT_APPLICABLE = "N/A"
 # What the agents read, each made from data.json, and what they write: one
 # summarises each table of observations, a few flowing paragraphs above it,
-# the other writes the step change. Each is about OBSERVATIONS_WORDS words,
+# another writes the step change, the last the view check. Each is about OBSERVATIONS_WORDS words,
 # by part, fewer for a table of few points, the context half as long, as it
 # says facts once rather than weighing themes. An agent writes up to any
 # number it is told and a little over a target, so it is told the target
@@ -246,12 +279,14 @@ NOT_APPLICABLE = "N/A"
 # MAX_OBSERVATIONS_WORDS, a margin it never sees, is refused.
 BRIEF = "brief.json"
 STEP_CHANGE_BRIEF = "step_change_brief.json"
+VIEW_CHECK_BRIEF = "view_check_brief.json"
 CONTENT = "content.json"
 STEP_CHANGE = "step_change.json"
+VIEW_CHECK = "view_check.json"
 OBSERVATIONS_WORDS = {"going_well": 150,
-                      "to_improve": 150, "context": 75, "step_change": 150}
+                      "to_improve": 150, "context": 75, "step_change": 150, "view_check": 150}
 MAX_OBSERVATIONS_WORDS = {"going_well": 200,
-                          "to_improve": 200, "context": 100, "step_change": 200}
+                          "to_improve": 200, "context": 100, "step_change": 200, "view_check": 200}
 # The chart of the resolved issues by epic, beside the main focus.
 EPICS_CHART = "jira_epics.svg"
 # The GitHub cells of the report, in order, as the Jira ones, and the chart
@@ -263,25 +298,84 @@ CHART_FILES = (*(chart for _, chart in JIRA_CELLS), EPICS_CHART, *(chart for _, 
                REPOS_CHART)
 
 
+@dataclass(frozen=True)
+class Comparison:
+    """A section comparing a baseline, the latest previous review or the
+    manager's view, with the period's points: its file and heading, how a
+    problem names it and its baseline, its task's name, which set_comparison.py
+    --of takes too, its rows' fields and categories, which may cite nothing
+    and which baseline points must each have one, how its table shows them,
+    its subtitle, the script's, a line under its heading, where {name} stands
+    for the baseline's name, and, only when its baseline may be missing, why
+    there is one, why there is none and what it says then."""
+    file: str
+    heading: str
+    name: str
+    task: str
+    words: str
+    shape: str
+    row: tuple[str, str, str]
+    example: str
+    kinds: dict
+    labels: dict
+    every: tuple
+    may_cite_none: tuple
+    null_cites: str | None
+    summary_of: str
+    baseline_points: str
+    of_baseline: str
+    null_row: str
+    missing_hint: str
+    columns: tuple[str, str]
+    counted: tuple[str, str]
+    no_evidence: str
+    subtitle: str
+    present: str | None = None
+    absent: str | None = None
+    not_applicable: str | None = None
+
+
+# The two comparisons, each read the same way: by its file's rules, its
+# report section and its check.
+STEP_CHANGE_COMPARISON = Comparison(
+    file=STEP_CHANGE, heading=STEP_CHANGE_HEADING, name="step change", task="step-change", words="step_change", shape=STEP_CHANGE_SHAPE,
+    row=STEP_CHANGE_ROW, example="R-I1", kinds=STEP_CHANGE_PARTS, labels=STEP_CHANGES, every=("to_improve",),
+    may_cite_none=("improved",), null_cites="context", summary_of="how the period compares with the latest previous review",
+    baseline_points="the latest review's points", of_baseline="the review", null_row="a period context point",
+    missing_hint="give every to-improve point of the latest review one, improved, still_to_improve or worsened",
+    columns=("Review point", "Change"), counted=("change", "changes"), no_evidence=NOT_RAISED,
+    subtitle="*How the period compares with the latest previous review{name}: what improved, persisted, worsened "
+    "or held, and how the context changed.*",
+    present="there is a previous review", absent="there is no previous review", not_applicable=f"{NOT_APPLICABLE}: no review before the period to compare with")
+VIEW_CHECK_COMPARISON = Comparison(
+    file=VIEW_CHECK, heading=VIEW_CHECK_HEADING, name="manager view check", task="view-check", words="view_check",
+    shape=VIEW_CHECK_SHAPE, row=VIEW_CHECK_ROW, example="V-I1", kinds=VIEW_CHECK_PARTS, labels=VIEW_CHECKS,
+    every=tuple(SUMMARY_PARTS), may_cite_none=("little_support",), null_cites=None,
+    summary_of="how the period's evidence bears on the manager's view", baseline_points="the view's points",
+    of_baseline="the view", null_row="a strong theme of the period the view doesn't mention",
+    missing_hint="give every point of the manager's view one, confirmed, little_support or contradicted",
+    columns=("View point", "Check"), counted=("check", "checks"), no_evidence=NO_SUPPORT,
+    subtitle="*How the manager's view, given at the start of the prep, holds against the period's evidence: what "
+    "it confirms, what has little support or is contradicted, and what the view leaves out.*")
+
+
 def expected_files(prep):
     """Every file the prep folder `prep` holds, and nothing else: the person,
     the period and who they are in each source, the manager's view of them,
     their previous reviews, the period's feedback, the manager's notes on
     them, what their Slack messages show, the report's data, the brief of
     its observations and the agent's summaries of them, the brief of the
-    step change and the agent's step change, the _raw folder of what each
-    source gave, and the report with its _charts folder."""
+    step change and the agent's step change, the brief of the view check and
+    the agent's view check, the _raw folder of what each source gave, and
+    the report with its _charts folder."""
     return {PERSON, ORIENTATION, REVIEWS, FEEDBACK, NOTES, SLACK, DATA, BRIEF, CONTENT, STEP_CHANGE_BRIEF, STEP_CHANGE,
-            RAW_DIR, report_name(prep), CHARTS_DIR}
+            VIEW_CHECK_BRIEF, VIEW_CHECK, RAW_DIR, report_name(prep), CHARTS_DIR}
 
 
 def report_name(prep):
     """The file name of the prep `prep`'s report, <Person>_Review_Prep.md,
     from its folder's name, <Person>_<YY-MM-DD>."""
-    subject = folder_subject(prep)
-    if not subject:
-        raise SystemExit(f"{prep!r} is not a prep folder, <Person>_<YY-MM-DD>")
-    return document_name(subject, REPORT_KIND)
+    return run_document(prep, REPORT_KIND, "prep", "Person")
 
 
 def fetched(paths, root=""):
@@ -801,72 +895,110 @@ def content_problems(content, observations):
     return problems
 
 
+def data_comparison_problems(comparison, value, data):
+    """Why `value` isn't the file of `comparison`, a Comparison, against
+    data.json, `data`, empty when it is: step_change_problems() or
+    view_check_problems()."""
+    if comparison is STEP_CHANGE_COMPARISON:
+        return step_change_problems(value, data["observations"], data["reviews"])
+    return view_check_problems(value, data["observations"], data["view"])
+
+
 def step_change_problems(step_change, observations, reviews):
     """Why `step_change`, step_change.json's, isn't the step change from the
     latest previous review in `reviews`, data.json's, to the period's points
-    in `observations`, empty when it is: null when there is no previous
-    review; else a summary, not empty, of at most its MAX_OBSERVATIONS_WORDS
-    words, and rows, each {review_point, change, evidence}: the review point
-    one of the latest review's ids, once, or null for a period context
-    point; the change one of STEP_CHANGE_PARTS for its part, or for None
-    when it has none; the evidence
-    period point ids, each once, at least one but for improved, and a
-    period context point among them when the review point is null; and
-    every to-improve point of the review with a row."""
-    what = STEP_CHANGE
-    if reviews is None:
-        return [] if step_change is None else [f"{what} must be null, as there is no previous review to compare with"]
-    if not (isinstance(step_change, dict) and sorted(step_change) == ["rows", "summary"]
-            and isinstance(step_change["summary"], str) and isinstance(step_change["rows"], list)):
-        return [f"{what} must be {STEP_CHANGE_SHAPE}, as there is a previous review"]
+    in `observations`, empty when it is, by comparison_problems(): null when
+    there is no previous review; each row's change one of STEP_CHANGE_PARTS
+    for its review point's part, every to-improve point of the review with a
+    row, only an improved one citing nothing, and a row with no review point
+    citing the period context point it stands for."""
+    return comparison_problems(STEP_CHANGE_COMPARISON, step_change, observations,
+                               None if reviews is None else baseline_points(reviews["latest"]))
+
+
+def view_check_problems(view_check, observations, view):
+    """Why `view_check`, view_check.json's, isn't the check of the manager's
+    view, `view`, data.json's, against the period's points in
+    `observations`, empty when it is, by comparison_problems(): every view
+    point with one row, confirmed,
+    little_support or contradicted, only little_support citing nothing; and
+    a row with no view point not_in_view, citing the points of the theme."""
+    return comparison_problems(VIEW_CHECK_COMPARISON, view_check, observations, baseline_points(view))
+
+
+def comparison_problems(comparison, value, observations, baseline):
+    """Why `value`, the file of `comparison`, a Comparison, isn't the
+    comparison of `baseline`, {id: (part, point)} or None when there is
+    nothing to compare, with the period's points in `observations`,
+    data.json's, empty when it is: null exactly when `baseline` is None;
+    else a summary, not empty, of at most its MAX_OBSERVATIONS_WORDS words,
+    and rows, each {point, kind, evidence} by its row's field names: the
+    point one of the baseline's ids, once, or null; the kind one of its
+    kinds for the point's part, or for None when it has none; the evidence
+    period point ids, each once, at least one but for a kind that may cite
+    none, and with null_cites a point of that part among them when the
+    point is null; and every baseline point of its every parts with a
+    row."""
+    what = comparison.file
+    if baseline is None:
+        return [] if value is None else [f"{what} must be null, as {comparison.absent} to compare with"]
+    if not (isinstance(value, dict) and sorted(value) == ["rows", "summary"]
+            and isinstance(value["summary"], str) and isinstance(value["rows"], list)):
+        return [f"{what} must be {comparison.shape}" + (f", as {comparison.present}" if comparison.present else "")]
     problems = []
-    summary = step_change["summary"]
+    summary = value["summary"]
     if not summary.strip():
-        problems.append(f"{what}'s summary is empty: summarise how the period compares with the latest previous "
-                        "review")
-    elif problem := _length_problem(f"{what}'s summary", summary, "step_change"):
+        problems.append(
+            f"{what}'s summary is empty: summarise {comparison.summary_of}")
+    elif problem := _length_problem(f"{what}'s summary", summary, comparison.words):
         problems.append(problem)
-    review, period = review_points(
-        reviews["latest"]), period_points(observations)
+    elif ids := POINT_ID_TEXT.findall(summary):
+        problems.append(f"{what}'s summary names {', '.join(ids)}: say what the points show in words, as ids "
+                        "belong only in the rows' evidence")
+    point_field, kind_field, _ = comparison.row
+    period = period_points(observations)
     seen = []
-    for number, row in enumerate(step_change["rows"], 1):
+    for number, row in enumerate(value["rows"], 1):
         field = f"{what}'s row {number}"
-        if not (isinstance(row, dict) and sorted(row) == sorted(STEP_CHANGE_ROW)
-                and (row["review_point"] is None or isinstance(row["review_point"], str))
-                and isinstance(row["change"], str) and isinstance(row["evidence"], list)
+        if not (isinstance(row, dict) and sorted(row) == sorted(comparison.row)
+                and (row[point_field] is None or isinstance(row[point_field], str))
+                and isinstance(row[kind_field], str) and isinstance(row["evidence"], list)
                 and all(isinstance(item, str) for item in row["evidence"])):
-            problems.append(f'{field} must be {{"review_point": "R-I1" or null, "change": "...", '
-                            '"evidence": ["I2", ...]}')
+            problems.append(f'{field} must be {{"{point_field}": "{comparison.example}" or null, '
+                            f'"{kind_field}": "...", "evidence": ["I2", ...]}}')
             continue
-        point, change, evidence = row["review_point"], row["change"], row["evidence"]
-        if point is not None and point not in review:
-            problems.append(f"{field}'s review_point, {point!r}, must be one of the latest review's points: "
-                            f"{', '.join(review) or 'it has none'}, or null for a period context point")
+        point, kind, evidence = row[point_field], row[kind_field], row["evidence"]
+        if point is not None and point not in baseline:
+            problems.append(f"{field}'s {point_field}, {point!r}, must be one of {comparison.baseline_points}: "
+                            f"{', '.join(baseline) or 'it has none'}, or null for {comparison.null_row}")
             continue
         if point is not None and point in seen:
             problems.append(
-                f"{field}'s review_point, {point}, has a row already: give each one row")
+                f"{field}'s {point_field}, {point}, has a row already: give each one row")
         seen.append(point)
-        part = review[point][0] if point else None
-        allowed = STEP_CHANGE_PARTS[part]
-        if change not in allowed:
-            problems.append(f"{field}'s change, {change!r}, must be {' or '.join(allowed)} for "
-                            + (f"a {part} point of the review" if part else "a row with no review_point"))
+        part = baseline[point][0] if point else None
+        allowed = comparison.kinds[part]
+        if kind not in allowed:
+            problems.append(f"{field}'s {kind_field}, {kind!r}, must be {' or '.join(allowed)} for "
+                            + (f"a {part} point of {comparison.of_baseline}" if part
+                               else f"a row with no {point_field}"))
         if unknown := [item for item in evidence if item not in period]:
             problems.append(f"{field}'s evidence names {', '.join(unknown)}, not points of the period: cite the "
                             "brief's ids, such as G1")
         elif len(set(evidence)) != len(evidence):
             problems.append(
                 f"{field}'s evidence names a point more than once: name each once")
-        elif not evidence and change != "improved":
+        elif not evidence and kind not in comparison.may_cite_none:
             problems.append(
                 f"{field}'s evidence is empty: cite the period points that show it, by their ids")
-        elif point is None and not any(period[item][0] == "context" for item in evidence):
-            problems.append(f"{field} has no review_point, so its evidence must cite the period context point it "
-                            "stands for, such as C1")
-    if missing := [point for point, (part, _) in review.items() if part == "to_improve" and point not in seen]:
-        problems.append(f"{what} has no row for {', '.join(missing)}: give every to-improve point of the latest "
-                        "review one, improved, still_to_improve or worsened")
+        elif point is None and comparison.null_cites and not any(
+                period[item][0] == comparison.null_cites for item in evidence):
+            problems.append(f"{field} has no {point_field}, so its evidence must cite the period "
+                            f"{comparison.null_cites} point it stands for, such as "
+                            f"{point_id(comparison.null_cites, 1)}")
+    if missing := [point for point, (part, _) in baseline.items() if part in comparison.every and point not in seen]:
+        problems.append(
+            f"{what} has no row for {', '.join(missing)}: {comparison.missing_hint}")
     return problems
 
 
@@ -895,16 +1027,18 @@ def observation_points(observations, part):
     return [point for group in observations[part] for point in group["points"]]
 
 
-def review_points(review):
-    """{id: (part, point)}: every point of `review`, the latest previous
-    review as data.json holds it, by its id, part by part."""
-    return {point["id"]: (part, point) for part in SUMMARY_PARTS for point in review[part]}
+def baseline_points(baseline):
+    """{id: (part, point)}: every point of `baseline`, the latest previous
+    review or the manager's view as data.json holds it, by its id, part by
+    part."""
+    return {point["id"]: (part, point) for part in SUMMARY_PARTS for point in baseline[part]}
 
 
-def point_id(part, number, review=False):
-    """The id of the `number`th point of `part`, from 1, in its table, or with
-    `review` in the latest previous review: G1, I2, C3, or R-G1."""
-    return f"{REVIEW_ID if review else ''}{POINT_IDS[part]}{number}"
+def point_id(part, number, prefix=""):
+    """The id of the `number`th point of `part`, from 1, in its table, after
+    `prefix`, REVIEW_ID in the latest previous review, VIEW_ID in the
+    manager's view: G1, I2, C3, R-G1 or V-C1."""
+    return f"{prefix}{POINT_IDS[part]}{number}"
 
 
 def types_text(by_type):

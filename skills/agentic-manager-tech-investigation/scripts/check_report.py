@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 
 from common import (folder_problem, CELL_PIPE, CITATION, DEFINITION, DESIGN_ORDER, FLOW_HEADER, HEADING, IDENTITY_HEADER, LEDGER,
-                    LEDGER_SECTIONS, LINKS, QUERY, QUEUE, QUEUE_SUBSECTIONS, REFERENCE_LINK, SOURCE_FINDINGS_COLUMN,
+                    LEDGER_SECTIONS, LINKS, CODE_SPAN, QUEUE, QUEUE_SUBSECTIONS, REFERENCE_LINK, SOURCE_FINDINGS_COLUMN,
                     TABLE_HEADINGS, UNUSED, anchor_ids, backtick_error, cited_sources, claim_length_problem,
                     design_evidence, expected_files, flow_states, headings, id_order, identity_states, ids,
                     ledger_rows, link_definitions, links, listed, local_link, markdown, records, reference_key,
@@ -262,7 +262,7 @@ def without_queries(body):
     for i in range(span[0] + 1, span[1]):
         cells = CELL_PIPE.split(lines[i])
         if len(cells) > 3 and re.fullmatch(r"S\d+", strip_anchors(cells[1]).strip()):
-            cells[3] = QUERY.sub("", cells[3])
+            cells[3] = CODE_SPAN.sub("", cells[3])
             lines[i] = "|".join(cells)
     return "\n".join(lines)
 

@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import date
 from unittest import mock
 
 # tests/<skill>/ mirrors skills/<skill>/.
@@ -85,6 +86,24 @@ class LogseqTest(unittest.TestCase):
                                ("", [])]:
             with self.subTest(text):
                 self.assertEqual(logseq.page_aliases(text), expected)
+
+    def test_journal_day(self):
+        for title, expected in [("2026_08_20", date(2026, 8, 20)), ("2026_02_30", None), ("notes", None)]:
+            with self.subTest(title):
+                self.assertEqual(logseq.journal_day(title), expected)
+
+    def test_parse_blocks_and_descendants(self):
+        # Each block nested under the one above it that is less indented, by
+        # tabs or spaces; a line that isn't a block continues the one above.
+        text = "- Planning\n\t- agenda\n\t  more on it\n\t\t- deep\n  - next\n- Retro"
+        blocks = logseq.parse_blocks(text)
+        self.assertEqual([(block["depth"], block["parent"], block["text"]) for block in blocks],
+                         [(0, None, "Planning"), (1, 0, "agenda\nmore on it"), (2, 1, "deep"),
+                          (1, 0, "next"), (0, None, "Retro")])
+        self.assertEqual(blocks[1]["line"], "\t- agenda\n\t  more on it")
+        for number, expected in [(0, [1, 2, 3]), (1, [2]), (4, [])]:
+            with self.subTest(number):
+                self.assertEqual(logseq.descendants(blocks, number), expected)
 
 
 if __name__ == "__main__":

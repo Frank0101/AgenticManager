@@ -418,7 +418,7 @@ class ChecksTest(unittest.TestCase):
             ("a sprint target that isn't the commitment's", lambda d: d["target_completion"].update(completed=0),
              "model: the sprint target is the original commitment's spells, and those completed"),
             ("a non-delivery count", lambda d: d["non_delivery_closures"].update(count=0),
-             "model: the non-delivery closures are the counted spells completed as Duplicate or Won't Do"),
+             "model: the non-delivery closures are the counted spells completed without delivery"),
             ("non-delivery pts", lambda d: d["non_delivery_closures"].update(points=5),
              "model: the non-delivery closures are"),
             ("a non-delivery ticket missing", lambda d: d["non_delivery_closures"]["issues"].clear(),
@@ -453,6 +453,10 @@ class ChecksTest(unittest.TestCase):
             # are recomputed from each pull request's title, branch and times.
             ("a pull request taken as the ticket's own", lambda d: d["ticket_pull_requests"]["PROJ-1"][1].update(
                 own=True), "model: PROJ-1's pull requests are as at the end"),
+            ("a word shaped like a key taken for another ticket",
+             lambda d: d["ticket_pull_requests"]["PROJ-2"][0].update(
+                 title="Fix UTF-8 handling", branch="fix/utf-8", own=False),
+             "model: PROJ-2's pull requests are as at the end"),
             ("a merge with no merge time", lambda d: d["ticket_pull_requests"]["PROJ-2"][0].update(mergedAt=None),
              "model: PROJ-2's pull requests are as at the end"),
             ("a merge after the end", lambda d: d["ticket_pull_requests"]["PROJ-2"][0].update(

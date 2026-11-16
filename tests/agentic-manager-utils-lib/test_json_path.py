@@ -29,6 +29,11 @@ class JsonPathTest(unittest.TestCase):
                 self.assertEqual(json_path.nested(
                     node, path, default), expected)
 
+    def test_is_number(self):
+        for value, ok in [(0, True), (2.5, True), (True, False), ("3", False), (None, False)]:
+            with self.subTest(value=value):
+                self.assertIs(json_path.is_number(value), ok)
+
 
 if __name__ == "__main__":
     unittest.main()

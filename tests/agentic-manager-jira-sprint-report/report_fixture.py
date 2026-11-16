@@ -33,11 +33,13 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import build_data as build  # noqa: E402
-from common import NO_EPIC, parse_ts  # noqa: E402
+from common import NO_EPIC, parse_ts, sprint_key  # noqa: E402
 from sprint_fixture import PR  # noqa: E402
 
 BASE = "https://acme.test"
 START = "2026-03-02T09:00:00.000+0000"
+# The keys of the sprint's project, as build_data.py tells a ticket's key.
+PROJ_KEYS = sprint_key({"spells": [{"key": "PROJ-1"}], "epics": []})
 
 
 def ev(day, kind, points: int | float | None = 2, done=False, **extra):
@@ -233,7 +235,7 @@ def pull(number, title, state, via, branch="", day=3):
     pr = {"url": PR.format(number), "title": title, "branch": branch, "via": via,
           "createdAt": f"2026-03-{day:02d}T10:00:00.000+0000", "mergedAt": end if state == "merged" else None,
           "closedAt": None if state == "open" else end}
-    return {**pr, "own": build.is_own_pull(pr, via), "state": build.pull_state(pr)}
+    return {**pr, "own": build.is_own_pull(pr, via, PROJ_KEYS), "state": build.pull_state(pr)}
 
 
 # The pull requests of the tickets in the sprint at the end: PROJ-1, Done, has

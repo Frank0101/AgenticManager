@@ -11,7 +11,7 @@ writes its files to is in output_folder.py.
 import json
 import os
 import re
-from typing import TypeGuard, TypeIs
+from typing import TypeGuard
 
 CONFIG_PATH = os.path.join(os.path.expanduser(
     "~"), ".config", "agentic-manager", "config.json")
@@ -133,9 +133,3 @@ def is_text_list(value) -> TypeGuard[list[str]]:
     """Whether `value` is a list of strings, as a list setting must be; an
     empty list is one."""
     return isinstance(value, list) and all(isinstance(v, str) for v in value)
-
-
-def is_number(value) -> TypeIs[int | float]:
-    """Whether `value` is a JSON number, not a boolean, which Python counts
-    as one."""
-    return isinstance(value, (int, float)) and not isinstance(value, bool)

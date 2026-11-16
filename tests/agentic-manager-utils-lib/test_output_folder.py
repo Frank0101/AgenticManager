@@ -145,6 +145,16 @@ class OutputFolderTest(unittest.TestCase):
                     with self.assertRaisesRegex(SystemExit, expected):
                         call()
 
+    def test_run_document(self):
+        # The document is named after the run folder's subject; a name of
+        # another form exits as run_folder() does, naming the folder's form.
+        self.assertEqual(output_folder.run_document("Acme-Q3_26-10-05", "Slides.html", "deck", "Name"),
+                         "Acme-Q3_Slides.html")
+        for run in ("Acme-Q3", "Acme_26-10", "_26-10-05x"):
+            with self.subTest(run), self.assertRaisesRegex(
+                    SystemExit, f"'{run}' is not a deck folder, <Name>_<YY-MM-DD>"):
+                output_folder.run_document(run, "Slides.html", "deck", "Name")
+
 
 class DayFolderTest(unittest.TestCase):
     def test_day_folder(self):

@@ -1,28 +1,31 @@
-"""Writes a prep's two briefs from data.json: brief.json, what the agent reads to write content.json, its summary of what is going well, what to improve and the context, and step_change_brief.json, what it reads to write step_change.json, the step change from the latest previous review.
+"""Writes a prep's three briefs from data.json: brief.json, what the agent reads to write content.json, its summary of what is going well, what to improve and the context, step_change_brief.json, what it reads to write step_change.json, the step change from the latest previous review, and view_check_brief.json, what it reads to write view_check.json, the check of the manager's view.
 
 Like the report, each is a view of data.json, and holds only what its task
 needs. The summaries need the company values and, as the tables order points
 by value, not weight, the work's main focus: a measure of volume, not
 impact, that helps a summary open with what matters most. The step change
 needs the previous reviews and every point's id, so it cites points by id
-rather than retyping them.
+rather than retyping them; the view check, the manager's view the same way.
 """
 import argparse
 import json
 import os
 
 from common import (BRIEF, DATA, OBSERVATION_HEADINGS, OBSERVATION_SOURCES, PERSON, PIECE_SOURCES, STEP_CHANGE_BRIEF,
-                    VALUED_PARTS, VALUES, company_setting, observation_points, prep_dir, read_json, write_prep_file)
+                    VALUED_PARTS, VIEW_CHECK_BRIEF, VALUES, company_setting, observation_points, prep_dir, read_json, write_prep_file)
 
 
 def write_briefs(prep):
-    """Write the prep `prep`'s brief.json and step_change_brief.json from
-    its person.json and data.json; returns their paths, in that order."""
+    """Write the prep `prep`'s brief.json, step_change_brief.json and
+    view_check_brief.json from its person.json and data.json; returns their
+    paths, in that order."""
     folder = prep_dir(prep)
     person, data = (read_json(os.path.join(folder, name))
                     for name in (PERSON, DATA))
     return [write_prep_file(prep, BRIEF, build_brief(person, data, company_setting(VALUES))),
-            write_prep_file(prep, STEP_CHANGE_BRIEF, build_step_change_brief(person, data))]
+            write_prep_file(prep, STEP_CHANGE_BRIEF,
+                            build_step_change_brief(person, data)),
+            write_prep_file(prep, VIEW_CHECK_BRIEF, build_view_check_brief(person, data))]
 
 
 def build_brief(person, data, values):
@@ -48,6 +51,14 @@ def build_step_change_brief(person, data):
     return {"person": person["person"], **period_entries(data["observations"]), "reviews": data["reviews"]}
 
 
+def build_view_check_brief(person, data):
+    """The brief of the view check, from `person`, person.json, and `data`,
+    data.json: the person, each table's points by period_entries(), with
+    their ids, and view, data.json's manager's view, its points with their
+    ids, or null when it has none."""
+    return {"person": person["person"], **period_entries(data["observations"]), "view": data["view"]}
+
+
 def period_entries(observations):
     """{part: points}: for each part of OBSERVATION_HEADINGS, the points of
     its table in `observations`, data.json's, in its order, each {id, point,
@@ -69,10 +80,11 @@ def period_entries(observations):
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Write the prep's briefs from data.json: brief.json, the points of each table of "
-        "observations, going well, to improve and context, which the agent summarises in content.json, and "
+        "observations, going well, to improve and context, which the agent summarises in content.json, "
         "step_change_brief.json, those points with their ids and the previous reviews, which it compares in "
-        "step_change.json.",
-        epilog="Prints one line of JSON: briefs, the two briefs' paths.")
+        "step_change.json, and view_check_brief.json, those points with their ids and the manager's view, which "
+        "it checks in view_check.json.",
+        epilog="Prints one line of JSON: briefs, the three briefs' paths.")
     parser.add_argument("--prep", required=True,
                         help="the prep's folder, <Person>_<YY-MM-DD>, as init_prep.py printed it")
     args = parser.parse_args(argv)

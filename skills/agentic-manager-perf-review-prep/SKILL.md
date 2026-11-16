@@ -1,13 +1,13 @@
 ---
 name: agentic-manager-perf-review-prep
 disable-model-invocation: true
-description: Helps a manager prepare a performance review of one person over a review period, from the evidence of their work in Jira, GitHub, the documentation, the team's messages and the manager's own notes. In development; not ready to use.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_content.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_step_change.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *)
+description: Helps a manager prepare a performance review of one person over a review period, from the evidence of their work in Jira, GitHub, the documentation, the team's messages and the manager's own notes.
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_content.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_comparison.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *)
 ---
 
 # Performance Review Prep
 
-Helps a manager prepare a performance review of one person over a review period. The skill is in development.
+Helps a manager prepare a performance review of one person over a review period.
 
 The skill's files go to the `perf-review-preps` folder of the user's configured output root (`output.root`), or to a temporary folder if none is set. The scripts choose the folder; don't pass one.
 
@@ -29,15 +29,9 @@ perf-review-preps/
     ├── notes.json        read_notes.py writes (what the manager's own notes say about the person, merged, with
     │                     their links)
     ├── slack.json        read_slack.py writes (what the person's Slack messages show, merged, with their links)
-    ├── data.json         prepare_report.py writes, through build_data.py, from _raw, reviews.json, feedback.json, notes.json and slack.json (the model
-    │                     the report reads: by source, the person's Jira issues, pull requests and Notion pages
-    │                     in the period, each with its day or week, and their facts: the counts, the issues
-    │                     created and resolved by type, the resolved ones by epic, the merged pull requests by
-    │                     repository, each main focus, the resolved issues' story points, the merged pull
-    │                     requests' lines changed, the series the charts draw and the link to each search; and
-    │                     the points of the feedback, the reviews in the period, the notes and Slack, going well
-    │                     and to improve, by company value, and context, each with its id; and the previous
-    │                     reviews, the latest's points with their ids)
+    ├── data.json         prepare_report.py writes, through build_data.py, from _raw and the summaries above (the
+    │                     model the report reads: the person's Jira issues, pull requests and Notion pages in the
+    │                     period with their figures, and the points of every summary, each with its id)
     ├── brief.json        prepare_report.py writes (each table of observations' points, going well, to improve and
     │                     context, the company values and the work's main focus, which the observations task
     │                     summarises)
@@ -45,12 +39,16 @@ perf-review-preps/
     ├── step_change_brief.json
     │                     prepare_report.py writes (each table of observations' points, with their ids, and the
     │                     previous reviews, which the step change task compares)
-    ├── step_change.json  set_step_change.py writes (the step change from the latest previous review)
+    ├── step_change.json  set_comparison.py writes (the step change from the latest previous review)
+    ├── view_check_brief.json
+    │                     prepare_report.py writes (each table of observations' points, with their ids, and the
+    │                     manager's view, which the view check task checks)
+    ├── view_check.json   set_comparison.py writes (the check of the manager's view against the period's evidence)
     └── Jane-Doe_Review_Prep.md
                           finish_report.py writes (the report for the manager, from the files above: for now,
-                          what is going well and what to improve, by company value, the context and the step change
-                          from the latest previous review, then the person's GitHub
-                          and Jira figures, each with its main focus, and the Notion pages they created)
+                          what is going well and what to improve, by company value, the context, the step change
+                          from the latest previous review and the check of the manager's view, then the person's
+                          GitHub and Jira figures, each with its main focus, and the Notion pages they created)
 ```
 
 ## Prerequisite
@@ -118,7 +116,7 @@ Ask the manager, in a message of its own:
 
 > Do you have Jane Doe's previous performance reviews, with the colleagues' feedback gathered for them? Paste them, give me paths or links to them, such as PDFs exported from your HR tool, or sum up their main points. Say "none" if there aren't any.
 
-Record their answer as [Summaries](#summaries) says, each review with its rating, as the company's ratings name it, or null when it gives none of them, with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py --prep <prep> --of reviews`. A review dated within the period counts as the period's feedback; one dated before it, or undated, as the most recent, is what the report compares the period with.
+Record their answer as [Summaries](#summaries) says, each review with its rating, as the company's ratings name it, or null when it gives none of them, with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py --prep <prep> --of reviews`. A review dated within the period counts as the period's feedback; one dated before it, or undated, is a previous review, and the most recent of those, an undated one counting as the most recent, is what the report compares the period with.
 
 ## 5. Read the period's OKRs and feedback
 
@@ -147,17 +145,17 @@ The person's work in Jira, GitHub and Notion, in the period. It and step 6 don't
 
 ## 8. Summarise the observations
 
-Once steps 6 and 7 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py --prep <prep>`: it builds `data.json`, the model the report reads, from the raw files and the reviews, feedback, notes and Slack summaries, with no network, then a brief for each task, and prints `tasks`, a line `Task <name>: <path>` for each of its tasks: one summarises each table of observations, what is going well, what to improve and the context, and the other writes the step change from the latest previous review, when there is one. Give each to a fresh subagent, all at once, only its path, with: "Do the task in <path> exactly as written there, then reply in one line." Each task holds its own instructions and records what it writes with a script that checks it as it's written. Once all have replied, go on to step 9.
+Once steps 6 and 7 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py --prep <prep>`: it builds `data.json`, the model the report reads, from the raw files and the summaries of the manager's view, the reviews, feedback, notes and Slack, with no network, then a brief for each task, and prints `tasks`, a line `Task <name>: <path>` for each of its tasks: one summarises each table of observations, what is going well, what to improve and the context, one writes the step change from the latest previous review, when there is one, and one checks the manager's view from step 3 against the period's evidence. Give each to a fresh subagent, all at once, only its path, with: "Do the task in <path> exactly as written there, then reply in one line." Each task holds its own instructions and records what it writes with a script that checks it as it's written. Once all have replied, go on to step 9.
 
-To change a summary or the step change later, as the manager asks, edit it yourself and record it whole again with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_content.py --prep <prep>` or `python3 ${CLAUDE_SKILL_DIR}/scripts/set_step_change.py --prep <prep>`, whose `--help` shows the input, then run step 9 again.
+To change a summary, the step change or the view check later, as the manager asks, edit it yourself and record it whole again with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_content.py --prep <prep>` or `python3 ${CLAUDE_SKILL_DIR}/scripts/set_comparison.py --of step-change|view-check --prep <prep>`, whose `--help` shows the input, then run step 9 again.
 
 ## 9. Finish
 
-Run `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py --prep <prep>`: it checks `content.json` and `step_change.json` field by field, then writes the report, `<Person>_Review_Prep.md`, and its charts from `data.json`, `content.json` and `step_change.json`, and checks the whole prep. If its `problems` aren't empty, fix what each names by running again the step that writes that file, step 8 for `content.json` and `step_change.json`, then run it again; if you can't, stop and tell the manager what they say.
+Run `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py --prep <prep>`: it checks `content.json`, `step_change.json` and `view_check.json` field by field, then writes the report, `<Person>_Review_Prep.md`, and its charts from `data.json` and those three, and checks the whole prep. If its `problems` aren't empty, fix what each names by running again the step that writes that file, step 8 for `content.json`, `step_change.json` and `view_check.json`, then run it again; if you can't, stop and tell the manager what they say.
 
 ## 10. Tell the manager
 
-Say the prep is ready, with a Markdown link to its report, and that the rest of the report, from what else was gathered, isn't built yet. Don't recap the report; add only a doubt about your own judgment that it doesn't show, such as a summary you weren't sure how to weigh. If step 1's `temporary` is `true`, add that the folder is temporary and setting `output.root` in the config keeps preps.
+Say the prep is ready, with a Markdown link to its report. Don't recap the report; add only a doubt about your own judgment that it doesn't show, such as a summary you weren't sure how to weigh. If step 1's `temporary` is `true`, add that the folder is temporary and setting `output.root` in the config keeps preps.
 
 ## Summaries
 

@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import check_prep  # noqa: E402
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import (CONTENT, STEP_CHANGE, FEEDBACK, REVIEWS, NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP,
+from prep_fixture import (CONTENT, STEP_CHANGE, VIEW_CHECK, FEEDBACK, REVIEWS, NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP,
                           SLACK, DATA, WORK_RAW, temp_output, write_prep)  # noqa: E402
 
 TODAY = date(2026, 11, 10)
@@ -80,6 +80,10 @@ class CheckTest(unittest.TestCase):
                   None, "missing step_change.json"),
                  ("a step change row missing", {"step_change": {**STEP_CHANGE, "rows": STEP_CHANGE["rows"][:1]}},
                   None, "step_change.json: step_change.json has no row for R-I1, R-I2"),
+                 ("no view check", {"view_check": None},
+                  None, "missing view_check.json"),
+                 ("a view check with no summary", {"view_check": {**VIEW_CHECK, "summary": ""}},
+                  None, "view_check.json: view_check.json's summary is empty"),
                  ("no report", {"report": False},
                   None, "_Review_Prep.md, _charts"),
                  ("a chart more", {}, "_charts/extra.svg",

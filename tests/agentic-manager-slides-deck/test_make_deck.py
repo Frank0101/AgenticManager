@@ -112,6 +112,32 @@ class ProblemsTest(unittest.TestCase):
                 "<p>{{asset:logo.svg}}</p>"), "{{asset:logo.svg}} goes only in an image's link"),
             ("token in the style", lambda d: d.update(style=["a { background: url({{asset:logo.svg}}) }"]),
              "style: holds a {{...}} token"),
+            ("blurred box-shadow", lambda d: d.update(style=[".a {", "  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);", "}"]),
+             "style: line 2: `box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1)` draws a blurred shadow"),
+            ("a blurred shadow after a solid one", lambda d: d.update(style=[".a { box-shadow: 4px 4px 0 #000, inset 0 0 6px red; }"]),
+             "style: line 1: `box-shadow: 4px 4px 0 #000, inset 0 0 6px red` draws a blurred shadow"),
+            ("text-shadow", lambda d: d.update(style=["h1 { text-shadow: 1px 1px 2px #000; }"]),
+             "style: line 1: `text-shadow: 1px 1px 2px #000` draws a blurred shadow"),
+            ("filter drop-shadow", lambda d: d.update(style=["img { filter: grayscale(1) drop-shadow(0 4px 6px rgb(0 0 0 / 20%)); }"]),
+             "style: line 1: `filter: grayscale(1) drop-shadow(0 4px 6px rgb(0 0 0 / 20%))` draws a blurred shadow"),
+            ("shadow from a custom property", lambda d: d.update(style=[":root { --lift: 0 6px 18px #0002; }", ".a { box-shadow: var(--lift); }"]),
+             "style: line 2: `box-shadow: var(--lift)` draws a blurred shadow"),
+            ("inline style shadow", set_slide("<div style='box-shadow: 0 0 12px #000'></div>"),
+             "slides[0].html: line 1: <div style> `box-shadow: 0 0 12px #000` draws a blurred shadow"),
+            ("inline shadow from the deck's custom property",
+             lambda d: d.update(style=[":root { --lift: 0 6px 18px #0002; }"],
+                                slides=[slide("<p style='text-shadow: var(--lift)'>x</p>")] + d["slides"][1:]),
+             "slides[0].html: line 1: <p style> `text-shadow: var(--lift)` draws a blurred shadow"),
+            ("body restyled", lambda d: d.update(style=["body { background: #000; }"]),
+             "style: line 1: `body` restyles the page around the deck"),
+            ("slides-wrapper restyled", lambda d: d.update(style=[".a {}", ".slides-wrapper { gap: 0; }"]),
+             "style: line 2: `.slides-wrapper` restyles the page around the deck"),
+            ("toolbar button restyled", lambda d: d.update(style=[".toolbar button { color: red; }"]),
+             "style: line 1: `.toolbar button` restyles the page around the deck"),
+            ("toolbar in a selector list, in a media rule",
+             lambda d: d.update(
+                 style=["@media print {", "  .a, .toolbar { display: none; }", "}"]),
+             "style: line 2: `.a, .toolbar` restyles the page around the deck"),
             ("image by its path", set_slide("<img src='/Users/me/logo.png'>"),
              "<img src> loads '/Users/me/logo.png': add the image with add_asset.py"),
             ("image by a relative path", set_slide("<img src='../_assets/logo.png'>"),
@@ -180,6 +206,32 @@ class ProblemsTest(unittest.TestCase):
                 data["slides"][0], data["slides"][2] = first, third
                 self.assertEqual(make_deck.problems(
                     data, frozenset({"acme-logo"}))[0], [])
+
+    def test_accepted_style(self):
+        # Each case: the deck's style and the first slide's html. A shadow
+        # with no blur prints as it shows, and a selector merely like the
+        # page's own restyles none of it.
+        cases = [
+            ("shadow with no blur", [
+             ".a { box-shadow: 4px 4px 0 #1e3a8a, inset 0 0 0 1px #ddd; }"], "<p>x</p>"),
+            ("text-shadow with no blur",
+             ["h1 { text-shadow: 2px 2px #000; }"], "<p>x</p>"),
+            ("no shadow", [
+             ".a { box-shadow: none; filter: blur(2px) drop-shadow(3px 3px 0 red); }"], "<p>x</p>"),
+            ("custom property with no blur", [":root { --offset: 6px 6px 0 #0f172a; }", ".a { box-shadow: var(--offset); }"],
+             "<p>x</p>"),
+            ("inline shadow with no blur", [],
+             "<div style='box-shadow: 3px 3px 0 0 #000'></div>"),
+            ("shadow in a comment", [
+             "/* box-shadow: 0 2px 8px #000; */", "body-text { color: red; }"], "<p>x</p>"),
+            ("selectors like the page's", [".toolbar-row, .body, #body, .slides-wrapper-x, .slide .toolbox { color: red; }"],
+             "<p>x</p>"),
+        ]
+        for name, style, html in cases:
+            with self.subTest(name):
+                data = content()
+                data["style"], data["slides"][0] = style, slide(html)
+                self.assertEqual(make_deck.problems(data)[0], [])
 
 
 class RingTest(unittest.TestCase):

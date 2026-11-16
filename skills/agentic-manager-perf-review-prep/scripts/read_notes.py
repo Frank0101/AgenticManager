@@ -8,17 +8,13 @@ reading.py runs every reading; this script knows only where the notes are
 and what each task shows, each note numbered so none goes without one.
 """
 import os
-import re
 from datetime import date
 
-from common import NOTES, PERSON, graph_path, links, notes, prep_dir, read_json
+from common import NOTES, PERSON, descendants, graph_path, journal_day, links, notes, parse_blocks, prep_dir, read_json
 import reading
 from reading import MERGE
 
 PAGES = "pages"
-# A journal's file name, such as 2026_07_22, and a block's first line.
-JOURNAL = re.compile(r"(\d{4})_(\d{2})_(\d{2})")
-BLOCK = re.compile(r"^(\s*)- ")
 READING_ANSWER = """{"items": [
   {"note": 1, "synopsis": "Presented the billing migration to the wider team; Sam asked for the slides, and Jane..."},
   {"note": 2, "synopsis": "..."}
@@ -65,18 +61,6 @@ def material(months, pages):
             "content": {"months": months, "pages": pages}}
 
 
-def journal_day(title):
-    """The day of the journal whose file is `title`, such as 2026_07_22, or
-    None when it isn't a journal's name."""
-    match = JOURNAL.fullmatch(title)
-    if not match:
-        return None
-    try:
-        return date(int(match[1]), int(match[2]), int(match[3]))
-    except ValueError:
-        return None
-
-
 def linking_blocks(text, wanted):
     """[{text}]: each block of the journal `text` that links a page of
     `wanted`, casefolded, shown inside the block it sits in, with that
@@ -95,36 +79,6 @@ def linking_blocks(text, wanted):
         tree = [root] + descendants(blocks, root)
         shown.update(tree)
         found.append({"text": "\n".join(blocks[n]["line"] for n in tree)})
-    return found
-
-
-def parse_blocks(text):
-    """The blocks of an outline, in order: {depth, parent, text, line}, line
-    the block as written, with its indent, and text without it."""
-    blocks, stack = [], []
-    for raw in text.split("\n"):
-        match = BLOCK.match(raw)
-        if not match:
-            if blocks and raw.strip():
-                blocks[-1]["text"] += "\n" + raw.strip()
-                blocks[-1]["line"] += "\n" + raw.rstrip()
-            continue
-        depth = len(match[1].replace("    ", "\t").replace("  ", "\t"))
-        while stack and blocks[stack[-1]]["depth"] >= depth:
-            stack.pop()
-        blocks.append({"depth": depth, "parent": stack[-1] if stack else None,
-                       "text": raw[match.end():].strip(), "line": raw.rstrip()})
-        stack.append(len(blocks) - 1)
-    return blocks
-
-
-def descendants(blocks, number):
-    """The numbers of the blocks nested under block `number`, in order."""
-    found = []
-    for later in range(number + 1, len(blocks)):
-        if blocks[later]["depth"] <= blocks[number]["depth"]:
-            break
-        found.append(later)
     return found
 
 

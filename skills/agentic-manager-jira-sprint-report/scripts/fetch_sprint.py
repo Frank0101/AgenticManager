@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from common import (CHANGELOGS_DIR, COMMENTS_DIR, META_FILE, PARENTS_FILE, PREVIOUS_SPRINT_FILE, PULL_REQUESTS_FILE,
                     PUNTED_ISSUES_FILE, RAW_DIR, REPORTS_FOLDER, SPRINT_FILE, SPRINT_ISSUES_FILE,
                     SPRINT_REPORT_FILE, STATUSES_FILE, GITHUB_FAILED, Context, JiraClient, as_of,
-                    blocker_candidates, clear_folder, day_folder, gather, require_gh, history_fields, nested, output_folder, parse_ts,
+                    blocker_candidates, gather, require_gh, history_fields, nested, new_run, parse_ts,
                     project_of, pulls_by_ticket, read_events, report_label, report_timezone,
                     standard_issues, status_categories, stops_on_failure, ticket_events, write_json)
 
@@ -139,10 +139,14 @@ def fetch_sprint(args):
 
         project_key = project_key_of(args, issues)
         label = report_label(project_key, sprint.get("name"))
-        out_root, temporary = output_folder(REPORTS_FOLDER)
-        report_dir = os.path.join(out_root, day_folder(
-            label, parse_ts(fetched_at).astimezone(reporting_zone)))
-        raw_dir = prepare_report_dir(report_dir, sprint_id)
+        out_root, temporary, run, replaced = new_run(
+            REPORTS_FOLDER, label, parse_ts(fetched_at).astimezone(reporting_zone))
+        report_dir = os.path.join(out_root, run)
+        if replaced:
+            log(
+                f"replaced the report of the same sprint and day: {report_dir}")
+        raw_dir = os.path.join(report_dir, RAW_DIR)
+        os.makedirs(raw_dir)
 
         write_json(os.path.join(raw_dir, SPRINT_FILE), sprint)
         write_json(os.path.join(raw_dir, PREVIOUS_SPRINT_FILE), previous)
@@ -279,32 +283,6 @@ def project_key_of(args, issues):
     if args.project:
         return args.project
     return project_of(issues[0]["key"]) if issues else None
-
-
-def prepare_report_dir(report_dir, sprint_id):
-    """Delete the report already in the destination folder (the same sprint and
-    day), then return a new, empty _raw folder. Every run starts from scratch,
-    so there is no stale state to reuse; earlier days' folders are left, since
-    their names can't clash with today's."""
-    if os.path.lexists(report_dir):
-        other = stored_sprint_id(report_dir)
-        if other is not None and other != str(sprint_id):
-            raise SystemExit(
-                f"refusing to delete {report_dir}: it holds the report of sprint {other}")
-        log(f"replacing the report of the same sprint and day: {report_dir}")
-        clear_folder(report_dir)
-    raw_dir = os.path.join(report_dir, RAW_DIR)
-    os.makedirs(raw_dir)
-    return raw_dir
-
-
-def stored_sprint_id(report_dir):
-    """An earlier report's sprint id, or None if it can't be read."""
-    try:
-        with open(os.path.join(report_dir, RAW_DIR, SPRINT_FILE), encoding="utf-8") as f:
-            return str(json.load(f).get("id"))
-    except (OSError, ValueError, AttributeError):
-        return None
 
 
 def log(message):

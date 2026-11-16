@@ -1,10 +1,10 @@
 """Unit tests for skills/agentic-manager-jira-sprint-report/scripts/fetch_sprint.py.
 Run with: python3 tests/run.py agentic-manager-jira-sprint-report
 
-They cover the script's own logic: its arguments, the report folder, the
-previous sprint, the changelogs it keeps and each ticket's pull requests. The
-Jira calls belong to the library's client, tested there; test_e2e_fetch.py
-runs the whole script against a fake Jira.
+They cover the script's own logic: its arguments, the previous sprint, the
+changelogs it keeps and each ticket's pull requests. The Jira calls belong to
+the library's client, tested there; test_e2e_fetch.py runs the whole script
+against a fake Jira.
 """
 
 import contextlib
@@ -13,7 +13,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 import unittest
 from unittest import mock
 
@@ -23,11 +22,10 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import fetch_sprint  # noqa: E402
-from common import RAW_DIR, SPRINT_FILE  # noqa: E402
 from agentic_manager import retry  # noqa: E402
 from agentic_manager.github import GH_BROKEN  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from sprint_fixture import PR, report_folder  # noqa: E402
+from sprint_fixture import PR  # noqa: E402
 # The fake gh's GraphQL answers follow the library's query.
 sys.path.insert(0, os.path.join(os.path.dirname(
     TEST_DIR), "agentic-manager-utils-lib"))
@@ -90,88 +88,6 @@ class ArgsTest(unittest.TestCase):
                     self.parse(*args)
                 self.assertEqual(raised.exception.code, 2)
                 self.assertIn(expected, err.getvalue())
-
-
-class ReportDirTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.root = self.tmp.name
-
-    def report(self, name, sprint):
-        """A report folder in the root whose sprint.json holds `sprint`: an
-        id, or text as it is."""
-        return report_folder(os.path.join(self.root, name),
-                             sprint if isinstance(sprint, str) else {"id": sprint})
-
-    def prepare(self, name, sprint_id):
-        """(the _raw folder made, what went to stderr)."""
-        with contextlib.redirect_stderr(io.StringIO()) as err:
-            raw = fetch_sprint.prepare_report_dir(
-                os.path.join(self.root, name), sprint_id)
-        return raw, err.getvalue()
-
-    def test_stored_sprint_id(self):
-        # A folder that isn't a readable report is never taken for one.
-        cases = [("a report", self.report("a", 7), "7"),
-                 ("no folder", os.path.join(self.root, "missing"), None),
-                 ("a sprint.json that isn't an object",
-                  self.report("list", "[]"), None),
-                 ("a sprint.json that isn't JSON", self.report("text", "{"), None)]
-        for name, folder, expected in cases:
-            with self.subTest(name):
-                self.assertEqual(
-                    fetch_sprint.stored_sprint_id(folder), expected)
-
-    def test_new_folder(self):
-        raw, said = self.prepare("PROJ-Sprint-7_26-03-16", 7)
-        self.assertEqual(raw, os.path.join(
-            self.root, "PROJ-Sprint-7_26-03-16", "_raw"))
-        self.assertEqual(os.listdir(raw), [])
-        self.assertEqual(said, "")
-
-    def test_only_the_report_of_the_same_sprint_and_day_is_deleted(self):
-        # Earlier days' reports of the sprint stay, as does every other
-        # sprint's report, and a report elsewhere that a link points to.
-        earlier_day = self.report("PROJ-Sprint-7_26-03-13", 7)
-        other = self.report("PROJ-Sprint-6_26-03-16", 6)
-        same_day = self.report("PROJ-Sprint-7_26-03-16", 7)
-        outside = tempfile.TemporaryDirectory()
-        self.addCleanup(outside.cleanup)
-        linked = report_folder(os.path.join(
-            outside.name, "PROJ-Sprint-7_26-03-01"), {"id": 7})
-        os.symlink(linked, os.path.join(self.root, "link"))
-        _, said = self.prepare("PROJ-Sprint-7_26-03-16", 7)
-        self.assertTrue(os.path.exists(earlier_day))
-        self.assertTrue(os.path.exists(other))
-        self.assertTrue(os.path.islink(os.path.join(self.root, "link")))
-        self.assertTrue(os.path.exists(
-            os.path.join(linked, RAW_DIR, SPRINT_FILE)))
-        self.assertEqual(os.listdir(os.path.join(same_day, "_raw")), [])
-        self.assertEqual(
-            said, f"replacing the report of the same sprint and day: {same_day}\n")
-
-    def test_refuses_to_delete_another_sprints_report(self):
-        self.report("PROJ-Sprint-7_26-03-16", 6)
-        with self.assertRaisesRegex(SystemExit, "it holds the report of sprint 6"):
-            self.prepare("PROJ-Sprint-7_26-03-16", 7)
-
-    def test_replaces_a_file_or_link_in_the_way(self):
-        # Whatever holds the destination's name is removed, but a link is
-        # removed itself, never what it points to.
-        elsewhere = os.path.join(self.root, "elsewhere")
-        os.makedirs(elsewhere)
-        cases = [("a file", lambda path: open(path, "w").close()),
-                 ("a link to a folder", lambda path: os.symlink(elsewhere, path)),
-                 ("a broken link", lambda path: os.symlink(os.path.join(self.root, "gone"), path))]
-        for sprint_id, (name, make) in enumerate(cases, start=7):
-            with self.subTest(name):
-                target = os.path.join(self.root, f"PROJ-Sprint-{sprint_id}")
-                make(target)
-                self.prepare(f"PROJ-Sprint-{sprint_id}", sprint_id)
-                self.assertFalse(os.path.islink(target))
-                self.assertTrue(os.path.isdir(os.path.join(target, "_raw")))
-        self.assertTrue(os.path.isdir(elsewhere))
 
 
 class PreviousSprintTest(unittest.TestCase):

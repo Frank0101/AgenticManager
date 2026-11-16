@@ -268,11 +268,10 @@ def raw_files():
 
 
 def report_folder(folder, sprint):
-    """`folder` made a report folder whose _raw/sprint.json holds `sprint`: a
-    sprint, such as {"id": 7}, as JSON, or text as it is, to make a broken
-    file."""
+    """`folder` made a report folder whose _raw/sprint.json holds `sprint`,
+    such as {"id": 7}."""
     raw = os.path.join(folder, RAW_DIR)
     os.makedirs(raw)
     with open(os.path.join(raw, SPRINT_FILE), "w", encoding="utf-8") as f:
-        f.write(sprint if isinstance(sprint, str) else json.dumps(sprint))
+        json.dump(sprint, f)
     return folder

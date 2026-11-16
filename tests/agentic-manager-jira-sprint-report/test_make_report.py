@@ -232,15 +232,15 @@ class ProseTest(unittest.TestCase):
              "2 tickets (4 pts) were descoped (PROJ-2, PROJ-6). 2 tickets (3 pts) were added as extra "
              "(PROJ-2, PROJ-3). PROJ-1 (2 → 3 pts) was re-estimated and PROJ-2 (2 pts) left the "
              "sprint and came back, counting as descoped and then as extra. At the close, 1 ticket (2 pts) "
-             "was not completed, all of it extra. PROJ-5 (2 pts) was resolved as Duplicate or Won't Do and "
-             "counts as completed."),
+             "was not completed, all of it extra. PROJ-5 (2 pts) was resolved without delivery, such as "
+             "Duplicate or Won't Do, and counts as completed."),
             ("active", ACTIVE,
              "Of the 5 tickets (9 pts) in the commitment, PROJ-4 (1 pt) was already Done at the start, and "
              "2 tickets (4 pts) were descoped (PROJ-2, PROJ-6). 2 tickets (3 pts) were added as extra "
              "(PROJ-2, PROJ-3). PROJ-1 (2 → 3 pts) was re-estimated and PROJ-2 (2 pts) left the "
              "sprint and came back, counting as descoped and then as extra. 1 ticket (2 pts) is open, all of it "
-             "extra, with 3 days left. PROJ-5 (2 pts) was resolved as Duplicate or Won't Do and counts as "
-             "completed."),
+             "extra, with 3 days left. PROJ-5 (2 pts) was resolved without delivery, such as Duplicate or "
+             "Won't Do, and counts as completed."),
             ("no commitment", {"spells": [t for t in TICKETS if t["scope"] == "extra" and t["key"] == "PROJ-3"]},
              "Nothing was committed at the start. PROJ-3 (1 pt) was added as extra. Everything in the sprint "
              "was completed by the close."),

@@ -1,4 +1,4 @@
-"""Builds a prep's data.json from its raw files and the summaries of the reviews, the feedback, the notes and Slack: the one model its report reads, every item and every fact worked out from them, once.
+"""Builds a prep's data.json from its raw files and the summaries of the manager's view, the reviews, the feedback, the notes and Slack: the one model its report reads, every item and every fact worked out from them, once.
 
 The report and its charts read these facts and never work them out again,
 and the final check rebuilds the file from the same files and works the
@@ -16,7 +16,7 @@ import statistics
 from collections import Counter
 from datetime import date, timedelta
 
-from common import (BINS_PER_DECADE, newest_key, DATA, FOCUS_SHARE, MAX_GROUPS, OBSERVATION_HEADINGS, PIECE_SOURCES, SUMMARY_FILES, SUMMARY_PARTS, VALUED_PARTS, VALUES, point_id, project_of, PERSON, WORK_LISTS, company_names, epic_of, jira_search_url, pull_search_url, period_days, prep_dir, raw_work_problems,
+from common import (BINS_PER_DECADE, newest_key, DATA, FOCUS_SHARE, MAX_GROUPS, OBSERVATION_HEADINGS, PIECE_SOURCES, SUMMARY_FILES, SUMMARY_PARTS, VALUED_PARTS, VALUES, REVIEW_ID, VIEW_ID, point_id, project_of, PERSON, WORK_LISTS, company_names, epic_of, jira_search_url, pull_search_url, period_days, prep_dir, raw_work_problems,
                     is_sub_task, read_json, read_raw_work, work_items, write_prep_file)
 
 # The searches data.json links to, by what they find: each list's, and the
@@ -29,7 +29,8 @@ MAX_POINTS = 20
 
 def build_data(prep):
     """Build the prep `prep`'s data.json from its raw files and the summaries
-    of the reviews, the feedback, the notes and Slack; returns its path. Exits, writing
+    of the manager's view, the reviews, the feedback, the notes and Slack;
+    returns its path. Exits, writing
     nothing, when a raw file is missing or breaks a rule, or a summary is
     missing."""
     person = read_json(os.path.join(prep_dir(prep), PERSON))
@@ -38,14 +39,14 @@ def build_data(prep):
         raise SystemExit("; ".join(problems))
     summaries = read_summaries(prep)
     if missing := [name for name, summary in summaries.items() if summary is None]:
-        raise SystemExit(f"{', '.join(SUMMARY_FILES[name] for name in missing)} missing: record the reviews "
-                         "and the feedback and read the notes and Slack, steps 4 to 6, first")
+        raise SystemExit(f"{', '.join(SUMMARY_FILES[name] for name in missing)} missing: record the manager's "
+                         "view, the reviews and the feedback and read the notes and Slack, steps 3 to 6, first")
     return write_prep_file(prep, DATA, build(raws, person, summaries, company_names(VALUES)))
 
 
 def read_summaries(prep):
-    """The summaries the report's observations and step change are built
-    from, in the prep `prep`, by SUMMARY_FILES' names, each None while it is
+    """The summaries the report's observations, step change and view check
+    are built from, in the prep `prep`, by SUMMARY_FILES' names, each None while it is
     missing."""
     folder = prep_dir(prep)
     return {name: read_json(os.path.join(folder, file)) if os.path.exists(os.path.join(folder, file)) else None
@@ -66,8 +67,9 @@ def build(raws, person, summaries, values):
     source its items, its facts and its searches' addresses; a Notion page
     with its calendar week, by calendar_week(), as its search may span only
     part of one; observations, the points of `summaries`, the reviews in the
-    period among them, by observations(), with `values`, the company's; and
-    reviews, the previous ones, by previous_reviews()."""
+    period among them, by observations(), with `values`, the company's;
+    reviews, the previous ones, by previous_reviews(); and view, the
+    manager's, by manager_view()."""
     weeks = week_groups(person["start"], person["end"])
     data: dict = {"weeks": weeks}
     for source, raw in raws.items():
@@ -81,6 +83,7 @@ def build(raws, person, summaries, values):
         summaries["reviews"]["pieces"], person["start"], person["end"])
     data["observations"] = observations(summaries, in_period, values)
     data["reviews"] = previous_reviews(previous)
+    data["view"] = manager_view(summaries["orientation"])
     return data
 
 
@@ -135,10 +138,11 @@ def observations(summaries, reviews, values):
     return result
 
 
-def numbered(points, part, review=False):
+def numbered(points, part, prefix=""):
     """`points` of `part`, each with its id first, by point_id(), in their
-    order, or with `review` as the latest previous review's."""
-    return [{"id": point_id(part, number, review), **point} for number, point in enumerate(points, 1)]
+    order, after `prefix`, such as REVIEW_ID for the latest previous
+    review's."""
+    return [{"id": point_id(part, number, prefix), **point} for number, point in enumerate(points, 1)]
 
 
 def part_points(summaries, reviews, part):
@@ -167,7 +171,7 @@ def point_text(point, part):
     {also, value}: the second company value it names and the first, each
     null when it names fewer. A piece's context point is a sentence alone."""
     if part not in VALUED_PARTS:
-        return {"point": point if isinstance(point, str) else point["point"]}
+        return {"point": summary_text(point)}
     return {"point": point["point"], "also": point["values"][1] if len(point["values"]) > 1 else None,
             "value": next(iter(point["values"]), None)}
 
@@ -181,24 +185,42 @@ def newest(dated):
 def previous_reviews(previous):
     """{latest, earlier}: the `previous` reviews, the most recent first, the
     step change compares the period with, or null when there are none: the
-    latest, the first, {period, date, rating} and its parts, each point with
-    its id, by numbered(), its text and, in VALUED_PARTS, its values; and the
-    earlier ones, which only weigh a point raised again, {period, date} and
-    their parts, each point's text."""
+    latest, the first, {period, date, rating} and its parts by
+    baseline_parts(), REVIEW_ID before each id; and the earlier ones, which
+    only weigh a point raised again, {period, date} and their parts, each
+    point's text."""
     if not previous:
         return None
     latest = previous[0]
-
-    def texts(point):
-        return point if isinstance(point, str) else point["point"]
     return {"latest": {"period": latest["period"], "date": latest["date"], "rating": latest["rating"],
-                       **{part: numbered([{"point": texts(point), **({"values": point["values"]}
-                                                                     if part in VALUED_PARTS else {})}
-                                          for point in latest[part]], part, review=True)
-                          for part in SUMMARY_PARTS}},
+                       **baseline_parts(latest, REVIEW_ID)},
             "earlier": [{"period": piece["period"], "date": piece["date"],
-                         **{part: [texts(point) for point in piece[part]] for part in SUMMARY_PARTS}}
+                         **{part: [summary_text(point) for point in piece[part]] for part in SUMMARY_PARTS}}
                         for piece in previous[1:]]}
+
+
+def manager_view(orientation):
+    """The manager's view, `orientation`, orientation.json, that the view
+    check compares with the period, its parts by baseline_parts(), VIEW_ID
+    before each id: it always has points, as its summary is refused without
+    one."""
+    return baseline_parts(orientation, VIEW_ID)
+
+
+def baseline_parts(summary, prefix):
+    """{part: points}: each part of SUMMARY_PARTS of `summary`, a summary
+    compared with the period, each point with its id, by numbered(), after
+    `prefix`, its text and, in VALUED_PARTS, its values."""
+    return {part: numbered([{"point": summary_text(point), **({"values": point["values"]}
+                                                              if part in VALUED_PARTS else {})}
+                            for point in summary[part]], part, prefix)
+            for part in SUMMARY_PARTS}
+
+
+def summary_text(point):
+    """The text of `point`, a summary's: a context point is a sentence
+    alone."""
+    return point if isinstance(point, str) else point["point"]
 
 
 # The facts.
@@ -501,7 +523,7 @@ def epic_search_urls(raw):
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Build the prep's data.json, the model its report reads, from the raw files step 7 wrote and "
-        "the summaries of the reviews, the feedback, the notes and Slack.",
+        "the summaries of the manager's view, the reviews, the feedback, the notes and Slack.",
         epilog="Prints one line of JSON: data, data.json's path. Needs no network: run it again to rebuild it.")
     parser.add_argument("--prep", required=True,
                         help="the prep's folder, <Person>_<YY-MM-DD>, as init_prep.py printed it")

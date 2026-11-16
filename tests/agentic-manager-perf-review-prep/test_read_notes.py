@@ -13,7 +13,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from datetime import date
 from unittest import mock
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -73,11 +72,6 @@ class ReadNotesTest(unittest.TestCase):
              "\t- [[Jane]] presented the migration, great questions\n\t\t- the team asked for the slides\n"
              "\t\t- [[Jane]] shared them right after"},
             {"text": "- #jane didn't flag the delay until asked\n\t- the second time this month"}])
-
-    def test_journal_day(self):
-        for title, expected in [("2026_08_20", date(2026, 8, 20)), ("2026_02_30", None), ("notes", None)]:
-            with self.subTest(title):
-                self.assertEqual(read_notes.journal_day(title), expected)
 
     def test_gather(self):
         # The period's journals that link the person by a confirmed link, by

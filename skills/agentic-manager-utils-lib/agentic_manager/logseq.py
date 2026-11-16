@@ -1,4 +1,4 @@
-"""Reads the user's notes in Logseq, the logseq-fs source: each journal and page, and the pages they link to.
+"""Reads the user's notes in Logseq, the logseq-fs source: each journal, with its day, and page, their outline's blocks, and the pages they link to.
 
 Only the source's `path`, the graph's folder, is read from the config, and
 the notes are only read, never changed. Links are read as Logseq writes them:
@@ -9,6 +9,7 @@ with what a file name can't hold percent-encoded.
 """
 import os
 import re
+from datetime import date
 from urllib.parse import unquote
 
 from agentic_manager.config import read_source
@@ -24,6 +25,9 @@ TAG = re.compile(r"(?<![\w#&/=])#([^\s#\[\]()\"',.;:!?]+)")
 # A property line, key:: value, as a page's properties are written before its
 # first block.
 PROPERTY = re.compile(r"([\w-]+)::\s*(.*)")
+# A journal's file name, such as 2026_07_22, and a block's first line.
+JOURNAL = re.compile(r"(\d{4})_(\d{2})_(\d{2})")
+BLOCK = re.compile(r"^(\s*)- ")
 
 
 def graph_path():
@@ -60,6 +64,18 @@ def page_title(stem):
     return unquote(stem.replace("___", "/"))
 
 
+def journal_day(title):
+    """The day of the journal whose file is `title`, such as 2026_07_22, or
+    None when it isn't a journal's name."""
+    match = JOURNAL.fullmatch(title)
+    if not match:
+        return None
+    try:
+        return date(int(match[1]), int(match[2]), int(match[3]))
+    except ValueError:
+        return None
+
+
 def links(text):
     """The pages `text` links to, each time it does, in order: [[Page]],
     #[[Page]] and #Page, as written."""
@@ -84,3 +100,33 @@ def page_aliases(text):
                      for name in match[2].split(","))
             return [name for name in names if name]
     return []
+
+
+def parse_blocks(text):
+    """The blocks of an outline, in order: {depth, parent, text, line}, line
+    the block as written, with its indent, and text without it."""
+    blocks, stack = [], []
+    for raw in text.split("\n"):
+        match = BLOCK.match(raw)
+        if not match:
+            if blocks and raw.strip():
+                blocks[-1]["text"] += "\n" + raw.strip()
+                blocks[-1]["line"] += "\n" + raw.rstrip()
+            continue
+        depth = len(match[1].replace("    ", "\t").replace("  ", "\t"))
+        while stack and blocks[stack[-1]]["depth"] >= depth:
+            stack.pop()
+        blocks.append({"depth": depth, "parent": stack[-1] if stack else None,
+                       "text": raw[match.end():].strip(), "line": raw.rstrip()})
+        stack.append(len(blocks) - 1)
+    return blocks
+
+
+def descendants(blocks, number):
+    """The numbers of the blocks nested under block `number`, in order."""
+    found = []
+    for later in range(number + 1, len(blocks)):
+        if blocks[later]["depth"] <= blocks[number]["depth"]:
+            break
+        found.append(later)
+    return found

@@ -45,7 +45,7 @@ HEADER_LABELS = ["Dates", "Goal", ai_marked("Goal outcome"), ai_marked("Key Achi
 # The report's title line, plain text the checks set apart from the rest.
 TITLE = re.compile(r"^# Sprint Summary:.*$", re.M)
 # The commentary's caveats, which its word limit doesn't count.
-CAVEATS = ("resolved as Duplicate or Won't Do",
+CAVEATS = ("resolved without delivery",
            "is reconstructed from changelogs")
 
 
@@ -186,7 +186,7 @@ def check_model(c, data):
         "issues": [{"key": t["key"], "status": t["status"], "resolution": t["resolution"],
                     "storyPoints": t["points"], "marker": t["closedAsNonDelivery"], "summary": t["summary"]}
                    for t in closures]}, "model",
-            "the non-delivery closures are the counted spells completed as Duplicate or Won't Do")
+            "the non-delivery closures are the counted spells completed without delivery")
     c.check((data["points_estimated_issue_count"], data["points_total_issue_count"])
             == (sum(1 for t in counted if t["points"] is not None), len(counted)), "model",
             "the estimated and total ticket counts are the counted spells'")
@@ -384,7 +384,8 @@ def ticket_state(events, instant):
 def check_pull_requests(c, data):
     """Each ticket in the sprint at the end, and no other, has its pull
     requests, each opened by the end, its merge and closing left out after
-    it, and its ownership and state what its title, branch and times give;
+    it, and its ownership and state what its title, branch and times give,
+    naming a ticket only by a key of the sprint's projects;
     and the Status to Verify rows are the tickets those and their statuses
     flag (not started with work, Done with one open), recomputed here with
     the checker's own rules."""
@@ -392,12 +393,13 @@ def check_pull_requests(c, data):
     present = {s["key"]: s for s in data["spells"]
                if s["counted"] and s["outcome"] != "descoped"}
     pulls_of = data["ticket_pull_requests"]
+    keys = sprint_key(data)
     c.check(set(pulls_of) == set(present), "model",
             "every ticket in the sprint at the end has its pull requests, and no other ticket")
     for key, pulls in pulls_of.items():
         wrong = []
         for pr in pulls:
-            named = set(ISSUE_KEY.findall(pr["title"] + " " + pr["branch"]))
+            named = set(keys.findall(pr["title"] + " " + pr["branch"]))
             own = not named or key in named or pr["via"] in named
             state = "merged" if pr["mergedAt"] else "declined" if pr["closedAt"] else "open"
             in_time = parse_ts(pr["createdAt"]) <= cutoff and all(
@@ -1004,7 +1006,7 @@ def historical_references(data):
         if events[0]["type"] == "joined" and any(s["key"] == key for s in spells[:index]):
             allowed.add(reference + "left the sprint and came back")
         if spell["counted"] and spell["closedAsNonDelivery"]:
-            allowed.add(reference + "was resolved as Duplicate or Won't Do")
+            allowed.add(reference + "was resolved without delivery")
     for key in data["membership_cross_check_excluded_keys"]:
         allowed.add(
             f"{key} ({pts(latest.get(key))}) is reconstructed from changelogs")
