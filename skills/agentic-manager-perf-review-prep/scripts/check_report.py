@@ -1,27 +1,38 @@
-"""Checks a prep's report against data.json: that it shows every GitHub and Jira figure, each main focus, the charts' series and the Notion pages created as the items give them, and holds only its charts.
+"""Checks a prep's report against data.json: that it shows every GitHub and Jira figure, each main focus, the charts' series and the Notion pages created as the items give them, and the feedback's points as the summaries give them, and holds only its charts.
 
 It reads each figure back from the report and works it out again from the
 items, apart from data.json's facts and from make_report.py, with which it
 shares only the report's constants and how a figure is written, in common.py:
 so a bug in the model or in the report can't pass by agreeing with itself.
 """
+from collections import Counter
 from datetime import date, timedelta
 import html
 import re
 
-from common import (BINS_PER_DECADE, CHART_FILES, CHARTS_DIR, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS, PAGES_HEADING,
-                    average_text, project_of, repo_code, repos_text, size_text, types_text, week_text)
+from common import (BINS_PER_DECADE, CHART_FILES, CHARTS_DIR, FEEDBACK_HEADINGS, FEEDBACK_SOURCES, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS, NO_VALUE,
+                    PAGES_HEADING, REFERENCE_NAMES, VALUED_PARTS, average_text, day_text, link_href, project_of, repo_code, repos_text, size_text, types_text,
+                    week_text)
 
-# Where the Jira section starts, after the GitHub one, and the Notion one
-# after it.
-JIRA_HEADING, NOTION_HEADING = "\n## Jira\n", "\n## Notion\n"
+# The report's sections, in order, each where its heading starts it.
+SECTION_HEADINGS = ("\n## Feedback\n", "\n## GitHub\n",
+                    "\n## Jira\n", "\n## Notion\n")
+# The start of a row of a table grouped as the Notion pages and the Feedback
+# points are: its group's cell, on the group's first row only, with how many
+# rows it spans and the group's name.
+GROUP_CELL = r'<tr valign="top">(?:<td rowspan="(\d+)"><small><small>([^<]*)</small></small></td>)?'
 # The Notion section's count of the pages created, and each page's row: its
-# week's cell, on the first row of the week only, with how many rows it
-# spans, then its link and title, and its area.
+# week's cell, then its link and title, and its area.
 PAGES_COUNT = re.compile(rf"<b>{re.escape(PAGES_HEADING)}</b> \((\d+)\)")
-PAGE_ROW = re.compile(r'<tr valign="top">(?:<td rowspan="(\d+)"><small><small>([^<]*)</small></small></td>)?'
-                      r'<td><small><small><a href="([^"]+)">([^<]*)</a></small></small></td>'
+PAGE_ROW = re.compile(GROUP_CELL + r'<td><small><small><a href="([^"]+)">([^<]*)</a></small></small></td>'
                       r'<td><small><small>([^<]*)</small></small></td></tr>')
+# A Feedback part: its heading, how many points it holds and its table, up
+# to the next part; and each point's row: its value's cell, then its text,
+# its source and its reference.
+FEEDBACK_PART = re.compile(r"<b>([^<]+)</b> \((\d+)\)((?:(?!<b>).)*)", re.S)
+FEEDBACK_ROW = re.compile(GROUP_CELL + r'<td><small><small>([^<]*)</small></small></td><td><small><small>([^<]*)</small></small></td>'
+                          r'<td><small><small>(.*?)</small></small></td></tr>')
+LINK = re.compile(r'<a href="([^"]+)">([^<]*)</a>')
 # A Jira main focus entry as the report writes it: its epic's link, key and
 # title, or the link of the issues with no epic, or a project's key alone,
 # and how many resolved issues it holds. The title holds no tag, so it can't
@@ -39,25 +50,28 @@ CHART = re.compile(
     rf'<td><a href="{CHARTS_DIR}/([^"]+)" target="_blank"><img src="{CHARTS_DIR}/\1"')
 
 
-def report_problems(report, data, charts):
-    """Why `report`, the report's text, doesn't show `data`, data.json, or
-    `charts`, the files in the charts folder, those starting with a dot
-    aside, aren't its charts, empty when they are: each count, total, average
-    and median, each breakdown and each link to its search, each main focus,
-    the series the charts draw, and the Notion pages created."""
+def report_problems(report, data, charts, summaries, values, folder):
+    """Why `report`, the report's text, doesn't show `data`, data.json, and
+    `summaries`, the feedback's pieces, the notes' summary and Slack's, by
+    SUMMARY_FILES' names, with `values`, the company's, or `charts`, the
+    files in the charts folder, those starting with a dot aside, aren't its
+    charts, empty when they are: each count, total, average and median, each
+    breakdown and each link to its search, each main focus, the series the
+    charts draw, the Notion pages created and the feedback's points, a note's
+    link relative to `folder`, the report's."""
     charts = [name for name in charts if not name.startswith(".")]
     problems = [] if sorted(charts) == sorted(CHART_FILES) else [
         f"the charts folder must hold only {', '.join(CHART_FILES)}: run finish_report.py again"]
-    if "\n## GitHub\n" not in report.split(JIRA_HEADING, 1)[0] or JIRA_HEADING not in report or \
-            NOTION_HEADING not in report.split(JIRA_HEADING, 1)[1]:
-        return problems + ["the report must have its GitHub section, then its Jira one, then its Notion one: run "
-                           "finish_report.py again"]
-    github_text, rest = report.split(JIRA_HEADING, 1)
-    jira_text, notion_text = rest.split(NOTION_HEADING, 1)
+    sections = re.split(
+        "(" + "|".join(map(re.escape, SECTION_HEADINGS)) + ")", report)
+    if tuple(sections[1::2]) != SECTION_HEADINGS:
+        return problems + ["the report must have its Feedback section, then its GitHub one, its Jira one and its "
+                           "Notion one: run finish_report.py again"]
+    feedback_text, github_text, jira_text, notion_text = sections[2::2]
     return problems + _jira_problems(jira_text, data["jira"], data["weeks"]) + \
         _github_problems(github_text, data["github"], data["weeks"]) + \
-        _notion_problems(
-            notion_text, data["notion"], (data["weeks"][0][0], data["weeks"][-1][1]))
+        _notion_problems(notion_text, data["notion"], (data["weeks"][0][0], data["weeks"][-1][1])) + \
+        _feedback_problems(feedback_text, summaries, values, folder)
 
 
 # Jira.
@@ -247,25 +261,90 @@ def _notion_problems(text, notion, period):
         return week_text([max(monday.isoformat(), period[0]), min(sunday.isoformat(), period[1])])
     problems = []
     count = PAGES_COUNT.search(text)
-    shown, week, spans = [], None, []
-    for span, named, url, title, area in PAGE_ROW.findall(text):
-        if named:
-            week = named
-            spans.append(int(span))
-        shown.append((week, html.unescape(url),
-                     html.unescape(title), html.unescape(area)))
+    rows, spans = _grouped_rows(PAGE_ROW, text)
+    shown = [(week, html.unescape(url), html.unescape(title), html.unescape(area))
+             for week, url, title, area in rows]
     newest = sorted(pages, key=lambda page: (
         page["between"][0], page["url"]), reverse=True)
     expected = [(week_of(page), page["url"],
                  page["title"], space(page) or "") for page in newest]
-    if not count or int(count[1]) != len(pages) or shown != expected or spans != [
-            sum(1 for row in expected if row[0] == named) for named in dict.fromkeys(row[0] for row in expected)]:
+    if not count or int(count[1]) != len(pages) or shown != expected or spans != _spans(expected):
         problems.append(
             "the report's Notion pages don't show data.json's: run finish_report.py again")
     return problems
 
 
+# Feedback.
+
+def _feedback_problems(text, summaries, values, folder):
+    """Why `text`, the report's Feedback section, doesn't show the points of
+    `summaries` going well and to improve, each part's table by the first of
+    `values` each names, those with the most points first, in their order
+    when as many, those naming none last, the most
+    recent first, by its piece's date or its latest evidence's, undated
+    first, and its evidence too, those of a day in the order given, a note's
+    link relative to `folder`, the report's, empty
+    when it does."""
+    def rows(part):
+        found = [(piece["date"], value(point), point["point"], "feedback", [], piece["period"] or "–")
+                 for piece in summaries["feedback"]["pieces"] for point in piece[part]]
+        for source in ("notes", "slack"):
+            for point in summaries[source][part]:
+                days = sorted(point["evidence"],
+                              key=lambda item: item["date"], reverse=True)
+                found.append((days[0]["date"], value(point), point["point"], source,
+                              [(link_href(item["link"], folder), f"{REFERENCE_NAMES[source]} {day_text(item['date'])}")
+                               for item in days],
+                              ""))
+        ordered = sorted(
+            found, key=lambda row: "~" if row[0] is None else row[0], reverse=True)
+        counts = Counter(row[1] for row in ordered)
+        ranked = sorted(
+            (name for name in values if counts[name]), key=lambda name: -counts[name])
+        return [(name, *row[2:]) for name in [*ranked, NO_VALUE] for row in ordered if row[1] == name]
+
+    def value(point):
+        return point["values"][0] if point["values"] else NO_VALUE
+    shown_parts = {}
+    for heading, count, table in FEEDBACK_PART.findall(text):
+        found, spans = _grouped_rows(FEEDBACK_ROW, table)
+        shown = []
+        for named, point, source, reference in found:
+            links = [(html.unescape(link), day)
+                     for link, day in LINK.findall(reference)]
+            shown.append((named, html.unescape(point), source,
+                         links, "" if links else html.unescape(reference)))
+        shown_parts[heading] = (int(count), shown, spans)
+    for part in VALUED_PARTS:
+        expected = [(name, point, FEEDBACK_SOURCES[source], links, period)
+                    for name, point, source, links, period in rows(part)]
+        if shown_parts.get(FEEDBACK_HEADINGS[part]) != (len(expected), expected, _spans(expected)):
+            return [f"the report's {FEEDBACK_HEADINGS[part]} points don't show the summaries': run finish_report.py "
+                    "again"]
+    return []
+
+
 # Shared.
+
+def _grouped_rows(pattern, text):
+    """The rows of a grouped table in `text`, as `pattern`, starting with
+    GROUP_CELL, reads them: each its group's name, carried down from the row
+    that names it, then its other cells; and each group as (name, the rows
+    it spans)."""
+    rows, spans, group = [], [], None
+    for span, named, *cells in pattern.findall(text):
+        if named:
+            group = html.unescape(named)
+            spans.append((group, int(span)))
+        rows.append((group, *cells))
+    return rows, spans
+
+
+def _spans(rows):
+    """Each group of `rows`, named by their first item, as (name, how many
+    rows it holds), in the order they come."""
+    return [(name, sum(1 for row in rows if row[0] == name)) for name in dict.fromkeys(row[0] for row in rows)]
+
 
 def _cells_problems(text, source, cells, expected, facts):
     """Why `text`, a source's section, doesn't show its table of `cells`, each

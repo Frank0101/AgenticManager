@@ -113,6 +113,14 @@ def add_period_arguments(parser, required=True):
                         help=f"the period's last day, as YYYY-MM-DD, today at the latest{with_start}")
 
 
+def is_day(value):
+    """Whether `value` is a day written as YYYY-MM-DD, and only so."""
+    try:
+        return isinstance(value, str) and len(value) == 10 and date.fromisoformat(value).isoformat() == value
+    except ValueError:
+        return False
+
+
 def day_argument(text):
     """`text` as a date, if it is one as YYYY-MM-DD; else an argparse error,
     so --start and --end can use it as their type."""

@@ -10,7 +10,7 @@ every step's points name the same values.
 import argparse
 import json
 
-from common import PROTOCOL, RATINGS, SUMMARY_PARTS, VALUED_PARTS, VALUES, company_setting, fill_protocol, prep_dir
+from common import POINT_LIMITS, PROTOCOL, RATINGS, SUMMARY_PARTS, VALUED_PARTS, VALUES, company_setting, fill_protocol, prep_dir
 
 OUTPUT = """Prints one line of JSON:
   parts          each part of a summary, with what it holds
@@ -26,7 +26,7 @@ def rules(prep):
     the prep `prep` follow."""
     prep_dir(prep)  # exits if the prep isn't there
     return {"parts": SUMMARY_PARTS, "valued_parts": list(VALUED_PARTS), "values": company_setting(VALUES),
-            "ratings": company_setting(RATINGS), "rules": fill_protocol(PROTOCOL, "_point")}
+            "ratings": company_setting(RATINGS), "rules": fill_protocol(PROTOCOL, "_point", POINT_LIMITS)}
 
 
 def main(argv=None):

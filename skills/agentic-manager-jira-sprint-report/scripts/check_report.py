@@ -18,7 +18,7 @@ from common import (folder_problem, days, BLOCKED_STATUSES, GOAL_VERDICTS, HIGH_
                     BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, JIRA_CELL, KEY_LIST, STATUS_HEADING,
                     TICKET_ESTIMATE,
                     TICKET_EVENT_TYPES,
-                    NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai, sprint_key, text_rule_problems,
+                    NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai_marked, table_cells, sprint_key, text_rule_problems,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty,
                     ratio, report_file, report_timezone, scope_group_label, spell_epic, whole_percentage, word_count,
                     latest_points)
@@ -39,8 +39,8 @@ CREATED_VALUES = {"sprint", "status", "statusCategory", "resolution", "priority"
 
 # The rows of the report's field tables, in order: the table at the top, then
 # the one under Sprint Metrics.
-HEADER_LABELS = ["Dates", "Goal", ai("Goal outcome"), ai("Key Achievements"),
-                 ai("Blockers & Risks"), "Sprint target completion"]
+HEADER_LABELS = ["Dates", "Goal", ai_marked("Goal outcome"), ai_marked("Key Achievements"),
+                 ai_marked("Blockers & Risks"), "Sprint target completion"]
 
 # The report's title line, plain text the checks set apart from the rest.
 TITLE = re.compile(r"^# Sprint Summary:.*$", re.M)
@@ -598,9 +598,9 @@ def header_rows(md):
     rows = []
     for table in md.split(FIELD_TABLE_HEAD)[1:]:
         for line in table.split("\n\n", 1)[0].splitlines():
-            cells = re.fullmatch(r"\| (.+?) \| (.*) \|", line)
-            rows.append((cells.group(1), cells.group(2))
-                        if cells else (line, None))
+            cells = table_cells(line) if line.startswith("|") else []
+            rows.append((cells[0], cells[1])
+                        if len(cells) == 2 else (line, None))
     return rows
 
 

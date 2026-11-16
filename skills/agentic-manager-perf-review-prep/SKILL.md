@@ -28,16 +28,18 @@ perf-review-preps/
     ├── notes.json        read_notes.py writes (what the manager's own notes say about the person, merged, with
     │                     their links)
     ├── slack.json        read_slack.py writes (what the person's Slack messages show, merged, with their links)
-    ├── data.json         build_data.py writes, from _raw (the model the report reads: by source, the person's
-    │                     Jira issues, pull requests and Notion pages in the period, each with its day or week,
-    │                     and their facts: the counts, the issues created and resolved by type, the resolved ones
-    │                     by epic, the merged pull requests by repository, each main focus, the resolved issues'
-    │                     story points, the merged pull requests' lines changed, the series the charts draw and
-    │                     the link to each search)
+    ├── data.json         build_data.py writes, from _raw, feedback.json, notes.json and slack.json (the model
+    │                     the report reads: by source, the person's Jira issues, pull requests and Notion pages
+    │                     in the period, each with its day or week, and their facts: the counts, the issues
+    │                     created and resolved by type, the resolved ones by epic, the merged pull requests by
+    │                     repository, each main focus, the resolved issues' story points, the merged pull
+    │                     requests' lines changed, the series the charts draw and the link to each search; and
+    │                     the points of the feedback, the notes and Slack, going well and to improve, by company
+    │                     value)
     └── Jane-Doe_Review_Prep.md
-                          finish_report.py writes (the report for the manager, from the files above: for now, the
-                          person's GitHub and Jira figures, each with its main focus, and the Notion pages they
-                          created)
+                          finish_report.py writes (the report for the manager, from the files above: for now,
+                          what is going well and what to improve, by company value, then the person's GitHub
+                          and Jira figures, each with its main focus, and the Notion pages they created)
 ```
 
 ## Prerequisite
@@ -132,11 +134,9 @@ The person's work in Jira, GitHub and Notion, in the period. Like step 6, it is 
 
    When a search returns 50 results, rows included, search its range again in shorter ranges, and record those instead; a single day that still returns 50 is recorded as full, as `set_notion.py`'s `--help` says. Record every search with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py --prep <prep>`, its results as the search returned them, unchanged: the script keeps the pages of their own, leaving out databases and their rows.
 
-3. **The data.** Once 1 and 2 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/build_data.py --prep <prep>`: it builds `data.json`, the model the report reads, from the raw files, with no network.
-
 ## 8. Finish
 
-Once steps 6 and 7 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py --prep <prep>`: it writes the report, `<Person>_Review_Prep.md`, and its charts from `data.json`, with no judgment, and checks the whole prep. If its `problems` aren't empty, fix what each names by running again the step that writes that file, then run it again; if you can't, stop and tell the manager what they say.
+Once steps 6 and 7 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py --prep <prep>`: it builds `data.json`, the model the report reads, from the raw files and the feedback, notes and Slack summaries, with no network, then writes the report, `<Person>_Review_Prep.md`, and its charts from it, with no judgment, and checks the whole prep. If its `problems` aren't empty, fix what each names by running again the step that writes that file, then run it again; if you can't, stop and tell the manager what they say.
 
 ## 9. Tell the manager
 
@@ -146,6 +146,6 @@ Say the prep is ready, with a Markdown link to its report, and that the rest of 
 
 What the manager tells you in steps 3 to 5, their view, the previous reviews and the period's feedback, is recorded as summaries. Before your first one, run `python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py --prep <prep>` once: it prints the parts of a summary, the company's values and ratings, and `rules`, how to write a point and pick its values, with examples.
 
-Once the manager answers, summarise what they gave, without showing them the summary: one summary for their view, and one for each review and each piece of the period's feedback, such as a document or a 1:1's notes. Give each review or piece its period as it names it, such as a date, "Mid Year Review 2026" or "Q3 2026", or null when it names none, and list them from the most recent, as far as you can tell, those with no period first, as the most recent of all. If something isn't clear, such as a word you can't read for sure or a document you couldn't open, ask them about it, all in one message, and wait for their answer. Then record it with the step's `set_summary.py` command, whose `--help` shows the input, tell them in one line that it's recorded, with a Markdown link to the `path` the script printed, and go on to the next step: that line can open the next step's message, as "a message of its own" means one with no other question in it.
+Once the manager answers, summarise what they gave, without showing them the summary: one summary for their view, and one for each review and each piece of the period's feedback, such as a document or a 1:1's notes. If something isn't clear, such as a word you can't read for sure or a document you couldn't open, ask them about it, all in one message, and wait for their answer. Then record it with the step's `set_summary.py` command, whose `--help` shows the input, tell them in one line that it's recorded, with a Markdown link to the `path` the script printed, and go on to the next step: that line can open the next step's message, as "a message of its own" means one with no other question in it.
 
 Each part is a list of points, written as `rules` says. Keep what the source says about the person and their work, once even when it says it more than once, add nothing it doesn't, and put each in the part it belongs to; leave a part empty when the source says nothing of it. When the source judges the person's character or intentions and describes no behaviour behind it, ask the manager what was observed; if they don't know, the point stays as the source puts it.

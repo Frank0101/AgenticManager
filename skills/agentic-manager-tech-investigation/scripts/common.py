@@ -24,6 +24,7 @@ from agentic_manager.jira import BROWSE_URL as TICKET_URL, NAME as JIRA_API, PRO
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.output_file import json_text, read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
+from agentic_manager.period import is_day  # noqa: E402,F401
 from agentic_manager.output_folder import clear_folder, folder_problem, day_folder, document_name, folder_day, folder_subject, output_folder, work_folder  # noqa: E402,F401
 from agentic_manager.text import CELL_PIPE, DEFINITION, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, display_date, free_name, headings, inline_links, link_definitions, link_text, links, local_link, markdown, reference_key, same_document, slug, table, table_row, word_count  # noqa: E402,F401
 from agentic_manager.text import table_cells as row_cells  # noqa: E402

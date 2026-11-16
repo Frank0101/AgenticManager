@@ -15,14 +15,14 @@ import check_report  # noqa: E402
 import common  # noqa: E402
 import make_report  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import DATA, DATA_NO_EPIC_FIRST, PERSON  # noqa: E402
+from prep_fixture import DATA, DATA_NO_EPIC_FIRST, PERSON, REPORT_FOLDER, SUMMARIES, VALUE_NAMES  # noqa: E402
 
 
 class MakeReportTest(unittest.TestCase):
     def test_render(self):
         # The fixture's Jira figures, each linked to its search, with its
         # breakdown and chart, as the final check reads them back.
-        report = make_report.render(PERSON, DATA)
+        report = make_report.render(PERSON, DATA, REPORT_FOLDER)
         self.assertTrue(report.startswith(
             "# Jane Doe: performance review prep\n\nPeriod: 10/08/2026 to 10/11/2026"))
         self.assertIn(
@@ -33,19 +33,44 @@ class MakeReportTest(unittest.TestCase):
                       '<small><a href="https://www.notion.so/billing-plan">Billing plan</a></small></small></td><td>'
                       '<small><small>Engineering</small></small></td></tr>', report)
         self.assertEqual(check_report.report_problems(
-            report, DATA, common.CHART_FILES), [])
+            report, DATA, common.CHART_FILES, SUMMARIES, VALUE_NAMES, REPORT_FOLDER), [])
+
+    def test_feedback_section(self):
+        # Each part's count, then its table: each value named once beside its
+        # points, the value with the most first, each point with its source
+        # and references, a piece's period or each evidence's source and
+        # day, linked, the most recent first; a part with none, its count
+        # alone.
+        report = make_report.render(PERSON, DATA, REPORT_FOLDER)
+        self.assertIn('<b>Going well</b> (3)', report)
+        self.assertIn('<tr valign="top"><td rowspan="2"><small><small>Teamwork</small></small></td><td><small><small>'
+                      "Explained the outage&#x27;s cause in the incident channel, and colleagues thanked them</small>"
+                      '</small></td><td><small><small>Slack</small></small></td><td><small><small><a href="https://'
+                      'acme.slack.com/archives/C1/p1">Slack 3 Sep</a></small></small></td></tr>', report)
+        self.assertIn('<td><small><small>Feedback</small></small></td><td><small><small>Q3 2026</small></small>'
+                      '</td></tr>', report)
+        self.assertIn('<a href="../../../journals/2026_10_01.md">Journal 1 Oct</a>, '
+                      '<a href="../../../journals/2026_08_20.md">Journal 20 Aug</a>', report)
+        empty = {**DATA, "feedback": {**DATA["feedback"], "to_improve": []}}
+        self.assertIn("<b>To improve</b> (0)\n\n## GitHub",
+                      make_report.render(PERSON, empty, REPORT_FOLDER))
+        # The Feedback first, its Point column marked as the agent's.
+        self.assertIn(
+            "Period: 10/08/2026 to 10/11/2026\n\n## Feedback\n", report)
+        self.assertIn(
+            f"<th><small><small>{common.ai_marked('Point')}</small></small></th>", report)
 
     def test_focus_section(self):
         # Every entry of the main focus, in its order, an epic linked with its
         # title and count, the issues with no epic linked to their search, as
         # the final check reads them back.
-        report = make_report.render(PERSON, DATA_NO_EPIC_FIRST)
+        report = make_report.render(PERSON, DATA_NO_EPIC_FIRST, REPORT_FOLDER)
         jira = DATA_NO_EPIC_FIRST["jira"]
         self.assertIn(f'<ol><li><a href="{html.escape(jira["no_epic_search_url"])}">no epic</a> (3)</li>'
                       f'<li><a href="{html.escape(jira["epic_search_urls"]["PROJ-1"])}">PROJ-1</a> Billing (2)</li>'
                       '</ol>', report)
         self.assertEqual(check_report.report_problems(
-            report, DATA_NO_EPIC_FIRST, common.CHART_FILES), [])
+            report, DATA_NO_EPIC_FIRST, common.CHART_FILES, SUMMARIES, VALUE_NAMES, REPORT_FOLDER), [])
 
     def test_notion_pages_by_calendar_week(self):
         # Pages found by a week's search split in two share that week's row.
@@ -55,11 +80,11 @@ class MakeReportTest(unittest.TestCase):
                   "between": ["2026-08-13", "2026-08-16"]}]
         data = {**DATA, "notion": {**DATA["notion"],
                                    "created": pages, "counts": {"created": 2}}}
-        report = make_report.render(PERSON, data)
+        report = make_report.render(PERSON, data, REPORT_FOLDER)
         self.assertEqual(report.count(
             '<td rowspan="2"><small><small>10–16 Aug</small></small></td>'), 1)
         self.assertEqual(check_report.report_problems(
-            report, data, common.CHART_FILES), [])
+            report, data, common.CHART_FILES, SUMMARIES, VALUE_NAMES, REPORT_FOLDER), [])
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import build_data  # noqa: E402
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import (DATA, DATA_BY_PROJECT, DATA_NO_EPIC_FIRST, PERSON, PREP, WEEKS, WORK_RAW,  # noqa: E402
+from prep_fixture import (DATA, DATA_BY_PROJECT, DATA_NO_EPIC_FIRST, PERSON, PREP, SUMMARIES, VALUE_NAMES, WEEKS, WORK_RAW,  # noqa: E402
                           temp_output, write_prep)
 
 
@@ -23,11 +23,13 @@ class BuildDataTest(unittest.TestCase):
         # weeks, each source's items without the fields kept only to check
         # them, its facts, such as the main focus of its one resolved issue,
         # the charts' series and each search's address.
-        self.assertEqual(build_data.build(WORK_RAW, PERSON), DATA)
+        self.assertEqual(build_data.build(
+            WORK_RAW, PERSON, SUMMARIES, VALUE_NAMES), DATA)
 
     def test_build_data(self):
-        # Written once every raw file is in and follows its rules; refused,
-        # writing nothing, while one is missing or from another period.
+        # Written once every raw file is in and follows its rules, and every
+        # summary is in; refused, writing nothing, while one is missing or a
+        # raw file is from another period.
         folder = temp_output(self)
         write_prep(folder, data=None, report=False, raw_work={
                    "jira": WORK_RAW["jira"], "github": WORK_RAW["github"]})
@@ -36,6 +38,10 @@ class BuildDataTest(unittest.TestCase):
         write_prep(folder, data=None, report=False, raw_work={**WORK_RAW, "github": {**WORK_RAW["github"],
                                                                                      "start": "2026-08-01"}})
         with self.assertRaisesRegex(SystemExit, "the github raw file is for 2026-08-01"):
+            build_data.build_data(PREP)
+        write_prep(folder, data=None, report=False)
+        os.remove(os.path.join(folder, PREP, "slack.json"))
+        with self.assertRaisesRegex(SystemExit, "slack.json missing"):
             build_data.build_data(PREP)
         write_prep(folder, data=None, report=False)
         self.assertEqual(common.read_json(build_data.build_data(PREP)), DATA)
@@ -142,6 +148,39 @@ class BuildDataTest(unittest.TestCase):
                                               [["2026-07-01", "2026-07-05"]])["resolved_by_epic"]
                 self.assertEqual(([(entry["key"], entry["issues"]) for entry in pie["epics"]], pie["other"]),
                                  (slices, other))
+
+    def test_feedback(self):
+        # name: (the feedback's pieces, the notes' points going well, the
+        # values, (value, point) of each going well, in order): a point
+        # under its first value, the company's order, those naming none
+        # last; the most recent first, an undated piece first of all.
+        def piece(date, point, values):
+            return {"period": None, "date": date, "going_well": [{"point": point, "values": values}],
+                    "to_improve": [], "context": []}
+
+        def note(day, point, values):
+            return {"point": point, "values": values, "evidence": [{"date": day, "link": f"/{day}.md"}]}
+        cases = [("first value only", [piece("2026-09-30", "a", ["Teamwork", "Ownership"])], [],
+                  ["Ownership", "Teamwork"], [("Teamwork", "a")]),
+                 ("the company's order", [piece("2026-09-30", "a", ["Teamwork"])],
+                  [note("2026-08-01", "b", ["Ownership"])
+                   ], ["Ownership", "Teamwork"],
+                  [("Ownership", "b"), ("Teamwork", "a")]),
+                 ("no value last", [piece("2026-09-30", "a", [])], [note("2026-08-01", "b", ["Teamwork"])],
+                  ["Ownership", "Teamwork"], [("Teamwork", "b"), (None, "a")]),
+                 ("most recent first, undated first of all",
+                  [piece("2026-08-15", "a", ["Teamwork"]),
+                   piece(None, "b", ["Teamwork"])],
+                  [note("2026-09-01", "c", ["Teamwork"])], ["Teamwork"],
+                  [("Teamwork", "b"), ("Teamwork", "c"), ("Teamwork", "a")])]
+        for name, pieces, notes, values, expected in cases:
+            with self.subTest(name):
+                summaries = {"feedback": {"pieces": pieces},
+                             "notes": {"going_well": notes, "to_improve": [], "context": []},
+                             "slack": {"going_well": [], "to_improve": [], "context": []}}
+                groups = build_data.feedback(summaries, values)["going_well"]
+                self.assertEqual([(group["value"], point["point"]) for group in groups for point in group["points"]],
+                                 expected)
 
     def test_model_fixtures(self):
         # name: (a model the report's tests use, worked out by hand): its

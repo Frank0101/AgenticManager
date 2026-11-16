@@ -9,6 +9,7 @@ and by the final check, so the two can't differ. Scripts import the shared
 library's names from here, so they don't depend on the order of their imports.
 """
 from datetime import date, timedelta
+from urllib.parse import quote
 import os
 import sys
 
@@ -25,9 +26,9 @@ from agentic_manager.logseq import graph_path, links, notes, page_aliases  # noq
 from agentic_manager.output_file import json_text, read_json, target, write_output_file  # noqa: E402,F401
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
 from agentic_manager.output_folder import CHARTS_DIR, DAY_FOLDER, RAW_DIR, clear_folder, day_folder, document_name, folder_problem, folder_subject, output_folder, work_folder  # noqa: E402,F401
-from agentic_manager.period import add_period_arguments, days, period_problem, shown  # noqa: E402,F401
+from agentic_manager.period import add_period_arguments, days, is_day, period_problem, shown  # noqa: E402,F401
 from agentic_manager.svg import GRID, SURFACE, INK, MUTED, arc_segment, esc, legend, nice_step, svg, text, text_width  # noqa: E402,F401
-from agentic_manager.text import as_name, number, plural, word_count  # noqa: E402,F401
+from agentic_manager.text import ai_marked, as_name, number, plural, word_count  # noqa: E402,F401
 
 # How to write a point and pick its values, with their examples, lives in the
 # protocol's shared part _point.md, the one place for them: the merges' tasks
@@ -76,11 +77,15 @@ SUMMARY_PARTS = {"going_well": "what is going well or exceeding",
 VALUED_PARTS = ("going_well", "to_improve")
 POINT_WORDS = 25
 MAX_POINT_WORDS = 40
+# The lengths the protocol's point rules give, filled from the two above.
+POINT_LIMITS = {"point_words": POINT_WORDS, "max_point_words": MAX_POINT_WORDS}
 VALUES = "values"
 RATINGS = "perf-review-ratings"
 MAX_VALUES = 2
-# A point's evidence links: a Slack message's address, or a note's file.
-LINK_SCHEMES = ("https://", "file://")
+# A point's evidence links: a Slack message's address, or a note's file, by
+# its absolute path, which a Markdown preview opens where a file:// address
+# isn't.
+WEB_LINK = "https://"
 SUMMARY_HELP = "\n".join(
     f"  {part:<11} {meaning}, each point "
     + ('{"point": "...", "values": ["..."]}, values every company value it clearly shows or calls for, as rules.py prints '
@@ -92,11 +97,15 @@ SUMMARY_HELP = "\n".join(
 ORIENTATION = "orientation.json"
 # What the manager gives, previous reviews or the period's feedback, is a
 # list of pieces, each a summary with its period as the source names it, such
-# as a date or "Mid Year Review 2026", null when it names none: a label, not
-# days worked out, so nothing is inferred and a piece with none still counts.
-# The agent lists them from the most recent, those with no period first, as
-# the most recent of all; what the manager gives counts, so how old it is isn't checked.
-PIECE_FIELDS = ("period",)
+# as a date or "Mid Year Review 2026", null when it names none, and its date,
+# the last day of that period as the agent reads it from the source, which
+# it has in hand, such as 2026-06-30 for a mid-year review, null when the
+# source gives no hint of one. The period is what a reader is shown; the date
+# only orders a piece among the other evidence, so a day the agent inferred
+# never reads as one the source gave. The agent lists them from the most
+# recent, those with no date first, as the most recent of all; what the
+# manager gives counts, so how old it is isn't checked.
+PIECE_FIELDS = ("period", "date")
 # The person's previous performance reviews, with the colleagues' feedback
 # gathered for them, each with its rating when it gives one, which must be one
 # of the company's.
@@ -179,6 +188,18 @@ HEADINGS = {"created": "Issues created", "resolved": "Issues resolved", "resolve
             "opened": "PRs created", "merged": "PRs merged", "merged_lines": "PRs size"}
 # The Notion section's heading of its table of the pages created.
 PAGES_HEADING = "Pages created"
+# The Feedback section: a table for each valued part, by its heading, each
+# point under the first company value it names, the one it shows most, so it
+# shows once, the values with the most points first, those naming none under
+# NO_VALUE, last, as it is no value; each point's source, by the summary file
+# it comes from, as the report names it; and what a reading's reference
+# names, by its source, beside the day it was seen on.
+FEEDBACK_HEADINGS = {"going_well": "Going well", "to_improve": "To improve"}
+NO_VALUE = "No value"
+FEEDBACK_SOURCES = {"feedback": "Feedback",
+                    "notes": "Manager's notes", "slack": "Slack"}
+REFERENCE_NAMES = {"notes": "Journal", "slack": "Slack"}
+SUMMARY_FILES = {"feedback": FEEDBACK, "notes": NOTES, "slack": SLACK}
 # The chart of the resolved issues by epic, beside the main focus.
 EPICS_CHART = "jira_epics.svg"
 # The GitHub cells of the report, in order, as the Jira ones, and the chart
@@ -575,7 +596,7 @@ def pieces_problems(value, names, fields, values, rules):
     """Why `value` isn't a list of pieces, empty when it is, `names` naming
     them all and one, such as ("feedback", "feedback piece"): {"pieces": [...]}, none when there are none, each with
     `fields` and the parts of SUMMARY_PARTS, its period a text or null, its
-    summary meeting summary_problems() with `values`, and each meeting
+    date a day or null, its summary meeting summary_problems() with `values`, and each meeting
     `rules(piece, what)`, which gets the name to give it in a problem."""
     kind, item = names
     if not (isinstance(value, dict) and list(value) == ["pieces"] and isinstance(value["pieces"], list)):
@@ -592,6 +613,9 @@ def pieces_problems(value, names, fields, values, rules):
         if not (piece["period"] is None or _is_text(piece["period"])):
             problems.append(f"{what}'s period, {piece['period']!r}, must be a text, such as "
                             "\"Mid Year Review 2026\", or null when it names none")
+        if not (piece["date"] is None or is_day(piece["date"])):
+            problems.append(f"{what}'s date, {piece['date']!r}, must be the last day of its period as YYYY-MM-DD, "
+                            "such as 2026-06-30 for a mid-year review, or null when the source gives no hint of one")
         problems += rules(piece, what)
     return problems
 
@@ -672,8 +696,8 @@ def point_shape(fields):
     """How a point with `fields` is written, for an error: a sentence when it
     has none."""
     shapes = {"point": '"..."', "values": '["...", ...] or []',
-              "evidence": '[{"date": "YYYY-MM-DD", "link": "https://... or file://..."}, ...]',
-              "links": '["https://... or file://...", ...]'}
+              "evidence": '[{"date": "YYYY-MM-DD", "link": "https://... or /path/to/note.md"}, ...]',
+              "links": '["https://... or /path/to/note.md", ...]'}
     return "{" + ", ".join(f'"{field}": {shapes[field]}' for field in fields) + "}" if fields else "a sentence"
 
 
@@ -696,10 +720,10 @@ def is_point(point, fields):
 
 def _is_evidence(item):
     """Whether `item` is a piece of a point's evidence: {date, link}, the date
-    a text or null, the link a web or file address."""
+    a text or null, the link a web address or a file's absolute path."""
     return (isinstance(item, dict) and sorted(item) == ["date", "link"]
             and (item["date"] is None or isinstance(item["date"], str))
-            and isinstance(item["link"], str) and item["link"].startswith(LINK_SCHEMES))
+            and isinstance(item["link"], str) and (item["link"].startswith(WEB_LINK) or os.path.isabs(item["link"])))
 
 
 def types_text(by_type):
@@ -744,6 +768,22 @@ def week_text(week):
     across two months, or "13 Jul" for a single day."""
     first, last = (date.fromisoformat(day) for day in week)
     if first == last:
-        return f"{last.day} {last:%b}"
+        return day_text(week[0])
     start = f"{first.day}" if first.month == last.month else f"{first.day} {first:%b}"
     return f"{start}–{last.day} {last:%b}"
+
+
+def day_text(day):
+    """A day, as YYYY-MM-DD, as the report writes it, the month as the charts'
+    axes name it: "13 Jul"."""
+    value = date.fromisoformat(day)
+    return f"{value.day} {value:%b}"
+
+
+def link_href(link, folder):
+    """An evidence's `link` as a link in a report in the folder `folder`
+    reaches it: a web address as it is, a file by its path relative to the
+    folder, as a Markdown preview opens a relative path, but reads an
+    absolute one from its workspace and opens no file:// address, with its
+    spaces and other such characters escaped, so the link doesn't break."""
+    return link if link.startswith(WEB_LINK) else quote(os.path.relpath(link, folder))

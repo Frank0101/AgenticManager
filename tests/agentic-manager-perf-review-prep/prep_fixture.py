@@ -24,22 +24,22 @@ PERSON = {"person": "Jane Doe", "start": "2026-08-10", "end": "2026-11-10",
 ORIENTATION = {"going_well": [{"point": "Has led the billing migration well since May", "values": ["Ownership"]}],
                "to_improve": [{"point": "Could share progress with the wider team more often", "values": []}],
                "context": ["Came back from a long leave in May"]}
-PIECE = {"period": "Mid Year Review 2026", "rating": "Meets",
+PIECE = {"period": "Mid Year Review 2026", "date": "2026-06-30", "rating": "Meets",
          "going_well": [{"point": "Delivered the billing migration on time", "values": ["Ownership"]}],
          "to_improve": [{"point": "Could lead a design review alone", "values": ["Teamwork"]}], "context": []}
 REVIEWS = {"pieces": [PIECE]}
-NOTE = {"period": "Q3 2026",
+NOTE = {"period": "Q3 2026", "date": "2026-09-30",
         "going_well": [{"point": "Agreed to own the billing migration and has kept to its plan",
                         "values": ["Ownership"]}],
         "to_improve": [], "context": []}
 FEEDBACK = {"pieces": [NOTE]}
 NOTES = {"going_well": [{"point": "Presented the migration to the wider team", "values": ["Teamwork"],
-                         "evidence": [{"date": "2026-09-02", "link": "file:///vault/journals/2026_09_02.md"}]}],
+                         "evidence": [{"date": "2026-09-02", "link": "/vault/journals/2026_09_02.md"}]}],
          "to_improve": [{"point": "Didn't flag delays until asked, many times", "values": ["Ownership"],
-                         "evidence": [{"date": "2026-10-01", "link": "file:///vault/journals/2026_10_01.md"},
-                                      {"date": "2026-08-20", "link": "file:///vault/journals/2026_08_20.md"}]}],
+                         "evidence": [{"date": "2026-10-01", "link": "/vault/journals/2026_10_01.md"},
+                                      {"date": "2026-08-20", "link": "/vault/journals/2026_08_20.md"}]}],
          "context": [{"point": "Moved to the payments team in the summer",
-                      "evidence": [{"date": None, "link": "file:///vault/pages/Jane.md"}]}]}
+                      "evidence": [{"date": None, "link": "/vault/pages/Jane.md"}]}]}
 # The work's items, as data.json records them, in PERSON's period.
 WORK_ITEMS = {"jira": {"created": [{"key": "PROJ-13", "title": "Retire old billing", "type": "Task", "epic": None,
                                     "status": "In Progress", "url": "https://acme.atlassian.net/browse/PROJ-13",
@@ -113,6 +113,29 @@ def weekly(*indexes):
     return [indexes.count(n) for n in range(len(WEEKS))]
 
 
+# The Feedback section's points, worked out by hand from FEEDBACK, NOTES and
+# SLACK: going well, under Teamwork, which has the most, Slack's, of 3
+# September, before the notes', of 2 September, then under Ownership the Q3
+# piece's; to improve, under Ownership, the notes' point, its evidence the
+# most recent first.
+FEEDBACK_POINTS = {
+    "going_well": [
+        {"value": "Teamwork", "points": [
+            {"point": "Explained the outage's cause in the incident channel, and colleagues thanked them",
+             "source": "slack", "date": "2026-09-03", "period": None,
+             "evidence": [{"date": "2026-09-03", "link": "https://acme.slack.com/archives/C1/p1"}]},
+            {"point": "Presented the migration to the wider team", "source": "notes", "date": "2026-09-02",
+             "period": None,
+             "evidence": [{"date": "2026-09-02", "link": "/vault/journals/2026_09_02.md"}]}]},
+        {"value": "Ownership", "points": [
+            {"point": "Agreed to own the billing migration and has kept to its plan", "source": "feedback",
+             "date": "2026-09-30", "period": "Q3 2026", "evidence": []}]}],
+    "to_improve": [
+        {"value": "Ownership", "points": [
+            {"point": "Didn't flag delays until asked, many times", "source": "notes", "date": "2026-10-01",
+             "period": None,
+             "evidence": [{"date": "2026-10-01", "link": "/vault/journals/2026_10_01.md"},
+                          {"date": "2026-08-20", "link": "/vault/journals/2026_08_20.md"}]}]}]}
 DATA = {"weeks": WEEKS,
         "jira": {**WORK_ITEMS["jira"], "counts": {"created": 1, "resolved": 1},
                  "epic_order": ["PROJ-1"],
@@ -150,7 +173,8 @@ DATA = {"weeks": WEEKS,
                                         f"{quote(QUERY['merged'].replace(' org:acme', '') + ' repo:acme/billing')}"
                                         "&type=pullrequests"}},
         "notion": {"created": [{**page, "week": ["2026-08-10", "2026-08-16"]} for page in WORK_ITEMS["notion"]["created"]],
-                   "counts": {"created": 1}}}
+                   "counts": {"created": 1}},
+        "feedback": FEEDBACK_POINTS}
 # Two more Jira models, worked out by hand, each changing DATA's resolved
 # issues and the facts they give. In the first, the issues with no epic hold
 # the most, so the main focus lists them before the epic: PROJ-12 and PROJ-14
@@ -193,6 +217,12 @@ DELAY = {"note": 2,
          "synopsis": "Didn't flag a delay until asked, the second time this month"}
 VALUES = [{"value": "Ownership", "meaning": "Sees work through to its end"},
           {"value": "Teamwork", "meaning": "Succeeds with others"}]
+VALUE_NAMES = [value["value"] for value in VALUES]
+# Where the report is written, beside the vault, for the links to notes,
+# which it writes relative to it.
+REPORT_FOLDER = "/vault/.out/perf-review-preps/Jane-Doe_26-11-10"
+# The summaries the Feedback section is built from, by their source.
+SUMMARIES = {"feedback": FEEDBACK, "notes": NOTES, "slack": SLACK}
 RATINGS = [{"rating": "Below", "meaning": "Misses most expectations"},
            {"rating": "Meets", "meaning": "Meets every expectation"},
            {"rating": "Exceeds", "meaning": "Goes beyond most expectations"}]
@@ -245,4 +275,5 @@ def write_prep(folder, person=PERSON, prep=PREP, orientation=ORIENTATION,
             with open(os.path.join(folder, prep, common.CHARTS_DIR, name), "w", encoding="utf-8") as f:
                 f.write("<svg/>")
         with open(os.path.join(folder, prep, common.report_name(prep)), "w", encoding="utf-8") as f:
-            f.write(make_report.render(person, data))
+            f.write(make_report.render(
+                person, data, os.path.join(folder, prep)))

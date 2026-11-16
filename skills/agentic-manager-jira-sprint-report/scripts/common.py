@@ -18,7 +18,7 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.output_file import json_text, read_json, write_output_file  # noqa: E402,F401
-from agentic_manager.text import HEADING, INLINE_LINK, as_name, display_date, link_text, number, plural, word_count  # noqa: E402,F401
+from agentic_manager.text import HEADING, INLINE_LINK, ai_marked, table, table_cells, as_name, display_date, link_text, number, plural, word_count  # noqa: E402,F401
 from agentic_manager.svg import GRID, INK, MUTED, SURFACE, legend, nice_step, svg, text, text_width  # noqa: E402,F401
 from agentic_manager.output_folder import CHARTS_DIR, RAW_DIR, clear_folder, day_folder, document_name, folder_problem, output_folder  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
@@ -154,13 +154,11 @@ ACHIEVEMENTS_WORDS = 150
 BLOCKERS_WORDS = 100
 RETRO_NOTES = 5
 
-# Marks the parts of the report the agent writes, on their heading or label;
-# everything else is generated from data.json and checked.
-AI_LABEL = "[AI Gen.]"
-
-# The head of the report's two-column tables of (label, value) rows: the one at
-# the top and the one under Sprint Metrics.
-FIELD_TABLE_HEAD = "| Field | Detail |\n|---|---|\n"
+# The header of the report's two-column tables of (label, value) rows: the one
+# at the top and the one under Sprint Metrics; and their head as the library's
+# table() writes it, which the check finds them by.
+FIELD_HEADER = ("Field", "Detail")
+FIELD_TABLE_HEAD = table(FIELD_HEADER, []) + "\n"
 
 
 def report_label(project_key, sprint_name):
@@ -691,13 +689,6 @@ def scope_group_label(group, status):
 def epic_groups(epic):
     """The commentary groups an epic has tickets to describe in, in order."""
     return [g for g in SCOPE_GROUPS if epic["scope_groups"][g]]
-
-
-def ai(title):
-    """A heading or label of an AI-written part. The label is a small superscript
-    after the title it marks: a note for the reader, not part of the title. Its
-    size is in rem, so it reads the same after a heading and in a table cell."""
-    return f'{title} <sup style="font-size:0.6rem;font-weight:normal">{AI_LABEL}</sup>'
 
 
 def chunks(text, size=DESCRIPTION_CHUNK_CHARS):

@@ -10,7 +10,7 @@ import os
 from build_data import data_problems
 from check_report import report_problems
 from common import (CHARTS_DIR, FEEDBACK, folder_problem, NOTES, ORIENTATION, PERSON, RATINGS, RAW_DIR, REVIEWS, SLACK, SOURCES,
-                    VALUES, DATA, company_names, expected_files, feedback_problems, notes_problems,
+                    SUMMARY_FILES, VALUES, DATA, company_names, expected_files, feedback_problems, notes_problems,
                     orientation_problems, period_days, person_problems, prep_dir, read_json, read_raw_work,
                     report_name, reviews_problems, slack_problems, sources_problems)
 
@@ -45,15 +45,21 @@ def check_prep(prep, today=None):
         days = period_days(person)
         rules[NOTES] = lambda value: notes_problems(value, values, days)
         rules[SLACK] = lambda value: slack_problems(value, values, days)
-        rules[DATA] = lambda value: data_problems(
-            value, read_raw_work(prep), person)
     for name, problems in rules.items():
         if name in read:
             errors += [
                 f"{name}: {problem}" for problem in problems(read[name])]
-    # The report shows data.json, so it is checked once data.json passes.
-    if {report, CHARTS_DIR} <= files and DATA in read and not any(error.startswith(DATA) for error in errors):
+    # data.json is built from the raw files and the summaries, so it is
+    # checked once they are all there and pass, as is the report, which
+    # shows them both.
+    summaries = {name: read.get(file) for name, file in SUMMARY_FILES.items()}
+    built = (NOTES in rules and None not in summaries.values()
+             and not any(error.startswith(f"{file}:") for error in errors for file in SUMMARY_FILES.values()))
+    if built and DATA in read:
+        errors += [f"{DATA}: {problem}" for problem in data_problems(
+            read[DATA], read_raw_work(prep), person, summaries, values)]
+    if built and {report, CHARTS_DIR} <= files and DATA in read and not any(error.startswith(DATA) for error in errors):
         with open(os.path.join(folder, report), encoding="utf-8") as f:
             errors += [f"{report}: {problem}" for problem in report_problems(
-                f.read(), read[DATA], os.listdir(os.path.join(folder, CHARTS_DIR)))]
+                f.read(), read[DATA], os.listdir(os.path.join(folder, CHARTS_DIR)), summaries, values, folder)]
     return {"ok": not errors, "errors": errors}

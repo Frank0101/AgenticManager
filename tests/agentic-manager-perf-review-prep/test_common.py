@@ -15,11 +15,10 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import (NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP, SLACK, NOTION_SEARCHES, PLAN_RESULT, DATA, WORK_ITEMS, WORK_RAW,  # noqa: E402
+from prep_fixture import (NOTE, NOTES, VALUE_NAMES, ORIENTATION, PERSON, PIECE, PREP, SLACK, NOTION_SEARCHES, PLAN_RESULT, DATA, WORK_ITEMS, WORK_RAW,  # noqa: E402
                            temp_output, write_prep)  # noqa: E402
 
 TODAY = date(2026, 11, 10)
-VALUE_NAMES = ["Ownership", "Teamwork"]
 
 
 class CommonTest(unittest.TestCase):
@@ -154,7 +153,7 @@ class CommonTest(unittest.TestCase):
         # context point, from a page, and it may be empty. name: (changes to
         # it, expected in its problems, or None).
         def evidence(*dates):
-            return [{"date": date, "link": f"file:///vault/{date}.md"} for date in dates]
+            return [{"date": date, "link": f"/vault/{date}.md"} for date in dates]
         days = ["2026-08-20", "2026-09-02", "2026-10-01"]
         cases = [("valid", {}, None),
                  ("empty", {"going_well": [], "to_improve": [],
@@ -167,6 +166,10 @@ class CommonTest(unittest.TestCase):
                  ("a link not a file's or a web page's", {"going_well": [
                      {"point": "Presented it", "values": [],
                       "evidence": [{"date": "2026-09-02", "link": "journals/x.md"}]}]},
+                  "going_well must be a list of points"),
+                 ("a file:// address", {"going_well": [
+                     {"point": "Presented it", "values": [],
+                      "evidence": [{"date": "2026-09-02", "link": "file:///vault/x.md"}]}]},
                   "going_well must be a list of points"),
                  ("a day no note was taken on", {"going_well": [
                      {"point": "Presented it", "values": [], "evidence": evidence("2026-09-03")}]},
@@ -205,6 +208,9 @@ class CommonTest(unittest.TestCase):
                   {**PIECE, "period": " "}], "must be a text"),
                  ("a period not a text", [
                   {**PIECE, "period": 2026}], "must be a text"),
+                 ("no date", [{**PIECE, "date": None}], None),
+                 ("a date not a day", [
+                  {**PIECE, "date": "2026-06"}], "must be the last day of its period"),
                  ("a rating not the company's", [{**PIECE, "rating": "Good"}],
                   "'Good', must be one of the company's: Below, Meets, Exceeds, or null"),
                  ("a field missing", [
@@ -230,7 +236,7 @@ class CommonTest(unittest.TestCase):
         cases = [("one piece", [NOTE], None), ("none", [], None),
                  ("no period", [{**NOTE, "period": None}], None),
                  ("a rating", [{**NOTE, "rating": None}],
-                  "must have the fields period, going_well")]
+                  "must have the fields period, date, going_well")]
         for name, notes, expected in cases:
             with self.subTest(name):
                 problems = common.feedback_problems(
@@ -389,6 +395,15 @@ class RepoCodeTest(unittest.TestCase):
         order = ["acme/api", "acme/web"]
         self.assertEqual([common.repo_code(repo, order) for repo in ("acme/api", "acme/web", "acme/docs")],
                          ["A", "B", None])
+
+    def test_link_href(self):
+        # A web address as it is; a file's path relative to the report's
+        # folder, escaped, so a space doesn't break the link.
+        self.assertEqual([common.link_href(link, "/My Vault/.out/preps/Jane-Doe_26-11-10")
+                          for link in ("https://acme.slack.com/archives/C1/p1?a=1", "/My Vault/journals/2026_09_02.md")],
+                         ["https://acme.slack.com/archives/C1/p1?a=1", "../../../journals/2026_09_02.md"])
+        self.assertEqual(common.link_href(
+            "/My Vault/journals/a b.md", "/My Vault"), "journals/a%20b.md")
 
 
 if __name__ == "__main__":

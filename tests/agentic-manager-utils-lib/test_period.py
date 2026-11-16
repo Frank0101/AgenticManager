@@ -20,6 +20,15 @@ TODAY = date(2026, 11, 10)
 
 
 class PeriodTest(unittest.TestCase):
+    def test_is_day(self):
+        # Only a real day as YYYY-MM-DD; another form fromisoformat accepts,
+        # a month or a day that doesn't exist, no.
+        cases = [("2026-06-30", True), ("20260630", False), ("2026-06", False), ("2026-02-30", False),
+                 (None, False)]
+        for value, expected in cases:
+            with self.subTest(value):
+                self.assertEqual(period.is_day(value), expected)
+
     def test_days(self):
         self.assertEqual(period.days(date(2026, 2, 27), date(2026, 3, 1)),
                          [date(2026, 2, 27), date(2026, 2, 28), date(2026, 3, 1)])

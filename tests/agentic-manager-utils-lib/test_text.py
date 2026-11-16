@@ -177,6 +177,11 @@ class TextTest(unittest.TestCase):
             with self.subTest(value):
                 self.assertEqual(text.number(value), expected)
 
+    def test_ai_marked(self):
+        # The title, then the label as a small superscript after it.
+        self.assertEqual(text.ai_marked("Goal"),
+                         'Goal <sup style="font-size:0.6rem;font-weight:normal">[AI Gen.]</sup>')
+
     def test_plural(self):
         # The singular for exactly 1, 1.0 too; anything else, 0 included,
         # takes the plural.

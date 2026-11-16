@@ -1,4 +1,4 @@
-"""Helpers for Markdown text, shared by every skill: word counts, names, links, the document a link reaches, headings, fenced code, tables, and the dates, numbers and plural words reports show.
+"""Helpers for Markdown text, shared by every skill: word counts, names, links, the document a link reaches, headings, fenced code, tables, the dates, numbers and plural words reports show, and the mark of what the AI wrote.
 
 A word count counts words as a reader would, the same in every skill: a link
 as its text, and only tokens with a letter or a digit ("don't" and "3.14" are
@@ -12,6 +12,10 @@ import re
 import unicodedata
 from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlencode, urlsplit
+
+# Marks a part of a document the AI wrote, on its heading or label, so a
+# reader tells judgment from what was generated from data and checked.
+AI_LABEL = "[AI Gen.]"
 
 # Markdown links, defined once for every skill: (image mark, text, URL) of an
 # inline link, (image mark, text, key) of a reference link, and (key, URL) of
@@ -247,3 +251,11 @@ def table_cells(line):
     """The cells of the Markdown table row `line`, trimmed; a pipe escaped
     as \\| stays inside its cell, read as |."""
     return [cell.strip().replace("\\|", "|") for cell in CELL_PIPE.split(line.strip().strip("|"))]
+
+
+def ai_marked(title):
+    """`title` marked as a part of a document the AI wrote: AI_LABEL after it
+    as a small superscript. The label is a note for the reader, not part of
+    the title; its size is in rem, so it reads the same after a heading and
+    in a table cell."""
+    return f'{title} <sup style="font-size:0.6rem;font-weight:normal">{AI_LABEL}</sup>'

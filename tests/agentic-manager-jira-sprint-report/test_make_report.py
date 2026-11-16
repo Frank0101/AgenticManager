@@ -17,14 +17,14 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import make_report  # noqa: E402
 from check_report import Checker, cells_of, check_commentary, rows_of, text_of  # noqa: E402
-from common import CHART_FILES, INLINE_LINK, NO_EPIC, ai, link_text  # noqa: E402
+from common import CHART_FILES, INLINE_LINK, NO_EPIC, ai_marked, link_text  # noqa: E402
 from make_report import Report  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
 from report_fixture import BASE, CONTENT, TICKETS, caveat_data, content_for, ev, sprint_data, ticket  # noqa: E402
 
 # The [AI Gen.] label, as make_report renders it.
-AI = ai("")
+AI = ai_marked("")
 
 ACTIVE = {"sprint_status": "active",
           "today": "2026-03-10", "sprint_complete_date": None}
@@ -91,12 +91,12 @@ class HeaderTest(unittest.TestCase):
         # charts. The fixture has a previous sprint, yet no carry-over row: the
         # outcome charts show the carry-over.
         def table(dates, goal, target, outcome=f"Partially met: {CONTENT['goal_reason']}"):
-            return ("| Field | Detail |\n|---|---|\n"
+            return ("| Field | Detail |\n| --- | --- |\n"
                     f"| Dates | {dates} |\n| Goal | {goal} |\n"
                     f"| Goal outcome{AI} | {outcome} |\n"
                     f"| Key Achievements{AI} | {CONTENT['key_achievements']} |\n"
                     f"| Blockers & Risks{AI} | {CONTENT['blockers_risks']} |",
-                    f"| Field | Detail |\n|---|---|\n| Sprint target completion | {target} |")
+                    f"| Field | Detail |\n| --- | --- |\n| Sprint target completion | {target} |")
         cases = [
             ("closed on its end date", {},
              table("02/03/2026–13/03/2026", "Ship login", "60%, 3/5 tickets (6/10 pts) completed")),

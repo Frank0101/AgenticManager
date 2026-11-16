@@ -94,7 +94,7 @@ ORIENTATION = {"going_well": [{"point": "Has \"led\" the billing migration well 
 VALUES = [{"value": "Ownership", "meaning": "Sees work through to its end"}]
 RATINGS = [{"rating": "Below", "meaning": "Misses most expectations"},
            {"rating": "Meets", "meaning": "Meets every expectation"}]
-PIECE = {"period": "Mid Year Review", "rating": "Meets", "going_well": [{"point": "Delivered the billing migration on time", "values": []}],
+PIECE = {"period": "Mid Year Review", "date": "2026-06-30", "rating": "Meets", "going_well": [{"point": "Delivered the billing migration on time", "values": []}],
          "to_improve": [], "context": []}
 PAGE = {"title": "Billing plan",
         "url": "https://www.notion.so/billing-plan", "path": "Engineering"}
@@ -231,7 +231,7 @@ class ScriptsTest(unittest.TestCase):
                     month, stdin=json.dumps({"items": [item]}))
         self.assertTrue(os.path.exists(started["merge"].split(": ", 1)[1]))
         merged = {"going_well": [{"point": item["synopsis"], "values": ["Ownership"],
-                                  "links": [Path(self.root, "graph", "journals", f"{TODAY:%Y_%m_%d}.md").as_uri()]}],
+                                  "links": [str(Path(self.root, "graph", "journals", f"{TODAY:%Y_%m_%d}.md"))]}],
                   "to_improve": [], "context": [], "in_doubt": []}
         self.run_ok(NOTES_SCRIPT, "submit", "--prep", prep,
                     "--task", "merge", stdin=json.dumps(merged))

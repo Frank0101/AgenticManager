@@ -17,7 +17,13 @@ from common import (FEEDBACK, ORIENTATION, RATINGS, REVIEWS, SUMMARY_HELP, VALUE
 PIECES_HELP = """
 Each part is a list of points, [] when the piece says nothing of it. Write
 {"pieces": []} when the manager has none. List them from the most recent,
-those with no period first: they're written in the order given."""
+those with no date first: they're written in the order given."""
+DATE_HELP = """\
+  date        the last day of that period, as YYYY-MM-DD, as you read it from
+              the source, such as 2026-06-30 for a mid-year review, or null
+              when it gives no hint of one; it only orders the evidence, and
+              the report shows the period
+"""
 # Each kind: the file it's written to, why a value isn't one, and its input.
 KINDS = {
     "orientation": (ORIENTATION, lambda value: orientation_problems(value, company_names(VALUES)), """\
@@ -39,11 +45,11 @@ every previous review, such as:
 
   python3 set_summary.py --prep Jane-Doe_26-11-10 --of reviews <<'END_OF_INPUT'
   {"pieces": [
-    {"period": "Mid Year Review 2026", "rating": "Meets",
+    {"period": "Mid Year Review 2026", "date": "2026-06-30", "rating": "Meets",
      "going_well": [{"point": "Jane delivered the billing migration on time", "values": ["Ownership"]}],
      "to_improve": [{"point": "Jane could lead a design review alone", "values": []}],
      "context": ["Jane moved to the payments team in March"]},
-    {"period": null, "rating": null,
+    {"period": null, "date": null, "rating": null,
      "going_well": [{"point": "Jane built a community of practice that reaches other teams",
                      "values": ["Teamwork", "Ownership"]}],
      "to_improve": [], "context": []}
@@ -52,6 +58,7 @@ every previous review, such as:
 
   period      the period the review covers, as it names it, such as a date
               or "Mid Year Review 2026", or null when it names none
+""" + DATE_HELP + """\
   rating      the rating it gave, one of the company's, as rules.py prints
               them, or null when it gives none of them
 """ + SUMMARY_HELP + PIECES_HELP),
@@ -60,13 +67,13 @@ every piece of the period's feedback, such as:
 
   python3 set_summary.py --prep Jane-Doe_26-11-10 --of feedback <<'END_OF_INPUT'
   {"pieces": [
-    {"period": "Q3 2026",
+    {"period": "Q3 2026", "date": "2026-09-30",
      "going_well": [{"point": "Jane agreed to own the billing migration and has kept to its plan",
                      "values": ["Ownership"]}],
      "to_improve": [{"point": "Jane agreed to share progress with the wider team every week",
                      "values": ["Teamwork"]}],
      "context": []},
-    {"period": null,
+    {"period": null, "date": null,
      "going_well": [{"point": "Jane fixed a billing bug the same day, as the support team thanked them for",
                      "values": ["Ownership"]}],
      "to_improve": [], "context": []}
@@ -75,7 +82,7 @@ every piece of the period's feedback, such as:
 
   period      the period the piece covers, as it names it, such as a date,
               "Q3 2026" or "1:1 of 08/10/2026", or null when it names none
-""" + SUMMARY_HELP + PIECES_HELP),
+""" + DATE_HELP + SUMMARY_HELP + PIECES_HELP),
 }
 OUTPUT = "Prints one line of JSON: path, the file written."
 

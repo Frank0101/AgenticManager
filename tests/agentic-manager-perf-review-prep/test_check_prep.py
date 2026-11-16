@@ -66,7 +66,7 @@ class CheckTest(unittest.TestCase):
                   "evidence must each be of a day"),
                  ("no data", {"data": None}, None, "_charts, data.json"),
                  ("data changed by hand", {"data": {**DATA, "jira": {**DATA["jira"], "focus": []}}},
-                  None, "data.json: data.json doesn't match the raw files it is built from"),
+                  None, "data.json: data.json doesn't match the raw files and summaries it is built from"),
                  ("a raw file missing", {"raw_work": {"jira": WORK_RAW["jira"], "github": WORK_RAW["github"]}},
                   None, "data.json: the work's raw files are missing"),
                  ("a raw file that breaks its rules", {"raw_work": {**WORK_RAW, "github": {

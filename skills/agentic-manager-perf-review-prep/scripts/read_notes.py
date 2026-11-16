@@ -10,7 +10,6 @@ and what each task shows, each note numbered so none goes without one.
 import os
 import re
 from datetime import date
-from pathlib import Path
 
 from common import NOTES, PERSON, graph_path, links, notes, prep_dir, read_json
 import reading
@@ -24,7 +23,7 @@ READING_ANSWER = """{"items": [
   {"note": 1, "synopsis": "Presented the billing migration to the wider team; Sam asked for the slides, and Jane..."},
   {"note": 2, "synopsis": "..."}
  ]}"""
-MERGE_ANSWER = reading.merge_answer("file://...", "note")
+MERGE_ANSWER = reading.merge_answer("/path/to/note.md", "note")
 
 
 # Gathering the notes.
@@ -43,7 +42,7 @@ def gather(prep):
         person["start"]), date.fromisoformat(person["end"])
     months, pages = {}, []
     for folder_name, title, text, file in notes(graph_path()):
-        link = Path(file).as_uri()
+        link = os.path.abspath(file)
         if folder_name == "pages":
             if title.casefold() in wanted:
                 pages.append(

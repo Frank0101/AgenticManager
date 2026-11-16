@@ -91,11 +91,11 @@ class ReadNotesTest(unittest.TestCase):
         self.assertEqual([note["date"] for note in content["months"]["2026-08"]], [
                          "2026-08-20", "2026-08-20"])
         self.assertEqual(content["months"]["2026-09"], [
-            {"date": "2026-09-02", "link": Path(self.graph, "journals", "2026_09_02.md").as_uri(),
+            {"date": "2026-09-02", "link": str(Path(self.graph, "journals", "2026_09_02.md")),
              "text": "- [[Jane promotion]] talk went well"}])
         self.assertEqual(content["pages"], [
                          {"title": "Jane", "text": "- Moved to the payments team in the summer",
-                          "link": Path(self.graph, "pages", "Jane.md").as_uri()}])
+                          "link": str(Path(self.graph, "pages", "Jane.md"))}])
 
     def test_runs_the_tasks_then_merges(self):
         # start gathers, writes every month and the pages, each saying how
@@ -136,15 +136,15 @@ class ReadNotesTest(unittest.TestCase):
                          ["2026-08.json", "2026-09.json", "pages.json"])
         with open(merge, encoding="utf-8") as f:
             text = f.read()
-        august = Path(self.graph, "journals", "2026_08_20.md").as_uri()
-        page = Path(self.graph, "pages", "Jane.md").as_uri()
+        august = str(Path(self.graph, "journals", "2026_08_20.md"))
+        page = str(Path(self.graph, "pages", "Jane.md"))
         for expected in ("- Teamwork: ", f'{{"date": "2026-08-20", "link": "{august}", "synopsis": "Presented',
                          f'{{"date": "2026-08-20", "link": "{august}", "synopsis": "Didn\'t flag',
                          f'{{"date": null, "link": "{page}", "synopsis": "Moved'):
             self.assertIn(expected, text)
         self.assertLess(text.index("Presented the migration"),
                         text.index("Didn't flag"))
-        september = Path(self.graph, "journals", "2026_09_02.md").as_uri()
+        september = str(Path(self.graph, "journals", "2026_09_02.md"))
         # The merge gives each point's links; the script adds each one's day,
         # so a page, which has none, can back only context.
         summary = {"going_well": [{"point": "Presented the migration to the team", "values": ["Teamwork"],
@@ -157,7 +157,7 @@ class ReadNotesTest(unittest.TestCase):
                 {**summary["going_well"][0], "links": [page]}]})
         with self.assertRaisesRegex(SystemExit, "must each be the link of something read"):
             reading.submit(read_notes.SOURCE, PREP, "merge", {**summary, "in_doubt": [], "going_well": [
-                {**summary["going_well"][0], "links": [Path(self.graph, "journals", "2026_08_21.md").as_uri()]}]})
+                {**summary["going_well"][0], "links": [str(Path(self.graph, "journals", "2026_08_21.md"))]}]})
         with self.assertRaisesRegex(SystemExit, '"in_doubt" must be a list of texts'):
             reading.submit(read_notes.SOURCE, PREP, "merge", summary)
         doubts = ["2026-08-20: Didn't flag a delay, but only once and minor",

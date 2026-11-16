@@ -14,9 +14,9 @@ import os
 import re
 from typing import cast
 
-from common import (browse_url, epic_title, SENTENCE_BREAK, CHART_FILES, COMMENTARY_WORDS, CONTENT_FILE, DATA_FILE, EPIC_COMMENTARY_WORDS, FIELD_TABLE_HEAD,
+from common import (browse_url, epic_title, SENTENCE_BREAK, CHART_FILES, COMMENTARY_WORDS, CONTENT_FILE, DATA_FILE, EPIC_COMMENTARY_WORDS, FIELD_HEADER,
                     JIRA_CELL, NO_EPIC, OUTCOME_COLOURS, PULL_STATES, RETRO_NOTES, SCOPE_GROUPS, STATUS_HEADING,
-                    ACHIEVEMENTS_WORDS, BLOCKERS_WORDS, GOAL_REASON_WORDS, ai, latest_points,
+                    ACHIEVEMENTS_WORDS, BLOCKERS_WORDS, GOAL_REASON_WORDS, ai_marked, latest_points, table,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty, ratio,
                     report_file, scope_group_label, sprint_key, text_rule_problems, ticket_ref, unit, whole_percentage,
                     word_count, write_report_file)
@@ -261,7 +261,7 @@ class Report:
         out of all of them: "N/M tickets (N/M pts)", the commitment's led by
         its target completion like the sprint's, and the scope it covers."""
         lines = ['<table>', '<tr>', '<th style="width:20%">Epic</th>', '<th style="width:14%">Commitment</th>',
-                 '<th style="width:14%">Extra</th>', f'<th style="width:52%">{ai("Commentary")}</th>', '</tr>']
+                 '<th style="width:14%">Extra</th>', f'<th style="width:52%">{ai_marked("Commentary")}</th>', '</tr>']
         for epic in self.data["epics"]:
             cells = [self.epic_link(epic), self.epic_done(epic, "original"), self.epic_done(epic, "extra"),
                      self.epic_commentary(epic)]
@@ -332,10 +332,10 @@ class Report:
         goal = (self.table_text(re.sub(r"\s*\n\s*", "<br>", html.escape(d["sprint_goal"].strip(), quote=False)))
                 if d["sprint_goal"].strip() else "*No goal was set in Jira for this sprint*")
         rows = [("Dates", dates), ("Goal", goal),
-                (ai("Goal outcome"), self.table_text(self.goal_outcome())),
-                (ai("Key Achievements"), self.table_text(
+                (ai_marked("Goal outcome"), self.table_text(self.goal_outcome())),
+                (ai_marked("Key Achievements"), self.table_text(
                     self.content["key_achievements"])),
-                (ai("Blockers & Risks"), self.table_text(
+                (ai_marked("Blockers & Risks"), self.table_text(
                     self.content["blockers_risks"]))]
         return field_table(rows)
 
@@ -544,14 +544,14 @@ class Report:
             f"## {STATUS_HEADING}",
             self.status_table(),
             self.bullets(
-                f"## {ai('Notes for Sprint Retro')}", c["retro_notes"]),
+                f"## {ai_marked('Notes for Sprint Retro')}", c["retro_notes"]),
         ]
         return "\n\n".join(parts).rstrip() + "\n"
 
 
 def field_table(rows):
     """The report's two-column table of (label, value) rows."""
-    return FIELD_TABLE_HEAD + "\n".join(f"| {label} | {value} |" for label, value in rows)
+    return table(FIELD_HEADER, rows)
 
 
 def linked_text(linked):

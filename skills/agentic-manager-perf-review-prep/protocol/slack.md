@@ -33,4 +33,4 @@ One synopsis for each conversation: a thread, or the messages in a row on one to
 
 ## Each item
 
-For each conversation, write an item: `date`, the day it started, as YYYY-MM-DD; `link`, the link of the person's first message in it, or of the one that mentions them, from the search result; and `synopsis`.
+For each conversation, write an item: `date`, the day it started, as YYYY-MM-DD; `link`, the link of the person's first message in it, or of the one that mentions them, copied exactly as the search result or the thread gives it, never built from the channel and the timestamp: a reply's link carries its `thread_ts`, without which Slack opens the thread's first message instead; and `synopsis`.

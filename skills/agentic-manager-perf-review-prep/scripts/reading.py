@@ -13,7 +13,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Callable
 
-from common import (FOLDER_NAME, PERSON, PROTOCOL, json_text, RAW_DIR, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
+from common import (FOLDER_NAME, PERSON, POINT_LIMITS, PROTOCOL, json_text, RAW_DIR, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
                     fill_protocol, is_point, library_command, point_fields, point_shape, prep_dir, script_command, read_json, stdin_json,
                     summary_problems, word_count, work_folder, write_raw,
                     write_prep_file)
@@ -224,7 +224,7 @@ def submit_section(command, answer):
 
 def merge_answer(link, item):
     """The shape of a merge's answer, for a source whose evidence is linked
-    as `link`, such as "file://...", and whose items are each an `item`,
+    as `link`, such as "/path/to/note.md", and whose items are each an `item`,
     such as "note"."""
     return ('{"going_well": [{"point": "...", "values": ["<each company value it clearly shows or calls for, '
             'at most two>"],\n'
@@ -423,7 +423,7 @@ def load_material(source, prep):
 def read_protocol(name):
     """The protocol file `name`'s text, its shared parts filled in, with the
     command that reads a Jira ticket by the path the skill pre-approves."""
-    return fill_protocol(PROTOCOL, name, {"synopsis_words": SYNOPSIS_WORDS,
+    return fill_protocol(PROTOCOL, name, {**POINT_LIMITS, "synopsis_words": SYNOPSIS_WORDS,
                                           "max_synopsis_words": MAX_SYNOPSIS_WORDS,
                                           "jira_ticket": f"{script_command(__file__, 'jira_ticket.py')} --key <key>",
                                           "extract_saved": library_command(__file__, "extract_saved.py")})

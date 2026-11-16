@@ -1,11 +1,11 @@
-"""Writes a prep's report, <Person>_Review_Prep.md, from data.json: for now, the person's Jira, GitHub and Notion figures.
+"""Writes a prep's report, <Person>_Review_Prep.md, from data.json: for now, the person's GitHub, Jira and Notion figures, and the feedback, by company value.
 
 Every figure is one of data.json's facts, and every link one of its search
 addresses, so the report can't count differently from the model; the charts
 it shows are make_charts.py's.
 """
-from common import (CHARTS_DIR, EPICS_CHART, FOCUS_SHARE, FOLDER_NAME, GITHUB_CELLS, HEADINGS, JIRA_CELLS, PAGES_HEADING, REPOS_CHART,
-                    average_text, esc, number, report_name, repo_code, repos_text, shown, size_text, types_text, week_text,
+from common import (CHARTS_DIR, EPICS_CHART, FEEDBACK_HEADINGS, FEEDBACK_SOURCES, FOCUS_SHARE, FOLDER_NAME, GITHUB_CELLS, HEADINGS, JIRA_CELLS, NO_VALUE, PAGES_HEADING, REFERENCE_NAMES, REPOS_CHART,
+                    ai_marked, average_text, day_text, esc, link_href, number, prep_dir, report_name, repo_code, repos_text, shown, size_text, types_text, week_text,
                     write_output_file)
 
 
@@ -13,20 +13,25 @@ def write_report(prep, person, data):
     """Write the prep `prep`'s report from `person`, its person.json, and
     `data`, its data.json; returns its path."""
     path, _ = write_output_file(
-        FOLDER_NAME, f"{prep}/{report_name(prep)}", render(person, data).encode("utf-8"))
+        FOLDER_NAME, f"{prep}/{report_name(prep)}", render(person, data, prep_dir(prep)).encode("utf-8"))
     return path
 
 
 # The report.
 
-def render(person, data):
-    """The report's text: the person and the period, then their GitHub work
-    and their Jira work, each its main focus, then its figures, then the
-    Notion pages they created. GitHub comes first: with agents writing much
+def render(person, data, folder):
+    """The report's text: the person and the period, then the Feedback,
+    what is going well and what to improve, first, as what the review is
+    about, a note it cites linked relative to `folder`, the report's, then
+    their GitHub work and their Jira work, each its main focus,
+    then its figures, then the Notion pages they created. GitHub comes before
+    Jira: with agents writing much
     of the code, pull requests stay the plainest trace of what someone did,
     while tickets grow more generic."""
     return "\n".join([f"# {person['person']}: performance review prep", "",
-                      f"Period: {shown(person['start'], person['end'])}", "", "## GitHub", "",
+                      f"Period: {shown(person['start'], person['end'])}", "", "## Feedback", "",
+                      *feedback_section(data["feedback"],
+                                        folder), "", "## GitHub", "",
                       *repos_section(data["github"]), "", *
                       github_section(data["github"]), "", "## Jira", "",
                       *focus_section(data["jira"]), "", *
@@ -127,13 +132,52 @@ def notion_section(notion):
     weeks = {}
     for page in reversed(notion["created"]):
         weeks.setdefault(week_text(page["week"]), []).append(page)
-    rows = [f'{f"""<td rowspan="{len(pages)}">{small(week)}</td>""" if index == 0 else ""}'
-            f'<td>{small(f"""<a href="{esc(page["url"])}">{esc(page["title"])}</a>""")}</td>'
-            f'<td>{small(esc(page["space"] or ""))}</td>'
-            for week, pages in weeks.items() for index, page in enumerate(pages)]
+    rows = grouped_rows((week, [f'<td>{small(f"""<a href="{esc(page["url"])}">{esc(page["title"])}</a>""")}</td>'
+                                f'<td>{small(esc(page["space"] or ""))}</td>' for page in pages])
+                        for week, pages in weeks.items())
     heads = "".join(
         f"<th>{small(head)}</th>" for head in ("Week", "Page", "Area"))
     return [f'<b>{PAGES_HEADING}</b> ({notion["counts"]["created"]})', "", *table(heads, *rows)]
+
+
+def feedback_section(feedback, folder):
+    """The Feedback section's lines: for each part of FEEDBACK_HEADINGS, how
+    many points it holds and a table of them, in small type, by company
+    value, each value named once beside its points, the most recent first,
+    each with its source and its reference: a piece's period, as the source
+    names it, or the days of a reading's evidence, the most recent first,
+    each linked to its note or message."""
+    lines = []
+    for part, heading in FEEDBACK_HEADINGS.items():
+        groups = feedback[part]
+        rows = grouped_rows((esc(group["value"] or NO_VALUE),
+                             [f'<td>{small(esc(point["point"]))}</td><td>{small(FEEDBACK_SOURCES[point["source"]])}</td>'
+                              f'<td>{small(reference(point, folder))}</td>' for point in group["points"]])
+                            for group in groups)
+        heads = "".join(f"<th>{small(head)}</th>" for head in (
+            "Value", ai_marked("Point"), "Source", "References"))
+        count = sum(len(group["points"]) for group in groups)
+        lines += [*([""] if lines else []), f"<b>{heading}</b> ({count})",
+                  *(["", *table(heads, *rows)] if rows else [])]
+    return lines
+
+
+def reference(point, folder):
+    """Where a feedback point comes from, as its row writes it: its piece's
+    period, – when the piece names none, or its evidence, each its source
+    and day, such as "Slack 14 Oct", linked to its message or note."""
+    if point["source"] == "feedback":
+        return esc(point["period"] or "–")
+    return ", ".join(f'<a href="{esc(link_href(item["link"], folder))}">{REFERENCE_NAMES[point["source"]]} {day_text(item["date"])}</a>'
+                     for item in point["evidence"])
+
+
+def grouped_rows(groups):
+    """A grouped table's rows, each group (name, rows), its name written as
+    HTML and each row its cells: the name in small type in a cell beside the
+    group's first row, spanning all of them."""
+    return [(f'<td rowspan="{len(rows)}">{small(name)}</td>' if index == 0 else "") + cells
+            for name, rows in groups for index, cells in enumerate(rows)]
 
 
 def small(content):

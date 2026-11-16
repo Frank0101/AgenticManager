@@ -19,7 +19,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_report  # noqa: E402
-from common import CHART_FILES, CHARTS_DIR, RAW_DIR, ai, expected_files  # noqa: E402
+from common import CHART_FILES, CHARTS_DIR, RAW_DIR, ai_marked, expected_files  # noqa: E402
 from make_report import Report, tag  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
@@ -27,7 +27,7 @@ from report_fixture import BASE, CONTENT, TICKETS, caveat_data, content_for, ev,
 from sprint_fixture import PR  # noqa: E402
 
 # The [AI Gen.] label as make_report renders it.
-AI = ai("")
+AI = ai_marked("")
 
 
 def ticket_event(data, key, kind):
