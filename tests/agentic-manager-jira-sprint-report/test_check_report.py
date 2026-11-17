@@ -19,12 +19,12 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_report  # noqa: E402
-from common import CHART_FILES, CHARTS_DIR, FIELD_HEADER, RAW_DIR, ai_marked, expected_files  # noqa: E402
+from common import CHART_FILES, CHARTS_DIR, FIELD_HEADER, NOTHING_UNTRACKED, RAW_DIR, ai_marked, expected_files  # noqa: E402
 from make_report import Report, tag  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
-from report_fixture import BASE, CONTENT, TICKETS, caveat_data, content_for, ev, linked, no_work_data, ticket, sprint_data  # noqa: E402
-from sprint_fixture import PR  # noqa: E402
+from report_fixture import BASE, CONTENT, TICKETS, caveat_data, content_for, ev, linked, many_untracked, no_work_data, ticket, sprint_data  # noqa: E402
+from sprint_fixture import OTHER_PULLS, PR, WEB  # noqa: E402
 
 # The [AI Gen.] label as make_report renders it.
 AI = ai_marked("")
@@ -248,6 +248,17 @@ class ChecksTest(unittest.TestCase):
             ("copied Jira keys", sprint_data(sprint_name="Sprint PROJ-90", sprint_goal="Deliver PROJ-91"), {},
              [(f'<a href="{BASE}/browse/PROJ-91">PROJ-91</a>', "PROJ-91", "links"),
               (f'<a href="{BASE}/browse/PROJ-100">PROJ-100: Login &lt;beta&gt;</a>', "PROJ-100: Login", "links")]),
+            # A pull request's copied title keeps its wording; the same words
+            # in the agent's commentary still fail.
+            ("copied GitHub words", sprint_data(other_pulls={**OTHER_PULLS, "pulls": {
+                **OTHER_PULLS["pulls"], WEB.format(13): {**OTHER_PULLS["pulls"][WEB.format(13)],
+                                                         "title": "Fix 2 closed issues"}}}), {},
+             [("A search spike", "Fix 2 closed issues, a search spike", "vocabulary")]),
+            ("an accordion", sprint_data(other_pulls=many_untracked(6)), {"untracked_commentary": {"acme/web": "Changes."}},
+             [("<summary>6 pull requests</summary>", "<summary>7 pull requests</summary>",
+               "untracked: the table lists")]),
+            ("no untracked pull request", sprint_data(other_pulls={**OTHER_PULLS, "pulls": {}}), {},
+             [(NOTHING_UNTRACKED, "Some work.", "untracked: with no untracked pull request")]),
             ("an epic with no work to describe",
              no_work_data(), {"epic_commentary": {}},
              [("1 ticket already done", "2 tickets already done", "epics: PROJ-100 has no work to describe")]),
@@ -366,6 +377,20 @@ class ChecksTest(unittest.TestCase):
              "<td>1 ticket</td></tr>"),
             ("images",
              '## Scope Timeline\n\n<a href="_charts/burndown.svg" target="_blank"><img src="_charts/burndown.svg" width="100%" alt="Sprint burndown"></a>', "## Scope Timeline"),
+            ("untracked: the table lists the untracked pull requests",
+             ">Spike the search</a>", ">Spike it</a>"),
+            ("untracked: the table lists the untracked pull requests", 'href="https://github.com/acme/web">',
+             'href="https://github.com/acme/ops">'),
+            ("untracked: the table lists the untracked pull requests",
+             '>Spike the search</a><br>', '>Spike the search</a><br><a href="https://github.com/acme/web/pull/99">More</a><br>'),
+            ("untracked: the commentary is marked", f'Pull requests</th><th width="52%">Commentary{AI}</th>',
+             'Pull requests</th><th width="52%">Commentary</th>'),
+            ("untracked: the section says what it shows",
+             "*Pull requests merged during the sprint", "*Pull requests"),
+            ("untracked: an Untracked Delivery section sits between",
+             "</table>\n\n## Untracked Delivery", "</table>\n\nMore work.\n\n## Untracked Delivery"),
+            ("vocabulary", "A search spike &amp; a faster build.",
+             "A search spike, 2 issues closed."),
             ("em dashes", "Partially met", "Partially met — mostly"),
             ("dates", "02/03/2026–", "2026-03-02–"),
             ("links", "Login shipped", "PROJ-9 and login shipped"),
@@ -468,6 +493,17 @@ class ChecksTest(unittest.TestCase):
                 mergedAt="2026-03-20T10:00:00.000+0000"), "model: PROJ-2's pull requests are as at the end"),
             ("a ticket without its pull requests", lambda d: d["ticket_pull_requests"].pop("PROJ-3"),
              "model: every ticket in the sprint at the end has its pull requests"),
+            # The untracked pull requests and their repositories are
+            # recomputed from each one's merge time, title and branch.
+            ("a pull request on a ticket of the sprint taken as untracked",
+             lambda d: d["other_pull_requests"][1].update(untracked=True),
+             "model: the untracked pull requests are those naming none of the sprint's tickets"),
+            ("a ticket a pull request doesn't name", lambda d: d["other_pull_requests"][0].update(tickets=["PROJ-9"]),
+             "model: https://github.com/acme/api/pull/90 names no ticket"),
+            ("a repository linked elsewhere", lambda d: d["untracked_delivery"][0].update(url="https://github.com/acme/ops"),
+             "model: the untracked delivery holds the untracked pull requests by repository"),
+            ("the repositories out of order", lambda d: d["untracked_delivery"].reverse(),
+             "model: the untracked delivery holds the untracked pull requests by repository"),
             ("a flagged ticket missing", lambda d: d["status_checks"].pop(),
              "model: the Status to Verify rows are the tickets"),
             ("a wrong flag", lambda d: d["status_checks"][0].update(flag="work_started"),

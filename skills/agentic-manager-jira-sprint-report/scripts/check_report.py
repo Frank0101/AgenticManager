@@ -15,12 +15,13 @@ import sys
 from datetime import date
 
 from common import (folder_problem, days, BLOCKED_STATUSES, GOAL_VERDICTS, HIGH_PRIORITIES, CHARTS_DIR, CHART_IMAGE, HEADING, INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, FIELD_HEADER, ISSUE_KEY,
-                    BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, JIRA_CELL, KEY_LIST, LEFT_OUT_REASONS, STATUS_HEADING,
+                    BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, GITHUB_CELL, JIRA_CELL, KEY_LIST, LEFT_OUT_REASONS,
+                    NOTHING_UNTRACKED, STATUS_HEADING, UNTRACKED_HEADING, UNTRACKED_OPEN_PULLS, UNTRACKED_SUBTITLE,
                     TICKET_ESTIMATE,
                     TICKET_EVENT_TYPES,
                     NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai_marked, no_work_text, sprint_key, text_rule_problems,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty,
-                    ratio, report_file, report_timezone, scope_group_label, spell_epic, whole_percentage, word_count,
+                    ratio, report_file, report_timezone, repository_url, scope_group_label, spell_epic, whole_percentage, word_count,
                     latest_points)
 
 
@@ -72,6 +73,7 @@ def run_checks(md, data, report_dir):
     check_files(c, report_dir, data)
     check_timeline(c, tables.get("timeline"), data)
     check_epics(c, tables.get("epics"), data)
+    check_untracked_section(c, md, tables.get("untracked"), data)
     check_status_section(c, md, tables.get("status"), data)
     check_style(c, md, data)
     check_vocabulary(c, md, data)
@@ -118,6 +120,8 @@ def table_kind(table):
         return "timeline"
     if "epic" in header and "commentary" in header:
         return "epics"
+    if "repository" in header and "pull requests" in header:
+        return "untracked"
     if "ticket" in header and "pull requests" in header:
         return "status"
     return None
@@ -232,6 +236,7 @@ def check_model(c, data):
     check_epic_points(c, data)
     check_ticket_events(c, data)
     check_pull_requests(c, data)
+    check_untracked_pulls(c, data)
     check_burndown_ideal(c, data)
     check_goal_facts(c, data)
     check_carried_in(c, data)
@@ -703,8 +708,9 @@ def commentary_of(md):
 
 
 def check_framing(c, md):
-    """Each big table has a heading directly above it (only charts may sit in
-    between). The paragraph after the timeline is check_commentary's."""
+    """Each big table has a heading directly above it (only charts, and the
+    line saying what a section shows, may sit in between). The paragraph
+    after the timeline is check_commentary's."""
     for table in html_tables(md):
         kind = table_kind(table)
         if kind in (None, "fields"):
@@ -715,7 +721,7 @@ def check_framing(c, md):
         if c.check(bool(headings), "headings", f"{kind} table has a heading above it"):
             between = "\n".join(
                 line for line in before[headings[-1].end():].splitlines()
-                if line.strip() and not CHART_IMAGE.fullmatch(line.strip()))
+                if line.strip() and not CHART_IMAGE.fullmatch(line.strip()) and line.strip() != UNTRACKED_SUBTITLE)
             c.check(between.strip() == "", "headings",
                     f"{kind} table directly follows '{headings[-1][2]}'")
 
@@ -924,6 +930,82 @@ def check_status_section(c, md, table, data):
                 f"{row['key']} shows {', '.join(counts)}")
 
 
+def check_untracked_section(c, md, table, data):
+    """The Untracked Delivery section sits between Delivery by Epic and
+    Sprint Metrics and shows the untracked pull requests, recomputed from
+    what GitHub gave (untracked_by_repository()): a row per repository, in
+    order, its pull requests each its title linked, in an accordion past
+    UNTRACKED_OPEN_PULLS, beside a commentary marked as the agent's; under
+    the line saying what it shows; with none, it says so."""
+    after = md.split(f"## {UNTRACKED_HEADING}\n\n", 1)
+    body = after[1].split("\n\n## ", 1) if len(after) == 2 else []
+    c.check(bool(re.search(rf"## Delivery by Epic\n\n<table.*?</table>\n\n## {UNTRACKED_HEADING}\n\n", md, re.S))
+            and len(body) == 2 and body[1].startswith("Sprint Metrics"),
+            "untracked", f"an {UNTRACKED_HEADING} section sits between Delivery by Epic's table and Sprint Metrics")
+    c.check(len(body) == 2 and body[0].startswith(f"{UNTRACKED_SUBTITLE}\n\n"), "untracked",
+            "the section says what it shows under its heading")
+    expected = untracked_by_repository(data)
+    if not expected:
+        c.check(table is None and len(body) == 2 and body[0] == f"{UNTRACKED_SUBTITLE}\n\n{NOTHING_UNTRACKED}", "untracked",
+                "with no untracked pull request, the section says so")
+        return
+    if not c.check(table is not None, "untracked", "table found") or table is None:
+        return
+    rows = rows_of(table)
+    c.check(ai_marked("Commentary")
+            in rows[0], "untracked", "the commentary is marked as the agent's")
+    titles = {pr["url"]: pr["title"] for pr in data["other_pull_requests"]}
+    shown = []
+    for row in rows[1:]:
+        cells = [cell for _, cell in cells_with_attributes(row)]
+        folded = re.fullmatch(
+            r"<details><summary>(\d+) pull requests</summary>(.*)</details>", cells[1], re.S)
+        pulls = [(html.unescape(url), html.unescape(title))
+                 for url, title in re.findall(r'<a href="([^"]+)">([^<]*)</a>', folded[2] if folded else cells[1])]
+        link = re.fullmatch(r'<a href="([^"]+)">[^<]*</a>', cells[0])
+        shown.append((text_of(cells[0]), link and html.unescape(link[1]), pulls,
+                      int(folded[1]) if folded else None))
+    c.check(shown == [(repository, repository_url(urls[0]), [(url, titles[url]) for url in urls],
+                       len(urls) if len(urls) > UNTRACKED_OPEN_PULLS else None)
+                      for repository, urls in expected], "untracked",
+            f"the table lists the untracked pull requests of {len(expected)} repositories, each linked, its pull "
+            "requests each its title linked, "
+            f"in an accordion past {UNTRACKED_OPEN_PULLS}")
+
+
+def check_untracked_pulls(c, data):
+    """Each pull request no ticket links names the tickets its title and
+    branch give and is untracked when none of them is the sprint's;
+    the untracked ones are grouped by repository, the most first."""
+    keys = sprint_key(data)
+    for pr in data["other_pull_requests"]:
+        named = sorted(set(keys.findall(pr["title"])) | set(
+            keys.findall(pr["branch"])), key=key_order)
+        c.check(pr["tickets"] == named, "model",
+                f"{pr['url']} names {named or 'no ticket'}")
+    untracked = untracked_by_repository(data)
+    c.check({pr["url"] for pr in data["other_pull_requests"] if pr["untracked"]}
+            == {url for _, urls in untracked for url in urls}, "model",
+            "the untracked pull requests are those naming none of the sprint's tickets")
+    c.check([(row["repository"], row["url"], row["pulls"]) for row in data["untracked_delivery"]]
+            == [(repository, repository_url(urls[0]), urls) for repository, urls in untracked], "model",
+            "the untracked delivery holds the untracked pull requests by repository, the most first, each "
+            "linked to its repository")
+
+
+def untracked_by_repository(data):
+    """[(repository, [urls in the order merged])] of the pull requests merged
+    during the sprint that no ticket links and that name none of its
+    tickets, recomputed from their titles and branches, the repository with
+    the most first, then by name."""
+    keys, sprint_keys = sprint_key(data), {t["key"] for t in data["spells"]}
+    found = {}
+    for pr in sorted(data["other_pull_requests"], key=lambda pr: (pr["mergedAt"] or "", pr["url"])):
+        if not (set(keys.findall(pr["title"])) | set(keys.findall(pr["branch"]))) & sprint_keys:
+            found.setdefault(pr["repository"], []).append(pr["url"])
+    return sorted(found.items(), key=lambda item: (-len(item[1]), item[0].lower()))
+
+
 def cells_with_attributes(row):
     """[(attributes, content)] of a row's <td> or <th> cells."""
     return re.findall(r"<t[dh]\b([^>]*)>(.*?)</t[dh]>", row, re.S)
@@ -953,9 +1035,9 @@ def generated_text(md):
             without_names = re.sub(
                 r"(<tr\b[^>]*>\s*)<td>.*?</td>", r"\1<td></td>", table, flags=re.S)
             md = md.replace(table, without_names, 1)
-        elif table_kind(table) == "status":
-            md = md.replace(table, re.sub(rf'(<td[^>]*class="{JIRA_CELL}"[^>]*>).*?</td>', r"\1</td>", table,
-                                          flags=re.S), 1)
+        elif table_kind(table) in ("status", "untracked"):
+            md = md.replace(table, re.sub(rf'(<td[^>]*class="(?:{JIRA_CELL}|{GITHUB_CELL})"[^>]*>).*?</td>',
+                                          r"\1</td>", table, flags=re.S), 1)
     return md
 
 

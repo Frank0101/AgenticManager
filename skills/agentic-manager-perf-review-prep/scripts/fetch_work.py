@@ -14,7 +14,7 @@ import os
 import subprocess
 
 from common import (JIRA_SOURCE, PARENT_FIELDS, PERSON, RAW_ITEM_FIELDS, dated_query, fetched, JiraClient, gh_orgs, is_sub_task, period_days,
-                    prep_dir, read_json, require_gh, search_pulls, selection, stops_on_failure, WORK_LISTS,
+                    prep_dir, read_json, require_gh, authored_searches, search_pulls, selection, stops_on_failure, WORK_LISTS,
                     write_raw_work)
 
 # What is fetched is what the raw files must hold, and each issue's or story's
@@ -90,14 +90,12 @@ def github_raw(login, person, run=subprocess.run):
     the library splits a window holding more than a search returns."""
     period = (person["start"], person["end"])
     orgs = gh_orgs(run)
-    terms = {"opened": ["is:pr", f"author:{login}", *(f"org:{org}" for org in orgs)],
-             "merged": ["is:pr", "is:merged", f"author:{login}", *(f"org:{org}" for org in orgs)]}
+    searches = authored_searches(login, orgs)
     raw = {"start": person["start"], "end": person["end"], "orgs": orgs,
-           "opened_query": dated_query(" ".join(terms["opened"]), "created", period),
-           "merged_query": dated_query(" ".join(terms["merged"]), "merged", period)}
-    for name, dated_by in (("opened", "created"), ("merged", "merged")):
+           **{f"{name}_query": dated_query(terms, dated_by, period) for name, (terms, dated_by) in searches.items()}}
+    for name, (terms, dated_by) in searches.items():
         raw[name] = search_pulls(
-            " ".join(terms[name]), dated_by, period, PR_FIELDS, run) if orgs else []
+            terms, dated_by, period, PR_FIELDS, run) if orgs else []
     return raw
 
 

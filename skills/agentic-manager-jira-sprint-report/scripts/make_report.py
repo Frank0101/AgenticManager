@@ -16,7 +16,7 @@ import re
 from typing import cast
 
 from common import (browse_url, epic_title, SENTENCE_BREAK, CHART_FILES, COMMENTARY_WORDS, CONTENT_FILE, DATA_FILE, EPIC_COMMENTARY_WORDS, FIELD_HEADER,
-                    JIRA_CELL, NO_EPIC, OUTCOME_COLOURS, PULL_STATES, RETRO_NOTES, SCOPE_GROUPS, STATUS_HEADING,
+                    GITHUB_CELL, JIRA_CELL, NO_EPIC, NOTHING_UNTRACKED, OUTCOME_COLOURS, UNTRACKED_HEADING, UNTRACKED_OPEN_PULLS, UNTRACKED_SUBTITLE, PULL_STATES, RETRO_NOTES, SCOPE_GROUPS, STATUS_HEADING,
                     ACHIEVEMENTS_WORDS, BLOCKERS_WORDS, GOAL_REASON_WORDS, SMALL_TYPE, ai_marked, chart_image, html_table, latest_points,
                     display_date, epic_groups, estimate, key_order, known_sum, no_work_text, read_json, parse_ts, plural, pts, qty, ratio,
                     report_file, scope_group_label, sprint_key, text_rule_problems, ticket_ref, unit, whole_percentage,
@@ -114,6 +114,12 @@ def validate_content(content, data):
             if written != groups or set(given) - set(groups):
                 problems.append(f"epic_commentary.{epic['key']} needs a paragraph for exactly these groups: "
                                 + (", ".join(groups) or "none"))
+    untracked = content.get("untracked_commentary")
+    repositories = [row["repository"] for row in data["untracked_delivery"]]
+    if (not isinstance(untracked, dict) or set(untracked) != set(repositories)
+            or any(not isinstance(text, str) or not text.strip() for text in untracked.values())):
+        problems.append("untracked_commentary must map exactly these repositories to a paragraph each: "
+                        + (", ".join(repositories) or "none, so {}"))
     if not problems:
         problems += text_problems(content, data)
     if problems:
@@ -129,6 +135,8 @@ def text_problems(content, data):
         given = content["epic_commentary"].get(epic["key"]) or {}
         paragraphs += [(f"epic_commentary.{epic['key']}.{group}", text, EPIC_COMMENTARY_WORDS)
                        for group, text in given.items()]
+    paragraphs += [(f"untracked_commentary.{repository}", text, EPIC_COMMENTARY_WORDS)
+                   for repository, text in content["untracked_commentary"].items()]
     sentences = [("goal_reason", content["goal_reason"],
                   GOAL_REASON_WORDS)] if "goal_reason" in content else []
     notes = [(f"retro_notes[{i}]", note)
@@ -282,6 +290,29 @@ class Report:
             return "–"
         share = f"{whole_percentage(done, total)}, " if scope == "original" else ""
         return share + ratio(done, total, epic[f"{scope}_points_done"], epic[f"{scope}_points_total"])
+
+    def untracked_table(self):
+        """The Untracked Delivery section's table: per repository, in the
+        model's order, its untracked pull requests, each its title linked,
+        folded into an accordion past UNTRACKED_OPEN_PULLS, and its
+        commentary, both in SMALL_TYPE; or a line saying there are none."""
+        rows = self.data["untracked_delivery"]
+        if not rows:
+            return NOTHING_UNTRACKED
+        pulls = {pr["url"]: pr for pr in self.data["other_pull_requests"]}
+        lines = ['<th width="20%">Repository</th><th width="28%">Pull requests</th>'
+                 f'<th width="52%">{ai_marked("Commentary")}</th>']
+        for row in rows:
+            listed = "<br>".join(f'<a href="{html.escape(url)}">{html.escape(pulls[url]["title"], quote=False)}</a>'
+                                 for url in row["pulls"])
+            if len(row["pulls"]) > UNTRACKED_OPEN_PULLS:
+                listed = f"<details><summary>{len(row['pulls'])} pull requests</summary>{listed}</details>"
+            text = self.content["untracked_commentary"][row["repository"]]
+            lines.append(f'<td class="{GITHUB_CELL}"><a href="{html.escape(row["url"])}">'
+                         f'{html.escape(row["repository"])}</a></td>'
+                         f'<td class="{GITHUB_CELL}" style="{SMALL_TYPE}">{listed}</td>'
+                         f'<td style="{SMALL_TYPE}">{html.escape(text, quote=False)}</td>')
+        return "\n".join(html_table(*lines))
 
     def status_table(self):
         """The Status to Verify section's table: per epic, in the model's
@@ -538,6 +569,9 @@ class Report:
             self.header_table(),
             "## Delivery by Epic",
             self.epic_table(),
+            f"## {UNTRACKED_HEADING}",
+            UNTRACKED_SUBTITLE,
+            self.untracked_table(),
             "## Sprint Metrics",
             self.metrics_table(),
             chart_image(CHART_FILES["outcome_tickets"],

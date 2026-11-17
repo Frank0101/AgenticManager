@@ -1,13 +1,13 @@
 ---
 name: agentic-manager-jira-sprint-report
 disable-model-invocation: true
-description: Writes a short, exec-ready report of one Jira sprint, closed or still running - goal outcome, key achievements, blockers and risks, delivery by epic, target completion and carry-over from the previous sprint, a burndown, a dated scope timeline (added, descoped, completed) with its commentary, the tickets whose status their pull requests contradict and notes for the retro - as Markdown with SVG charts, built from the Jira REST API and GitHub.
+description: Writes a short, exec-ready report of one Jira sprint, closed or still running - goal outcome, key achievements, blockers and risks, delivery by epic, target completion and carry-over from the previous sprint, a burndown, a dated scope timeline (added, descoped, completed) with its commentary, the tickets whose status their pull requests contradict, the pull requests merged during the sprint on none of its tickets and notes for the retro - as Markdown with SVG charts, built from the Jira REST API and GitHub.
 allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_file.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_description.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *)
 ---
 
 # Sprint Report
 
-Writes a short, exec-ready report of one Jira sprint, closed or still running. Scripts generate the figures, tables, charts, the timeline and its commentary, and the tickets whose status their pull requests contradict: everything but the parts marked [AI Gen.]. You write only those parts, in `content.json` (step 2).
+Writes a short, exec-ready report of one Jira sprint, closed or still running. Scripts generate the figures, tables, charts, the timeline and its commentary, the tickets whose status their pull requests contradict, and the pull requests merged during the sprint on none of its tickets: everything but the parts marked [AI Gen.]. You write only those parts, in `content.json` (step 2).
 
 The report's files go to the `jira-sprint-reports` folder of the user's configured output root (`output.root`), or to a temporary folder if none is set. The scripts choose the folder; don't pass one.
 
@@ -52,15 +52,16 @@ Read `brief.json`, at the `brief` path step 1 prints. It holds all the data you 
 
 ### What's in the brief
 
-| Part            | What it is                                                                                                                                                                                                                                                                                                                                                                                 |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `sprint`        | The sprint's name, status, goal and dates, and `goal_verdicts`, the verdicts you can choose from.                                                                                                                                                                                                                                                                                          |
-| `epics`         | Each epic with its description and the tickets the sprint worked on. For each ticket: `group` (`completed`, `in_review`, `not_completed` or `descoped`), `scope` (`original` is the commitment, `extra` was added later), `carried_in` (still in the previous sprint when it closed), latest `points`, `status`, `flagged`, summary, description and, for possible blockers, its comments. |
-| `goal_tickets`  | Every ticket of the original commitment, with its `epic_key`, `epic_name`, `summary`, `points` and `outcome` (`completed`, `not_completed` or `descoped`). It includes work already done when the sprint started and tickets completed without delivery, so the goal's commitment is whole.                                                                                                |
-| `report_facts`  | The report's own figures, in its exact wording.                                                                                                                                                                                                                                                                                                                                            |
-| `ticket_events` | The status changes of each ticket under `epics`, with dates.                                                                                                                                                                                                                                                                                                                               |
+| Part                 | What it is                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `sprint`             | The sprint's name, status, goal and dates, and `goal_verdicts`, the verdicts you can choose from.                                                                                                                                                                                                                                                                                          |
+| `epics`              | Each epic with its description and the tickets the sprint worked on. For each ticket: `group` (`completed`, `in_review`, `not_completed` or `descoped`), `scope` (`original` is the commitment, `extra` was added later), `carried_in` (still in the previous sprint when it closed), latest `points`, `status`, `flagged`, summary, description and, for possible blockers, its comments. |
+| `goal_tickets`       | Every ticket of the original commitment, with its `epic_key`, `epic_name`, `summary`, `points` and `outcome` (`completed`, `not_completed` or `descoped`). It includes work already done when the sprint started and tickets completed without delivery, so the goal's commitment is whole.                                                                                                |
+| `report_facts`       | The report's own figures, in its exact wording.                                                                                                                                                                                                                                                                                                                                            |
+| `ticket_events`      | The status changes of each ticket under `epics`, with dates.                                                                                                                                                                                                                                                                                                                               |
+| `untracked_delivery` | Each repository with pull requests merged during the sprint, by the people of its tickets' pull requests, that are on none of its tickets: for each pull request, its `url`, `title` and description.                                                                                                                                                                                      |
 
-The brief holds only the first part of each epic's and ticket's Jira description. When a description is longer, it also has `description_chunks`, the number of pieces it has in total. Read another piece only when it could change what you write, with `python3 ${CLAUDE_SKILL_DIR}/scripts/read_description.py --report-dir <report_dir> --key KEY --chunk N`.
+The brief holds only the first part of each epic's and ticket's Jira description, and of each pull request's. When a description is longer, it also has `description_chunks`, the number of pieces it has in total. Read another piece only when it could change what you write, with `python3 ${CLAUDE_SKILL_DIR}/scripts/read_description.py --report-dir <report_dir> --key KEY --chunk N`, where `KEY` is a ticket's or an epic's key, or a pull request's `url`.
 
 ### How to write each field of content.json
 
@@ -74,6 +75,8 @@ Work out the goal themes first: several fields use them, so match tickets to the
 
 **`epic_commentary`**: for every epic in the brief, one short paragraph per `group` it has tickets in. Say what changed for users or the system ("Staff can now sign in with their work account") and, where the epic's or the tickets' descriptions say so, why it matters, using the epic's description for context and each ticket's summary and description. Merge small items. At most 80 words per paragraph. Describe a ticket with no description from its summary alone; if a whole group has only bare summaries, add that "the tickets carry no detail".
 
+**`untracked_commentary`**: for every repository in `untracked_delivery`, one short paragraph of at most 80 words on what its pull requests changed, from their titles and descriptions, the same way as the epic commentary. `{}` when there is none.
+
 **`key_achievements`**: one paragraph of at most 150 words on what the sprint achieved, a step above the epic commentary: the `completed` tickets, by goal theme in the goal's order, then the other epics in the brief's order.
 
 **`blockers_risks`**: one paragraph of at most 100 words on the commitment still open: tickets with `scope` `original` in the `in_review` and `not_completed` groups. Group them by goal theme, then by epic, and say what the open work holds back. Give a reason only where a comment states one ("under discussion with Security"), and say when a ticket is flagged. If nothing from the commitment is open, say so.
@@ -83,7 +86,7 @@ Work out the goal themes first: several fields use them, so match tickets to the
 Rules for all of it. `finish_report.py` rejects text that breaks the wording and format rules, naming the field; it can't tell whether a figure is quoted, whether the text stays within what the tickets say, or whether it carries customer data or names a colleague, so you are the only guard for those:
 
 - No ticket keys except in the retro notes, and no figures except quoted ones in the retro notes: the generated parts show them.
-- Only what the tickets, descriptions and comments say. Never carry customer data from descriptions (names, contact details, account IDs, financial details), and never name colleagues: name the team ("with Security").
+- Only what the tickets, pull requests, descriptions and comments say. Never carry customer data from descriptions (names, contact details, account IDs, financial details), and never name colleagues: name the team ("with Security").
 - A work item is a ticket; it is completed, never closed. Write pts, never points; numbers as digits, never "one" to "twenty"; dates as `DD/MM/YYYY`.
 
 ### Writing the file
@@ -102,6 +105,9 @@ python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/output_
       "not_completed": "Audit logging of sign-ins hasn't started.",
       "descoped": "The admin screen for sign-in providers was dropped."
     }
+  },
+  "untracked_commentary": {
+    "acme/api": "The export no longer fails on empty files."
   },
   "key_achievements": "One paragraph.",
   "blockers_risks": "One paragraph.",

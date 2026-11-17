@@ -26,7 +26,7 @@ from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order, 
 from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.period import days  # noqa: E402,F401
 from agentic_manager.failures import GITHUB_FAILED, stops_on_failure  # noqa: E402,F401
-from agentic_manager.github import require_gh  # noqa: E402,F401
+from agentic_manager.github import authored_searches, gh_orgs, pull_fields, pull_parts, require_gh, search_pulls  # noqa: E402,F401
 from agentic_manager.ticket_pulls import pulls_by_ticket, read_events  # noqa: E402,F401
 
 # The skill's output folder, which holds the report folders (see output_folder.py).
@@ -38,7 +38,10 @@ REPORTS_FOLDER = "jira-sprint-reports"
 # fetch's own facts (META_FILE). Changelogs and comments hold one <KEY>.json
 # per ticket, sub-tasks left out; PULL_REQUESTS_FILE every ticket's pull requests, how each was
 # found and through which ticket, the ticket or a sub-task, when it was
-# opened, merged and closed, and those skipped as GitHub says they don't exist.
+# opened, merged and closed and who opened it, and those skipped as GitHub
+# says they don't exist; OTHER_PULLS_FILE the pull requests their authors
+# merged during the sprint that no ticket links (fetch_sprint.py's
+# other_pull_requests()).
 META_FILE = "_meta.json"
 SPRINT_FILE = "sprint.json"
 PREVIOUS_SPRINT_FILE = "previous_sprint.json"
@@ -48,6 +51,7 @@ PUNTED_ISSUES_FILE = "punted_issues.json"
 STATUSES_FILE = "statuses.json"
 PARENTS_FILE = "parents.json"
 PULL_REQUESTS_FILE = "pull_requests.json"
+OTHER_PULLS_FILE = "other_pull_requests.json"
 CHANGELOGS_DIR = "changelogs"
 COMMENTS_DIR = "comments"
 DATA_FILE = "data.json"
@@ -142,14 +146,27 @@ PULL_STATES = ("merged", "open", "declined")
 # report's vocabulary doesn't apply to.
 STATUS_HEADING = "Status to Verify"
 JIRA_CELL = "jira"
+# The section of the pull requests merged during the sprint on none of its
+# tickets, under Delivery by Epic, with what it shows in a line under its
+# heading, as perf-review-prep's sections have; the class of its cells copied from GitHub,
+# which the report's vocabulary doesn't apply to; and how many pull requests
+# a repository's list shows open, more folding into an accordion.
+UNTRACKED_HEADING = "Untracked Delivery"
+UNTRACKED_SUBTITLE = "*Pull requests merged during the sprint that don't reference any of its tickets, by repository.*"
+GITHUB_CELL = "github"
+UNTRACKED_OPEN_PULLS = 5
+NOTHING_UNTRACKED = "Every pull request merged during the sprint by its people is on a ticket of the sprint."
 
 # A description reaches the agent in pieces of at most this many characters, so
-# the brief stays small and the rest is read only when it could matter.
+# the brief stays small and the rest is read only when it could matter; a pull
+# request's in smaller ones, as there are many and their titles say most.
 DESCRIPTION_CHUNK_CHARS = 2000
+PULL_DESCRIPTION_CHUNK_CHARS = 500
 
 # Word limits, so the report stays short enough for an exec to read: the
 # timeline's commentary before its caveats, the goal verdict's reason, each
-# group's paragraph of an epic's commentary, and the Key Achievements and Blockers &
+# group's paragraph of an epic's commentary and each repository's of the
+# untracked delivery, and the Key Achievements and Blockers &
 # Risks paragraphs; and the most retro notes. Words are counted as the
 # library's word_count counts them.
 COMMENTARY_WORDS = 100
@@ -697,6 +714,19 @@ def no_work_text(counts):
     return "No work on this epic in the sprint: " + ", ".join(
         f"{counts[reason]} {unit(counts[reason])} {text}"
         for reason, text in LEFT_OUT_REASONS.items() if counts.get(reason))
+
+
+def repository_url(pull_url):
+    """The address of the repository of the pull request at `pull_url`."""
+    parts = pull_parts(pull_url)
+    assert parts, pull_url
+    return f"https://{parts['host']}/{parts['owner']}/{parts['name']}"
+
+
+def pull_chunks(body):
+    """A pull request's description in pieces, as the brief and
+    read_description.py cut it: PULL_DESCRIPTION_CHUNK_CHARS each."""
+    return chunks(body, PULL_DESCRIPTION_CHUNK_CHARS)
 
 
 def chunks(text, size=DESCRIPTION_CHUNK_CHARS):

@@ -15,7 +15,7 @@ from datetime import date, datetime, time
 from common import (days, CHANGELOGS_DIR, COMMENTS_DIR, DATA_FILE, GOAL_VERDICTS, META_FILE, OUTCOME_ROWS, OUTCOMES, PARENTS_FILE,
                     PREVIOUS_SPRINT_FILE, PUNTED_ISSUES_FILE, RAW_DIR, SPRINT_FILE,
                     SPRINT_ISSUES_FILE, SPRINT_REPORT_FILE, STATUSES_FILE, SCOPE_GROUPS, Context, add_and_remove_events,
-                    as_of, blocker_candidates, PULL_REQUESTS_FILE, PULL_STATES, in_sprint_at, key_order, known_sum,
+                    as_of, blocker_candidates, OTHER_PULLS_FILE, PULL_REQUESTS_FILE, repository_url, PULL_STATES, in_sprint_at, key_order, known_sum,
                     read_json, nested, outcome_total, parse_ts, plain_text, report_timezone, spell_epic, sprint_date,
                     sprint_key, sprint_moves_of, standard_issues, state_at, status_categories, ticket_events, write_json)
 
@@ -64,6 +64,7 @@ def build_data(report_dir):
 
     parents = read_json(os.path.join(raw_dir, PARENTS_FILE))
     pull_requests = read_json(os.path.join(raw_dir, PULL_REQUESTS_FILE))
+    other_raw = read_json(os.path.join(raw_dir, OTHER_PULLS_FILE))
     changes = load_changelogs(os.path.join(
         raw_dir, CHANGELOGS_DIR), current_raw + removed_raw)
     context = Context(sprint_id, sprint["startDate"],
@@ -180,6 +181,12 @@ def build_data(report_dir):
         # them.
         "ticket_pull_requests": {key: pulls_of[key] for key in sorted(pulls_of, key=key_order)},
         "status_checks": build_status_checks(spells, pulls_of, epics),
+        # The pull requests the people of the tickets' pull requests merged
+        # during the sprint that no ticket links, and those of them on none
+        # of its tickets, by repository: the Untracked Delivery section.
+        "other_pull_requests": (others := other_pulls(other_raw, keys,
+                                                      {t["key"] for t in spells})),
+        "untracked_delivery": untracked_delivery(others),
         "timeline": build_timeline(spells, status, start, end, complete, today),
         "burndown_baseline": baseline,
         "burndown": with_spread(build_burndown(spells, start, last_day, moment, zone), ideal),
@@ -571,6 +578,39 @@ def pull_state(pr):
     if pr["mergedAt"]:
         return "merged"
     return "declined" if pr["closedAt"] else "open"
+
+
+def other_pulls(raw, keys, sprint_keys):
+    """The pull requests of other_pull_requests.json (`raw`), merged during
+    the sprint as fetched, in the order merged, each with what GitHub gives,
+    its description as `body`; then, from those, the tickets its title and
+    branch name (keys `keys` matches, sprint_key()) and whether it is
+    untracked: naming none of `sprint_keys`, the sprint's tickets, as one
+    naming a ticket of the sprint is that ticket's work, whether or not Jira
+    links it."""
+    pulls = []
+    for url, pr in raw["pulls"].items():
+        record = {"url": url, "repository": nested(pr, ["repository", "nameWithOwner"]) or "",
+                  "title": pr.get("title") or "", "body": pr.get("body") or "",
+                  "branch": pr.get("headRefName") or "", "author": nested(pr, ["author", "login"]),
+                  "mergedAt": pr.get("mergedAt")}
+        tickets = sorted(set(keys.findall(record["title"])) | set(keys.findall(record["branch"])),
+                         key=key_order)
+        pulls.append({**record, "tickets": tickets,
+                     "untracked": not set(tickets) & sprint_keys})
+    return sorted(pulls, key=lambda pr: (pr["mergedAt"] or "", pr["url"]))
+
+
+def untracked_delivery(pulls):
+    """The untracked pull requests of `pulls` (other_pulls()) by repository:
+    [{repository, url, pulls: [their urls, in the order merged]}], the
+    repository with the most first, then by name."""
+    repositories = {}
+    for pr in pulls:
+        if pr["untracked"]:
+            repositories.setdefault(pr["repository"], []).append(pr["url"])
+    return [{"repository": name, "url": repository_url(urls[0]), "pulls": urls}
+            for name, urls in sorted(repositories.items(), key=lambda item: (-len(item[1]), item[0].lower()))]
 
 
 def build_status_checks(spells, pulls_of, epics):

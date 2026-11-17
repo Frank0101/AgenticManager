@@ -181,6 +181,16 @@ def search_pulls(terms, date_field, window, fields, run=subprocess.run):
     return halves[0] + halves[1]
 
 
+def authored_searches(login, orgs):
+    """{name: (terms, date field)} of the searches of the pull requests the
+    account `login` authored in the organisations `orgs`, as search_pulls()
+    takes them: "opened", dated by when each was created, and "merged",
+    those merged, by when."""
+    scope = [f"author:{login}", *(f"org:{org}" for org in orgs)]
+    return {"opened": (" ".join(["is:pr", *scope]), "created"),
+            "merged": (" ".join(["is:pr", "is:merged", *scope]), "merged")}
+
+
 def dated_query(terms, date_field, window):
     """GitHub's search query of `terms` dated by `date_field` within
     `window`, (first, last) as YYYY-MM-DD, such as "is:pr author:janedoe
@@ -217,14 +227,6 @@ def _search_page(query, fields, after, run):
     if not isinstance(page, dict):
         raise GhError(GRAPHQL, f"the search {query!r} got no answer")
     return page
-
-
-def pull_events(urls, run=subprocess.run):
-    """(events, gone) of the pull requests at `urls`: events as {url: {url,
-    state, createdAt, mergedAt, closedAt}}, when each was opened and, if it
-    was, merged and closed (else None), with state OPEN, CLOSED or MERGED;
-    and gone as pull_fields() gives it."""
-    return pull_fields(urls, EVENT_FIELDS, run)
 
 
 def pull_fields(urls, fields, run=subprocess.run):

@@ -132,6 +132,25 @@ class BriefTest(unittest.TestCase):
         self.assertEqual(make_brief.build_brief(
             fixture.no_work_data())["epics"], [])
 
+    def test_untracked_delivery(self):
+        # By repository, as the model orders them, each pull request with its
+        # address, title and description, a long one as a first chunk of the
+        # pull requests' size with its count.
+        self.assertEqual([row["repository"] for row in self.brief["untracked_delivery"]], [
+                         "acme/web", "acme/api"])
+        self.assertEqual(self.brief["untracked_delivery"][1], {"repository": "acme/api", "pulls": [
+            {"url": "https://github.com/acme/api/pull/90", "title": "Fix the flaky export test",
+             "description": "Why: fix the flaky export test."}]})
+        data = fixture.sprint_data()
+        long = "\n".join(f"Line {n} of the description." for n in range(100))
+        next(pr for pr in data["other_pull_requests"]
+             if pr["untracked"])["body"] = long
+        first = make_brief.build_brief(
+            data)["untracked_delivery"][1]["pulls"][0]
+        pieces = common.chunks(long, common.PULL_DESCRIPTION_CHUNK_CHARS)
+        self.assertEqual(
+            (first["description"], first["description_chunks"]), (pieces[0], len(pieces)))
+
     def test_epics_in_order_of_completed_pts(self):
         # Commitment and extra together: the order Key Achievements takes.
         self.assertEqual([e["key"] for e in self.brief["epics"]], [

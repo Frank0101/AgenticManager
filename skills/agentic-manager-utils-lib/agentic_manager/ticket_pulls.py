@@ -1,6 +1,6 @@
 """Jira tickets' pull requests, shared by every skill that relates tickets to
 code: those the Development panels of each ticket and of its sub-tasks list,
-and when GitHub says each was opened, merged and closed.
+when GitHub says each was opened, merged and closed, and who opened it.
 
 A sub-task's work is its parent's, as Jira's sprint report rolls it in. The
 panel is the link the team's integration made, and GitHub isn't searched for
@@ -11,12 +11,16 @@ the panel already listed some for; a search of titles found none.
 import subprocess
 
 from agentic_manager.batch import gather
-from agentic_manager.github import pull_events, pull_parts
+from agentic_manager.github import EVENT_FIELDS, pull_fields, pull_parts
 from agentic_manager.jira import key_order
 from agentic_manager.json_path import nested
 
 # Jira's condition for the issue types that are sub-tasks.
 SUB_TASKS = "issuetype in subTaskIssueTypes()"
+# What a pull request's events are read with: when it was opened, merged and
+# closed, and its author, a person (User) or an app (Bot), by its GitHub
+# account, as Jira names people only by their display name.
+PULL_EVENT_FIELDS = f"{EVENT_FIELDS} author {{ __typename login }}"
 
 
 def pulls_by_ticket(client, issues):
@@ -71,8 +75,9 @@ def first_found(*groups):
 
 def read_events(pulls, run=subprocess.run):
     """(events, gone) of each pull request of `pulls` on GitHub, as
-    github.pull_events() gives them: when each was opened, merged and closed,
-    and GitHub's words for those it says don't exist. An entry whose url
-    isn't a GitHub pull request, such as another code host's, gets no events.
-    Raises GhError for any other gh failure."""
-    return pull_events([pr["url"] for pr in pulls if pull_parts(pr.get("url"))], run)
+    github.pull_fields() gives them: when each was opened, merged and closed
+    and its author, as PULL_EVENT_FIELDS reads them, and GitHub's words for
+    those it says don't exist. An entry whose url isn't a GitHub pull
+    request, such as another code host's, gets no events. Raises GhError for
+    any other gh failure."""
+    return pull_fields([pr["url"] for pr in pulls if pull_parts(pr.get("url"))], PULL_EVENT_FIELDS, run)

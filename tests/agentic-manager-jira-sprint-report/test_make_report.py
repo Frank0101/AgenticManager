@@ -17,11 +17,12 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import make_report  # noqa: E402
 from check_report import Checker, cells_with_attributes, check_commentary, rows_of, text_of  # noqa: E402
-from common import CHART_FILES, NO_EPIC, ai_marked, link_text  # noqa: E402
+from common import CHART_FILES, NO_EPIC, NOTHING_UNTRACKED, UNTRACKED_SUBTITLE, ai_marked, link_text  # noqa: E402
 from make_report import Report  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
-from report_fixture import BASE, CONTENT, TICKETS, caveat_data, content_for, ev, linked, no_work_data, sprint_data, ticket  # noqa: E402
+from sprint_fixture import OTHER_PULLS, WEB  # noqa: E402
+from report_fixture import BASE, CONTENT, TICKETS, caveat_data, content_for, ev, linked, many_untracked, no_work_data, sprint_data, ticket  # noqa: E402
 
 # The [AI Gen.] label, as make_report renders it.
 AI = ai_marked("")
@@ -405,11 +406,14 @@ class BuildTest(unittest.TestCase):
     def test_sections_in_order(self):
         md = report().build()
         headings = [line for line in md.splitlines() if line.startswith("#")]
-        self.assertEqual(headings, ["# Sprint Summary: Sprint 7", "## Delivery by Epic", "## Sprint Metrics", "## Scope Timeline",
+        self.assertEqual(headings, ["# Sprint Summary: Sprint 7", "## Delivery by Epic", "## Untracked Delivery", "## Sprint Metrics", "## Scope Timeline",
                                     "## Status to Verify", f"## Notes for Sprint Retro{AI}"])
         # The outcome charts sit above the timeline, the burndown under its heading.
         self.assertEqual(re.findall(r'<img src="([^"]+)" width="100%"', md),
                          [CHART_FILES["outcome_tickets"], CHART_FILES["outcome_pts"], CHART_FILES["burndown"]])
+        # Untracked Delivery says what it shows, between its heading and table.
+        self.assertIn(
+            f"## Untracked Delivery\n\n{UNTRACKED_SUBTITLE}\n\n<table", md)
         burndown = CHART_FILES["burndown"]
         self.assertIn(f'## Scope Timeline\n\n<a href="{burndown}" target="_blank"><img src="{burndown}" '
                       'width="100%" alt="Sprint burndown"></a>', md)
@@ -464,6 +468,32 @@ class BuildTest(unittest.TestCase):
             self.assertEqual(r.status_table(), make_report.NOTHING_TO_VERIFY)
             self.assertIn("## Status to Verify\n\nEvery ticket's status agrees with its pull requests.\n\n## Notes",
                           r.build())
+
+    def test_untracked_table(self):
+        # A row per repository, in the model's order: the repository linked,
+        # its pull requests each its title linked, then the commentary marked
+        # as the agent's, both in small type; past 5 pull requests, the list
+        # folds into an accordion; with none, a line instead of the table.
+        table = report().untracked_table()
+        rows = [[cell for _, cell in cells_with_attributes(
+            row)] for row in rows_of(table)]
+        self.assertEqual([text_of(cell) for cell in rows[0]], [
+                         "Repository", "Pull requests", f"Commentary [AI Gen.]"])
+        self.assertEqual(rows[1], ['<a href="https://github.com/acme/web">acme/web</a>',
+                                   f'<a href="{WEB.format(13)}">Spike the search</a><br>'
+                                   f'<a href="{WEB.format(14)}">Speed up the build</a>',
+                                   "A search spike &amp; a faster build."])
+        self.assertIn('<td class="github" style="font-size:75%">', table)
+        self.assertEqual(text_of(rows[2][0]), "acme/api")
+        for count, folded in ((6, True), (5, False)):
+            with self.subTest(count):
+                data = sprint_data(other_pulls=many_untracked(count))
+                table = Report(data, content_for(data)).untracked_table()
+                self.assertEqual(
+                    f"<details><summary>{count} pull requests</summary>" in table, folded)
+        data = sprint_data(other_pulls={**OTHER_PULLS, "pulls": {}})
+        self.assertEqual(Report(data, content_for(
+            data)).untracked_table(), NOTHING_UNTRACKED)
 
     def test_mid_sprint_snapshot_note(self):
         # A running sprint's figures are provisional; the note says so.
@@ -525,6 +555,14 @@ class ValidateContentTest(unittest.TestCase):
              {"goal_reason": None}, {"sprint_goal": ""}),
             ("goal_reason must be left out: the brief offers only one verdict",
              {"goal_reason": "Work has only just started."}, EARLY),
+            ("untracked_commentary must map exactly these repositories to a paragraph each: acme/web, acme/api",
+             {"untracked_commentary": {"acme/web": "x"}}),
+            ("untracked_commentary must map exactly these repositories",
+             {"untracked_commentary": {**CONTENT["untracked_commentary"], "acme/ops": "x"}}),
+            ("untracked_commentary must map exactly these repositories",
+             {"untracked_commentary": {**CONTENT["untracked_commentary"], "acme/api": " "}}),
+            ("untracked_commentary.acme/api: 81 words, at most 80",
+             {"untracked_commentary": {**CONTENT["untracked_commentary"], "acme/api": "word " * 81}}),
             ("epic_commentary must map each epic key to its groups' paragraphs",
              {"epic_commentary": []}),
             ("epic_commentary.PROJ-100 must map each group to a paragraph",

@@ -23,7 +23,7 @@ import common  # noqa: E402
 from agentic_manager import output_file  # noqa: E402
 from common import NO_EPIC, parse_ts  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from sprint_fixture import PR, moved  # noqa: E402
+from sprint_fixture import OTHER_PULLS, PR, WEB, moved  # noqa: E402
 from ticket_fixture import (CATEGORIES, CLOSE, PLUS_ONE, PREVIOUS, START, START_DATE, at, carried, changed,  # noqa: E402
                             context, done, events, joined, left, points, raw)
 from report_fixture import PROJ_KEYS, ev, pull, ticket  # noqa: E402
@@ -454,6 +454,22 @@ class StatusChecksTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, f"PROJ-1: no GitHub times for {PR.format(42)}"):
             build.ticket_pulls(raw, "PROJ-1", at("03-10"), PROJ_KEYS)
 
+    def test_other_pulls_and_untracked_delivery(self):
+        # In the order merged, each naming the tickets its title and branch
+        # give; untracked when naming none of the sprint's tickets, a ticket
+        # of another sprint allowed; by repository, the most first, each in
+        # the order merged.
+        found = build.other_pulls(OTHER_PULLS, PROJ_KEYS, {"PROJ-1", "PROJ-2"})
+        self.assertEqual([(pr["url"], pr["tickets"], pr["untracked"]) for pr in found],
+                         [(PR.format(90), [], True), (PR.format(91), ["PROJ-1"], False),
+                          (WEB.format(13), ["PROJ-90"], True), (WEB.format(14), [], True)])
+        self.assertEqual((found[0]["repository"], found[0]["title"], found[0]["body"], found[0]["author"]),
+                         ("acme/api", "Fix the flaky export test", "Why: fix the flaky export test.", "janedoe"))
+        self.assertEqual(build.untracked_delivery(found), [
+            {"repository": "acme/web", "url": "https://github.com/acme/web",
+                "pulls": [WEB.format(13), WEB.format(14)]},
+            {"repository": "acme/api", "url": "https://github.com/acme/api", "pulls": [PR.format(90)]}])
+
     def test_status_flag(self):
         # Each status category with its own pull requests' states, the
         # others' ignored: not started with work, or Done with one open. A
@@ -874,6 +890,7 @@ class MainTest(unittest.TestCase):
         self.write(common.PREVIOUS_SPRINT_FILE, self.previous)
         self.write(common.PARENTS_FILE, [])
         self.write(common.PULL_REQUESTS_FILE, self.pulls)
+        self.write(common.OTHER_PULLS_FILE, OTHER_PULLS)
         for issue in self.current + self.removed:
             default = [left(at("03-04"))] if issue in self.removed else []
             self.write(os.path.join(common.CHANGELOGS_DIR, f"{issue['key']}.json"),

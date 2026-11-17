@@ -77,6 +77,13 @@ class GithubTest(unittest.TestCase):
                     with self.assertRaisesRegex(SystemExit, re.escape(expected)):
                         github.require_gh(run, "the code is read", "fetch.py")
 
+    def test_authored_searches(self):
+        # What the account opened, by creation, and what of it was merged, by
+        # merge, in every organisation given.
+        self.assertEqual(github.authored_searches("janedoe", ["acme", "acme-labs"]), {
+            "opened": ("is:pr author:janedoe org:acme org:acme-labs", "created"),
+            "merged": ("is:pr is:merged author:janedoe org:acme org:acme-labs", "merged")})
+
     def test_search_pulls(self):
         # Every page of a window's pull requests, by the date asked for; a
         # window holding more than a search returns split in halves until
@@ -263,8 +270,8 @@ class GithubTest(unittest.TestCase):
         cases = [("secondary", secondary, [60, 120, 240]),
                  ("primary", primary, [])]
         calls = [("gh_json", lambda run: github.gh_json(["search", "prs"], run)),
-                 ("graphql", lambda run: github.pull_events(
-                     [PR.format(1)], run)),
+                 ("graphql", lambda run: github.pull_fields(
+                     [PR.format(1)], github.EVENT_FIELDS, run)),
                  ("search", lambda run: github.search_pulls("is:pr", "created", ("2026-09-01", "2026-09-01"),
                                                             "url", run))]
         for (name, message, waits), (call, make) in [(case, c) for case in cases for c in calls]:
@@ -418,7 +425,7 @@ class GithubTest(unittest.TestCase):
                 self.assertEqual(parts and (parts["host"], parts["owner"], parts["name"], parts["number"]),
                                  expected)
 
-    def test_pull_events(self):
+    def test_pull_fields_reads_events(self):
         # Many pull requests in one GraphQL call, grouped by repository, each
         # value a variable; split into calls of a batch each, one host
         # each. One GitHub says doesn't exist is returned apart with GitHub's
@@ -455,7 +462,7 @@ class GithubTest(unittest.TestCase):
                     code, out, err = graphql_answer(command[1:], lambda url: None if url in missing
                                                     else node(url))
                     return subprocess.CompletedProcess(command, code, out, err)
-                self.assertEqual(github.pull_events(urls, run),
+                self.assertEqual(github.pull_fields(urls, github.EVENT_FIELDS, run),
                                  ({url: node(url) for url in answered}, gone))
                 self.assertEqual(sorted((c[c.index("--hostname") + 1] if "--hostname" in c else "")
                                         for c in calls), sorted(hosts))
@@ -470,7 +477,8 @@ class GithubTest(unittest.TestCase):
             with self.subTest(unsafe):
                 run = Runner()
                 with self.assertRaises(github.GhError) as raised:
-                    github.pull_events([PR.format(41), unsafe], run)
+                    github.pull_fields(
+                        [PR.format(41), unsafe], github.EVENT_FIELDS, run)
                 self.assertEqual((raised.exception.command, raised.exception.message),
                                  (["api", "graphql"], f"{unsafe}: not a pull request's address gh can be asked about"))
                 self.assertEqual(run.calls, [])
@@ -529,12 +537,13 @@ class GithubTest(unittest.TestCase):
                     return subprocess.CompletedProcess(command, code, out, err)
                 if isinstance(expected, Fails):
                     with self.assertRaises(github.GhError) as raised:
-                        github.pull_events([PR.format(41)], run)
+                        github.pull_fields(
+                            [PR.format(41)], github.EVENT_FIELDS, run)
                     self.assertEqual((raised.exception.command, raised.exception.message),
                                      (["api", "graphql"], expected.message))
                 else:
-                    self.assertEqual(github.pull_events(
-                        [PR.format(41)], run), expected)
+                    self.assertEqual(github.pull_fields(
+                        [PR.format(41)], github.EVENT_FIELDS, run), expected)
 
 
 if __name__ == "__main__":

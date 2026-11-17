@@ -23,7 +23,7 @@ from agentic_manager.commands import library_command, script_command, stdin_json
 from agentic_manager.config import company_setting  # noqa: E402,F401
 from agentic_manager.json_path import is_number  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
-from agentic_manager.github import commit_authors, gh_json, gh_orgs, profile_name, dated_query, pull_search_url, require_gh, search_pulls, selection  # noqa: E402,F401
+from agentic_manager.github import authored_searches, commit_authors, gh_json, gh_orgs, profile_name, dated_query, pull_search_url, require_gh, search_pulls, selection  # noqa: E402,F401
 from agentic_manager.jira import JiraClient, browse_url, is_sub_task, plain_text, project_of, search_url as jira_search_url  # noqa: E402,F401
 from agentic_manager.logseq import descendants, graph_path, journal_day, links, notes, page_aliases, page_title, parse_blocks  # noqa: E402,F401
 from agentic_manager.output_file import json_text, read_json, write_output_file, write_output_json  # noqa: E402,F401

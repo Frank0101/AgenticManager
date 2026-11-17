@@ -191,6 +191,31 @@ COMMENTS = {"PROJ-7": [{"id": "1", "body": "Waiting on a dependency."}]}
 # PROJ-2's, still In Progress at the close: its own, merged, and one naming
 # only PROJ-5, neither of which flags a ticket that has started.
 PR = "https://github.com/acme/api/pull/{}"
+WEB = "https://github.com/acme/web/pull/{}"
+
+
+def other_pull(url, title, branch, merged):
+    """A merged pull request no ticket links, as other_pull_requests.json
+    holds it."""
+    return {"url": url, "title": title, "body": f"Why: {title.lower()}.", "headRefName": branch,
+            "mergedAt": merged, "author": {"login": "janedoe"},
+            "repository": {"nameWithOwner": "/".join(url.split("/")[3:5])}}
+
+
+# The pull requests the tickets' authors merged during the sprint that no
+# ticket links, as the fetch keeps them: one in acme/api and two in acme/web,
+# one of them naming a ticket of another sprint; and one naming a ticket of
+# the sprint.
+OTHER_PULLS = {"people": ["janedoe"], "orgs": ["acme"], "window": ["2026-03-01", "2026-03-14"], "gone": {},
+               "pulls": {pr["url"]: pr for pr in (
+                   other_pull(PR.format(90), "Fix the flaky export test",
+                              "fix-flaky-export", "2026-03-06T10:00:00Z"),
+                   other_pull(PR.format(91), "PROJ-1 tweak the copy",
+                              "PROJ-1-copy", "2026-03-07T10:00:00Z"),
+                   other_pull(WEB.format(13), "Spike the search",
+                              "PROJ-90-search-spike", "2026-03-10T10:00:00Z"),
+                   other_pull(WEB.format(14), "Speed up the build",
+                              "faster-build", "2026-03-11T10:00:00Z"))}}
 PULL_REQUESTS = {
     "tickets": {"PROJ-1": [{"url": PR.format(42), "name": "PROJ-1 import from a folder", "state": "OPEN",
                             "source": {"branch": "PROJ-1-folder"}, "via": "PROJ-1"},
@@ -231,6 +256,8 @@ CONTENT = {
     "blockers_risks": "Importing from a shared link is still in progress, with no blocker recorded.",
     "retro_notes": ["4 tickets (8 pts) were descoped: was the commitment too large?",
                     "PROJ-6 (1 pt) left the sprint and came back: was it ready when it was committed?"],
+    "untracked_commentary": {"acme/web": "A search spike and a faster build.",
+                             "acme/api": "The export test no longer fails at random."},
 }
 
 
@@ -261,6 +288,7 @@ def raw_files():
             "type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"{name}."}]}]}}}
             for key, name, id_ in (IMPORT, EXPORT)],
         "pull_requests.json": PULL_REQUESTS,
+        "other_pull_requests.json": OTHER_PULLS,
     }
     files.update({f"changelogs/{k}.json": v for k, v in CHANGELOGS.items()})
     files.update({f"comments/{k}.json": v for k, v in COMMENTS.items()})

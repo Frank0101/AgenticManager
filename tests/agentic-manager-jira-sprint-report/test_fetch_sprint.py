@@ -29,7 +29,7 @@ from sprint_fixture import PR  # noqa: E402
 # The fake gh's GraphQL answers follow the library's query.
 sys.path.insert(0, os.path.join(os.path.dirname(
     TEST_DIR), "agentic-manager-utils-lib"))
-from gh_fake import graphql_answer, is_graphql  # noqa: E402
+from gh_fake import graphql_answer, is_graphql, is_search, search_answer  # noqa: E402
 
 
 # Retries wait for real; here they needn't.
@@ -143,8 +143,9 @@ class Panel:
 
 class gh:
     """A runner that answers gh's commands from `answers`, by the words after
-    gh up to the first option, a GraphQL call by each pull request's "pr view
-    <url>" and, when it holds "api graphql", as a whole by that; it records
+    gh up to the first option, a GraphQL search by the pull requests under
+    "search", a GraphQL call by each pull request's "pr view <url>" and,
+    when it holds "api graphql", as a whole by that; it records
     each command. A command it has no answer for fails with GitHub's rate
     limit message, as gh does, and a pull request GitHub can't resolve."""
 
@@ -153,6 +154,8 @@ class gh:
 
     def __call__(self, command, **kwargs):
         self.calls.append(" ".join(command))
+        if is_search(command[1:]) and "search" in self.answers:
+            return subprocess.CompletedProcess(command, *search_answer(command[1:], self.answers["search"]))
         if is_graphql(command[1:]):
             if "api graphql" not in self.answers:
                 return subprocess.CompletedProcess(command, *graphql_answer(
@@ -295,6 +298,44 @@ class PullRequestsTest(unittest.TestCase):
                 self.assertTrue(message.startswith(start), message)
                 self.assertTrue(message.endswith(end), message)
                 self.assertEqual(len(run.calls), 1, run.calls)
+
+
+class OtherPullRequestsTest(unittest.TestCase):
+    START, END = "2026-03-04T12:00:00.000Z", "2026-03-13T16:00:00.000Z"
+    WINDOW = ("2026-03-03", "2026-03-14")
+
+    def test_other_pull_requests(self):
+        # The people who authored the tickets' pull requests, apps left out,
+        # each searched in the account's organisations for the pull requests
+        # merged in the days around the sprint, by address and merge time;
+        # of those merged during it, only the ones no ticket links, the
+        # skipped included, are read.
+        author = {PR.format(41): {"__typename": "User", "login": "janedoe"},
+                  PR.format(42): {"__typename": "Bot", "login": "renovate"}}
+        pulls = {"tickets": {}, "events": {url: {"author": who} for url, who in author.items()},
+                 "skipped": [{"url": PR.format(43), "via": ["PROJ-1"], "message": "gone"}]}
+        merged = "2026-03-08T10:00:00Z"
+        # 52 and 53 were merged on the days searched, but before the start
+        # and after the end.
+        found = [{"url": PR.format(n), "mergedAt": merged} for n in (41, 43, 50)] + [
+            {"url": PR.format(52), "mergedAt": "2026-03-04T11:00:00Z"},
+            {"url": PR.format(53), "mergedAt": "2026-03-13T17:00:00Z"}]
+        run = gh({"api user/orgs?per_page=100": [{"login": "acme"}], "search": found,
+                  f"pr view {PR.format(50)}": {"title": "Fix the build"}})
+        self.assertEqual(fetch_sprint.other_pull_requests(pulls, self.START, self.END, run), {
+            "people": ["janedoe"], "orgs": ["acme"], "window": list(self.WINDOW),
+            "pulls": {PR.format(50): {"title": "Fix the build"}}, "gone": {}})
+        # GitHub is searched a day wider on each side of the sprint.
+        searches = [call for call in run.calls if "search(query:" in call]
+        self.assertEqual(len(searches), 1)
+        self.assertIn(
+            "q=is:pr is:merged author:janedoe org:acme merged:2026-03-03..2026-03-14", searches[0])
+        # With no one to search, GitHub isn't asked.
+        run = gh({})
+        self.assertEqual(fetch_sprint.other_pull_requests({"tickets": {}, "events": {}, "skipped": []}, self.START,
+                                                          self.END, run),
+                         {"people": [], "orgs": [], "window": list(self.WINDOW), "pulls": {}, "gone": {}})
+        self.assertEqual(run.calls, [])
 
 
 class ChangelogsTest(unittest.TestCase):

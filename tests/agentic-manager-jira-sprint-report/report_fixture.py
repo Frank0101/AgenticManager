@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import build_data as build  # noqa: E402
 from common import NO_EPIC, parse_ts, sprint_key  # noqa: E402
-from sprint_fixture import PR  # noqa: E402
+from sprint_fixture import OTHER_PULLS, PR, WEB  # noqa: E402
 
 BASE = "https://acme.test"
 START = "2026-03-02T09:00:00.000+0000"
@@ -154,6 +154,13 @@ def category(done):
     return "done" if done else "indeterminate"
 
 
+def many_untracked(count):
+    """other_pull_requests.json with `count` untracked pull requests, all in
+    acme/web."""
+    return {**OTHER_PULLS, "pulls": {WEB.format(n): {**OTHER_PULLS["pulls"][WEB.format(14)], "url": WEB.format(n),
+                                                     "title": f"Change {n}"} for n in range(100, 100 + count)}}
+
+
 def no_work_data():
     """Sprint data whose only epic the sprint did no work on: its tickets
     are PROJ-4, already done before it started, and PROJ-5, resolved without
@@ -169,7 +176,9 @@ def caveat_data(kind, keys):
                                       "completed", marker="duplicate") for key in keys])
 
 
-def sprint_data(**changes):
+def sprint_data(other_pulls=OTHER_PULLS, **changes):
+    """A sprint's data.json, as build_data.py writes it, with `changes`;
+    `other_pulls` is other_pull_requests.json."""
     data = {
         "report_timezone": "Europe/London", "base_url": BASE, "label": "PROJ-Sprint-7", "sprint_id": 7,
         "sprint_name": "Sprint 7",
@@ -227,6 +236,10 @@ def sprint_data(**changes):
         "burndown_weekdays": build.burndown_weekdays(data["sprint_start"], data["sprint_end"]),
         "burndown_ideal": ideal,
     })
+    others = build.other_pulls(other_pulls, sprint_key(
+        {"spells": tickets, "epics": data["epics"]}), {t["key"] for t in tickets})
+    data.update({"other_pull_requests": others,
+                "untracked_delivery": build.untracked_delivery(others)})
     data.setdefault("goal_verdicts", build.goal_verdicts(data["sprint_goal"], data["sprint_status"],
                                                          data["sprint_start"], data["sprint_end"], data["today"]))
     data.setdefault("days_left", build.days_left(
@@ -273,6 +286,8 @@ CONTENT = {
     "blockers_risks": "Nothing from the commitment was left open; the only open ticket is extra work.",
     "retro_notes": ["PROJ-1 (3 pts) grew during the sprint: was it refined enough?",
                     "PROJ-2 (2 pts) left the sprint and came back: should it have stayed out?"],
+    "untracked_commentary": {"acme/web": "A search spike & a faster build.",
+                             "acme/api": "The export test no longer fails at random."},
 }
 
 
@@ -280,6 +295,8 @@ def content_for(data):
     """CONTENT as the agent would write it for `data`: a sprint offered only
     one verdict gets it, and no reason."""
     content = copy.deepcopy(CONTENT)
+    content["untracked_commentary"] = {row["repository"]: CONTENT["untracked_commentary"].get(
+        row["repository"], "Work merged outside the sprint's tickets.") for row in data["untracked_delivery"]}
     if len(data["goal_verdicts"]) == 1:
         content["goal_verdict"] = data["goal_verdicts"][0]
         del content["goal_reason"]

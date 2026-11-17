@@ -25,6 +25,9 @@ class ReadDescriptionTest(unittest.TestCase):
             f"Line {n} of the description." for n in range(200))
         data = fixture.sprint_data()
         data["spells"][0]["description"] = self.long
+        self.pull = next(
+            pr for pr in data["other_pull_requests"] if pr["untracked"])
+        self.pull["body"] = self.long
         with open(os.path.join(self.tmp.name, common.DATA_FILE), "w", encoding="utf-8") as f:
             json.dump(data, f)
         self.key = data["spells"][0]["key"]
@@ -50,8 +53,18 @@ class ReadDescriptionTest(unittest.TestCase):
         self.assertIn(f"{epic['key']}, chunk 1 of 1",
                       self.read("--key", epic["key"]))
 
+    def test_an_untracked_pull_request_has_smaller_chunks(self):
+        # Cut as the brief cuts it, by its address.
+        pieces = common.chunks(self.long, common.PULL_DESCRIPTION_CHUNK_CHARS)
+        self.assertEqual(self.read("--key", self.pull["url"], "--chunk", "2"),
+                         f"{self.pull['url']}, chunk 2 of {len(pieces)}\n\n{pieces[1]}\n")
+
     def test_refusals(self):
-        cases = [(("--key", "NOPE-1"), "no ticket or epic NOPE-1"),
+        # A pull request on a ticket of the sprint isn't untracked delivery.
+        tracked = "https://github.com/acme/api/pull/91"
+        cases = [(("--key", "NOPE-1"), "no ticket, epic or untracked pull request NOPE-1"),
+                 (("--key", tracked),
+                  f"no ticket, epic or untracked pull request {tracked}"),
                  (("--key", self.key, "--chunk", "0"), "--chunk is 1 to"),
                  (("--key", self.key, "--chunk", str(len(self.pieces) + 1)), "--chunk is 1 to")]
         for args, expected in cases:

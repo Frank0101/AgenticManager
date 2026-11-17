@@ -13,12 +13,13 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from common import (CHANGELOGS_DIR, COMMENTS_DIR, META_FILE, PARENTS_FILE, PREVIOUS_SPRINT_FILE, PULL_REQUESTS_FILE,
+from common import (CHANGELOGS_DIR, COMMENTS_DIR, META_FILE, OTHER_PULLS_FILE, PARENTS_FILE, PREVIOUS_SPRINT_FILE, PULL_REQUESTS_FILE,
                     PUNTED_ISSUES_FILE, RAW_DIR, REPORTS_FOLDER, SPRINT_FILE, SPRINT_ISSUES_FILE,
                     SPRINT_REPORT_FILE, STATUSES_FILE, GITHUB_FAILED, Context, JiraClient, as_of,
-                    blocker_candidates, gather, require_gh, history_fields, nested, new_run, parse_ts,
+                    authored_searches, blocker_candidates, gather, gh_orgs, require_gh, history_fields, nested,
+                    new_run, parse_ts, pull_fields, search_pulls,
                     project_of, pulls_by_ticket, read_events, report_label, report_timezone,
                     standard_issues, status_categories, stops_on_failure, ticket_events, write_json)
 
@@ -27,6 +28,11 @@ BASE_FIELDS = [
     "summary", "status", "issuetype", "created", "resolution", "priority", "parent",
     "description",
 ]
+# What the pull requests no ticket links are read with, besides their
+# address: what a reader needs to tell what each was, its description
+# included, the keys its title and branch name, and when it was merged.
+OTHER_PULL_FIELDS = ("url title body headRefName mergedAt author { login } "
+                     "repository { nameWithOwner }")
 # What a GitHub failure's message starts with.
 NO_REPORT = f"{GITHUB_FAILED}, so no report was written"
 # How the sprint is named on the command line, shown in --help.
@@ -136,6 +142,9 @@ def fetch_sprint(args):
 
         pulls = pull_requests(client, standard)
         log(f"{sum(map(len, pulls['tickets'].values()))} pull request(s) found")
+        others = other_pull_requests(pulls, sprint["startDate"], moment)
+        log(f"{len(others['pulls'])} other pull request(s) merged during the sprint, "
+            f"searched among {len(others['people'])} people's")
 
         project_key = project_key_of(args, issues)
         label = report_label(project_key, sprint.get("name"))
@@ -156,6 +165,7 @@ def fetch_sprint(args):
         write_json(os.path.join(raw_dir, STATUSES_FILE), statuses)
         write_json(os.path.join(raw_dir, PARENTS_FILE), parents)
         write_json(os.path.join(raw_dir, PULL_REQUESTS_FILE), pulls)
+        write_json(os.path.join(raw_dir, OTHER_PULLS_FILE), others)
         for key, changes in changelogs.items():
             write_json(os.path.join(
                 raw_dir, CHANGELOGS_DIR, f"{key}.json"), changes)
@@ -277,6 +287,45 @@ def pull_requests(client, issues, run=subprocess.run):
     tickets = {key: [pr for pr in prs if pr["url"] not in gone]
                for key, prs in found.items()}
     return {"tickets": tickets, "events": events, "skipped": skipped}
+
+
+def other_pull_requests(pulls, start, moment, run=subprocess.run):
+    """What other_pull_requests.json holds: {people, orgs, window, pulls:
+    {url: its OTHER_PULL_FIELDS}, gone: {url: GitHub's words}}, the pull
+    requests that the people who authored the tickets' `pulls`
+    (pull_requests()'s), apps left out, merged between the sprint's `start`
+    and `moment`, its end, in the organisations gh belongs to, and that no
+    ticket links; `window` is the days searched (search_window()). Raises
+    GhError when gh fails.
+
+    Work done outside Jira has nothing there to find it by, so it is looked
+    for by who did the sprint's work, in any of those organisations'
+    repositories, as perf-review-prep looks for a person's work. Only merged
+    pull requests are work done. The search gives only each one's address
+    and when it was merged, and only those merged during the sprint that no
+    ticket links are read in full: the tickets' are read already."""
+    window = search_window(start, moment)
+    first, last = parse_ts(start), parse_ts(moment)
+    people = sorted({login for event in pulls["events"].values()
+                     if nested(event, ["author", "__typename"]) == "User"
+                     and (login := nested(event, ["author", "login"]))})
+    orgs = gh_orgs(run) if people else []
+    known = set(pulls["events"]) | {skip["url"] for skip in pulls["skipped"]}
+    found = [pull["url"] for login in people
+             for pull in search_pulls(*authored_searches(login, orgs)["merged"], window, "url mergedAt", run)
+             if first <= parse_ts(pull["mergedAt"]) <= last] if orgs else []
+    details, gone = pull_fields([url for url in dict.fromkeys(found) if url not in known],
+                                OTHER_PULL_FIELDS, run)
+    return {"people": people, "orgs": orgs, "window": list(window), "pulls": details, "gone": gone}
+
+
+def search_window(start, moment):
+    """(first, last) days, as YYYY-MM-DD, GitHub is searched within for the
+    pull requests merged during the sprint, from its `start` to `moment`, its
+    end: a day wider on each side, as GitHub's search dates are UTC days;
+    other_pull_requests() keeps those merged between the two instants."""
+    return ((parse_ts(start) - timedelta(days=1)).date().isoformat(),
+            (parse_ts(moment) + timedelta(days=1)).date().isoformat())
 
 
 def project_key_of(args, issues):

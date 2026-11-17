@@ -521,6 +521,10 @@ class TimezoneTest(ReportTest):
                 self.raw["sprint_report.json"] = {"contents": {
                     "completedIssues": [{"key": "PROJ-1"}], "puntedIssues": []}}
                 self.raw["_meta.json"]["fetched_at"] = close
+                # No work outside the tickets, so no repository to describe.
+                self.raw["other_pull_requests.json"] = {
+                    **fixture.OTHER_PULLS, "pulls": {}}
+                self.content["untracked_commentary"] = {}
                 data, md = self.make_report()
                 completion = data["spells"][0]["events"][-1]
                 self.assertEqual(
