@@ -12,11 +12,11 @@ import argparse
 import os
 from datetime import date, datetime, time
 
-from common import (days, CHANGELOGS_DIR, COMMENTS_DIR, DATA_FILE, GOAL_VERDICTS, META_FILE, OUTCOME_ROWS, OUTCOMES, PARENTS_FILE,
+from common import (days, CHANGELOGS_DIR, COMMENTS_DIR, DATA_FILE, GOAL_VERDICTS, LEFT_OUT_REASONS, META_FILE, OUTCOME_ROWS, OUTCOMES, PARENTS_FILE,
                     PREVIOUS_SPRINT_FILE, PUNTED_ISSUES_FILE, RAW_DIR, SPRINT_FILE,
                     SPRINT_ISSUES_FILE, SPRINT_REPORT_FILE, STATUSES_FILE, SCOPE_GROUPS, Context, add_and_remove_events,
                     as_of, blocker_candidates, OTHER_PULLS_FILE, PULL_REQUESTS_FILE, repository_url, PULL_STATES, in_sprint_at, key_order, known_sum,
-                    read_json, nested, outcome_total, parse_ts, plain_text, report_timezone, spell_epic, sprint_date,
+                    read_json, nested, parse_ts, plain_text, report_timezone, spell_epic, sprint_date,
                     sprint_key, sprint_moves_of, standard_issues, state_at, status_categories, ticket_events, write_json)
 
 # Terms meaning an issue was closed without delivering it (duplicate, won't do,
@@ -127,7 +127,9 @@ def build_data(report_dir):
     spells.sort(key=lambda t: (
         key_order(t["key"]), parse_ts(t["events"][0]["at"])))
     counted = [t for t in spells if t["counted"]]
+    latest = latest_points(spells)
     counts, points = outcome_breakdown(spells)
+    count_totals, point_totals = outcome_totals(counts, points)
     epics = build_epics(spells, epic_descriptions(parents))
     # The pull requests of each ticket in the sprint at the end, the only
     # tickets whose status the report checks.
@@ -159,18 +161,31 @@ def build_data(report_dir):
             "complete_instant": previous["completeDate"],
             "complete_date": sprint_date(previous["completeDate"], zone)},
         "spells": spells,
+        # Each ticket's latest estimate, its last spell's: the one it shows
+        # wherever no moment of its own applies.
+        "latest_points": latest,
         # Each ticket's history as at the end: the spells are worked out from it.
         "ticket_events": {key: events_of[key] for key in sorted(with_spells, key=key_order)},
         # Issues that joined and left before the start: in no part of the report.
         "left_before_start_keys": sorted(left_before_start, key=key_order),
         "outcome_breakdown_counts": counts,
         "outcome_breakdown_points": points,
+        # Each breakdown row's work however it ended, and "all", the
+        # commitment and the extra together: the outcome charts' totals.
+        "outcome_totals_counts": count_totals,
+        "outcome_totals_points": point_totals,
+        # The ways the sprint departed from the ideal one, which the
+        # timeline's commentary states.
+        "scope_changes": scope_changes(spells),
         "non_delivery_closures": non_delivery_closures(spells),
         "points_estimated_issue_count": sum(1 for t in counted if t["points"] is not None),
         "points_total_issue_count": len(counted),
         # Jira's current buckets cannot independently verify these issues'
         # historical membership, which is reconstructed from their changes.
-        "membership_cross_check_excluded_keys": later_moves,
+        # As change_group() gives them, at their latest estimates: a ticket
+        # with no spell counts as unestimated.
+        "membership_cross_check_excluded": change_group(
+            [{"key": key, "points": latest.get(key)} for key in later_moves]),
         "blocker_candidate_keys": blocker_keys,
         # Their comments as at the end, as plain text and without authors.
         "blocker_comments": blocker_comments(os.path.join(raw_dir, COMMENTS_DIR), blocker_keys, moment, zone),
@@ -432,6 +447,12 @@ def non_delivery_marker(status, resolution):
     return None
 
 
+def latest_points(spells):
+    """{key: pts} of each ticket's latest estimate, its last spell's: the one
+    data.json gives a ticket wherever no moment of its own applies."""
+    return {s["key"]: s["points"] for s in spells}
+
+
 def outcome_breakdown(spells):
     """(counts, points) of the counted spells by row (original, its carried_in
     and new parts, extra) and outcome, at each spell's latest estimate, the
@@ -447,12 +468,67 @@ def outcome_breakdown(spells):
             {k: known_sum(found) for k, found in estimates.items()})
 
 
+def outcome_totals(counts, points):
+    """(counts, points) of each outcome_breakdown row's work, however it
+    ended, and under "all" of the commitment's and the extra's together,
+    from the breakdown's `counts` and `points`: the pts by known_sum's rule,
+    over the rows and outcomes that hold tickets."""
+    totals = []
+    for breakdown, by in ((counts, None), (points, counts)):
+        rows = {row: outcome_total(breakdown, row, by) for row in OUTCOME_ROWS}
+        rows["all"] = known_sum(rows[row] for row in ("original", "extra")
+                                if outcome_total(counts, row))
+        totals.append(rows)
+    return tuple(totals)
+
+
+def outcome_total(breakdown, row, counts=None):
+    """All the work of an outcome_breakdown row, however it ended. For the pts
+    breakdown, `counts` is the tickets breakdown: the pts add up by known_sum's
+    rule, over the outcomes that hold tickets, so a row of unestimated tickets
+    totals None."""
+    cells = [f"{row}_{outcome}" for outcome in OUTCOMES]
+    if counts is None:
+        return sum(breakdown[cell] for cell in cells)
+    return known_sum(breakdown[cell] for cell in cells if counts[cell])
+
+
+def scope_changes(spells):
+    """The ways the sprint departed from the ideal one, in the order the
+    timeline's commentary states them, each as change_group() gives it: the
+    commitment's work already Done at the start, at its first estimate, and
+    descoped; the counted extra work, with how much of it is unestimated;
+    the extra work added and descoped again, so not counted; and the
+    reopened, re-estimated, from its first estimate, and left-and-came-back
+    spells."""
+    original = [s for s in spells if s["scope"] == "original"]
+    extra = [s for s in spells if s["scope"] == "extra" and s["counted"]]
+    reestimated = [s for s in spells if s["reestimated"]]
+    return {
+        "done_at_start": change_group([s for s in original if s["doneAtStart"]], "firstEstimate"),
+        "descoped": change_group([s for s in original if s["outcome"] == "descoped"]),
+        "extra": {**change_group(extra), "unestimated": sum(1 for s in extra if s["points"] is None)},
+        "dropped": change_group([s for s in spells if not s["counted"]]),
+        "reopened": change_group([s for s in spells if s["reopened"]]),
+        "reestimated": {**change_group(reestimated),
+                        "first_points": known_sum(s["firstEstimate"] for s in reestimated)},
+        "came_back": change_group([s for s in spells if s["cameBack"]]),
+    }
+
+
+def change_group(spells, estimate="points"):
+    """Some spells as the commentary names them: how many, their pts at
+    `estimate`, by known_sum's rule, and their tickets' keys, sorted."""
+    return {"count": len(spells), "points": known_sum(s[estimate] for s in spells),
+            "keys": sorted({s["key"] for s in spells}, key=key_order)}
+
+
 def non_delivery_closures(spells):
-    """The counted spells completed as a non-delivery (Duplicate, Won't Do...):
-    how many, their pts and each one's key, status, resolution, estimate,
-    marker and summary."""
+    """The counted spells completed as a non-delivery (Duplicate, Won't Do...),
+    as change_group() gives them, and each one's key, status, resolution,
+    estimate, marker and summary."""
     closures = [s for s in spells if s["counted"] and s["closedAsNonDelivery"]]
-    return {"count": len(closures), "points": known_sum(s["points"] for s in closures),
+    return {**change_group(closures),
             "issues": [{"key": s["key"], "status": s["status"], "resolution": s["resolution"],
                         "storyPoints": s["points"], "marker": s["closedAsNonDelivery"], "summary": s["summary"]}
                        for s in closures]}
@@ -473,8 +549,8 @@ def target_completion(spells):
 def build_epics(spells, descriptions=None):
     """Per-epic delivery of the counted spells: done is completed; the total
     adds not completed and descoped. The pts follow known_sum's rule. Each epic also carries its
-    description and its spells sorted into the commentary's groups (see
-    scope_group)."""
+    description, its spells sorted into the commentary's groups (see
+    scope_group) and how many each reason left out."""
     descriptions = descriptions or {}
     epics, estimates = {}, {}
     for spell in (s for s in spells if s["counted"]):
@@ -514,6 +590,10 @@ def build_epics(spells, descriptions=None):
     for key, epic in epics.items():
         epic |= {field: known_sum(found)
                  for field, found in estimates[key].items()}
+        # How many of its tickets each reason left out: the commentary of an
+        # epic the sprint did no work on.
+        epic["left_out_counts"] = {reason: sum(1 for t in epic["left_out"] if t["reason"] == reason)
+                                   for reason in LEFT_OUT_REASONS}
     # Largest first, unestimated work weighing nothing.
     return sorted(epics.values(),
                   key=lambda e: (-((e["original_points_total"] or 0) + (e["extra_points_total"] or 0)),

@@ -50,6 +50,13 @@ class BriefTest(unittest.TestCase):
         self.assertEqual(
             [t["points"] for t in brief["goal_tickets"] if t["key"] == "PROJ-2"], [2])
 
+    def test_the_estimate_is_the_stored_one(self):
+        # The brief reads data.json's latest estimates, never the spells.
+        self.data["latest_points"]["PROJ-1"] = 8
+        brief = make_brief.build_brief(self.data)
+        self.assertEqual([t["points"] for e in brief["epics"] for t in e["tickets"] if t["key"] == "PROJ-1"],
+                         [8])
+
     def test_carried_in_marks_the_work_of_the_previous_sprint(self):
         # PROJ-2 was carried over from Sprint 6 in its original spell, not in its later extra one.
         self.assertEqual({(t["key"], t["scope"], t["carried_in"]) for t in self.tickets()}, {

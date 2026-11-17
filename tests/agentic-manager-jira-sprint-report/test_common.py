@@ -445,25 +445,6 @@ class QuantitiesTest(unittest.TestCase):
                 self.assertEqual(function(*args), expected)
 
 
-class OutcomeTotalTest(unittest.TestCase):
-    def test_outcome_total(self):
-        # A row's tickets add up; its pts by known_sum's rule over the
-        # outcomes that hold tickets: unestimated tickets alone are None,
-        # and a row with no tickets is 0.
-        def cells(completed, not_completed, descoped):
-            return {"new_completed": completed, "new_not_completed": not_completed, "new_descoped": descoped}
-        counts = cells(1, 2, 0)
-        cases = [("fully estimated", cells(3, 2, 0), 5), ("partly estimated", cells(None, 2, 0), 2),
-                 ("all unestimated", cells(None, None, 0), None)]
-        for name, points, expected in cases:
-            with self.subTest(name):
-                self.assertEqual(common.outcome_total(
-                    points, "new", counts), expected)
-        self.assertEqual(common.outcome_total(counts, "new"), 3)
-        self.assertEqual(common.outcome_total(
-            cells(0, 0, 0), "new", cells(0, 0, 0)), 0)
-
-
 class ExpectedFilesTest(unittest.TestCase):
     def test_expected_files(self):
         self.assertEqual(common.expected_files("PROJ-Sprint-3"),

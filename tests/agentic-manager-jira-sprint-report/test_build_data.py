@@ -26,7 +26,7 @@ sys.path.insert(0, TEST_DIR)
 from sprint_fixture import OTHER_PULLS, PR, WEB, moved  # noqa: E402
 from ticket_fixture import (CATEGORIES, CLOSE, PLUS_ONE, PREVIOUS, START, START_DATE, at, carried, changed,  # noqa: E402
                             context, done, events, joined, left, points, raw)
-from report_fixture import PROJ_KEYS, ev, pull, ticket  # noqa: E402
+from report_fixture import PROJ_KEYS, ev, pull, ticket, with_flags  # noqa: E402
 
 
 def spells_of(issue, changes, ctx=None, moment=CLOSE):
@@ -299,6 +299,93 @@ class BreakdownAndEpicsTest(unittest.TestCase):
             "original_completed": 3, "original_descoped": 1, "carried_in_completed": 3, "new_descoped": 1,
             "extra_completed": 5})
 
+    def test_outcome_totals(self):
+        # Each row's work however it ended, and all of it, the commitment's
+        # and the extra's; the pts by known_sum's rule, over the cells that
+        # hold tickets. name: (counts and pts per row as (completed, not
+        # completed, descoped), then the expected totals of the original,
+        # carried_in, new and extra rows and all, in tickets and in pts)
+        counts = {"original": (1, 1, 1), "carried_in": (
+            1, 0, 0), "new": (0, 1, 1), "extra": (1, 0, 0)}
+        points_ = {"original": (4, 2, 1), "carried_in": (
+            4, 0, 0), "new": (0, 2, 1), "extra": (3, 0, 0)}
+        cases = [
+            ("estimated", counts, points_, (3, 1, 2, 1, 4), (7, 4, 3, 3, 10)),
+            ("unestimated extra", counts, {**points_, "extra": (None, 0, 0)},
+             (3, 1, 2, 1, 4), (7, 4, 3, None, 7)),
+            ("all unestimated", counts, {"original": (None, None, None), "carried_in": (None, 0, 0),
+                                         "new": (0, None, None), "extra": (None, 0, 0)},
+             (3, 1, 2, 1, 4), (None, None, None, None, None)),
+            ("no extra", {**counts, "extra": (0, 0, 0)}, {**points_, "extra": (0, 0, 0)},
+             (3, 1, 2, 0, 3), (7, 4, 3, 0, 7)),
+            ("no work", {row: (0, 0, 0) for row in counts}, {row: (0, 0, 0) for row in counts},
+             (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)),
+        ]
+
+        def breakdown(rows):
+            return {f"{row}_{outcome}": value for row, values in rows.items()
+                    for outcome, value in zip(("completed", "not_completed", "descoped"), values)}
+        names = ("original", "carried_in", "new", "extra", "all")
+        for name, by_count, by_points, tickets, pts_ in cases:
+            with self.subTest(name):
+                self.assertEqual(build.outcome_totals(breakdown(by_count), breakdown(by_points)),
+                                 (dict(zip(names, tickets)), dict(zip(names, pts_))))
+
+    def test_outcome_total(self):
+        # A row's tickets add up; its pts by known_sum's rule over the
+        # outcomes that hold tickets: unestimated tickets alone are None,
+        # and a row with no tickets is 0.
+        def cells(completed, not_completed, descoped):
+            return {"new_completed": completed, "new_not_completed": not_completed, "new_descoped": descoped}
+        counts = cells(1, 2, 0)
+        cases = [("fully estimated", cells(3, 2, 0), 5), ("partly estimated", cells(None, 2, 0), 2),
+                 ("all unestimated", cells(None, None, 0), None)]
+        for name, points, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(build.outcome_total(
+                    points, "new", counts), expected)
+        self.assertEqual(build.outcome_total(counts, "new"), 3)
+        self.assertEqual(build.outcome_total(
+            cells(0, 0, 0), "new", cells(0, 0, 0)), 0)
+
+    def test_scope_changes(self):
+        # Each way the sprint departed from the ideal one, as (count, pts,
+        # keys); the rest are empty. name: (spells, the changes that happened)
+        cases = [
+            ("a steady sprint", [ticket("PROJ-1", [ev(2, "committed"), ev(4, "completed", done=True)],
+                                        "completed")], {}),
+            # Done at the start counts its first estimate, a re-estimate goes
+            # from the first to the latest.
+            ("done at the start, then re-estimated",
+             [ticket("PROJ-1", [ev(2, "committed", 1, done=True), ev(4, "reestimated", 3, done=True)],
+                     "completed")],
+             {"done_at_start": (1, 1, ["PROJ-1"]), "reestimated": (1, 3, ["PROJ-1"], {"first_points": 1})}),
+            ("descoped, then back as extra, unestimated",
+             [ticket("PROJ-2", [ev(2, "committed", 2), ev(4, "removed", 2)], "descoped"),
+              ticket("PROJ-2", [ev(5, "joined", None)],
+                     "not_completed", scope="extra"),
+              ticket("PROJ-3", [ev(5, "joined", None)], "not_completed", scope="extra")],
+             {"descoped": (1, 2, ["PROJ-2"]), "extra": (2, None, ["PROJ-2", "PROJ-3"], {"unestimated": 2}),
+              "came_back": (1, None, ["PROJ-2"])}),
+            ("added and descoped again", [ticket("PROJ-4", [ev(3, "joined", 3), ev(4, "removed", 3)], "descoped",
+                                                 scope="extra")],
+             {"dropped": (1, 3, ["PROJ-4"])}),
+            ("reopened", [ticket("PROJ-5", [ev(2, "committed", done=True), ev(4, "reopened")], "not_completed")],
+             {"done_at_start": (1, 2, ["PROJ-5"]), "reopened": (1, 2, ["PROJ-5"])}),
+        ]
+        extras = {"extra": {"unestimated": 0},
+                  "reestimated": {"first_points": 0}}
+        for name, spells, changed_ in cases:
+            with self.subTest(name):
+                expected = {}
+                for change in ("done_at_start", "descoped", "extra", "dropped", "reopened", "reestimated",
+                               "came_back"):
+                    count, pts_, keys, *more = changed_.get(change, (0, 0, []))
+                    expected[change] = {"count": count, "points": pts_, "keys": keys,
+                                        **extras.get(change, {}), **(more[0] if more else {})}
+                self.assertEqual(build.scope_changes(
+                    with_flags(spells)), expected)
+
     def test_non_delivery_closures(self):
         # The counted spells completed as a non-delivery, at their latest
         # estimates; an uncounted spell is left out.
@@ -307,7 +394,7 @@ class BreakdownAndEpicsTest(unittest.TestCase):
         uncounted = dict(ticket("PROJ-2", [ev(3, "joined", 5), ev(4, "removed", 5)], "descoped", scope="extra"),
                          closedAsNonDelivery="won't do")
         self.assertEqual(build.non_delivery_closures(self.TICKETS + [duplicate, uncounted]), {
-            "count": 1, "points": 3,
+            "count": 1, "points": 3, "keys": ["PROJ-1"],
             "issues": [{"key": "PROJ-1", "status": "Duplicate", "resolution": "Done", "storyPoints": 3,
                         "marker": "duplicate", "summary": "Work item PROJ-1"}]})
 
@@ -374,6 +461,8 @@ class BreakdownAndEpicsTest(unittest.TestCase):
                           "descoped": ["PROJ-7", "PROJ-10"]})
         self.assertEqual([(t["key"], t["reason"]) for t in epic["left_out"]],
                          [("PROJ-2", "done_at_start"), ("PROJ-3", "non_delivery"), ("PROJ-9", "done_at_start")])
+        self.assertEqual(epic["left_out_counts"], {
+                         "non_delivery": 1, "done_at_start": 2})
         # Each ticket carries what the commentary needs to describe it,
         # including its estimate, status, flag and whether it was carried over.
         self.assertEqual(epic["scope_groups"]["in_review"][0],
@@ -940,9 +1029,9 @@ class MainTest(unittest.TestCase):
         self.assertEqual(data["previous_sprint"], {"id": 6, "name": "Sprint 6", "complete_instant":
                                                    PREVIOUS["completeDate"], "complete_date": START_DATE})
         self.assertEqual(
-            data["membership_cross_check_excluded_keys"], ["PROJ-3"])
+            data["membership_cross_check_excluded"]["keys"], ["PROJ-3"])
         self.assertEqual(data["left_before_start_keys"], ["PROJ-4"])
-        self.assertEqual(data["non_delivery_closures"], {"count": 1, "points": 3, "issues": [
+        self.assertEqual(data["non_delivery_closures"], {"count": 1, "points": 3, "keys": ["PROJ-2"], "issues": [
             {"key": "PROJ-2", "status": "Duplicate", "resolution": "Done", "storyPoints": 3, "marker": "duplicate",
              "summary": "Summary of PROJ-2"}]})
         self.assertEqual(data["blocker_candidate_keys"], ["PROJ-1"])

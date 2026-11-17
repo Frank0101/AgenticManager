@@ -522,17 +522,6 @@ def as_of(sprint, fetched_at):
     return fetched_at
 
 
-def outcome_total(breakdown, row, counts=None):
-    """All the work of an outcome_breakdown row, however it ended. For the pts
-    breakdown, `counts` is the tickets breakdown: the pts add up by known_sum's
-    rule, over the outcomes that hold tickets, so a row of unestimated tickets
-    totals None."""
-    cells = [f"{row}_{outcome}" for outcome in OUTCOMES]
-    if counts is None:
-        return sum(breakdown[cell] for cell in cells)
-    return known_sum(breakdown[cell] for cell in cells if counts[cell])
-
-
 # --- The report's vocabulary and formats
 #
 # Exec readers compare reports sprint to sprint, so each idea has one word and
@@ -579,8 +568,8 @@ def known_sum(estimates):
     shown as "– pts", when there are estimates to add and none is set, so
     unestimated work never shows as "0 pts"; and 0 for no work at all. A
     partial sum is None only when all its work is unestimated, so sums of the
-    partial sums of non-empty parts, such as outcome_total's, follow the same
-    rule."""
+    partial sums of non-empty parts, such as an outcome row's total, follow
+    the same rule."""
     estimates = list(estimates)
     known = [e for e in estimates if e is not None]
     return sum(known) if known or not estimates else None
@@ -612,13 +601,6 @@ def ratio(done, total, done_points, total_points):
 def ticket_ref(key, points):
     """One ticket: "PROJ-20 (2 pts)", or "PROJ-13 (– pts)" with no estimate."""
     return f"{key} ({pts(points)})"
-
-
-def latest_points(spells):
-    """{key: pts} of each ticket's latest estimate, its last spell's: the one
-    a ticket shows wherever no moment of its own applies, such as running
-    text and the Status to Verify table."""
-    return {s["key"]: s["points"] for s in spells}
 
 
 def sprint_key(data):

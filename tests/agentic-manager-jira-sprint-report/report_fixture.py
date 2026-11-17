@@ -178,7 +178,9 @@ def caveat_data(kind, keys):
 
 def sprint_data(other_pulls=OTHER_PULLS, **changes):
     """A sprint's data.json, as build_data.py writes it, with `changes`;
-    `other_pulls` is other_pull_requests.json."""
+    `other_pulls` is other_pull_requests.json, and a change
+    `membership_cross_check_excluded_keys` names the membership caveat's
+    tickets."""
     data = {
         "report_timezone": "Europe/London", "base_url": BASE, "label": "PROJ-Sprint-7", "sprint_id": 7,
         "sprint_name": "Sprint 7",
@@ -189,12 +191,12 @@ def sprint_data(other_pulls=OTHER_PULLS, **changes):
                             "complete_date": "2026-03-02"},
         "spells": copy.deepcopy(TICKETS),
         "ticket_pull_requests": copy.deepcopy(PULLS),
-        "membership_cross_check_excluded_keys": [],
         "blocker_candidate_keys": ["PROJ-2"],
         "blocker_comments": {"PROJ-2": [{"at": "2026-03-05T10:00:00.000+0000", "date": "2026-03-05",
                                          "text": "Waiting on Security."}]},
     }
     data.update(changes)
+    excluded = data.pop("membership_cross_check_excluded_keys", [])
     cutoff_day = data["today"] if data["sprint_status"] == "active" else (
         data["sprint_complete_date"] or data["sprint_end"])
     if "as_of_instant" not in changes:
@@ -222,6 +224,11 @@ def sprint_data(other_pulls=OTHER_PULLS, **changes):
     counted = [t for t in tickets if t["counted"]]
     data.update({
         "outcome_breakdown_counts": counts, "outcome_breakdown_points": points,
+        **dict(zip(("outcome_totals_counts", "outcome_totals_points"), build.outcome_totals(counts, points))),
+        "scope_changes": build.scope_changes(tickets),
+        "latest_points": (latest := build.latest_points(tickets)),
+        "membership_cross_check_excluded": build.change_group(
+            [{"key": key, "points": latest.get(key)} for key in excluded]),
         "non_delivery_closures": build.non_delivery_closures(tickets),
         "points_estimated_issue_count": sum(1 for t in counted if t["points"] is not None),
         "points_total_issue_count": len(counted),

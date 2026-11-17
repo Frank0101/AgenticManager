@@ -9,7 +9,6 @@ anything is written, each problem naming the content.json field to fix, so it
 is fixed where it was written. check_report.py checks the result.
 """
 import argparse
-from collections import Counter
 import html
 import os
 import re
@@ -17,8 +16,8 @@ from typing import cast
 
 from common import (browse_url, epic_title, SENTENCE_BREAK, CHART_FILES, COMMENTARY_WORDS, CONTENT_FILE, DATA_FILE, EPIC_COMMENTARY_WORDS, FIELD_HEADER,
                     EPICS_HEADING, GITHUB_CELL, JIRA_CELL, METRICS_HEADING, NO_EPIC, NOTHING_TO_VERIFY, NOTHING_UNTRACKED, RETRO_HEADING, TIMELINE_HEADING, OUTCOME_COLOURS, UNTRACKED_HEADING, UNTRACKED_OPEN_PULLS, UNTRACKED_SUBTITLE, PULL_STATES, RETRO_NOTES, SCOPE_GROUPS, STATUS_HEADING,
-                    ACHIEVEMENTS_WORDS, BLOCKERS_WORDS, GOAL_REASON_WORDS, SMALL_TYPE, ai_marked, chart_image, html_table, latest_points,
-                    display_date, epic_groups, estimate, key_order, known_sum, no_work_text, read_json, parse_ts, plural, pts, qty, ratio,
+                    ACHIEVEMENTS_WORDS, BLOCKERS_WORDS, GOAL_REASON_WORDS, SMALL_TYPE, ai_marked, chart_image, html_table,
+                    display_date, epic_groups, estimate, key_order, no_work_text, read_json, parse_ts, plural, pts, qty, ratio,
                     report_file, scope_group_label, sprint_key, text_rule_problems, ticket_ref, unit, whole_percentage,
                     word_count, write_report_file)
 
@@ -35,8 +34,6 @@ TAGS = {
     "reestimated": ("Re-estimated", "#9c27b0", "#ffffff"),
 }
 
-
-# What the section says when no ticket needs checking.
 
 # Phrases of the commentary, each with the shorter form used when the text is
 # over its word limit: one place for both, so they can't drift apart.
@@ -156,7 +153,7 @@ def text_problems(content, data):
                      found in text_rule_problems(text)]
     # Only the retro notes may name tickets, so only they are held to the
     # tickets' latest estimates.
-    latest = latest_points(data["spells"])
+    latest = data["latest_points"]
     for field, text in notes:
         problems += [f"{field}: {rule}, found {found[:3]}" for rule,
                      found in text_rule_problems(text, latest)]
@@ -259,7 +256,7 @@ class Report:
         work on, why its tickets are left out, in italics, as it isn't the
         agent's."""
         if not (groups := epic_groups(epic)):
-            return f"<i>{no_work_text(Counter(t['reason'] for t in epic['left_out']))}</i>"
+            return f"<i>{no_work_text(epic['left_out_counts'])}</i>"
         text = self.content["epic_commentary"].get(epic["key"]) or {}
         return "<br><br>".join(f"<b>{scope_group_label(g, self.data['sprint_status'])}:</b> "
                                f"{html.escape(text[g], quote=False)}" for g in groups)
@@ -397,7 +394,7 @@ class Report:
         """The timeline's commentary: everything that departed from the ideal
         sprint (all of it committed on the first day, completed steadily,
         nothing left at the end), generated rather than written by the agent,
-        as it is a fact of the data. From the spells alone, in this order and
+        as it is a fact of the data. From data.json's scope_changes, in this order and
         leaving out what didn't happen: the commitment, with what was already
         Done at the start and what was descoped; the extra work, with what had
         no estimate and what was added and descoped again; reopened,
@@ -418,51 +415,48 @@ class Report:
                 text = text.replace(long, short)
         return " ".join([text] + self.commentary_caveats())
 
-    def listed(self, spells, name_up_to):
-        """The spells' keys, sorted, as " (KEY, KEY)"; nothing when there are
-        more than `name_up_to`."""
-        keys = sorted({s["key"] for s in spells}, key=key_order)
+    def listed(self, group, name_up_to):
+        """The group's keys as " (KEY, KEY)"; nothing when there are more
+        than `name_up_to`."""
+        keys = group["keys"]
         return f" ({', '.join(self.md_key(k) for k in keys)})" if len(keys) <= name_up_to else ""
 
-    def mentioned(self, spells, one, many, name_up_to=3):
-        """Tickets in running text: one ticket as "KEY (N pts) <one>", a list
-        as "N tickets (N pts) <many> (KEY, KEY)", the keys left out above
-        `name_up_to`. A "{keys}" in `many` places the list there instead of
-        at the end."""
-        if len(spells) == 1 and name_up_to:
-            return f"{ticket_ref(self.md_key(spells[0]['key']), spells[0]['points'])} {one}"
-        phrase = one if len(spells) == 1 else many
+    def mentioned(self, group, one, many, name_up_to=3):
+        """Tickets in running text, from a group as data.json's scope_changes
+        stores it: one ticket as "KEY (N pts) <one>", a list as "N tickets (N
+        pts) <many> (KEY, KEY)", the keys left out above `name_up_to`. A
+        "{keys}" in `many` places the list there instead of at the end."""
+        if group["count"] == 1 and name_up_to:
+            return f"{ticket_ref(self.md_key(group['keys'][0]), group['points'])} {one}"
+        phrase = one if group["count"] == 1 else many
         if "{keys}" not in phrase:
             phrase += "{keys}"
-        return f"{amount(spells)} {phrase.replace('{keys}', self.listed(spells, name_up_to))}"
+        return f"{qty(group['count'], group['points'])} {phrase.replace('{keys}', self.listed(group, name_up_to))}"
 
-    def reestimates(self, spells, name_up_to):
+    def reestimates(self, group, name_up_to):
         """Re-estimated tickets: one as "KEY (old → new pts) was re-estimated",
         a list as "N tickets (old → new pts) were re-estimated (KEY, KEY)",
         from the estimates before the first re-estimate to the latest."""
-        change = (f"{estimate(known_sum(s['firstEstimate'] for s in spells))} → "
-                  f"{pts(known_sum(s['points'] for s in spells))}")
-        if len(spells) == 1 and name_up_to:
-            return f"{self.md_key(spells[0]['key'])} ({change}) was re-estimated"
-        return (f"{len(spells)} {unit(len(spells))} ({change}) {were(len(spells))} re-estimated"
-                f"{self.listed(spells, name_up_to)}")
+        change = f"{estimate(group['first_points'])} → {pts(group['points'])}"
+        count = group["count"]
+        if count == 1 and name_up_to:
+            return f"{self.md_key(group['keys'][0])} ({change}) was re-estimated"
+        return (f"{count} {unit(count)} ({change}) {were(count)} re-estimated"
+                f"{self.listed(group, name_up_to)}")
 
     def commentary_text(self, name_up_to):
-        d, spells = self.data, self.data["spells"]
+        d, changes = self.data, self.data["scope_changes"]
 
-        def say(found, one, many):
-            return self.mentioned(found, one, many, name_up_to)
-        original = [s for s in spells if s["scope"] == "original"]
+        def say(group, one, many):
+            return self.mentioned(group, one, many, name_up_to)
         sentences = []
 
-        already = [dict(s, points=s["firstEstimate"])
-                   for s in original if s["doneAtStart"]]
-        descoped = [s for s in original if s["outcome"] == "descoped"]
+        already, descoped = changes["done_at_start"], changes["descoped"]
         parts = []
-        if already:
+        if already["count"]:
             parts.append(say(already, "was already Done at the start",
                          "were already Done at the start"))
-        if descoped:
+        if descoped["count"]:
             parts.append(say(descoped, "was descoped", "were descoped"))
         total = d["target_completion"]["total"]
         committed = qty(total, d["burndown_baseline"])
@@ -473,29 +467,26 @@ class Report:
                              else f"{'The' if total == 1 else 'All'} {committed} in the commitment stayed in "
                              "the sprint")
 
-        extra = [s for s in spells if s["scope"] == "extra" and s["counted"]]
-        dropped = [s for s in spells if not s["counted"]]
+        extra, dropped = changes["extra"], changes["dropped"]
         parts = []
-        if extra:
-            unestimated = [s for s in extra if s["points"] is None]
+        if extra["count"]:
+            unestimated = extra["unestimated"]
             parts.append(say(extra, "was added as extra", "were added as extra")
-                         + (f", {qty(len(unestimated), None)} {UNESTIMATED[0]}"
-                            if unestimated and len(extra) > 1 else ""))
-        if dropped:
+                         + (f", {qty(unestimated, None)} {UNESTIMATED[0]}"
+                            if unestimated and extra["count"] > 1 else ""))
+        if dropped["count"]:
             parts.append(say(dropped, "was added and descoped again, so it doesn't count",
                              "were added and descoped again{keys}, so they don't count"))
         if parts:
             sentences.append("; ".join(parts))
 
-        returns = [s for s in spells if s["cameBack"]]
-        reopened = [s for s in spells if s["reopened"]]
-        reestimated = [s for s in spells if s["reestimated"]]
+        returns, reopened, reestimated = changes["came_back"], changes["reopened"], changes["reestimated"]
         parts = []
-        if reopened:
+        if reopened["count"]:
             parts.append(say(reopened, "was reopened", "were reopened"))
-        if reestimated:
+        if reestimated["count"]:
             parts.append(self.reestimates(reestimated, name_up_to))
-        if returns:
+        if returns["count"]:
             came_back = f"left the sprint and came back, {RETURNED[0]}"
             parts.append(say(returns, came_back, came_back))
         if parts:
@@ -526,20 +517,17 @@ class Report:
     def commentary_caveats(self):
         """Data-quality warnings, never cut for length."""
         d, caveats = self.data, []
-        non_delivery = [{"key": i["key"], "points": i["storyPoints"]}
-                        for i in d["non_delivery_closures"]["issues"]]
-        if non_delivery:
-            caveats.append(self.mentioned(non_delivery,
+        closures = d["non_delivery_closures"]
+        if closures["count"]:
+            caveats.append(self.mentioned(closures,
                                           "was resolved without delivery, such as Duplicate or Won't Do, and counts as "
                                           "completed",
                                           "were resolved without delivery{keys}, such as Duplicate or Won't Do, and count as "
-                                          "completed", len(non_delivery)) + ".")
-        excluded = d["membership_cross_check_excluded_keys"]
-        if excluded:
-            latest = latest_points(d["spells"])
-            found = [{"key": k, "points": latest.get(k)} for k in excluded]
-            caveats.append("The membership of " + self.mentioned(found, "is reconstructed from changelogs",
-                                                                 "is reconstructed from changelogs", len(found))
+                                          "completed", closures["count"]) + ".")
+        excluded = d["membership_cross_check_excluded"]
+        if excluded["count"]:
+            caveats.append("The membership of " + self.mentioned(excluded, "is reconstructed from changelogs",
+                                                                 "is reconstructed from changelogs", excluded["count"])
                            + ", as later sprint moves prevent checking it against Jira.")
         return caveats
 
@@ -609,12 +597,6 @@ def tag(kind, suffix=""):
     return (f'<span style="background:{background};color:{colour};border-radius:10px;padding:1px 7px;'
             f'margin:1px 3px 1px 0;font-size:90%;white-space:nowrap;display:inline-block">'
             f'{html.escape(label + suffix)}</span>')
-
-
-def amount(spells):
-    """The amount of work of some spells: "N tickets (N pts)", "– pts" if
-    none has an estimate."""
-    return qty(len(spells), known_sum(s["points"] for s in spells))
 
 
 def were(count):

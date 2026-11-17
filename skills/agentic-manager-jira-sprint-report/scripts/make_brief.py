@@ -11,7 +11,7 @@ import argparse
 import os
 
 from common import (BRIEF_FILE, DATA_FILE, SCOPE_GROUPS, chunks, pull_chunks, display_date,
-                    epic_title, latest_points, link_text, read_json, spell_epic, write_json)
+                    epic_title, link_text, read_json, spell_epic, write_json)
 from make_report import Report
 
 
@@ -34,7 +34,7 @@ def build_brief(data):
     holds every ticket of the commitment, that work included, so each goal
     theme has its full denominator."""
     comments = data["blocker_comments"]
-    latest = latest_points(data["spells"])
+    latest = data["latest_points"]
     epics = []
     for epic in data["epics"]:
         tickets = []

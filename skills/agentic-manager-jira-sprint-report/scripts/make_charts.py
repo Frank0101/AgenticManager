@@ -10,8 +10,8 @@ import math
 import os
 from datetime import date
 
-from common import (CHART_FILES, DATA_FILE, OUTCOME_COLOURS, OUTCOME_ROWS, OUTCOMES, display_date, known_sum, number,
-                    outcome_total, pts, read_json, scope_group_label, unit, whole_percentage, write_report_file)
+from common import (CHART_FILES, DATA_FILE, OUTCOME_COLOURS, OUTCOME_ROWS, OUTCOMES, display_date, number,
+                    pts, read_json, scope_group_label, unit, whole_percentage, write_report_file)
 from common import GRID, INK, MUTED, SURFACE, legend, nice_step, svg, text, text_width
 
 WEEKEND = "#e7e4dc"
@@ -157,17 +157,13 @@ def outcome_chart(data, is_points):
 
 def outcome_labels(data, is_points):
     """What one outcome chart writes beside its bars: (breakdown, totals,
-    grand total, [(row, label, sublabel)], the bracket's lines). The pts add
-    up by known_sum's rule: those of unestimated work alone are None."""
-    counts = data["outcome_breakdown_counts"]
-    breakdown = data["outcome_breakdown_points"] if is_points else counts
+    grand total, [(row, label, sublabel)], the bracket's lines), from
+    data.json's breakdown and its totals: the pts of unestimated work alone
+    are None."""
+    kind = "points" if is_points else "counts"
+    breakdown, totals = data[f"outcome_breakdown_{kind}"], data[f"outcome_totals_{kind}"]
     rows = outcome_rows(data)
-    names = ("original", *(r for r, _ in rows))
-    tickets = {row: outcome_total(counts, row) for row in names}
-    totals = {row: outcome_total(breakdown, row, counts if is_points else None)
-              for row in names}
-    grand = known_sum(totals[row]
-                      for row in ("original", "extra") if tickets[row])
+    grand = totals["all"]
 
     def sublabel(row):
         text_ = amount_text(totals[row], is_points)

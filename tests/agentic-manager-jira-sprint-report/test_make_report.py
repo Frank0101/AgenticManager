@@ -268,6 +268,25 @@ class ProseTest(unittest.TestCase):
         self.assertIn(
             f"[PROJ-4]({BASE}/browse/PROJ-4) (1 pt)", report().commentary())
 
+    def test_views_render_the_stored_facts(self):
+        # The commentary, its membership caveat and an epic's no-work text
+        # render data.json's
+        # stored facts, never the spells again.
+        data = sprint_data()
+        data["scope_changes"]["reopened"] = {
+            "count": 1, "points": 5, "keys": ["PROJ-3"]}
+        self.assertIn("PROJ-3 (5 pts) was reopened",
+                      link_text(Report(data, CONTENT).commentary()))
+        data = caveat_data("membership", ["PROJ-1"])
+        data["membership_cross_check_excluded"]["points"] = 7
+        self.assertIn("The membership of PROJ-1 (7 pts) is reconstructed",
+                      link_text(Report(data, CONTENT).commentary()))
+        data = no_work_data()
+        data["epics"][0]["left_out_counts"] = {
+            "non_delivery": 3, "done_at_start": 0}
+        self.assertEqual(Report(data, CONTENT).epic_commentary(data["epics"][0]),
+                         "<i>No work on this epic in the sprint: 3 tickets resolved without delivery</i>")
+
     def test_commentary_states_what_is_open(self):
         # What is open says how much of it is from the commitment, as that is
         # what the sprint promised.

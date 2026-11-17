@@ -57,6 +57,9 @@ def sprint(**changes):
         "points_estimated_issue_count": 4, "points_total_issue_count": 4,
     }
     data.update(changes)
+    # The breakdown's totals, as build_data.py stores them.
+    data["outcome_totals_counts"], data["outcome_totals_points"] = build.outcome_totals(
+        data["outcome_breakdown_counts"], data["outcome_breakdown_points"])
     last = data["today"] if data["sprint_status"] == "active" else data["sprint_complete_date"]
     if last > "2026-03-13":
         data["burndown"] += [{"date": f"2026-03-{day:02d}", "committed": 2, "total": 2}
@@ -208,6 +211,15 @@ class OutcomeChartTest(unittest.TestCase):
                     self.assertIn(label, chart)
                 for label in absent:
                     self.assertNotIn(label, chart)
+
+    def test_totals_are_the_stored_ones(self):
+        # The title and the shares render data.json's totals, never the
+        # breakdown added up again.
+        data = sprint()
+        data["outcome_totals_counts"]["all"] = 8
+        chart = charts.outcome_chart(data, is_points=False)
+        self.assertIn("Sprint Outcome (8 tickets)", chart)
+        self.assertIn("1 ticket (12% of total)", chart)
 
     def test_rows_split_the_commitment_under_a_bracket(self):
         chart = charts.outcome_chart(sprint(), is_points=False)

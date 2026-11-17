@@ -21,8 +21,7 @@ from common import (folder_problem, days, BLOCKED_STATUSES, GOAL_VERDICTS, HIGH_
                     TICKET_EVENT_TYPES,
                     NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai_marked, no_work_text, sprint_key, text_rule_problems,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty,
-                    ratio, report_file, report_timezone, repository_url, scope_group_label, spell_epic, whole_percentage, word_count,
-                    latest_points)
+                    ratio, report_file, report_timezone, repository_url, scope_group_label, spell_epic, whole_percentage, word_count)
 
 
 # The event kinds of a spell.
@@ -137,9 +136,10 @@ def strip_tags(text):
 
 def check_model(c, data):
     """Each spell's events are well formed, and its outcome, latest estimate
-    and whether it's counted are what its events give; the charts' breakdown,
-    the non-delivery closures, the ticket counts, the burndown, the timeline,
-    and the epics' commentary groups and completed pts are built from the
+    and whether it's counted are what its events give; the charts' breakdown
+    and its totals, the non-delivery closures, the ticket counts, the
+    burndown, the timeline, the commentary's scope changes, and the epics'
+    commentary groups, left-out counts and completed pts are built from the
     same spells."""
     seen_keys = set()
     for t in data["spells"]:
@@ -184,12 +184,20 @@ def check_model(c, data):
             found = estimates.get(f"{row}_{outcome}", [])
             c.check(got == (len(found), known_sum(found)), "model",
                     f"the charts' {row} {outcome.replace('_', ' ')} is the counted spells' {qty(*got)}")
+    in_row = {row: [p for outcome in OUTCOMES for p in estimates.get(f"{row}_{outcome}", [])]
+              for row in OUTCOME_ROWS}
+    in_row["all"] = in_row["original"] + in_row["extra"]
+    c.check((data["outcome_totals_counts"], data["outcome_totals_points"])
+            == ({row: len(found) for row, found in in_row.items()},
+                {row: known_sum(found) for row, found in in_row.items()}), "model",
+            "the charts' totals per row, and of the commitment and the extra together, are the counted spells'")
 
     counted = [t for t in data["spells"] if t["counted"]]
     closures = [t for t in counted
                 if t["outcome"] == "completed" and t["closedAsNonDelivery"]]
     c.check(data["non_delivery_closures"] == {
         "count": len(closures), "points": known_sum(t["points"] for t in closures),
+        "keys": sorted({t["key"] for t in closures}, key=key_order),
         "issues": [{"key": t["key"], "status": t["status"], "resolution": t["resolution"],
                     "storyPoints": t["points"], "marker": t["closedAsNonDelivery"], "summary": t["summary"]}
                    for t in closures]}, "model",
@@ -232,6 +240,16 @@ def check_model(c, data):
                       for t in data["spells"] for e in t["events"])
     c.check(logged == replayed, "model",
             "the timeline holds exactly the spells' events")
+    latest = latest_estimates(data)
+    c.check(data["latest_points"] == latest, "model",
+            "each ticket's latest estimate is its last spell's, as its events give")
+    excluded = data["membership_cross_check_excluded"]
+    keys = excluded["keys"]
+    c.check(excluded == {"count": len(keys), "points": known_sum(latest.get(k) for k in keys),
+                         "keys": sorted(set(keys), key=key_order)}, "model",
+            "the membership caveat counts its tickets, sorted, at their latest estimates")
+    c.check(data["scope_changes"] == scope_change_figures(data), "model",
+            "the commentary's scope changes are the spells' that their events give")
     check_commentary_groups(c, data)
     check_epic_points(c, data)
     check_ticket_events(c, data)
@@ -265,6 +283,51 @@ def check_commentary_groups(c, data):
             stored.setdefault(t["reason"], []).append(t["key"])
         c.check(stored == expected.get(epic["key"], {}), "model",
                 f"{epic['key']}'s commentary groups hold the tickets their outcomes give")
+        left_out = {reason: len(expected.get(epic["key"], {}).get(reason, []))
+                    for reason in LEFT_OUT_REASONS}
+        c.check(epic["left_out_counts"] == left_out, "model",
+                f"{epic['key']}'s left-out counts are its tickets' that their outcomes give")
+
+
+def latest_estimates(data):
+    """{key: pts} of each ticket's latest estimate, recomputed from the last
+    event of its last spell."""
+    return {s["key"]: s["events"][-1]["points"] for s in data["spells"]}
+
+
+def scope_change_figures(data):
+    """{change: {count, points, keys}} of the ways the sprint departed from
+    the ideal one, recomputed from the spells' events: the commitment's work
+    already Done when committed, at its first estimate, and removed; the extra
+    work that stayed, with how much is unestimated, and that was removed; the
+    reopened and re-estimated spells, the latter with their first estimates;
+    and the spells that joined after an earlier spell of their ticket."""
+    spells = data["spells"]
+    original = [s for s in spells if s["events"][0]["type"] == "committed"]
+    joined = [s for s in spells if s["events"][0]["type"] == "joined"]
+
+    def removed(s):
+        return s["events"][-1]["type"] == "removed"
+
+    def kinds(s):
+        return {e["type"] for e in s["events"]}
+
+    def group(found, first=False):
+        return {"count": len(found),
+                "points": known_sum(s["events"][0 if first else -1]["points"] for s in found),
+                "keys": sorted({s["key"] for s in found}, key=key_order)}
+    extra = [s for s in joined if not removed(s)]
+    reestimated = [s for s in spells if "reestimated" in kinds(s)]
+    return {
+        "done_at_start": group([s for s in original if s["events"][0]["done"]], first=True),
+        "descoped": group([s for s in original if removed(s)]),
+        "extra": {**group(extra), "unestimated": sum(1 for s in extra if s["events"][-1]["points"] is None)},
+        "dropped": group([s for s in joined if removed(s)]),
+        "reopened": group([s for s in spells if "reopened" in kinds(s)]),
+        "reestimated": {**group(reestimated), "first_points": group(reestimated, first=True)["points"]},
+        "came_back": group([s for i, s in enumerate(spells) if s in joined
+                            and any(o["key"] == s["key"] for o in spells[:i])]),
+    }
 
 
 def commentary_groups(data):
@@ -631,34 +694,27 @@ def check_commentary(c, md, data):
     core = " ".join(s for s in sentences if not any(m in s for m in CAVEATS))
     c.check(word_count(core) <= COMMENTARY_WORDS, "commentary",
             f"at most {COMMENTARY_WORDS} words before its caveats (got {word_count(core)})")
-    spells = data["spells"]
+    spells, changes = data["spells"], scope_change_figures(data)
     original = [s for s in spells if s["scope"] == "original"]
     committed = qty(len(original), data["burndown_baseline"])
     c.check((f"{committed} in the commitment" if original else "Nothing was committed at the start") in text,
             "commentary", f"states the commitment, {committed}" if original else "states that nothing was committed")
-    descoped = [s for s in original if s["outcome"] == "descoped"]
-    extra = [s for s in spells if s["scope"] == "extra" and s["counted"]]
-    for kind, items in (("descoped", descoped), ("added as extra", extra)):
-        if len(items) > 1:
-            amount = qty(len(items), known_sum(s["points"] for s in items))
-            c.check(f"{amount} {plural(len(items), 'was', 'were')} {kind}" in text,
+    for kind, group in (("descoped", changes["descoped"]), ("added as extra", changes["extra"])):
+        if group["count"] > 1:
+            amount = qty(group["count"], group["points"])
+            c.check(f"{amount} {plural(group['count'], 'was', 'were')} {kind}" in text,
                     "commentary", f"states {amount} {kind}")
-    returns = [s for i, s in enumerate(spells)
-               if s["events"][0]["type"] == "joined" and any(o["key"] == s["key"] for o in spells[:i])]
     departures = [
-        ("already Done at the start", r"already Done at the start",
-         any(s["events"][0]["done"] for s in original)),
-        ("descoped from the commitment", r"\b(?:was|were) descoped", bool(descoped)),
-        ("added as extra", r"\b(?:was|were) added as extra", bool(extra)),
-        ("added and descoped again", r"added and descoped again",
-         any(not s["counted"] for s in spells)),
-        ("reopened", r"\breopened\b", any(
-            e["type"] == "reopened" for s in spells for e in s["events"])),
-        ("re-estimated", r"\bre-estimated\b",
-         any(e["type"] == "reestimated" for s in spells for e in s["events"])),
-        ("left and came back", r"left the sprint and came back", bool(returns)),
+        ("already Done at the start", r"already Done at the start", "done_at_start"),
+        ("descoped from the commitment", r"\b(?:was|were) descoped", "descoped"),
+        ("added as extra", r"\b(?:was|were) added as extra", "extra"),
+        ("added and descoped again", r"added and descoped again", "dropped"),
+        ("reopened", r"\breopened\b", "reopened"),
+        ("re-estimated", r"\bre-estimated\b", "reestimated"),
+        ("left and came back", r"left the sprint and came back", "came_back"),
     ]
-    for name, pattern, happened in departures:
+    for name, pattern, change in departures:
+        happened = changes[change]["count"] > 0
         c.check(bool(re.search(pattern, core)) == happened, "commentary",
                 f"{'mentions' if happened else 'does not mention'} {name}")
     open_spells = [s for s in spells if s["counted"]
@@ -676,7 +732,7 @@ def check_commentary(c, md, data):
         c.check(expected in core, "commentary",
                 "states that nothing is still open")
     keys = {s["key"] for s in spells}
-    excluded = set(data["membership_cross_check_excluded_keys"])
+    excluded = set(data["membership_cross_check_excluded"]["keys"])
     c.check(all(set(ISSUE_KEY.findall(sentence)) <=
                 (keys | excluded if CAVEATS[1] in sentence else keys)
                 for sentence in sentences), "commentary", "names only tickets of the sprint or its membership caveat")
@@ -910,7 +966,7 @@ def check_status_section(c, md, table, data):
             cells = cells[1:]
         shown.append((epic, text_of(cells[0][1]), text_of(
             cells[1][1]), text_of(cells[2][1])))
-    latest = latest_points(data["spells"])
+    latest = latest_estimates(data)
     expected = [(None if r["epicKey"] == NO_EPIC else r["epicKey"], f"{r['key']} ({pts(latest.get(r['key']))})",
                  r["status"] or "") for r in rows]
     c.check([s[:3] for s in shown] == expected, "status",
@@ -1061,7 +1117,7 @@ def check_vocabulary(c, md, data):
         if table_kind(table) in ("timeline", "status"):
             prose = prose.replace(table, "", 1)
     prose = strip_tags(prose)
-    latest = latest_points(data["spells"])
+    latest = latest_estimates(data)
     lists = [group for group in KEY_LIST.findall(prose) if ", " in group]
     unsorted = [group for group in lists if group.split(
         ", ") != sorted(group.split(", "), key=key_order)]
@@ -1084,34 +1140,29 @@ def check_vocabulary(c, md, data):
 
 
 def historical_references(data):
-    """Allowed single-ticket references in the generator's fixed commentary phrases."""
+    """Allowed single-ticket references in the generator's fixed commentary
+    phrases: each scope change of one spell, as scope_change_figures() gives
+    it, and each ticket of the two caveats."""
     allowed = set()
-    spells = data["spells"]
-    latest = latest_points(spells)
-    for index, spell in enumerate(spells):
-        key, points, events = spell["key"], spell["points"], spell["events"]
-        reference = f"{key} ({pts(points)}) "
-        if spell["scope"] == "original":
-            if events[0]["done"]:
-                allowed.add(
-                    f"{key} ({pts(events[0]['points'])}) was already Done at the start")
-            if spell["outcome"] == "descoped":
-                allowed.add(reference + "was descoped")
-        elif spell["counted"]:
-            allowed.add(reference + "was added as extra")
-        if not spell["counted"]:
-            allowed.add(reference + "was added and descoped again")
-        if any(e["type"] == "reopened" for e in events):
-            allowed.add(reference + "was reopened")
-        changes = [e for e in events if e["type"] == "reestimated"]
-        if changes:
-            old = estimate(changes[0]["fromPoints"])
-            allowed.add(f"{key} ({old} → {pts(points)}) was re-estimated")
-        if events[0]["type"] == "joined" and any(s["key"] == key for s in spells[:index]):
-            allowed.add(reference + "left the sprint and came back")
+    changes = scope_change_figures(data)
+    phrases = {"done_at_start": "was already Done at the start", "descoped": "was descoped",
+               "extra": "was added as extra", "dropped": "was added and descoped again",
+               "reopened": "was reopened", "came_back": "left the sprint and came back"}
+    for change, phrase in phrases.items():
+        group = changes[change]
+        if group["count"] == 1:
+            allowed.add(
+                f"{group['keys'][0]} ({pts(group['points'])}) {phrase}")
+    group = changes["reestimated"]
+    if group["count"] == 1:
+        allowed.add(f"{group['keys'][0]} ({estimate(group['first_points'])} → {pts(group['points'])}) "
+                    "was re-estimated")
+    for spell in data["spells"]:
         if spell["counted"] and spell["closedAsNonDelivery"]:
-            allowed.add(reference + "was resolved without delivery")
-    for key in data["membership_cross_check_excluded_keys"]:
+            allowed.add(
+                f"{spell['key']} ({pts(spell['points'])}) was resolved without delivery")
+    latest = latest_estimates(data)
+    for key in data["membership_cross_check_excluded"]["keys"]:
         allowed.add(
             f"{key} ({pts(latest.get(key))}) is reconstructed from changelogs")
     return allowed

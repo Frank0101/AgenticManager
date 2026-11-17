@@ -80,7 +80,8 @@ class HelpersTest(unittest.TestCase):
                 self.assertEqual(out.getvalue(), printed)
 
     def test_ratio_units_with_fractional_operands(self):
-        data = {"spells": [], "membership_cross_check_excluded_keys": []}
+        data = {"spells": [], "membership_cross_check_excluded": {
+            "count": 0, "points": 0, "keys": []}}
         for ratio in ("2/3", "2/2.5", "0.5/2", "0.5/2.5", "0/0.5"):
             for suffix in (" ticket", " tickets", " pts", "", ".", " ptsx"):
                 with self.subTest(ratio=ratio, suffix=suffix):
@@ -520,6 +521,28 @@ class ChecksTest(unittest.TestCase):
              "model: the charts' new descoped is the counted spells'"),
             ("the charted commitment", lambda d: d["outcome_breakdown_counts"].update(original_descoped=0),
              "model: the charts' original descoped is the counted spells'"),
+            ("a row total", lambda d: d["outcome_totals_counts"].update(new=5),
+             "model: the charts' totals per row, and of the commitment and the extra together, are the counted spells'"),
+            ("the grand total in pts", lambda d: d["outcome_totals_points"].update(all=None),
+             "model: the charts' totals per row, and of the commitment and the extra together, are the counted spells'"),
+            ("a scope change's pts", lambda d: d["scope_changes"]["descoped"].update(points=9),
+             "model: the commentary's scope changes are the spells' that their events give"),
+            ("a re-estimate's first pts", lambda d: d["scope_changes"]["reestimated"].update(first_points=3),
+             "model: the commentary's scope changes are the spells' that their events give"),
+            ("a return missing", lambda d: d["scope_changes"]["came_back"].update(count=0, points=0, keys=[]),
+             "model: the commentary's scope changes are the spells' that their events give"),
+            ("a latest estimate stored wrong", lambda d: d["latest_points"].update({"PROJ-1": 2}),
+             "model: each ticket's latest estimate is its last spell's, as its events give"),
+            ("the membership caveat's pts", lambda d: d.update(membership_cross_check_excluded={
+                "count": 1, "points": 2, "keys": ["PROJ-1"]}),
+             "model: the membership caveat counts its tickets, sorted, at their latest estimates"),
+            ("the membership caveat's keys unsorted", lambda d: d.update(membership_cross_check_excluded={
+                "count": 2, "points": 4, "keys": ["PROJ-3", "PROJ-1"]}),
+             "model: the membership caveat counts its tickets, sorted, at their latest estimates"),
+            ("the non-delivery keys", lambda d: d["non_delivery_closures"].update(keys=[]),
+             "model: the non-delivery closures are the counted spells completed without delivery"),
+            ("a left-out count", lambda d: d["epics"][0]["left_out_counts"].update(non_delivery=2),
+             "model: PROJ-100's left-out counts are its tickets' that their outcomes give"),
             # The commentary groups are recomputed from the spells too.
             ("completed work described as descoped", lambda d: d["epics"][0]["scope_groups"].update(
                 completed=[], descoped=[{"key": "PROJ-1"}] + d["epics"][0]["scope_groups"]["descoped"]),

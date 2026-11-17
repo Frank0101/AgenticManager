@@ -429,7 +429,7 @@ class ChartsTest(ReportTest):
         for field in ("spells", "outcome_breakdown_counts", "outcome_breakdown_points", "timeline", "burndown"):
             self.assertEqual(after[field], before[field], field)
         self.assertEqual(
-            after["membership_cross_check_excluded_keys"], ["PROJ-1"])
+            after["membership_cross_check_excluded"]["keys"], ["PROJ-1"])
         self.assertIn(
             "later sprint moves prevent checking it against Jira", md)
 
@@ -439,7 +439,7 @@ class ChartsTest(ReportTest):
         self.assertNotIn("PROJ-7", [s["key"] for s in data["spells"]])
         self.assertEqual(data["left_before_start_keys"], ["PROJ-11"])
         self.assertEqual(
-            data["membership_cross_check_excluded_keys"], ["PROJ-7"])
+            data["membership_cross_check_excluded"]["keys"], ["PROJ-7"])
         self.assertIn("PROJ-7) (– pts) is reconstructed from changelogs", md)
 
     def test_print_series(self):
