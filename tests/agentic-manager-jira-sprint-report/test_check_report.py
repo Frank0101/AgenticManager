@@ -23,7 +23,7 @@ from common import CHART_FILES, CHARTS_DIR, FIELD_HEADER, RAW_DIR, ai_marked, ex
 from make_report import Report, tag  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
-from report_fixture import BASE, CONTENT, TICKETS, caveat_data, content_for, ev, linked, ticket, sprint_data  # noqa: E402
+from report_fixture import BASE, CONTENT, TICKETS, caveat_data, content_for, ev, linked, no_work_data, ticket, sprint_data  # noqa: E402
 from sprint_fixture import PR  # noqa: E402
 
 # The [AI Gen.] label as make_report renders it.
@@ -248,10 +248,9 @@ class ChecksTest(unittest.TestCase):
             ("copied Jira keys", sprint_data(sprint_name="Sprint PROJ-90", sprint_goal="Deliver PROJ-91"), {},
              [(f'<a href="{BASE}/browse/PROJ-91">PROJ-91</a>', "PROJ-91", "links"),
               (f'<a href="{BASE}/browse/PROJ-100">PROJ-100: Login &lt;beta&gt;</a>', "PROJ-100: Login", "links")]),
-            ("an epic with nothing to describe",
-             sprint_data(spells=[s for s in sprint_data()[
-                         "spells"] if s["key"] in ("PROJ-4", "PROJ-5")]),
-             {"epic_commentary": {}}, [('<td style="font-size:75%">–</td></tr>', '<td style="font-size:75%">Done.</td></tr>', "epics: PROJ-100 has no scope")]),
+            ("an epic with no work to describe",
+             no_work_data(), {"epic_commentary": {}},
+             [("1 ticket already done", "2 tickets already done", "epics: PROJ-100 has no work to describe")]),
         ]
         for name, data, content, breakages in cases:
             md = Report(data, {**copy.deepcopy(CONTENT), **content}).build()
@@ -495,8 +494,12 @@ class ChecksTest(unittest.TestCase):
                 scope_groups={**d["epics"][0]["scope_groups"], "completed": [{"key": "PROJ-1"}, {"key": "PROJ-4"}]}),
              "model: PROJ-100's commentary groups hold the tickets their outcomes give"),
             ("descoped work left out", lambda d: d["epics"][0].update(
-                left_out=d["epics"][0]["left_out"] + [{"key": "PROJ-6"}],
+                left_out=d["epics"][0]["left_out"] +
+                [{"key": "PROJ-6", "reason": "non_delivery"}],
                 scope_groups={**d["epics"][0]["scope_groups"], "descoped": [{"key": "PROJ-2"}]}),
+             "model: PROJ-100's commentary groups hold the tickets their outcomes give"),
+            ("work done before the sprint said resolved without delivery", lambda d: next(
+                t for t in d["epics"][0]["left_out"] if t["key"] == "PROJ-4").update(reason="non_delivery"),
              "model: PROJ-100's commentary groups hold the tickets their outcomes give"),
             # The spells are worked out from each ticket's events, so the two
             # must tell the same story.

@@ -154,6 +154,13 @@ def category(done):
     return "done" if done else "indeterminate"
 
 
+def no_work_data():
+    """Sprint data whose only epic the sprint did no work on: its tickets
+    are PROJ-4, already done before it started, and PROJ-5, resolved without
+    delivery."""
+    return sprint_data(spells=[copy.deepcopy(t) for t in TICKETS if t["key"] in ("PROJ-4", "PROJ-5")])
+
+
 def caveat_data(kind, keys):
     """Sprint data whose `kind` caveat, membership or non_delivery, names `keys`."""
     if kind == "membership":

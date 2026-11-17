@@ -128,6 +128,11 @@ OUTCOME_COLOURS = {"completed": ("#0ca30c", "#ffffff"), "not_completed": ("#fab2
 # The groups of an epic's commentary, in the order it shows them (see
 # build_data.py's scope_group).
 SCOPE_GROUPS = ("completed", "in_review", "not_completed", "descoped")
+# Why a ticket the sprint did no work on is left out of the commentary groups
+# (see build_data.py's scope_group), in the words an epic with only such
+# tickets shows in place of its commentary.
+LEFT_OUT_REASONS = {"non_delivery": "resolved without delivery",
+                    "done_at_start": "already done before it started"}
 
 # A pull request's states as at the end, in the order the section counts them.
 PULL_STATES = ("merged", "open", "declined")
@@ -683,6 +688,15 @@ def scope_group_label(group, status):
 def epic_groups(epic):
     """The commentary groups an epic has tickets to describe in, in order."""
     return [g for g in SCOPE_GROUPS if epic["scope_groups"][g]]
+
+
+def no_work_text(counts):
+    """The commentary of an epic the sprint did no work on, from `counts`,
+    how many of its tickets each of LEFT_OUT_REASONS left out: "No work on
+    this epic in the sprint: 1 ticket resolved without delivery"."""
+    return "No work on this epic in the sprint: " + ", ".join(
+        f"{counts[reason]} {unit(counts[reason])} {text}"
+        for reason, text in LEFT_OUT_REASONS.items() if counts.get(reason))
 
 
 def chunks(text, size=DESCRIPTION_CHUNK_CHARS):

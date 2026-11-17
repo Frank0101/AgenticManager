@@ -9,6 +9,7 @@ anything is written, each problem naming the content.json field to fix, so it
 is fixed where it was written. check_report.py checks the result.
 """
 import argparse
+from collections import Counter
 import html
 import os
 import re
@@ -17,7 +18,7 @@ from typing import cast
 from common import (browse_url, epic_title, SENTENCE_BREAK, CHART_FILES, COMMENTARY_WORDS, CONTENT_FILE, DATA_FILE, EPIC_COMMENTARY_WORDS, FIELD_HEADER,
                     JIRA_CELL, NO_EPIC, OUTCOME_COLOURS, PULL_STATES, RETRO_NOTES, SCOPE_GROUPS, STATUS_HEADING,
                     ACHIEVEMENTS_WORDS, BLOCKERS_WORDS, GOAL_REASON_WORDS, SMALL_TYPE, ai_marked, chart_image, html_table, latest_points,
-                    display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty, ratio,
+                    display_date, epic_groups, estimate, key_order, known_sum, no_work_text, read_json, parse_ts, plural, pts, qty, ratio,
                     report_file, scope_group_label, sprint_key, text_rule_problems, ticket_ref, unit, whole_percentage,
                     word_count, write_report_file)
 
@@ -247,11 +248,14 @@ class Report:
 
     def epic_commentary(self, epic):
         """One labelled paragraph per group the epic has tickets in, a blank
-        line apart so each group stands out, or "–"."""
+        line apart so each group stands out; for an epic the sprint did no
+        work on, why its tickets are left out, in italics, as it isn't the
+        agent's."""
+        if not (groups := epic_groups(epic)):
+            return f"<i>{no_work_text(Counter(t['reason'] for t in epic['left_out']))}</i>"
         text = self.content["epic_commentary"].get(epic["key"]) or {}
-        lines = [f"<b>{scope_group_label(g, self.data['sprint_status'])}:</b> {html.escape(text[g], quote=False)}"
-                 for g in epic_groups(epic)]
-        return "<br><br>".join(lines) or "–"
+        return "<br><br>".join(f"<b>{scope_group_label(g, self.data['sprint_status'])}:</b> "
+                               f"{html.escape(text[g], quote=False)}" for g in groups)
 
     def epic_table(self):
         """Per epic, the commitment's and the extra work's tickets completed,

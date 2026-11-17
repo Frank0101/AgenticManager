@@ -21,7 +21,7 @@ from common import CHART_FILES, NO_EPIC, ai_marked, link_text  # noqa: E402
 from make_report import Report  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
-from report_fixture import BASE, CONTENT, TICKETS, caveat_data, content_for, ev, linked, sprint_data, ticket  # noqa: E402
+from report_fixture import BASE, CONTENT, TICKETS, caveat_data, content_for, ev, linked, no_work_data, sprint_data, ticket  # noqa: E402
 
 # The [AI Gen.] label, as make_report renders it.
 AI = ai_marked("")
@@ -201,16 +201,15 @@ class TablesTest(unittest.TestCase):
 
     def test_epic_commentary(self):
         # A labelled paragraph per group with tickets to describe, in order,
-        # a blank line apart and escaped; "Open" for not completed work while the sprint runs; "–"
-        # for an epic with nothing to describe.
+        # a blank line apart and escaped; "Open" for not completed work while
+        # the sprint runs; for an epic the sprint did no work on, why its
+        # tickets are left out, in italics.
         in_review = sprint_data()
         in_review["spells"][2]["status"] = "In Review"  # PROJ-2's extra spell
         in_review = sprint_data(spells=in_review["spells"])
         review_content = copy.deepcopy(CONTENT)
         review_content["epic_commentary"]["PROJ-100"]["in_review"] = \
             review_content["epic_commentary"]["PROJ-100"].pop("not_completed")
-        left_out = sprint_data(spells=[s for s in sprint_data()[
-                               "spells"] if s["key"] in ("PROJ-4", "PROJ-5")])
         cases = [
             ("closed", sprint_data(), CONTENT,
              '<td style="font-size:75%"><b>Completed:</b> Staff can sign in with a password.<br><br>'
@@ -221,8 +220,8 @@ class TablesTest(unittest.TestCase):
             ("active", sprint_data(**ACTIVE), CONTENT, "<b>Open:</b> Remembering"),
             ("in review", in_review, review_content,
              "<b>In review:</b> Remembering"),
-            ("nothing to describe", left_out, {
-             **CONTENT, "epic_commentary": {}}, '<td style="font-size:75%">–</td></tr>'),
+            ("no work to describe", no_work_data(), {
+             **CONTENT, "epic_commentary": {}}, '<td style="font-size:75%"><i>No work on this epic in the sprint: 1 ticket resolved without delivery, 1 ticket already done before it started</i></td></tr>'),
         ]
         for name, data, content, expected in cases:
             with self.subTest(name):

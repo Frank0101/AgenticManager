@@ -15,10 +15,10 @@ import sys
 from datetime import date
 
 from common import (folder_problem, days, BLOCKED_STATUSES, GOAL_VERDICTS, HIGH_PRIORITIES, CHARTS_DIR, CHART_IMAGE, HEADING, INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, FIELD_HEADER, ISSUE_KEY,
-                    BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, JIRA_CELL, KEY_LIST, STATUS_HEADING,
+                    BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, JIRA_CELL, KEY_LIST, LEFT_OUT_REASONS, STATUS_HEADING,
                     TICKET_ESTIMATE,
                     TICKET_EVENT_TYPES,
-                    NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai_marked, sprint_key, text_rule_problems,
+                    NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai_marked, no_work_text, sprint_key, text_rule_problems,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty,
                     ratio, report_file, report_timezone, scope_group_label, spell_epic, whole_percentage, word_count,
                     latest_points)
@@ -250,9 +250,22 @@ def check_epic_points(c, data):
 
 
 def check_commentary_groups(c, data):
-    """Each epic's commentary groups, and the work left out of them, hold
-    the counted spells their outcomes and events give: descoped work is
-    always described, and completed work only if the sprint did it."""
+    """Each epic's commentary groups, and the work left out of them with
+    why, hold the counted spells their outcomes and events give."""
+    expected = commentary_groups(data)
+    for epic in data["epics"]:
+        stored = {group: [t["key"] for t in tickets]
+                  for group, tickets in epic["scope_groups"].items() if tickets}
+        for t in epic["left_out"]:
+            stored.setdefault(t["reason"], []).append(t["key"])
+        c.check(stored == expected.get(epic["key"], {}), "model",
+                f"{epic['key']}'s commentary groups hold the tickets their outcomes give")
+
+
+def commentary_groups(data):
+    """{epic key: {group: [ticket keys]}}, recomputed from the counted
+    spells: descoped work is always described, and completed work only if
+    the sprint did it, the rest under one of LEFT_OUT_REASONS."""
     expected = {}
     for t in (t for t in data["spells"] if t["counted"]):
         if t["outcome"] == "descoped":
@@ -260,18 +273,15 @@ def check_commentary_groups(c, data):
         elif t["outcome"] == "not_completed":
             group = "in_review" if "review" in (
                 t["status"] or "").lower() else "not_completed"
-        elif t["closedAsNonDelivery"] or not any(e["type"] == "completed" for e in t["events"]):
-            group = "left_out"
+        elif t["closedAsNonDelivery"]:
+            group = "non_delivery"
+        elif not any(e["type"] == "completed" for e in t["events"]):
+            group = "done_at_start"
         else:
             group = "completed"
         epic = expected.setdefault(spell_epic(t)[0], {})
         epic.setdefault(group, []).append(t["key"])
-    for epic in data["epics"]:
-        groups = {**epic["scope_groups"], "left_out": epic["left_out"]}
-        stored = {group: [t["key"] for t in tickets]
-                  for group, tickets in groups.items() if tickets}
-        c.check(stored == expected.get(epic["key"], {}), "model",
-                f"{epic['key']}'s commentary groups hold the tickets their outcomes give")
+    return expected
 
 
 def check_ticket_events(c, data):
@@ -812,7 +822,7 @@ def tag_labels(e):
 def check_epics(c, table, data):
     if not c.check(table is not None, "epics", "table found"):
         return
-    figures = epic_figures(data)
+    figures, groups = epic_figures(data), commentary_groups(data)
     c.check({e["key"] for e in data["epics"]} == set(figures), "epics",
             f"the epics are the spells' epics {sorted(figures, key=key_order)}")
     for epic in data["epics"]:
@@ -832,7 +842,8 @@ def check_epics(c, table, data):
                             total_pts) if total else "–")
         c.check(cells == expected, "epics",
                 f"{epic['key']} shows {' '.join(expected)} (got {' '.join(cells)})")
-        check_epic_commentary(c, epic, commentary, data["sprint_status"])
+        check_epic_commentary(
+            c, epic, commentary, data["sprint_status"], groups.get(epic["key"], {}))
 
 
 def epic_figures(data):
@@ -851,14 +862,16 @@ def epic_figures(data):
             for key, scopes in estimates.items()}
 
 
-def check_epic_commentary(c, epic, cell, status):
+def check_epic_commentary(c, epic, cell, status, groups):
     """The labels of the groups the epic has tickets to describe in, in order
-    and a blank line apart; "–" if there are none. The paragraphs are the
+    and a blank line apart; with none, why its tickets, `groups` as
+    commentary_groups() gives them, are left out. The paragraphs are the
     agent's, checked when the report is written."""
     labels = [scope_group_label(g, status) for g in epic_groups(epic)]
     if not labels:
-        c.check(cell.strip() == "–", "epics",
-                f"{epic['key']} has no scope to describe, so its commentary is –")
+        expected = f"<i>{no_work_text({reason: len(groups.get(reason, [])) for reason in LEFT_OUT_REASONS})}</i>"
+        c.check(cell.strip() == expected, "epics",
+                f"{epic['key']} has no work to describe, so its commentary is {expected}")
         return
     lines = [re.match(r"<b>([^<]+):</b> (.+)", line.strip())
              for line in cell.split("<br><br>")]

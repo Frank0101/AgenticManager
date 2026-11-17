@@ -29,8 +29,10 @@ def build_brief(data):
     group, scope, latest estimate, flag and, for blocker candidates, the
     comments up to the end. Work the sprint didn't do (data.json's left_out)
     isn't listed under the epics, so the commentary doesn't describe it as this
-    sprint's work, but goal_tickets holds every ticket of the commitment, that
-    work included, so each goal theme has its full denominator."""
+    sprint's work, and an epic with only such work isn't listed at all, as the
+    report says itself that the sprint did no work on it; but goal_tickets
+    holds every ticket of the commitment, that work included, so each goal
+    theme has its full denominator."""
     comments = data["blocker_comments"]
     latest = latest_points(data["spells"])
     epics = []
@@ -50,8 +52,9 @@ def build_brief(data):
                     **first_chunk(ticket["description"]),
                     **({"comments": brief_comments(comments[ticket["key"]])} if ticket["key"] in comments else {}),
                 })
-        epics.append((epic["points_done"] or 0, {"key": epic["key"], "name": epic["name"], **first_chunk(epic["description"]),
-                                                 "tickets": tickets}))
+        if tickets:
+            epics.append((epic["points_done"] or 0, {"key": epic["key"], "name": epic["name"], **first_chunk(epic["description"]),
+                                                     "tickets": tickets}))
     # By completed pts, commitment and extra together: the order Key
     # Achievements takes after the goal's themes. The figure itself stays out
     # of the brief, as the report quotes only report_facts. Matching tickets to

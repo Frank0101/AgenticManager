@@ -126,6 +126,12 @@ class BriefTest(unittest.TestCase):
         self.assertEqual(self.brief["ticket_events"]["PROJ-1"], [
             {"date": "04/03/2026", "from": "In Progress", "to": "Done"}])
 
+    def test_an_epic_the_sprint_did_no_work_on_is_not_listed(self):
+        # Its only tickets, PROJ-4 already Done at the start and PROJ-5 a
+        # Duplicate, are left out, so the agent has nothing to describe.
+        self.assertEqual(make_brief.build_brief(
+            fixture.no_work_data())["epics"], [])
+
     def test_epics_in_order_of_completed_pts(self):
         # Commitment and extra together: the order Key Achievements takes.
         self.assertEqual([e["key"] for e in self.brief["epics"]], [

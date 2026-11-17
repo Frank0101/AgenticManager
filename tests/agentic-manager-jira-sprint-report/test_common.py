@@ -52,6 +52,21 @@ class ChunksTest(unittest.TestCase):
                          " ".join(text.split()))
 
 
+class NoWorkTextTest(unittest.TestCase):
+    def test_no_work_text(self):
+        # Each reason with its tickets, in LEFT_OUT_REASONS' order; a reason
+        # with none is left out.
+        lead = "No work on this epic in the sprint: "
+        cases = [({"non_delivery": 1}, lead + "1 ticket resolved without delivery"),
+                 ({"done_at_start": 2, "non_delivery": 0},
+                  lead + "2 tickets already done before it started"),
+                 ({"done_at_start": 1, "non_delivery": 3},
+                  lead + "3 tickets resolved without delivery, 1 ticket already done before it started")]
+        for counts, expected in cases:
+            with self.subTest(counts):
+                self.assertEqual(common.no_work_text(counts), expected)
+
+
 class ReportTimezoneTest(unittest.TestCase):
     def test_report_timezone(self):
         # A named zone keeps its clock changes; anything else is refused
