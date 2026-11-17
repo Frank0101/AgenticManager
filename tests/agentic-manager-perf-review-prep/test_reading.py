@@ -14,10 +14,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import reading  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import DELAY, PRESENTED  # noqa: E402
-
-MESSAGE = {"date": "2026-08-20", "link": "https://acme.slack.com/archives/C1/p1",
-           "synopsis": "In a cross-team channel, posted the billing rollout plan; three people asked follow-ups"}
+from prep_fixture import DELAY, PRESENTED, SLACK_ITEM  # noqa: E402
 
 
 class ReadingTest(unittest.TestCase):
@@ -56,10 +53,10 @@ class ReadingTest(unittest.TestCase):
         # name: (the item, expected in its problems, or None for none): an
         # item not numbered has its own day, of the task's, and its link.
         days = ["2026-08-20"]
-        cases = [("valid", MESSAGE, None),
-                 ("another day", {**MESSAGE, "date": "2026-09-01"},
+        cases = [("valid", SLACK_ITEM, None),
+                 ("another day", {**SLACK_ITEM, "date": "2026-09-01"},
                   "must be the day of what it comes from"),
-                 ("no link", {**MESSAGE, "link": None},
+                 ("no link", {**SLACK_ITEM, "link": None},
                   "link, None, must be the address"),
                  ("numbered", {"note": 1, "synopsis": "x"}, "must have the fields date, link, synopsis")]
         for name, item, expected in cases:

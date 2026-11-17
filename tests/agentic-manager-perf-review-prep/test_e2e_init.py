@@ -1,7 +1,7 @@
 """End-to-end tests for skills/agentic-manager-perf-review-prep/scripts/find_jira_account.py,
 init_prep.py, find_person.py, set_identities.py, rules.py, set_summary.py,
-read_notes.py, fetch_work.py, set_notion.py, read_slack.py, build_data.py
-and finish_report.py: they run each as a script, as the agent does, from looking the person up in Jira and
+read_notes.py, fetch_work.py, set_notion.py, read_slack.py, prepare_report.py,
+set_content.py, set_comparison.py and finish_report.py: they run each as a script, as the agent does, from looking the person up in Jira and
 starting the prep on the account the manager confirmed, through who the
 person is in each other source, their view, the person's previous reviews
 and the period's feedback, the manager's notes, the person's work and their Slack
@@ -193,9 +193,10 @@ class ScriptsTest(unittest.TestCase):
         # summaries follow, set_summary.py records the summaries of the
         # manager's view, the previous reviews and the period's feedback, read_notes.py hands out the notes'
         # tasks and takes their answers, fetch_work.py and set_notion.py
-        # record the work, read_slack.py the Slack messages, build_data.py
-        # builds data.json from the raw files and finish_report.py the report
-        # from it, checking the whole prep, which fails once the folder holds
+        # record the work, read_slack.py the Slack messages, prepare_report.py
+        # builds data.json from the raw files and the briefs, set_content.py
+        # and set_comparison.py record the agent's text and finish_report.py
+        # the report from them, checking the whole prep, which fails once the folder holds
         # a file of the agent's.
         found = self.run_ok(ACCOUNT_SCRIPT, "--person", "Jane Doe")
         self.assertEqual([account["accountId"] for account in found["accounts"]], [

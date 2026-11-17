@@ -122,7 +122,12 @@ class CheckReportTest(unittest.TestCase):
                   ("<li>A <a", "<li>B <a"), "GitHub main focus"),
                  ("no GitHub section", ("## GitHub", "## Code"), "its GitHub one"),
                  ("no Jira section", ("## Jira", "## Tickets"), "its Jira one"),
-                 ("no charts", ('<td><a href="_charts', '<td><a href="charts'), "a row of three figures and one of their charts")]
+                 ("a chart's link broken", ('<td><a href="_charts', '<td><a href="charts'),
+                  "a row of three figures and one of their charts"),
+                 ("a cell's chart replaced", (
+                     '_charts/github_opened_over_time.svg" target="_blank"><img src="_charts/github_opened_over_time.svg"',
+                     '_charts/other.svg" target="_blank"><img src="_charts/other.svg"'),
+                  "GitHub cell for opened")]
         for name, change, expected in cases:
             with self.subTest(name):
                 text = report.replace(

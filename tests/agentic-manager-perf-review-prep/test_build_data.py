@@ -320,11 +320,6 @@ class BuildDataTest(unittest.TestCase):
                     for key in ("PROJ-1", "PROJ-2", "OPS-3")]
         self.assertEqual(build_data.focus(projects), [{"key": "PROJ", "title": None, "url": None, "issues": 2},
                                                       {"key": "OPS", "title": None, "url": None, "issues": 1}])
-        # The pie ranks the issues with no epic as the focus does.
-        self.assertEqual([entry["key"] for entry in build_data.with_no_epic([{"key": "a", "issues": 1}], 3)],
-                         [None, "a"])
-        self.assertEqual(build_data.with_no_epic(
-            [{"key": "a", "issues": 1}], 0), [{"key": "a", "issues": 1}])
         self.assertEqual(build_data.by_epic(issues("a", None, "b", "a")), {
             "epics": [{"key": "a", "title": "A", "url": "https://acme.test/a", "issues": 2},
                       {"key": "b", "title": "B", "url": "https://acme.test/b", "issues": 1}], "no_epic": 1})

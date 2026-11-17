@@ -17,7 +17,6 @@ TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
-import common  # noqa: E402
 import find_person  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from prep_fixture import PERSON, PREP, temp_output, write_prep  # noqa: E402

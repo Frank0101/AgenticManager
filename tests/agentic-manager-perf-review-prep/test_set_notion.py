@@ -13,13 +13,13 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import set_notion  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import NOTION_SEARCHES, PREP, DATA, temp_output, write_prep  # noqa: E402
+from prep_fixture import NOTION_SEARCHES, PREP, temp_output, write_prep  # noqa: E402
 
 
 class SetNotionTest(unittest.TestCase):
     def setUp(self):
         self.folder = temp_output(self)
-        write_prep(self.folder, data=DATA)
+        write_prep(self.folder)
 
     def test_writes_the_searches(self):
         # The searches as given into Notion's raw file, which data.json is

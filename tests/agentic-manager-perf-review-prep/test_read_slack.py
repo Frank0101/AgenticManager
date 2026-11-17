@@ -16,11 +16,8 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import read_slack  # noqa: E402
 import reading  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import PREP, temp_output, write_prep  # noqa: E402
+from prep_fixture import PREP, SLACK_ITEM as ITEM, SLACK_LINK as LINK, temp_output, write_prep  # noqa: E402
 
-LINK = "https://acme.slack.com/archives/C1/p1"
-ITEM = {"date": "2026-08-20", "link": LINK,
-        "synopsis": "In a cross-team channel, posted the billing rollout plan; three people asked follow-ups"}
 POINT = "Posted the billing rollout plan in a cross-team channel"
 
 

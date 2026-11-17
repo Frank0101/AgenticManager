@@ -248,6 +248,10 @@ SLACK = {"going_well": [{"point": "Explained the outage's cause in the incident 
          "to_improve": [],
          "context": [{"point": "Posted the billing rollout plan in a cross-team channel",
                       "evidence": [{"date": "2026-08-20", "link": "https://acme.slack.com/archives/C2/p2"}]}]}
+# A Slack reading task's item: a message's day, link and synopsis.
+SLACK_LINK = "https://acme.slack.com/archives/C1/p1"
+SLACK_ITEM = {"date": "2026-08-20", "link": SLACK_LINK,
+              "synopsis": "In a cross-team channel, posted the billing rollout plan; three people asked follow-ups"}
 # A reading task's answer: the synopses of the notes it was shown, by number.
 PRESENTED = {
     "note": 1, "synopsis": "Presented the migration to the team, who asked for the slides; Jane shared them"}

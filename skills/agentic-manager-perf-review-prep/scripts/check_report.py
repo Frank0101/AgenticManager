@@ -10,7 +10,7 @@ from datetime import date, timedelta
 import html
 import re
 
-from common import (BINS_PER_DECADE, CHARTS_DIR, OBSERVATION_HEADINGS, OBSERVATIONS_SUBTITLE, OBSERVATION_SOURCES, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS, NO_VALUE,
+from common import (BINS_PER_DECADE, CHART_IMAGE, CHARTS_DIR, OBSERVATION_HEADINGS, OBSERVATIONS_SUBTITLE, OBSERVATION_SOURCES, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS, NO_VALUE,
                     PAGES_HEADING, REVIEW_ID, STEP_CHANGE_COMPARISON, SUMMARY_PARTS, VALUED_PARTS, VIEW_CHECK_COMPARISON, VIEW_ID, ai_marked, average_text, details_text, display_date, link_href, point_id, reference_text, project_of, repo_code, repos_text, size_text, step_change_problems, types_text,
                     view_check_problems, week_text)
 
@@ -57,11 +57,12 @@ FOCUS_ENTRY = re.compile(
 # name, and how many merged pull requests it holds.
 REPO_ENTRY = re.compile(
     r'<li>(?:([A-Z]) )?<a href="([^"]+)">([^<]+)</a> \((\d+)\)</li>')
-# A figure's cell and a chart's, as the report writes them.
+# A figure's cell and a chart's, as the report writes them: a figure's chart
+# fills a plain cell, which tells it from a main focus's chart, in a cell of
+# half the width.
 FIGURE = re.compile(
     r'<td>(?:<a href="([^"]+)">([\d.]+)</a>|([\d.]+)) \((.*?)\)</td>')
-CHART = re.compile(
-    rf'<td><a href="{CHARTS_DIR}/([^"]+)" target="_blank"><img src="{CHARTS_DIR}/\1"')
+CHART = re.compile(rf"<td>{CHART_IMAGE.pattern}</td>")
 
 
 def report_problems(report, data, summaries, values, folder, content, step_change, view_check):
@@ -512,7 +513,7 @@ def _cells_problems(text, source, cells, expected, facts):
     return [f"the report's {source} cell for {name} doesn't show data.json: run finish_report.py again"
             for (name, chart), (url, linked, plain, made_of), shown in zip(cells, figures, charts)
             if (float(linked or plain), html.unescape(url) or None, html.unescape(made_of), shown) !=
-            (expected[name][0], facts[f"{name}_search_url"], expected[name][1], chart)]
+            (expected[name][0], facts[f"{name}_search_url"], expected[name][1], f"{CHARTS_DIR}/{chart}")]
 
 
 def _counts(items, group):

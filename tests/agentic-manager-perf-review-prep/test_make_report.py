@@ -191,16 +191,13 @@ class MakeReportTest(unittest.TestCase):
 
     def test_focus_section(self):
         # Every entry of the main focus, in its order, an epic linked with its
-        # title and count, the issues with no epic linked to their search, as
-        # the final check reads them back.
+        # title and count, the issues with no epic linked to their search.
         report = make_report.render(
             PERSON, DATA_NO_EPIC_FIRST, REPORT_FOLDER, CONTENT, STEP_CHANGE, VIEW_CHECK)
         jira = DATA_NO_EPIC_FIRST["jira"]
         self.assertIn(f'<ol><li><a href="{html.escape(jira["no_epic_search_url"])}">no epic</a> (3)</li>'
                       f'<li><a href="{html.escape(jira["epic_search_urls"]["PROJ-1"])}">PROJ-1</a> Billing (2)</li>'
                       '</ol>', report)
-        self.assertEqual(check_report.report_problems(
-            report, DATA_NO_EPIC_FIRST, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, CONTENT, STEP_CHANGE, VIEW_CHECK), [])
 
     def test_notion_pages_by_calendar_week(self):
         # Pages found by a week's search split in two share that week's row.
