@@ -68,9 +68,8 @@ SENSITIVE = ("Before you ask the user anything else, show them `notice`, word fo
 # The warning of a skill that reads sensitive data, kept here so every such
 # skill warns in the same words. No tool can tell from inside whether the AI
 # running it keeps what it reads, so it is a question for the user, not a check.
-NOTICE = ("This skill reads sensitive data, such as what is written about people. Run it only from an "
-          "AI tool approved for such data, such as one with zero data retention (ZDR), which keeps "
-          "nothing it reads. Is the tool you're using now one of them?")
+NOTICE = ("This skill reads sensitive data and should only run from an AI tool with zero data "
+          "retention (ZDR). Proceed?")
 FIX_STEPS = ("Show the user every error and the config's `path`, and explain how to fix "
              "each one. Never edit the config yourself.")
 
