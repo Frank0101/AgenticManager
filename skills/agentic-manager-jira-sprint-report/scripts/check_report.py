@@ -14,11 +14,11 @@ import re
 import sys
 from datetime import date
 
-from common import (folder_problem, days, BLOCKED_STATUSES, GOAL_VERDICTS, HIGH_PRIORITIES, CHARTS_DIR, HEADING, INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, FIELD_TABLE_HEAD, ISSUE_KEY,
+from common import (folder_problem, days, BLOCKED_STATUSES, GOAL_VERDICTS, HIGH_PRIORITIES, CHARTS_DIR, CHART_IMAGE, HEADING, INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, FIELD_HEADER, ISSUE_KEY,
                     BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, JIRA_CELL, KEY_LIST, STATUS_HEADING,
                     TICKET_ESTIMATE,
                     TICKET_EVENT_TYPES,
-                    NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai_marked, table_cells, sprint_key, text_rule_problems,
+                    NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai_marked, sprint_key, text_rule_problems,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty,
                     ratio, report_file, report_timezone, scope_group_label, spell_epic, whole_percentage, word_count,
                     latest_points)
@@ -41,6 +41,7 @@ CREATED_VALUES = {"sprint", "status", "statusCategory", "resolution", "priority"
 # the one under Sprint Metrics.
 HEADER_LABELS = ["Dates", "Goal", ai_marked("Goal outcome"), ai_marked("Key Achievements"),
                  ai_marked("Blockers & Risks"), "Sprint target completion"]
+
 
 # The report's title line, plain text the checks set apart from the rest.
 TITLE = re.compile(r"^# Sprint Summary:.*$", re.M)
@@ -110,6 +111,8 @@ def html_tables(md):
 
 
 def table_kind(table):
+    if rows_of(table)[0] == FIELD_HEADER:
+        return "fields"
     header = strip_tags(rows_of(table)[0]).lower()
     if "date" in header and "events" in header and "end of day" in header:
         return "timeline"
@@ -121,7 +124,7 @@ def table_kind(table):
 
 
 def rows_of(table):
-    return re.findall(r"<tr>(.*?)</tr>", table, re.S)
+    return re.findall(r"<tr\b[^>]*>(.*?)</tr>", table, re.S)
 
 
 def strip_tags(text):
@@ -559,12 +562,12 @@ def check_header(c, md, data):
     c.check(values["Dates"] == dates, "header", f"Dates is {dates!r}")
 
     goal = values["Goal"]
-    shown = re.sub(r"\[(" + ISSUE_KEY.pattern + r")\]\([^)]*\)",
-                   r"\1", goal).replace("\\|", "|")
+    shown = re.sub(
+        r'<a href="[^"]*">(' + ISSUE_KEY.pattern + r")</a>", r"\1", goal)
     lines = [line.strip()
              for line in data["sprint_goal"].splitlines() if line.strip()]
     expected_goal = "<br>".join(html.escape(line, quote=False)
-                                for line in lines) if lines else "*No goal was set in Jira for this sprint*"
+                                for line in lines) if lines else "<i>No goal was set in Jira for this sprint</i>"
     c.check(shown == expected_goal, "header",
             "Goal is Jira's goal, one line per <br>")
 
@@ -578,21 +581,27 @@ def check_header(c, md, data):
         + f" completed{so_far}")
     c.check(values["Sprint target completion"] == target,
             "header", f"Sprint target completion is {target!r}")
-    c.check(f"## Sprint Metrics\n\n{FIELD_TABLE_HEAD}| Sprint target completion |" in md,
+    metrics = md.split("## Sprint Metrics\n\n", 1)
+    first = html_tables(metrics[1])[:1] if len(metrics) == 2 else []
+    c.check(bool(first) and metrics[1].startswith(first[0]) and table_kind(first[0]) == "fields"
+            and [label for label, _ in field_rows(first[0])] == ["Sprint target completion"],
             "header", "Sprint target completion is a table of its own under Sprint Metrics")
 
 
 def header_rows(md):
     """[(label, value)] of the report's tables of fields, the one at the top
     and the one under Sprint Metrics, in order, or None if there are none."""
-    if FIELD_TABLE_HEAD not in md:
-        return None
+    tables = [t for t in html_tables(md) if table_kind(t) == "fields"]
+    return [row for table in tables for row in field_rows(table)] if tables else None
+
+
+def field_rows(table):
+    """[(label, value)] of a table of fields' rows below its headings; a row
+    that isn't 2 cells as (its HTML, None)."""
     rows = []
-    for table in md.split(FIELD_TABLE_HEAD)[1:]:
-        for line in table.split("\n\n", 1)[0].splitlines():
-            cells = table_cells(line) if line.startswith("|") else []
-            rows.append((cells[0], cells[1])
-                        if len(cells) == 2 else (line, None))
+    for row in rows_of(table)[1:]:
+        cells = [content for _, content in cells_with_attributes(row)]
+        rows.append((cells[0], cells[1]) if len(cells) == 2 else (row, None))
     return rows
 
 
@@ -688,7 +697,7 @@ def check_framing(c, md):
     between). The paragraph after the timeline is check_commentary's."""
     for table in html_tables(md):
         kind = table_kind(table)
-        if kind is None:
+        if kind in (None, "fields"):
             continue
         before = md.partition(table)[0]
         # A section heading, ## or deeper: the # title heads the whole report.
@@ -696,13 +705,13 @@ def check_framing(c, md):
         if c.check(bool(headings), "headings", f"{kind} table has a heading above it"):
             between = "\n".join(
                 line for line in before[headings[-1].end():].splitlines()
-                if line.strip() and not ((m := INLINE_LINK.fullmatch(line.strip())) and m[1]))
+                if line.strip() and not CHART_IMAGE.fullmatch(line.strip()))
             c.check(between.strip() == "", "headings",
                     f"{kind} table directly follows '{headings[-1][2]}'")
 
 
 def check_images(c, md, report_dir):
-    embedded = [m[3] for m in INLINE_LINK.finditer(md) if m[1]]
+    embedded = [m[1] for m in CHART_IMAGE.finditer(md)]
     for name in CHART_FILES.values():
         c.check(name in embedded, "images", f"{name} embedded")
     for src in embedded:
@@ -844,7 +853,7 @@ def epic_figures(data):
 
 def check_epic_commentary(c, epic, cell, status):
     """The labels of the groups the epic has tickets to describe in, in order
-    and a blank line apart; "–" if there are none. The sentences are the
+    and a blank line apart; "–" if there are none. The paragraphs are the
     agent's, checked when the report is written."""
     labels = [scope_group_label(g, status) for g in epic_groups(epic)]
     if not labels:
@@ -925,11 +934,11 @@ def check_style(c, md, data):
 def generated_text(md):
     """Exclude only the fixed source-text slots, never matching prose by value."""
     md = TITLE.sub("# Sprint Summary:", md)
-    md = re.sub(r"^\| Goal \|.*$", "| Goal | |", md, flags=re.M)
+    md = re.sub(r"(<td>Goal</td><td>).*?(</td>)", r"\1\2", md, flags=re.S)
     for table in html_tables(md):
         if table_kind(table) == "epics":
             without_names = re.sub(
-                r"(<tr>\s*)<td>.*?</td>", r"\1<td></td>", table, flags=re.S)
+                r"(<tr\b[^>]*>\s*)<td>.*?</td>", r"\1<td></td>", table, flags=re.S)
             md = md.replace(table, without_names, 1)
         elif table_kind(table) == "status":
             md = md.replace(table, re.sub(rf'(<td[^>]*class="{JIRA_CELL}"[^>]*>).*?</td>', r"\1</td>", table,

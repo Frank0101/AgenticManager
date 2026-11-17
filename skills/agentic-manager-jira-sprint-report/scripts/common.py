@@ -17,7 +17,7 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.output_file import json_text, read_json, write_output_file, write_output_json  # noqa: E402,F401
-from agentic_manager.text import HEADING, INLINE_LINK, SMALL_TYPE, ai_marked, table, table_cells, as_name, display_date, link_text, number, plural, word_count  # noqa: E402,F401
+from agentic_manager.text import CHART_IMAGE, HEADING, INLINE_LINK, SMALL_TYPE, ai_marked, chart_image, html_table, as_name, display_date, link_text, number, plural, word_count  # noqa: E402,F401
 from agentic_manager.svg import GRID, INK, MUTED, SURFACE, legend, nice_step, svg, text, text_width  # noqa: E402,F401
 from agentic_manager.output_folder import CHARTS_DIR, RAW_DIR, document_name, folder_problem, new_run, output_folder  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
@@ -72,7 +72,8 @@ HIGH_PRIORITIES = {"highest", "high"}
 BLOCKED_STATUSES = {"blocked", "impeded",
                     "on hold", "waiting", "waiting for support"}
 
-# Where a sentence ends, for the commentary and the agent's one-sentence texts.
+# Where a sentence ends, for the timeline's commentary and goal_reason, the
+# agent's one-sentence text.
 SENTENCE_BREAK = re.compile(r"(?<=[.!?]) +(?=[A-Z0-9])")
 
 # The words the report's vocabulary bans (see "The report's vocabulary and
@@ -143,21 +144,20 @@ DESCRIPTION_CHUNK_CHARS = 2000
 
 # Word limits, so the report stays short enough for an exec to read: the
 # timeline's commentary before its caveats, the goal verdict's reason, each
-# sentence of an epic's commentary, and the Key Achievements and Blockers &
+# group's paragraph of an epic's commentary, and the Key Achievements and Blockers &
 # Risks paragraphs; and the most retro notes. Words are counted as the
 # library's word_count counts them.
 COMMENTARY_WORDS = 100
 GOAL_REASON_WORDS = 25
-EPIC_COMMENTARY_WORDS = 40
+EPIC_COMMENTARY_WORDS = 80
 ACHIEVEMENTS_WORDS = 150
 BLOCKERS_WORDS = 100
 RETRO_NOTES = 5
 
-# The header of the report's two-column tables of (label, value) rows: the one
-# at the top and the one under Sprint Metrics; and their head as the library's
-# table() writes it, which the check finds them by.
-FIELD_HEADER = ("Field", "Detail")
-FIELD_TABLE_HEAD = table(FIELD_HEADER, []) + "\n"
+# The heading row of the report's two-column tables of (label, value) rows,
+# the one at the top and the one under Sprint Metrics, which the check finds
+# them by: a narrow label beside a wide value.
+FIELD_HEADER = '<th width="20%">Field</th><th width="80%">Detail</th>'
 
 
 def report_label(project_key, sprint_name):

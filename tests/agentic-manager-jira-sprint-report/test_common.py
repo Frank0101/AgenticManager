@@ -2,7 +2,6 @@
 Run with: python3 tests/run.py agentic-manager-jira-sprint-report
 """
 
-import json
 import os
 import sys
 import tempfile

@@ -35,6 +35,26 @@ CHARTS = ("_charts/outcome-tickets.svg",
 
 
 class ReportTest(unittest.TestCase):
+    @staticmethod
+    def spells(data):
+        """{key: [its spells]}."""
+        found = {}
+        for spell in data["spells"]:
+            found.setdefault(spell["key"], []).append(spell)
+        return found
+
+    @staticmethod
+    def shown(event, with_points=False):
+        """An event as "type dd", " done" marking work already Done when it
+        joined; with `with_points`, then ":pts", or ":-" without an
+        estimate."""
+        text = f"{event['type']} {event['date'][8:]}" + (
+            " done" if event["done"] and event["type"] in ("committed", "joined") else "")
+        if with_points:
+            text += ":" + ("-" if event["points"]
+                           is None else f"{event['points']:g}")
+        return text
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = os.path.join(self.tmp.name, "home")
@@ -81,7 +101,7 @@ class ReportTest(unittest.TestCase):
     def make_report(self):
         data = self.build()
         self.assert_runs("make_charts.py")
-        # The agent writes a sentence for each group of each epic, which
+        # The agent writes a paragraph for each group of each epic, which
         # depends on the data the test built.
         self.content["epic_commentary"] = fixture.epic_commentary(data)
         with open(os.path.join(self.dir, "content.json"), "w", encoding="utf-8") as f:
@@ -108,20 +128,9 @@ class BuildTest(ReportTest):
     The other tests change it, so this pins what they start from; one
     ticket's history at a time is covered by test_e2e_cases.py."""
 
-    def spells(self, data):
-        """{key: [its spells]}."""
-        found = {}
-        for spell in data["spells"]:
-            found.setdefault(spell["key"], []).append(spell)
-        return found
-
     def tickets(self, data):
         """{key: its last spell}."""
         return {key: spells[-1] for key, spells in self.spells(data).items()}
-
-    def kinds(self, spell):
-        return [f"{e['type']} {e['date'][8:]}" + (" done" if e["done"] and e["type"] in ("committed", "joined") else "")
-                for e in spell["events"]]
 
     def test_each_ticket(self):
         # Each spell as (scope, outcome, events), " done" marking work already
@@ -144,7 +153,7 @@ class BuildTest(ReportTest):
         self.assertEqual(set(found), set(cases))
         for key, expected in cases.items():
             with self.subTest(key):
-                self.assertEqual([(s["scope"], s["outcome"], self.kinds(s))
+                self.assertEqual([(s["scope"], s["outcome"], [self.shown(e) for e in s["events"]])
                                  for s in found[key]], expected)
 
     def test_totals(self):
@@ -193,7 +202,7 @@ class BuildTest(ReportTest):
                 self.assertEqual(
                     c[f"original_{outcome}"], c[f"carried_in_{outcome}"] + c[f"new_{outcome}"])
         # The charts show the carry-over; the header table doesn't.
-        self.assertNotIn("| Carried over", md)
+        self.assertNotIn("Carried over", md)
 
     def test_later_edits_change_nothing(self):
         # What happened to the issues after the sprint closed, as Jira shows it
@@ -374,7 +383,7 @@ class ReopenedAtTheStartTest(ReportTest):
             self.assertIn("Of the 13 tickets (33 pts) in the commitment, 8 tickets (19 pts) were already Done "
                           "at the start", md)
             self.assertIn(
-                "| Sprint target completion | 38%, 5/13 tickets (9/33 pts) completed |", md)
+                "<td>Sprint target completion</td><td>38%, 5/13 tickets (9/33 pts) completed</td>", md)
             self.assertIn(
                 '<a href="https://acme.atlassian.net/browse/PROJ-20">PROJ-20</a> (1 pt)', md)
             self.assertEqual(md.count(">Already done</span>"), 8)
@@ -616,13 +625,13 @@ class MakeReportTest(ReportTest):
                 "2 tickets (6 pts) are open, 1 ticket (5 pts) of them from the commitment, with 2 days left.",
                 "(today)"], []),
             ("no goal", no_goal, [
-                "*No goal was set in Jira for this sprint*",
-                "| Goal outcome <sup style=\"font-size:0.6rem;font-weight:normal\">[AI Gen.]</sup> "
-                "| No goal set in Jira for this sprint |"], []),
+                "<i>No goal was set in Jira for this sprint</i>",
+                "<td>Goal outcome <sup style=\"font-size:0.6rem;font-weight:normal\">[AI Gen.]</sup></td>"
+                "<td>No goal set in Jira for this sprint</td>"], []),
             # With no estimate at all, every pts figure is "– pts", and a
             # ratio's unestimated pts "–"; a sum of no ticket stays 0.
             ("no estimates", no_estimates, [
-                "| Sprint target completion | 29%, 2/7 tickets (–/– pts) completed |",
+                "<td>Sprint target completion</td><td>29%, 2/7 tickets (–/– pts) completed</td>",
                 "<td>0%, 0/2 tickets (0/– pts)</td>",
                 "<b>Commitment:</b><br>7 tickets (– pts)",
                 "Of the 7 tickets (– pts) in the commitment"], ["0 pts", "0/0 pts"]),
@@ -634,7 +643,7 @@ class MakeReportTest(ReportTest):
             # ...but text copied from Jira stays as the team wrote it, and the
             # checker accepts it.
             ("em dash in Jira's text", jira_text, [
-                "# Sprint Summary: " + source, "| Goal | " + source + " |", ": " + source + "</a>"], []),
+                "# Sprint Summary: " + source, "<td>Goal</td><td>" + source + "</td>", ": " + source + "</a>"], []),
         ]
         for name, change, present, absent in cases:
             with self.subTest(name):

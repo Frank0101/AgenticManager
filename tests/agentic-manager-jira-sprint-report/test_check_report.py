@@ -19,11 +19,11 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import check_report  # noqa: E402
-from common import CHART_FILES, CHARTS_DIR, RAW_DIR, ai_marked, expected_files  # noqa: E402
+from common import CHART_FILES, CHARTS_DIR, FIELD_HEADER, RAW_DIR, ai_marked, expected_files  # noqa: E402
 from make_report import Report, tag  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
-from report_fixture import BASE, CONTENT, TICKETS, caveat_data, content_for, ev, ticket, sprint_data  # noqa: E402
+from report_fixture import BASE, CONTENT, TICKETS, caveat_data, content_for, ev, linked, ticket, sprint_data  # noqa: E402
 from sprint_fixture import PR  # noqa: E402
 
 # The [AI Gen.] label as make_report renders it.
@@ -49,8 +49,8 @@ def event_at(at, **fields):
 
 class HelpersTest(unittest.TestCase):
     def test_html_parsing(self):
-        table = ("<table><tr><th>Date</th><th>Events</th><th>End of day</th></tr>"
-                 "<tr><td>a<br>b</td><td>c</td><td>d</td></tr></table>")
+        table = ('<table width="100%"><tr valign="top"><th>Date</th><th>Events</th><th>End of day</th></tr>'
+                 '<tr valign="top"><td>a<br>b</td><td>c</td><td>d</td></tr></table>')
         self.assertEqual(check_report.html_tables(f"x {table} y"), [table])
         self.assertEqual([check_report.cells_with_attributes(r) for r in check_report.rows_of(table)],
                          [[("", "Date"), ("", "Events"), ("", "End of day")],
@@ -59,6 +59,8 @@ class HelpersTest(unittest.TestCase):
                          [(' rowspan="2"', "a")])
         self.assertEqual(check_report.strip_tags("<b>a</b><br>b"), "a  b")
         self.assertEqual(check_report.table_kind(table), "timeline")
+        self.assertEqual(check_report.table_kind(
+            f"<table><tr>{FIELD_HEADER}</tr></table>"), "fields")
         self.assertIsNone(check_report.table_kind(
             "<table><tr><th>Other</th></tr></table>"))
 
@@ -128,8 +130,6 @@ class ChecksTest(unittest.TestCase):
     def test_status_rows_of_every_kind_pass(self):
         # Whatever a row's flag and counts, the section the generator writes
         # passes the section's own check.
-        def linked(merged=0, opened=0, declined=0):
-            return {"merged": merged, "open": opened, "declined": declined}
         # name: changes to the first row
         cases = {"not started, 1 PR": {"flag": "work_started", "linked": linked(merged=1), "otherTickets": 0},
                  "not started, 1 open PR": {"flag": "work_started", "linked": linked(opened=1), "otherTickets": 0},
@@ -155,7 +155,7 @@ class ChecksTest(unittest.TestCase):
                  "no goal": ({"sprint_goal": ""}, "No goal set in Jira for this sprint"),
                  "blank goal": ({"sprint_goal": "   "}, "No goal set in Jira for this sprint"),
                  "blank goal lines": ({"sprint_goal": "\n \n"}, "No goal set in Jira for this sprint"),
-                 # Jira's goal, with its keys linked and pipes escaped, reads back as Jira's.
+                 # Jira's goal, with its keys linked, reads back as Jira's.
                  "a goal over several lines": ({"sprint_goal": "Ship login\nFix PROJ-1 | export"}, "Partially met"),
                  "literal HTML and entities": ({"sprint_goal": "Ship <beta> & preserve &amp;\nFix PROJ-1 | export"},
                                                "Partially met"),
@@ -246,12 +246,12 @@ class ChecksTest(unittest.TestCase):
              [("Login shipped: staff", source + ": staff", check) for check in ("vocabulary", "em dashes", "dates")]),
             # Only the title is plain text: a key in a copied field is linked.
             ("copied Jira keys", sprint_data(sprint_name="Sprint PROJ-90", sprint_goal="Deliver PROJ-91"), {},
-             [(f"[PROJ-91]({BASE}/browse/PROJ-91)", "PROJ-91", "links"),
+             [(f'<a href="{BASE}/browse/PROJ-91">PROJ-91</a>', "PROJ-91", "links"),
               (f'<a href="{BASE}/browse/PROJ-100">PROJ-100: Login &lt;beta&gt;</a>', "PROJ-100: Login", "links")]),
             ("an epic with nothing to describe",
              sprint_data(spells=[s for s in sprint_data()[
                          "spells"] if s["key"] in ("PROJ-4", "PROJ-5")]),
-             {"epic_commentary": {}}, [("<td>–</td>\n</tr>", "<td>Done.</td>\n</tr>", "epics: PROJ-100 has no scope")]),
+             {"epic_commentary": {}}, [('<td style="font-size:75%">–</td></tr>', '<td style="font-size:75%">Done.</td></tr>', "epics: PROJ-100 has no scope")]),
         ]
         for name, data, content, breakages in cases:
             md = Report(data, {**copy.deepcopy(CONTENT), **content}).build()
@@ -304,8 +304,8 @@ class ChecksTest(unittest.TestCase):
         proj_1 = f'<a href="{BASE}/browse/PROJ-1">PROJ-1'
         cases = [
             ("timeline", ">Descoped</span>", ">Removed</span>"),
-            ("timeline", f'>Descoped</span></td></tr>\n<tr><td style="white-space:nowrap">{proj_6}',
-             f'>Completed</span></td></tr>\n<tr><td style="white-space:nowrap">{proj_6}'),
+            ("timeline", f'>Descoped</span></td></tr>\n<tr valign="top"><td style="white-space:nowrap">{proj_6}',
+             f'>Completed</span></td></tr>\n<tr valign="top"><td style="white-space:nowrap">{proj_6}'),
             ("timeline", ">Re-estimated: 2 → 3 pts</span>",
              ">Re-estimated: 3 pts</span>"),
             ("timeline", f"{proj_6} (2 pts)", f"{proj_6} (3 pts)"),
@@ -317,7 +317,8 @@ class ChecksTest(unittest.TestCase):
             ("timeline", ">03/03/2026</td>", ">07/03/2026</td>"),
             ("timeline: the days are the timeline's, in order (6)",
              ">04/03/2026</td>", ">05/04/2026</td>"),
-            ("cell shapes", '<td rowspan="5" style', '<td rowspan="4" style'),
+            ("cell shapes", '<td rowspan="5">02/03/2026',
+             '<td rowspan="4">02/03/2026'),
             ("commentary: states 2 tickets (4 pts) descoped",
              "2 tickets (4 pts) were descoped", "2 tickets (5 pts) were descoped"),
             ("commentary: mentions left and came back",
@@ -342,25 +343,30 @@ class ChecksTest(unittest.TestCase):
             ("epics", "<b>Not completed:</b>", "<b>Open:</b>"),
             ("epics", "<br><br><b>Descoped:</b> Sign-in audit logging &amp; the admin screen were dropped.", ""),
             ("epics", "<br><br><b>Not completed:</b>", "<br><b>Not completed:</b>"),
-            ("header", f"| Goal outcome{AI} |", "| Goal outcome |"),
-            ("header", "| Field | Detail |", "| Item | Detail |"),
-            ("header", "| Dates | 02/03/2026–13/03/2026 |",
-             "| Dates | 02/03/2026 to 13/03/2026 |"),
-            ("header", "| Goal | Ship login |", "| Goal | Ship it |"),
-            ("header", "| Sprint target completion |", "| Target |"),
+            ("header", f"<td>Goal outcome{AI}</td>", "<td>Goal outcome</td>"),
+            ("header", '<th width="20%">Field</th>', '<th width="20%">Item</th>'),
+            ("header", "<td>Dates</td><td>02/03/2026–13/03/2026</td>",
+             "<td>Dates</td><td>02/03/2026 to 13/03/2026</td>"),
+            ("header", "<td>Goal</td><td>Ship login</td>",
+             "<td>Goal</td><td>Ship it</td>"),
+            ("header", "<td>Sprint target completion</td>", "<td>Target</td>"),
             ("header: Sprint target completion is a table of its own under Sprint Metrics",
-             "## Sprint Metrics\n\n| Field", "## Sprint Metrics\n\nThe figures.\n\n| Field"),
+             "## Sprint Metrics\n\n<table", "## Sprint Metrics\n\nThe figures.\n\n<table"),
             ("images: _charts/outcome-pts.svg sits under the Sprint Metrics heading",
-             "![Sprint outcome in pts](_charts/outcome-pts.svg)\n\n## Scope Timeline",
-             "## Scope Timeline\n\n![Sprint outcome in pts](_charts/outcome-pts.svg)"),
+             '<a href="_charts/outcome-pts.svg" target="_blank"><img src="_charts/outcome-pts.svg" width="100%" alt="Sprint outcome in pts"></a>\n\n## Scope Timeline',
+             '## Scope Timeline\n\n<a href="_charts/outcome-pts.svg" target="_blank"><img src="_charts/outcome-pts.svg" width="100%" alt="Sprint outcome in pts"></a>'),
+            ("images: _charts/outcome-pts.svg embedded", 'width="100%" alt="Sprint outcome in pts"',
+             'alt="Sprint outcome in pts"'),
             ("header", "3/5 tickets (6/10 pts) completed",
              "3/5 tickets (6/11 pts) completed"),
-            ("header", "| 60%, 3/5 tickets", "| 3/5 tickets"),
+            ("header", "<td>60%, 3/5 tickets (6/10 pts) completed</td>",
+             "<td>3/5 tickets (6/10 pts) completed</td>"),
             # The carry-over row was removed on purpose: the charts show it.
-            ("header", "3/5 tickets (6/10 pts) completed |",
-             "3/5 tickets (6/10 pts) completed |\n| Carried over from Sprint 6 | 1 ticket |"),
+            ("header", "3/5 tickets (6/10 pts) completed</td></tr>",
+             '3/5 tickets (6/10 pts) completed</td></tr>\n<tr valign="top"><td>Carried over from Sprint 6</td>'
+             "<td>1 ticket</td></tr>"),
             ("images",
-             "## Scope Timeline\n\n![Sprint burndown](_charts/burndown.svg)", "## Scope Timeline"),
+             '## Scope Timeline\n\n<a href="_charts/burndown.svg" target="_blank"><img src="_charts/burndown.svg" width="100%" alt="Sprint burndown"></a>', "## Scope Timeline"),
             ("em dashes", "Partially met", "Partially met — mostly"),
             ("dates", "02/03/2026–", "2026-03-02–"),
             ("links", "Login shipped", "PROJ-9 and login shipped"),
@@ -594,11 +600,13 @@ class ChecksTest(unittest.TestCase):
                     self.assert_fails(failure, md)
 
     def test_framing(self):
-        # Only the timeline and epic tables need a heading directly above them.
+        # Only the report's big tables need a heading directly above them,
+        # not the tables of fields.
         epics = "<table><tr><th>Epic</th><th>Commentary</th></tr></table>"
         cases = [("an epic table", "<table><tr><th>Epic</th><th>Commentary</th></tr></table>\n\n" + "Prose. " * 10,
                   ["headings: epics table has a heading above it"]),
-                 ("another table", "<table><tr><th>Field</th></tr></table>", []),
+                 ("a table of fields",
+                  f"<table><tr>{FIELD_HEADER}</tr></table>", []),
                  # The report's title isn't a section heading.
                  ("only the title above", "# Sprint Summary: S1\n\n" + epics,
                   ["headings: epics table has a heading above it"]),

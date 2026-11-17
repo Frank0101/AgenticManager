@@ -16,7 +16,7 @@ from typing import cast
 
 from common import (browse_url, epic_title, SENTENCE_BREAK, CHART_FILES, COMMENTARY_WORDS, CONTENT_FILE, DATA_FILE, EPIC_COMMENTARY_WORDS, FIELD_HEADER,
                     JIRA_CELL, NO_EPIC, OUTCOME_COLOURS, PULL_STATES, RETRO_NOTES, SCOPE_GROUPS, STATUS_HEADING,
-                    ACHIEVEMENTS_WORDS, BLOCKERS_WORDS, GOAL_REASON_WORDS, SMALL_TYPE, ai_marked, latest_points, table,
+                    ACHIEVEMENTS_WORDS, BLOCKERS_WORDS, GOAL_REASON_WORDS, SMALL_TYPE, ai_marked, chart_image, html_table, latest_points,
                     display_date, epic_groups, estimate, key_order, known_sum, read_json, parse_ts, plural, pts, qty, ratio,
                     report_file, scope_group_label, sprint_key, text_rule_problems, ticket_ref, unit, whole_percentage,
                     word_count, write_report_file)
@@ -99,19 +99,19 @@ def validate_content(content, data):
     commentary = content.get("epic_commentary")
     if not isinstance(commentary, dict):
         problems.append(
-            "epic_commentary must map each epic key to its groups' sentences")
+            "epic_commentary must map each epic key to its groups' paragraphs")
     else:
         for epic in data["epics"]:
             groups, given = epic_groups(
                 epic), commentary.get(epic["key"]) or {}
             if not isinstance(given, dict):
                 problems.append(
-                    f"epic_commentary.{epic['key']} must map each group to a sentence")
+                    f"epic_commentary.{epic['key']} must map each group to a paragraph")
                 continue
             written = [g for g in SCOPE_GROUPS if isinstance(
                 given.get(g), str) and given[g].strip()]
             if written != groups or set(given) - set(groups):
-                problems.append(f"epic_commentary.{epic['key']} needs a sentence for exactly these groups: "
+                problems.append(f"epic_commentary.{epic['key']} needs a paragraph for exactly these groups: "
                                 + (", ".join(groups) or "none"))
     if not problems:
         problems += text_problems(content, data)
@@ -124,12 +124,12 @@ def text_problems(content, data):
     so the fix stays next to the text that needs it."""
     paragraphs = [("key_achievements", content["key_achievements"], ACHIEVEMENTS_WORDS),
                   ("blockers_risks", content["blockers_risks"], BLOCKERS_WORDS)]
-    sentences = [("goal_reason", content["goal_reason"],
-                  GOAL_REASON_WORDS)] if "goal_reason" in content else []
     for epic in data["epics"]:
         given = content["epic_commentary"].get(epic["key"]) or {}
-        sentences += [(f"epic_commentary.{epic['key']}.{group}", text, EPIC_COMMENTARY_WORDS)
-                      for group, text in given.items()]
+        paragraphs += [(f"epic_commentary.{epic['key']}.{group}", text, EPIC_COMMENTARY_WORDS)
+                       for group, text in given.items()]
+    sentences = [("goal_reason", content["goal_reason"],
+                  GOAL_REASON_WORDS)] if "goal_reason" in content else []
     notes = [(f"retro_notes[{i}]", note)
              for i, note in enumerate(content["retro_notes"])]
     problems = [f"{field}: must be a single paragraph" for field,
@@ -186,8 +186,10 @@ class Report:
         included, a link."""
         return sprint_key(self.data).sub(lambda m: self.md_key(m.group(0)), text)
 
-    def table_text(self, text):
-        return self.linkify(str(text).replace("\n", " ").replace("|", "\\|"))
+    def cell_text(self, text):
+        """`text`, already HTML, for a table cell: each bare Jira key of the
+        sprint's projects a link, as Markdown links don't work in HTML."""
+        return sprint_key(self.data).sub(lambda m: self.html_key(m.group(0)), str(text))
 
     # --- tables
 
@@ -219,9 +221,8 @@ class Report:
         ticket with events that day, its estimate at the end of the day and its
         events as tags in time order; the day's date and end-of-day figures
         span its rows."""
-        lines = [f'<table style="{SMALL_TYPE}">', '<tr>', '<th style="width:14%">Date</th>',
-                 '<th style="width:14%">Ticket</th>', '<th style="width:46%">Events</th>',
-                 '<th style="width:26%">End of day</th>', '</tr>']
+        rows = ['<th width="14%">Date</th><th width="14%">Ticket</th><th width="46%">Events</th>'
+                '<th width="26%">End of day</th>']
         names = {"sprint_start": "sprint start",
                  "today": "today", "sprint_closed": "sprint closed"}
         for row in self.data["timeline"]:
@@ -231,43 +232,41 @@ class Report:
             day = display_date(
                 row["date"]) + "".join(f"<br>({names[l]})" for l in row["labels"])
             span = max(len(tickets), 1)
-            first = [
-                f'<td rowspan="{span}" style="vertical-align:top">{day}</td>']
-            last = [
-                f'<td rowspan="{span}" style="vertical-align:top">{self.end_of_day(row)}</td>']
+            first = [f'<td rowspan="{span}">{day}</td>']
+            last = [f'<td rowspan="{span}">{self.end_of_day(row)}</td>']
             if not tickets:
-                lines.append(
-                    "<tr>" + first[0] + '<td colspan="2">–</td>' + last[0] + "</tr>")
+                rows.append(first[0] + '<td colspan="2">–</td>' + last[0])
                 continue
             for index, key in enumerate(sorted(tickets, key=key_order)):
                 events = sorted(tickets[key], key=lambda e: parse_ts(e["at"]))
                 cells = [f'<td style="white-space:nowrap">{ticket_ref(self.html_key(key), events[-1]["points"])}</td>',
                          "<td>" + "".join(self.tags(e) for e in events) + "</td>"]
-                lines.append("<tr>" + "".join((first if index == 0 else []) + cells
-                                              + (last if index == 0 else [])) + "</tr>")
-        lines.append("</table>")
-        return "\n".join(lines)
+                rows.append("".join((first if index == 0 else []) + cells
+                                    + (last if index == 0 else [])))
+        return "\n".join(html_table(*rows, small=True))
 
     def epic_commentary(self, epic):
-        """One labelled sentence per group the epic has tickets in, a blank
+        """One labelled paragraph per group the epic has tickets in, a blank
         line apart so each group stands out, or "–"."""
         text = self.content["epic_commentary"].get(epic["key"]) or {}
-        lines = [f"<b>{scope_group_label(g, self.data['sprint_status'])}:</b> {html.escape(text[g])}"
+        lines = [f"<b>{scope_group_label(g, self.data['sprint_status'])}:</b> {html.escape(text[g], quote=False)}"
                  for g in epic_groups(epic)]
         return "<br><br>".join(lines) or "–"
 
     def epic_table(self):
         """Per epic, the commitment's and the extra work's tickets completed,
         out of all of them: "N/M tickets (N/M pts)", the commitment's led by
-        its target completion like the sprint's, and the scope it covers."""
-        lines = ['<table>', '<tr>', '<th style="width:20%">Epic</th>', '<th style="width:14%">Commitment</th>',
-                 '<th style="width:14%">Extra</th>', f'<th style="width:52%">{ai_marked("Commentary")}</th>', '</tr>']
+        its target completion like the sprint's, and its commentary on the
+        scope it covers, in SMALL_TYPE, as it is the longest text in the
+        table."""
+        rows = ['<th width="20%">Epic</th><th width="14%">Commitment</th><th width="14%">Extra</th>'
+                f'<th width="52%">{ai_marked("Commentary")}</th>']
         for epic in self.data["epics"]:
-            cells = [self.epic_link(epic), self.epic_done(epic, "original"), self.epic_done(epic, "extra"),
-                     self.epic_commentary(epic)]
-            lines += ["<tr>"] + [f"<td>{c}</td>" for c in cells] + ["</tr>"]
-        lines.append("</table>")
-        return "\n".join(lines)
+            cells = [self.epic_link(epic), self.epic_done(
+                epic, "original"), self.epic_done(epic, "extra")]
+            rows.append("".join(f"<td>{c}</td>" for c in cells)
+                        + f'<td style="{SMALL_TYPE}">{self.epic_commentary(epic)}</td>')
+        return "\n".join(html_table(*rows))
 
     @staticmethod
     def epic_done(epic, scope):
@@ -289,22 +288,20 @@ class Report:
         if not rows:
             return NOTHING_TO_VERIFY
         names = {epic["key"]: epic for epic in self.data["epics"]}
-        lines = ['<table>', '<tr>', '<th style="width:22%">Epic</th>', '<th style="width:14%">Ticket</th>',
-                 '<th style="width:14%">Status</th>', '<th style="width:50%">What its pull requests show</th>',
-                 '</tr>']
+        lines = ['<th width="22%">Epic</th><th width="14%">Ticket</th><th width="14%">Status</th>'
+                 '<th width="50%">What its pull requests show</th>']
         for index, row in enumerate(rows):
             cells = []
             if index == 0 or rows[index - 1]["epicKey"] != row["epicKey"]:
                 span = sum(1 for r in rows if r["epicKey"] == row["epicKey"])
                 epic = names[row["epicKey"]]
-                cells.append(f'<td rowspan="{span}" class="{JIRA_CELL}" style="vertical-align:top">'
-                             f'{self.epic_link(epic)}</td>')
+                cells.append(
+                    f'<td rowspan="{span}" class="{JIRA_CELL}">{self.epic_link(epic)}</td>')
             cells += [f'<td style="white-space:nowrap">{ticket_ref(self.html_key(row["key"]), row["points"])}</td>',
                       f'<td class="{JIRA_CELL}">{html.escape(row["status"] or "")}</td>',
                       f"<td>{self.status_text(row)}</td>"]
-            lines.append("<tr>" + "".join(cells) + "</tr>")
-        lines.append("</table>")
-        return "\n".join(lines)
+            lines.append("".join(cells))
+        return "\n".join(html_table(*lines))
 
     @staticmethod
     def status_text(row):
@@ -327,16 +324,17 @@ class Report:
         dates = f"{display_date(d['sprint_start'])}–{display_date(d['sprint_end'])}"
         if d["sprint_complete_date"] and d["sprint_complete_date"] != d["sprint_end"]:
             dates += f" (completed {display_date(d['sprint_complete_date'])})"
-        # A table row is one line, so each line break of the goal, with the
-        # blank lines and spaces around it, shows as <br> inside the cell.
-        goal = (self.table_text(re.sub(r"\s*\n\s*", "<br>", html.escape(d["sprint_goal"].strip(), quote=False)))
-                if d["sprint_goal"].strip() else "*No goal was set in Jira for this sprint*")
+        # Each line break of the goal, with the blank lines and spaces around
+        # it, shows as <br> inside the cell.
+        goal = (self.cell_text(re.sub(r"\s*\n\s*", "<br>", html.escape(d["sprint_goal"].strip(), quote=False)))
+                if d["sprint_goal"].strip() else "<i>No goal was set in Jira for this sprint</i>")
         rows = [("Dates", dates), ("Goal", goal),
-                (ai_marked("Goal outcome"), self.table_text(self.goal_outcome())),
-                (ai_marked("Key Achievements"), self.table_text(
-                    self.content["key_achievements"])),
-                (ai_marked("Blockers & Risks"), self.table_text(
-                    self.content["blockers_risks"]))]
+                (ai_marked("Goal outcome"), self.cell_text(
+                    html.escape(self.goal_outcome(), quote=False))),
+                (ai_marked("Key Achievements"), self.cell_text(
+                    html.escape(self.content["key_achievements"], quote=False))),
+                (ai_marked("Blockers & Risks"), self.cell_text(
+                    html.escape(self.content["blockers_risks"], quote=False)))]
         return field_table(rows)
 
     def goal_outcome(self):
@@ -538,10 +536,11 @@ class Report:
             self.epic_table(),
             "## Sprint Metrics",
             self.metrics_table(),
-            f"![Sprint outcome in tickets]({CHART_FILES['outcome_tickets']})",
-            f"![Sprint outcome in pts]({CHART_FILES['outcome_pts']})",
+            chart_image(CHART_FILES["outcome_tickets"],
+                        "Sprint outcome in tickets"),
+            chart_image(CHART_FILES["outcome_pts"], "Sprint outcome in pts"),
             "## Scope Timeline",
-            f"![Sprint burndown]({CHART_FILES['burndown']})",
+            chart_image(CHART_FILES["burndown"], "Sprint burndown"),
             self.timeline_table(),
             self.commentary(),
             f"## {STATUS_HEADING}",
@@ -553,8 +552,9 @@ class Report:
 
 
 def field_table(rows):
-    """The report's two-column table of (label, value) rows."""
-    return table(FIELD_HEADER, rows)
+    """The report's two-column table of (label, value) rows, each value
+    already HTML."""
+    return "\n".join(html_table(FIELD_HEADER, *(f"<td>{label}</td><td>{value}</td>" for label, value in rows)))
 
 
 def linked_text(linked):

@@ -235,7 +235,7 @@ CONTENT = {
 
 
 def epic_commentary(data):
-    """A valid epic_commentary for any data.json: a sentence for each group
+    """A valid epic_commentary for any data.json: a paragraph for each group
     each epic has tickets to describe in."""
     return {epic["key"]: {group: f"Scope {group.replace('_', ' ')} on this epic." for group, tickets
                           in epic["scope_groups"].items() if tickets} for epic in data["epics"]}

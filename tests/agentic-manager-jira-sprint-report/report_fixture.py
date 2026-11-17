@@ -227,6 +227,11 @@ def sprint_data(**changes):
     return data
 
 
+def linked(merged=0, opened=0, declined=0):
+    """A status check row's pull requests Jira links, by state."""
+    return {"merged": merged, "open": opened, "declined": declined}
+
+
 def pull(number, title, state, via, branch="", day=3):
     """A pull request as ticket_pulls() stores it, opened on a day of March
     2026 and, unless open, merged or declined the day after; its ownership

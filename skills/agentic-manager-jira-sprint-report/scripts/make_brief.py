@@ -104,7 +104,7 @@ def report_facts(data):
     retro notes can quote them without first generating the report and
     reading it back."""
     report = Report(data, {})
-    facts = [f"Sprint target completion: {link_text(report.target_completion_value())}",
+    facts = [f"Sprint target completion: {report.target_completion_value()}",
              link_text(report.commentary())]
     for epic in data["epics"]:
         name = epic_title(epic)

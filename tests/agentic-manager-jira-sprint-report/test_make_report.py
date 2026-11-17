@@ -17,11 +17,11 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import make_report  # noqa: E402
 from check_report import Checker, cells_with_attributes, check_commentary, rows_of, text_of  # noqa: E402
-from common import CHART_FILES, INLINE_LINK, NO_EPIC, ai_marked, link_text  # noqa: E402
+from common import CHART_FILES, NO_EPIC, ai_marked, link_text  # noqa: E402
 from make_report import Report  # noqa: E402
 
 sys.path.insert(0, TEST_DIR)
-from report_fixture import BASE, CONTENT, TICKETS, caveat_data, content_for, ev, sprint_data, ticket  # noqa: E402
+from report_fixture import BASE, CONTENT, TICKETS, caveat_data, content_for, ev, linked, sprint_data, ticket  # noqa: E402
 
 # The [AI Gen.] label, as make_report renders it.
 AI = ai_marked("")
@@ -52,8 +52,9 @@ class HelpersTest(unittest.TestCase):
             # OTHER-2 only look like keys.
             ("linkify", r.linkify("See PROJ-1, OTHER-2, UTF-8 and a-2."),
              f"See [PROJ-1]({BASE}/browse/PROJ-1), OTHER-2, UTF-8 and a-2."),
-            # A Markdown table cell must stay on one line and not split on |.
-            ("table_text", r.table_text("a | b\nc"), "a \\| b c"),
+            # A table cell is HTML, so its keys are HTML links.
+            ("cell_text", r.cell_text("See PROJ-1, OTHER-2 | done."),
+             f'See <a href="{BASE}/browse/PROJ-1">PROJ-1</a>, OTHER-2 | done.'),
             # A tag sets both colours, so it reads the same in light and dark.
             ("tag", make_report.tag("removed"),
              '<span style="background:#b5b2aa;color:#1a1a1a;border-radius:10px;padding:1px 7px;'
@@ -90,38 +91,42 @@ class HeaderTest(unittest.TestCase):
         # every report, and the target completion in its own table above the
         # charts. The fixture has a previous sprint, yet no carry-over row: the
         # outcome charts show the carry-over.
+        def fields(*rows):
+            return "\n".join(['<table width="100%">',
+                              '<tr valign="top"><th width="20%">Field</th><th width="80%">Detail</th></tr>',
+                              *(f'<tr valign="top"><td>{label}</td><td>{value}</td></tr>' for label, value in rows),
+                              "</table>"])
+
         def table(dates, goal, target, outcome=f"Partially met: {CONTENT['goal_reason']}"):
-            return ("| Field | Detail |\n| --- | --- |\n"
-                    f"| Dates | {dates} |\n| Goal | {goal} |\n"
-                    f"| Goal outcome{AI} | {outcome} |\n"
-                    f"| Key Achievements{AI} | {CONTENT['key_achievements']} |\n"
-                    f"| Blockers & Risks{AI} | {CONTENT['blockers_risks']} |",
-                    f"| Field | Detail |\n| --- | --- |\n| Sprint target completion | {target} |")
+            return (fields(("Dates", dates), ("Goal", goal), (f"Goal outcome{AI}", outcome),
+                           (f"Key Achievements{AI}",
+                            CONTENT['key_achievements']),
+                           (f"Blockers & Risks{AI}", CONTENT['blockers_risks'])),
+                    fields(("Sprint target completion", target)))
         cases = [
             ("closed on its end date", {},
              table("02/03/2026–13/03/2026", "Ship login", "60%, 3/5 tickets (6/10 pts) completed")),
             ("active", ACTIVE,
              table("02/03/2026–13/03/2026", "Ship login", "60%, 3/5 tickets (6/10 pts) completed so far")),
             ("closed late, without a goal", {"sprint_complete_date": "2026-03-16", "sprint_goal": ""},
-             table("02/03/2026–13/03/2026 (completed 16/03/2026)", "*No goal was set in Jira for this sprint*",
+             table("02/03/2026–13/03/2026 (completed 16/03/2026)", "<i>No goal was set in Jira for this sprint</i>",
                    "60%, 3/5 tickets (6/10 pts) completed", "No goal set in Jira for this sprint")),
             # All the work was added after the start: no ratio of nothing.
             ("no commitment", {"spells": [t for t in TICKETS if t["scope"] == "extra"]},
              table("02/03/2026–13/03/2026", "Ship login", "No commitment")),
             ("blank goal", {"sprint_goal": "   "},
-             table("02/03/2026–13/03/2026", "*No goal was set in Jira for this sprint*",
+             table("02/03/2026–13/03/2026", "<i>No goal was set in Jira for this sprint</i>",
                    "60%, 3/5 tickets (6/10 pts) completed", "No goal set in Jira for this sprint")),
             ("blank goal lines", {"sprint_goal": "\n \n"},
-             table("02/03/2026–13/03/2026", "*No goal was set in Jira for this sprint*",
+             table("02/03/2026–13/03/2026", "<i>No goal was set in Jira for this sprint</i>",
                    "60%, 3/5 tickets (6/10 pts) completed", "No goal set in Jira for this sprint")),
-            # Jira's goal keeps its wording, one line per <br>, its keys linked
-            # and its pipes escaped so the cell holds.
+            # Jira's goal keeps its wording, one line per <br>, its keys linked.
             ("a goal over several lines", {"sprint_goal": "Ship login\n\n  Fix PROJ-1 | export  \n"},
-             table("02/03/2026–13/03/2026", f"Ship login<br>Fix [PROJ-1]({BASE}/browse/PROJ-1) \\| export",
+             table("02/03/2026–13/03/2026", f'Ship login<br>Fix <a href="{BASE}/browse/PROJ-1">PROJ-1</a> | export',
                    "60%, 3/5 tickets (6/10 pts) completed")),
             ("literal HTML and entities", {"sprint_goal": 'Ship <beta> & preserve &amp;\nFix PROJ-1 | "export"'},
              table("02/03/2026–13/03/2026",
-                   f'Ship &lt;beta&gt; &amp; preserve &amp;amp;<br>Fix [PROJ-1]({BASE}/browse/PROJ-1) \\| "export"',
+                   f'Ship &lt;beta&gt; &amp; preserve &amp;amp;<br>Fix <a href="{BASE}/browse/PROJ-1">PROJ-1</a> | "export"',
                    "60%, 3/5 tickets (6/10 pts) completed")),
         ]
         for name, changes, expected in cases:
@@ -129,6 +134,11 @@ class HeaderTest(unittest.TestCase):
                 r = report(**changes)
                 self.assertEqual(
                     (r.header_table(), r.metrics_table()), expected)
+        # The agent's text is escaped, so it can't break the table.
+        escaped = Report(sprint_data(), {
+                         **CONTENT, "key_achievements": "Shipped <b> & co."}).header_table()
+        self.assertIn(
+            f"<td>Key Achievements{AI}</td><td>Shipped &lt;b&gt; &amp; co.</td>", escaped)
 
 
 class TablesTest(unittest.TestCase):
@@ -137,7 +147,8 @@ class TablesTest(unittest.TestCase):
 
     def test_timeline_table(self):
         table = report().timeline_table()
-        self.assertTrue(table.startswith('<table style="font-size:75%">'))
+        self.assertTrue(table.startswith(
+            '<table width="100%" style="font-size:75%">'))
         self.assertEqual(self.rows(table), [
             "Date | Ticket | Events | End of day",
             "02/03/2026 (sprint start) | PROJ-1 (2 pts) | Added | Commitment: 5 tickets (9 pts) Still open: 4 tickets "
@@ -156,7 +167,7 @@ class TablesTest(unittest.TestCase):
             "with extra",
             "13/03/2026 (sprint closed) | – | Still open: 0 tickets (0 pts) of the commitment 1 ticket (2 pts) with extra"])
         self.assertIn(
-            '<td rowspan="5" style="vertical-align:top">02/03/2026<br>(sprint start)</td>', table)
+            '<td rowspan="5">02/03/2026<br>(sprint start)</td>', table)
         self.assertIn('<td colspan="2">–</td>', table)
 
     def test_tags_follow_the_events_order(self):
@@ -179,8 +190,8 @@ class TablesTest(unittest.TestCase):
 
     def test_epic_table(self):
         table = report().epic_table().replace("\n", "")
-        self.assertIn(f'<th style="width:14%">Commitment</th><th style="width:14%">Extra</th>'
-                      f'<th style="width:52%">Commentary{AI}</th>', table)
+        self.assertIn(f'<th width="14%">Commitment</th><th width="14%">Extra</th>'
+                      f'<th width="52%">Commentary{AI}</th>', table)
         # The epic's name is Jira text, so it is escaped.
         self.assertIn(f'<td><a href="{BASE}/browse/PROJ-100">PROJ-100: Login &lt;beta&gt;</a></td>'
                       "<td>60%, 3/5 tickets (6/10 pts)</td><td>0/1 ticket (0/2 pts)</td>", table)
@@ -189,7 +200,7 @@ class TablesTest(unittest.TestCase):
             "<td>(no epic)</td><td>–</td><td>1/1 ticket (1/1 pts)</td>", table)
 
     def test_epic_commentary(self):
-        # A labelled sentence per group with tickets to describe, in order,
+        # A labelled paragraph per group with tickets to describe, in order,
         # a blank line apart and escaped; "Open" for not completed work while the sprint runs; "–"
         # for an epic with nothing to describe.
         in_review = sprint_data()
@@ -202,16 +213,16 @@ class TablesTest(unittest.TestCase):
                                "spells"] if s["key"] in ("PROJ-4", "PROJ-5")])
         cases = [
             ("closed", sprint_data(), CONTENT,
-             "<td><b>Completed:</b> Staff can sign in with a password.<br><br>"
+             '<td style="font-size:75%"><b>Completed:</b> Staff can sign in with a password.<br><br>'
              "<b>Not completed:</b> Remembering the last sign-in method is still in progress.<br><br>"
              "<b>Descoped:</b> Sign-in audit logging &amp; the admin screen were dropped.</td>"),
             ("no epic", sprint_data(), CONTENT,
-             "<td><b>Completed:</b> The export now handles empty files.</td>"),
+             '<td style="font-size:75%"><b>Completed:</b> The export now handles empty files.</td>'),
             ("active", sprint_data(**ACTIVE), CONTENT, "<b>Open:</b> Remembering"),
             ("in review", in_review, review_content,
              "<b>In review:</b> Remembering"),
             ("nothing to describe", left_out, {
-             **CONTENT, "epic_commentary": {}}, "<td>–</td></tr>"),
+             **CONTENT, "epic_commentary": {}}, '<td style="font-size:75%">–</td></tr>'),
         ]
         for name, data, content, expected in cases:
             with self.subTest(name):
@@ -398,14 +409,15 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(headings, ["# Sprint Summary: Sprint 7", "## Delivery by Epic", "## Sprint Metrics", "## Scope Timeline",
                                     "## Status to Verify", f"## Notes for Sprint Retro{AI}"])
         # The outcome charts sit above the timeline, the burndown under its heading.
-        self.assertEqual([m[3] for m in INLINE_LINK.finditer(md) if m[1]],
+        self.assertEqual(re.findall(r'<img src="([^"]+)" width="100%"', md),
                          [CHART_FILES["outcome_tickets"], CHART_FILES["outcome_pts"], CHART_FILES["burndown"]])
-        self.assertIn(
-            f"## Scope Timeline\n\n![Sprint burndown]({CHART_FILES['burndown']})", md)
+        burndown = CHART_FILES["burndown"]
+        self.assertIn(f'## Scope Timeline\n\n<a href="{burndown}" target="_blank"><img src="{burndown}" '
+                      'width="100%" alt="Sprint burndown"></a>', md)
         self.assertIn(
             "</table>\n\nOf the 5 tickets (9 pts) in the commitment,", md)
         self.assertIn(
-            f"| Key Achievements{AI} | Login shipped: staff can sign in", md)
+            f"<td>Key Achievements{AI}</td><td>Login shipped: staff can sign in", md)
         # The agent's retro notes may name tickets; they are linked here.
         self.assertIn(
             f"## Notes for Sprint Retro{AI}\n\n- [PROJ-1]({BASE}/browse/PROJ-1) (3 pts) grew", md)
@@ -430,8 +442,6 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(r.status_table().count(
             '<td rowspan="1" class="jira"'), 2)
 
-        def linked(merged=0, opened=0, declined=0):
-            return {"merged": merged, "open": opened, "declined": declined}
         # name: (changes to PROJ-1's row, what its cell says)
         cases = [
             ("Done, several open", {"ownOpen": 4},
@@ -460,7 +470,7 @@ class BuildTest(unittest.TestCase):
         # A running sprint's figures are provisional; the note says so.
         note = 'This is a mid-sprint snapshot as at 10/03/2026, with 3 days left. "Open" means not completed yet.'
         self.assertIn(
-            f"# Sprint Summary: Sprint 7\n\n{note}\n\n| Field |", report(**ACTIVE).build())
+            f'# Sprint Summary: Sprint 7\n\n{note}\n\n<table width="100%">', report(**ACTIVE).build())
         self.assertNotIn("mid-sprint snapshot", report().build())
 
     def test_no_values_in_bold(self):
@@ -516,18 +526,18 @@ class ValidateContentTest(unittest.TestCase):
              {"goal_reason": None}, {"sprint_goal": ""}),
             ("goal_reason must be left out: the brief offers only one verdict",
              {"goal_reason": "Work has only just started."}, EARLY),
-            ("epic_commentary must map each epic key to its groups' sentences",
+            ("epic_commentary must map each epic key to its groups' paragraphs",
              {"epic_commentary": []}),
-            ("epic_commentary.PROJ-100 must map each group to a sentence",
+            ("epic_commentary.PROJ-100 must map each group to a paragraph",
              {"epic_commentary": {"PROJ-100": "x", NO_EPIC: {"completed": "x"}}}),
-            (f"epic_commentary.{NO_EPIC} needs a sentence for exactly these groups: completed",
+            (f"epic_commentary.{NO_EPIC} needs a paragraph for exactly these groups: completed",
              {"epic_commentary": {**commentary, NO_EPIC: {}}}),
-            (f"epic_commentary.{NO_EPIC} needs a sentence for exactly these groups: completed",
+            (f"epic_commentary.{NO_EPIC} needs a paragraph for exactly these groups: completed",
              {"epic_commentary": {"PROJ-100": commentary["PROJ-100"]}}),
-            ("epic_commentary.PROJ-100 needs a sentence for exactly these groups: completed, not_completed, descoped",
+            ("epic_commentary.PROJ-100 needs a paragraph for exactly these groups: completed, not_completed, descoped",
              {"epic_commentary": {**commentary,
                                   "PROJ-100": {**commentary["PROJ-100"], "in_review": "x"}}}),
-            ("epic_commentary.PROJ-100 needs a sentence for exactly these groups",
+            ("epic_commentary.PROJ-100 needs a paragraph for exactly these groups",
              {"epic_commentary": {**commentary,
                                   "PROJ-100": {**commentary["PROJ-100"], "descoped": " "}}}),
             # The text: word limits, no ticket keys (describe the work), one
@@ -547,15 +557,19 @@ class ValidateContentTest(unittest.TestCase):
             (None, {"key_achievements": "CSV export now handles UTF-8 names."}),
             ("blockers_risks: must be a single paragraph",
              {"blockers_risks": "Open.\n\nStill open."}),
-            ("epic_commentary.PROJ-100.completed: must be one sentence",
+            # A group's commentary is a short paragraph: several sentences,
+            # never several paragraphs.
+            (None, {"epic_commentary": {**commentary, "PROJ-100": {**commentary["PROJ-100"],
+                                        "completed": "Staff can sign in. Password reset also works."}}}),
+            ("epic_commentary.PROJ-100.completed: must be a single paragraph",
              {"epic_commentary": {**commentary, "PROJ-100": {**commentary["PROJ-100"],
-                                  "completed": "Staff can sign in. Password reset also works."}}}),
-            # Each group's sentence has its own limit, however many groups
+                                  "completed": "Staff can sign in.\n\nPassword reset also works."}}}),
+            # Each group's paragraph has its own limit, however many groups
             # the epic has.
-            ("epic_commentary.PROJ-100.completed: 41 words, at most 40",
-             {"epic_commentary": {**commentary, "PROJ-100": {**commentary["PROJ-100"], "completed": "word " * 41}}}),
+            ("epic_commentary.PROJ-100.completed: 81 words, at most 80",
+             {"epic_commentary": {**commentary, "PROJ-100": {**commentary["PROJ-100"], "completed": "word " * 81}}}),
             (None, {"epic_commentary": {**commentary, "PROJ-100": {
-                group: "word " * 40 for group in commentary["PROJ-100"]}}}),
+                group: "word " * 80 for group in commentary["PROJ-100"]}}}),
             ("epic_commentary.__no_epic__.completed: names tickets ['PROJ-3']",
              {"epic_commentary": {**commentary, NO_EPIC: {"completed": "PROJ-3 shipped."}}}),
             ("key_achievements: no story or stories, found ['stories']", {

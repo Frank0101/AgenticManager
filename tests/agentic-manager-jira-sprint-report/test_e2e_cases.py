@@ -165,17 +165,7 @@ class CasesTest(ReportTest):
 
     def test_each_case(self):
         data = self.build()
-        by_key = {}
-        for spell in data["spells"]:
-            by_key.setdefault(spell["key"], []).append(spell)
-
-        def shown(e, with_points):
-            text = f"{e['type']} {e['date'][8:]}" + (" done" if e["done"] and e["type"] in (
-                "committed", "joined") else "")
-            if with_points:
-                text += ":" + ("-" if e["points"]
-                               is None else f"{e['points']:g}")
-            return text
+        by_key = self.spells(data)
         for index, (name, *_, expected) in enumerate(CASES):
             with self.subTest(name):
                 spells = by_key.get(key_of(index), [])
@@ -188,7 +178,7 @@ class CasesTest(ReportTest):
                         (spell["scope"], spell["carriedIn"]), (X if scope == X else O, scope == C))
                     self.assertEqual(
                         (spell["outcome"], spell["points"], spell["counted"]), (outcome, points, counted))
-                    self.assertEqual([shown(e, ":" in wanted) for e, wanted in zip(
+                    self.assertEqual([self.shown(e, ":" in wanted) for e, wanted in zip(
                         spell["events"], events)], events)
                     self.assertEqual(len(spell["events"]), len(events))
                     self.assertEqual((spell["doneAtStart"], spell["reopened"], spell["reestimated"], spell["cameBack"]),
@@ -207,7 +197,7 @@ class CasesTest(ReportTest):
                              for o in ("completed", "not_completed", "descoped")),
                          sum(1 for s in spells if s[0] == X and s[3]))
         done = sum(s[1] == 'completed' for s in original)
-        self.assertIn(f"| Sprint target completion | {round(100 * done / len(original))}%, {done}/"
+        self.assertIn(f"<td>Sprint target completion</td><td>{round(100 * done / len(original))}%, {done}/"
                       f"{len(original)} tickets (", md)
         self.assertEqual(data["non_delivery_closures"]["count"], 1)
         with open(os.path.join(self.dir, REPORT), encoding="utf-8") as f:
@@ -216,11 +206,11 @@ class CasesTest(ReportTest):
         # ticket's estimate, gives the burndown on every day: nothing moves it
         # unseen.
         table_match = re.search(
-            r'<table style="font-size:75%">.*?</table>', md, re.S)
+            r'<table width="100%" style="font-size:75%">.*?</table>', md, re.S)
         assert table_match is not None, "report has no timeline table"
         table = table_match[0]
         days, day = {}, None
-        for row in re.findall(r"<tr>(.*?)</tr>", table, re.S)[1:]:
+        for row in re.findall(r"<tr\b[^>]*>(.*?)</tr>", table, re.S)[1:]:
             cells = re.findall(r"<td([^>]*)>(.*?)</td>", row, re.S)
             if "rowspan" in cells[0][0]:
                 day = re.sub(r"<[^>]+>", " ", cells[0][1]).split()[0]

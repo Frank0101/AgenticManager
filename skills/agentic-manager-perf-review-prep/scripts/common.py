@@ -32,7 +32,7 @@ from agentic_manager.output_folder import CHARTS_DIR, RAW_DIR, clear_folder, fol
 from agentic_manager.period import add_period_arguments, days, is_day, period_problem, shown  # noqa: E402,F401
 from agentic_manager.tasks import submit_section, task_line, write_task as write_task_file  # noqa: E402,F401
 from agentic_manager.svg import GRID, SURFACE, INK, MUTED, arc_segment, esc, legend, nice_step, svg, text, text_width  # noqa: E402,F401
-from agentic_manager.text import SMALL_TYPE, ai_marked, as_name, display_date, number, plural, word_count  # noqa: E402,F401
+from agentic_manager.text import SMALL_TYPE, ai_marked, chart_image, html_table, as_name, display_date, number, plural, word_count  # noqa: E402,F401
 
 # How to write a point and pick its values, with their examples, lives in the
 # protocol's shared part _point.md, the one place for them: the merges' tasks

@@ -1,4 +1,4 @@
-"""Helpers for Markdown text, shared by every skill: word counts, names, links, the document a link reaches, headings, fenced code, tables, the dates, numbers and plural words reports show, and the mark of what the AI wrote.
+"""Helpers for Markdown text, shared by every skill: word counts, names, links, the document a link reaches, headings, fenced code, Markdown and HTML tables, charts in a page, the dates, numbers and plural words reports show, and the mark of what the AI wrote.
 
 A word count counts words as a reader would, the same in every skill: a link
 as its text, and only tokens with a letter or a digit ("don't" and "3.14" are
@@ -19,6 +19,11 @@ AI_LABEL = "[AI Gen.]"
 # The type of a report's table of many rows, small enough to scan it whole,
 # the same in every skill.
 SMALL_TYPE = "font-size:75%"
+
+# A chart as chart_image() places it, so a check reads back what it wrote;
+# group 1 is its path.
+CHART_IMAGE = re.compile(
+    r'<a href="([^"]+)" target="_blank"><img src="\1" width="100%" alt="[^"]*"></a>')
 
 # Markdown links, defined once for every skill: (image mark, text, URL) of an
 # inline link, (image mark, text, key) of a reference link, and (key, URL) of
@@ -254,6 +259,22 @@ def table_cells(line):
     """The cells of the Markdown table row `line`, trimmed; a pipe escaped
     as \\| stays inside its cell, read as |."""
     return [cell.strip().replace("\\|", "|") for cell in CELL_PIPE.split(line.strip().strip("|"))]
+
+
+def html_table(*rows, small=False):
+    """A report's HTML table, as lines: the full width, each of `rows` its
+    cells already written, aligned to the top, as HTML centres them by
+    default; with `small`, in SMALL_TYPE, for a table of many rows. HTML, as
+    Markdown can't set a table's or a column's width."""
+    style = f' style="{SMALL_TYPE}"' if small else ""
+    return [f'<table width="100%"{style}>', *(f'<tr valign="top">{cells}</tr>' for cells in rows), "</table>"]
+
+
+def chart_image(src, description):
+    """The chart at `src`, described as `description`, as wide as the page
+    or its cell and linked to itself, so a click opens it full size in a new
+    tab."""
+    return f'<a href="{src}" target="_blank"><img src="{src}" width="100%" alt="{description}"></a>'
 
 
 def ai_marked(title):

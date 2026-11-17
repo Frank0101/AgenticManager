@@ -72,7 +72,7 @@ Work out the goal themes first: several fields use them, so match tickets to the
 
 **`goal_reason`**: one sentence of at most 25 words on why the goal got its verdict, naming the themes that decided it ("Search is met, but most of Billing's commitment is still open"). Leave it out when the brief offers only one verdict.
 
-**`epic_commentary`**: for every epic in the brief, one sentence per `group` it has tickets in. Say what changed for users or the system ("Staff can now sign in with their work account"), using the epic's description for context and each ticket's summary and description. Merge small items. At most 40 words per sentence. Describe a ticket with no description from its summary alone; if a whole group has only bare summaries, add that "the tickets carry no detail".
+**`epic_commentary`**: for every epic in the brief, one short paragraph per `group` it has tickets in. Say what changed for users or the system ("Staff can now sign in with their work account") and, where the epic's or the tickets' descriptions say so, why it matters, using the epic's description for context and each ticket's summary and description. Merge small items. At most 80 words per paragraph. Describe a ticket with no description from its summary alone; if a whole group has only bare summaries, add that "the tickets carry no detail".
 
 **`key_achievements`**: one paragraph of at most 150 words on what the sprint achieved, a step above the epic commentary: the `completed` tickets, by goal theme in the goal's order, then the other epics in the brief's order.
 

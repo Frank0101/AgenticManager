@@ -5,7 +5,7 @@ addresses, so the report can't count differently from the model; the charts
 it shows are make_charts.py's.
 """
 from common import (CHARTS_DIR, EPICS_CHART, OBSERVATION_HEADINGS, OBSERVATIONS_SUBTITLE, OBSERVATION_SOURCES, FOCUS_SHARE, FOLDER_NAME, GITHUB_CELLS, HEADINGS, JIRA_CELLS, NO_VALUE, PAGES_HEADING, PIECE_SOURCES, REPOS_CHART,
-                    SMALL_TYPE, STEP_CHANGE_COMPARISON, VALUED_PARTS, VIEW_CHECK_COMPARISON, ai_marked, period_points, baseline_points, average_text, details_text, display_date, esc, link_href, reference_text, number, prep_dir, report_name, repo_code, repos_text, shown, size_text, types_text, week_text,
+                    STEP_CHANGE_COMPARISON, VALUED_PARTS, VIEW_CHECK_COMPARISON, ai_marked, chart_image, html_table, period_points, baseline_points, average_text, details_text, display_date, esc, link_href, reference_text, number, prep_dir, report_name, repo_code, repos_text, shown, size_text, types_text, week_text,
                     write_output_file)
 
 
@@ -65,7 +65,7 @@ def observations_section(observations, folder, content):
         heads, rows, count = observation_rows(part, observations[part], folder)
         lines += [*(["", "---", ""] if lines else []), ai_marked(f"<b>{heading}</b>") if rows else f"<b>{heading}</b>",
                   *(["", content[part].strip(), "", f"<details><summary>{details_text(count)}</summary>", "",
-                     *table(heads, *rows, small=True), "", "</details>"] if rows else [])]
+                     *html_table(heads, *rows, small=True), "", "</details>"] if rows else [])]
     return lines
 
 
@@ -121,8 +121,8 @@ def comparison_section(comparison, value, observations, baseline, folder, name):
     return [f"## {ai_marked(comparison.heading)}", "", comparison.subtitle.format(name=name), "",
             value["summary"].strip(),
             *(["", f"<details><summary>{details_text(len(rows), comparison.counted)}</summary>", "",
-               *table(observation_heads(((point_column, 35), (ai_marked(kind_column), 15), ("Evidence", 50))),
-                      *rows, small=True), "", "</details>"] if rows else [])]
+               *html_table(observation_heads(((point_column, 35), (ai_marked(kind_column), 15), ("Evidence", 50))),
+                           *rows, small=True), "", "</details>"] if rows else [])]
 
 
 def review_name(review):
@@ -236,7 +236,7 @@ def notion_section(notion):
                         for week, pages in weeks.items())
     heads = "".join(
         f"<th>{head}</th>" for head in ("Week", "Page", "Area"))
-    return [f'<b>{PAGES_HEADING}</b> ({notion["counts"]["created"]})', "", *table(heads, *rows, small=True)]
+    return [f'<b>{PAGES_HEADING}</b> ({notion["counts"]["created"]})', "", *html_table(heads, *rows, small=True)]
 
 
 # Shared by the sections.
@@ -254,15 +254,7 @@ def cells_table(cells, figures, facts):
                      for name, _ in cells)
     charts = "".join(
         f"<td>{image(chart, figures[name][3])}</td>" for name, chart in cells)
-    return table(heads, values, charts)
-
-
-def table(*rows, small=False):
-    """A report table's lines: the full width, each of `rows`, its cells
-    already written, aligned to the top, as HTML centres them by default;
-    with `small`, in SMALL_TYPE, for a table of many rows."""
-    style = f' style="{SMALL_TYPE}"' if small else ""
-    return [f'<table width="100%"{style}>', *(f'<tr valign="top">{cells}</tr>' for cells in rows), "</table>"]
+    return html_table(heads, values, charts)
 
 
 def figure(value, url):
@@ -273,15 +265,14 @@ def figure(value, url):
 def focus_table(chart, description, note, entries):
     """A main focus's lines: `chart`, described as `description`, and beside
     it the main focus, with its `note`, its `entries` numbered."""
-    return table(f'<td width="50%">{image(chart, description)}</td>'
-                 f'<td width="50%"><b>Main focus</b> ({note}):<ol>{entries}</ol></td>')
+    return html_table(f'<td width="50%">{image(chart, description)}</td>'
+                      f'<td width="50%"><b>Main focus</b> ({note}):<ol>{entries}</ol></td>')
 
 
 def image(chart, description):
-    """The chart `chart`, described as `description`, as wide as its cell
-    and linked to itself, so a click opens it full size in a new tab."""
-    return (f'<a href="{CHARTS_DIR}/{chart}" target="_blank"><img src="{CHARTS_DIR}/{chart}" width="100%" '
-            f'alt="{description}"></a>')
+    """The chart `chart` of CHARTS_DIR, described as `description`, as
+    chart_image() places it."""
+    return chart_image(f"{CHARTS_DIR}/{chart}", description)
 
 
 def grouped_rows(groups):

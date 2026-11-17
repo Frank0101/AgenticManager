@@ -204,6 +204,27 @@ class TextTest(unittest.TestCase):
                 self.assertEqual(text.table_row(cells), row)
                 self.assertEqual(text.table_cells(row), cells)
 
+    def test_html_table(self):
+        # The full width, every row aligned to the top; small type on request.
+        cases = [({}, ['<table width="100%">', '<tr valign="top"><th>A</th></tr>',
+                       '<tr valign="top"><td>x</td></tr>', "</table>"]),
+                 ({"small": True}, ['<table width="100%" style="font-size:75%">', '<tr valign="top"><th>A</th></tr>',
+                                    '<tr valign="top"><td>x</td></tr>', "</table>"])]
+        for options, expected in cases:
+            with self.subTest(options):
+                self.assertEqual(text.html_table(
+                    "<th>A</th>", "<td>x</td>", **options), expected)
+
+    def test_chart_image(self):
+        # As wide as the page, and a click opens it full size in a new tab.
+        self.assertEqual(text.chart_image("_charts/a.svg", "Burndown"),
+                         '<a href="_charts/a.svg" target="_blank"><img src="_charts/a.svg" width="100%" '
+                         'alt="Burndown"></a>')
+        # CHART_IMAGE reads back what chart_image() writes, path first.
+        found = text.CHART_IMAGE.fullmatch(text.chart_image("_charts/a.svg", "Burndown"))
+        assert found is not None
+        self.assertEqual(found[1], "_charts/a.svg")
+
 
 if __name__ == "__main__":
     unittest.main()
