@@ -46,8 +46,10 @@ tests/repo/              checks of the repo's own integrity: every module and li
                          section in AGENTS.md and each SKILL.md reaches a heading,
                          README.md's table lists every skill with its archetype, a
                          run's folders and document take the library's names, every
-                         skill has what its archetype requires, and every skill runs
-                         only when called by its name
+                         skill has what its archetype requires, every skill's
+                         prerequisite runs the config check its frontmatter
+                         pre-approves, and every skill runs only when called by its
+                         name
 tests/run.py             runs every skill's tests, each skill in its own process (its own
                          tests are in tests/runner/)
 .claude/skills  ─┐       symlinks to skills/, so the skills load when you run
@@ -125,7 +127,7 @@ Before you change a skill, read its archetype's file, which README.md's table na
 
 Every skill other than a utility starts with the prerequisite, step 1. A skill that produces a document then follows the rest of these steps. Each script step is one command, pre-approved in the frontmatter.
 
-1. **Prerequisite:** run the library's `check_config.py` and state the sources the skill needs (see [Prerequisite, sources and permissions](#prerequisite-sources-and-permissions)).
+1. **Prerequisite:** run the library's `check_config.py` with what the skill needs (see [Prerequisite, sources and permissions](#prerequisite-sources-and-permissions)).
 2. **Gather:** collect what the document is built from.
    - When it is a fetch of known data, one script does it, builds everything deterministic and writes a brief holding only what the agent needs. A source only the agent can reach, such as an `mcp` one, it fetches itself, and a script records what the source gave. It prints one line of JSON on stdout (the paths the next step needs) and progress on stderr; on failure it exits non-zero with a message that says what to do.
    - When it is research, the agent does it and keeps its working notes in files, such as a ledger of sources and findings, written through `output_file.py` or a script of the skill that writes through the library. Scripts own what is mechanical about them: the folder, the skeleton, the allowed values and the structure check. They also answer the agent's lookups and print a brief of the notes for writing the document, so the agent doesn't read a notes file whole to research or write.
@@ -147,17 +149,15 @@ What a skill's instructions and scripts must do, on top of the rules that always
 
 #### Prerequisite, sources and permissions
 
-- Unless it's a utility, start the instructions with the prerequisite: run the library's `agentic_manager/check_config.py`, whose `--help` shows what it returns. The check only validates the config and doesn't know what the skill needs, so the skill names it: any enabled source of a group, such as `workflow`, when it can work with whatever tool a team uses, or a specific source, such as `jira-api`, when its steps only work with one tool, and any company setting it reads, such as `company.values`. It also says what it does if they aren't enabled or set (usually stop and show their `setup`). On a failure, or after creating the config, the check prints `next_steps` for the agent to follow, so skills don't repeat them:
+- Unless it's a utility, start the instructions with the prerequisite: run the library's `agentic_manager/check_config.py` with `--needs` and what the skill needs (its `--help` shows what it returns): any enabled source of a group, such as `workflow`, when it can work with whatever tool a team uses, a specific source, such as `jira-api`, when its steps only work with one tool, and any company setting it reads, such as `company.values`. A skill that reads sensitive data, such as what is written about people, adds `--sensitive`, so the user accepts a warning before it reads anything; which skills do is the developer's call. The check always prints `next_steps`, what the agent does in every case, from a missing config to a missing source, so every prerequisite reads the same and none explains the result; a skill adds after it only what it does with its sources, when that helps:
 
   ```markdown
   ## Prerequisite
 
-  Run the config check, `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py`, pre-approved in the frontmatter. If it fails, stop here and follow its `next_steps`. If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ as `python3`; if the script is missing, tell them to reinstall every skill.
-
-  This skill needs any enabled source of `workflow`, and the `github-cli` source. If one is missing, stop and tell the user how to enable it, showing its `setup` and the config `path`. The scripts read the config's settings themselves: never read the config file, or pass or show a setting.
+  Run the config check, `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py --needs workflow github-cli`, pre-approved in the frontmatter, and follow its `next_steps`. If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ as `python3`; if the script is missing, tell them to reinstall every skill.
   ```
 
-- If the skill runs its own scripts, pre-approve them in the frontmatter so Claude Code doesn't ask permission for each step, and tell the agent to call them by that same path: `allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/<script>.py *)`, one per script, separated by spaces. Never pre-approve a command that changes the user's config or anything outside the skill's own output; without the ` *`, a rule approves only the command with no arguments, as `check_config.py`'s does, so its `--init` still asks.
+- If the skill runs its own scripts, pre-approve them in the frontmatter so Claude Code doesn't ask permission for each step, and tell the agent to call them by that same path: `allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/<script>.py *)`, one per script, separated by spaces. Never pre-approve a command that changes the user's config or anything outside the skill's own output; without the ` *`, a rule approves only the command exactly as written, as `check_config.py`'s does, so its `--init` still asks.
 - Reach each enabled source's tool through its channel (`mcp`, `cli`, `api` or `fs`). Never hard-code a tool, URL or credential: the user's config decides what is available.
 - Reach an `api` or `fs` source through a script that reads its settings with `agentic_manager.config.read_source()`, since the agent never reads them, and never pass a setting to a script on its command line. An `mcp` or `cli` source needs no settings, so the agent can use it directly, and a script can run a `cli` source's program once it has checked that the source is enabled.
 

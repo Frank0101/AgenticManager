@@ -16,7 +16,7 @@ from datetime import date
 
 from common import (folder_problem, days, BLOCKED_STATUSES, GOAL_VERDICTS, HIGH_PRIORITIES, CHARTS_DIR, CHART_IMAGE, HEADING, INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, FIELD_HEADER, ISSUE_KEY,
                     BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, GITHUB_CELL, JIRA_CELL, KEY_LIST, LEFT_OUT_REASONS,
-                    NOTHING_UNTRACKED, STATUS_HEADING, UNTRACKED_HEADING, UNTRACKED_OPEN_PULLS, UNTRACKED_SUBTITLE,
+                    EPICS_HEADING, METRICS_HEADING, NOTHING_TO_VERIFY, NOTHING_UNTRACKED, RETRO_HEADING, STATUS_HEADING, TIMELINE_HEADING, UNTRACKED_HEADING, UNTRACKED_OPEN_PULLS, UNTRACKED_SUBTITLE,
                     TICKET_ESTIMATE,
                     TICKET_EVENT_TYPES,
                     NO_EPIC, OUTCOME_ROWS, OUTCOMES, ai_marked, no_work_text, sprint_key, text_rule_problems,
@@ -596,7 +596,7 @@ def check_header(c, md, data):
         + f" completed{so_far}")
     c.check(values["Sprint target completion"] == target,
             "header", f"Sprint target completion is {target!r}")
-    metrics = md.split("## Sprint Metrics\n\n", 1)
+    metrics = md.split(f"## {METRICS_HEADING}\n\n", 1)
     first = html_tables(metrics[1])[:1] if len(metrics) == 2 else []
     c.check(bool(first) and metrics[1].startswith(first[0]) and table_kind(first[0]) == "fields"
             and [label for label, _ in field_rows(first[0])] == ["Sprint target completion"],
@@ -733,7 +733,7 @@ def check_images(c, md, report_dir):
     for src in embedded:
         c.check(os.path.exists(os.path.join(report_dir, src)),
                 "images", f"{src} exists")
-    for heading, charts in (("Sprint Metrics", ("outcome_tickets", "outcome_pts")), ("Scope Timeline", ("burndown",))):
+    for heading, charts in ((METRICS_HEADING, ("outcome_tickets", "outcome_pts")), (TIMELINE_HEADING, ("burndown",))):
         section = md.split(f"## {heading}", 1)
         under = re.split(r"^## ", section[1], maxsplit=1, flags=re.M)[0] if len(
             section) == 2 else ""
@@ -893,11 +893,11 @@ def check_status_section(c, md, table, data):
     other tickets; a Done one, its own still open; with no rows, it says so."""
     section = md.split(f"## {STATUS_HEADING}\n\n", 1)
     after = section[1].split("\n\n## ", 1) if len(section) == 2 else []
-    c.check(len(after) == 2 and after[1].startswith("Notes for Sprint Retro"), "status",
+    c.check(len(after) == 2 and after[1].startswith(RETRO_HEADING), "status",
             f"a {STATUS_HEADING} section sits right above the retro notes")
     rows = data["status_checks"]
     if not rows:
-        c.check(table is None and len(section) == 2 and section[1].startswith("Every ticket's status agrees"),
+        c.check(table is None and len(section) == 2 and section[1].startswith(NOTHING_TO_VERIFY),
                 "status", "with nothing to verify, the section says so")
         return
     if not c.check(table is not None, "status", "table found") or table is None:
@@ -939,8 +939,8 @@ def check_untracked_section(c, md, table, data):
     the line saying what it shows; with none, it says so."""
     after = md.split(f"## {UNTRACKED_HEADING}\n\n", 1)
     body = after[1].split("\n\n## ", 1) if len(after) == 2 else []
-    c.check(bool(re.search(rf"## Delivery by Epic\n\n<table.*?</table>\n\n## {UNTRACKED_HEADING}\n\n", md, re.S))
-            and len(body) == 2 and body[1].startswith("Sprint Metrics"),
+    c.check(bool(re.search(rf"## {EPICS_HEADING}\n\n<table.*?</table>\n\n## {UNTRACKED_HEADING}\n\n", md, re.S))
+            and len(body) == 2 and body[1].startswith(METRICS_HEADING),
             "untracked", f"an {UNTRACKED_HEADING} section sits between Delivery by Epic's table and Sprint Metrics")
     c.check(len(body) == 2 and body[0].startswith(f"{UNTRACKED_SUBTITLE}\n\n"), "untracked",
             "the section says what it shows under its heading")

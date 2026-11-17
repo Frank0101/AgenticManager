@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Validates the user's AgenticManager config (~/.config/agentic-manager/config.json)
-against config-template.json, which lists every supported key.
+against config-template.json, which lists every supported key, and checks it
+gives what the calling skill needs.
 
 The config may hold only what the template lists, but may leave things out, so
 configs keep working when the template gains new ones. It is only ever written
-by --init, never overwritten; "next_steps" tells the agent what to do about it,
-so no skill repeats it. Every source comes by group, enabled or not, and every
-company setting, set or not, so the calling skill decides what it needs, never
-with a setting's value: those can be secrets, which a script reads itself.
+by --init, never overwritten. "next_steps" always tells the agent what to do,
+so no skill explains the result. Needs are judged by enabled and set, never by
+a setting's value: those can be secrets, which a script reads itself.
 """
 
 import json
@@ -26,28 +26,51 @@ TEMPLATE_PATH = os.path.join(os.path.dirname(
 
 HELP = """Validates the user's AgenticManager config against its template.
 
-Usage: check_config.py [--init]
-  --init  copies the template to the config path first, if no config exists yet.
-  --help  prints this.
+Usage: check_config.py [--init] [--needs NEED ...] [--sensitive]
+  --init       copies the template to the config path first, if no config
+               exists yet.
+  --needs      what the skill needs, each one of:
+                 a group, such as workflow: any enabled source of it
+                 a source, such as jira-api: that source, enabled
+                 a company setting, such as company.values: set
+  --sensitive  the skill reads sensitive data: adds "notice", the warning the
+               user must accept before the skill reads anything.
+  --help       prints this.
 
-Prints one line of JSON:
-  success: {"ok": true, "path": ..., "template": ..., "created": bool,
+Prints one line of JSON, always with "next_steps", what the agent does next:
+  ready:   {"ok": true, "path": ..., "template": ..., "created": bool,
             "sources": {group: {source: {"tool", "channel", "enabled",
                                          "setup" when disabled}}},
-            "company": {setting: {"set", "setup" when not set}}},
-           plus "next_steps" if the config was just created
-  failure: {"ok": false, "path": ..., "template": ..., "created": bool,
-            "errors": ["...", ...], "next_steps": "..."}
-           (exit code 1)"""
+            "company": {setting: {"set", "setup" when not set}},
+            "notice" with --sensitive, "next_steps": ...}
+  missing: {"ok": false, "path": ..., "template": ..., "created": bool,
+            "missing": {need: setup}, "next_steps": ...} (exit code 1)
+  invalid: {"ok": false, "path": ..., "template": ..., "created": bool,
+            "errors": ["...", ...], "next_steps": ...} (exit code 1)"""
 
 # What the user does to the config once it exists.
 EDIT = ("edit the config at `path`: enable the sources they use, fill in their "
         "settings, and optionally set output.root and the company settings")
 CREATE = ("The config doesn't exist. Ask the user whether to create it from the "
-          "template. Only if they explicitly agree, run this script again with "
-          "--init, then tell them to " + EDIT + ".")
-CREATED = ("The config was created from the template, with every source disabled. "
-           "Tell the user to " + EDIT + ".")
+          "template. Only if they explicitly agree, run the same command again with "
+          "--init added, then tell them to " + EDIT + ".")
+CREATED = ("The config was created from the template, with every source disabled: "
+           "tell the user to " + EDIT + ".")
+REINSTALL = ("The skill and the library don't match: tell the user to reinstall every skill, "
+             "then run the skill again.")
+MISSING = ("Stop here: the config lacks what the skill needs. For each entry of `missing`, "
+           "tell the user how to fix it, showing its setup and the config's `path`.")
+READY = ("Go on with the skill. Its scripts read the config's settings themselves: never read "
+         "the config file, or pass or show a setting a script hasn't printed for you.")
+SENSITIVE = ("Before you ask the user anything else, show them `notice`, word for word, in a "
+             "message of its own, and wait for their answer. Go on only on an explicit yes; on "
+             "anything else, stop. Once they say yes: ")
+# The warning of a skill that reads sensitive data, kept here so every such
+# skill warns in the same words. No tool can tell from inside whether the AI
+# running it keeps what it reads, so it is a question for the user, not a check.
+NOTICE = ("This skill reads sensitive data, such as what is written about people. Run it only from an "
+          "AI tool approved for such data, such as one with zero data retention (ZDR), which keeps "
+          "nothing it reads. Is the tool you're using now one of them?")
 FIX_STEPS = ("Show the user every error and the config's `path`, and explain how to fix "
              "each one. Never edit the config yourself.")
 
@@ -216,19 +239,62 @@ def _list_company(config, template):
     return listed
 
 
+def missing_needs(needs, sources, company):
+    """What of `needs` the config doesn't give, {need: how to fix it}, from
+    the sources and company settings listed for a valid config: a group with
+    no source enabled, a source not enabled, a company setting not set."""
+    missing = {}
+    for need in needs:
+        if need.startswith("company."):
+            setting = company[need.removeprefix("company.")]
+            if not setting["set"]:
+                missing[need] = setting["setup"]
+        elif need in sources:
+            if not any(source["enabled"] for source in sources[need].values()):
+                missing[need] = "enable one of its sources: " + "; or ".join(
+                    f"{name}: {source['setup']}" for name, source in sources[need].items())
+        else:
+            source = next(group[need]
+                          for group in sources.values() if need in group)
+            if not source["enabled"]:
+                missing[need] = source["setup"]
+    return missing
+
+
+def argument_errors(args, template):
+    """Why `args`, a skill's command line for this check, aren't ones it
+    takes, empty when they are: an unknown option or word, or a need the
+    template has no group, source or company setting for."""
+    needs = needs_of(args)
+    known = {*template["sources"], *(source for group in template["sources"].values() for source in group),
+             *(f"company.{key}" for key in template["company"])}
+    return ([f'unknown argument "{a}" (usage: check_config.py [--init] [--needs NEED ...] [--sensitive])'
+             for a in args if a not in ("--init", "--needs", "--sensitive", *needs)]
+            + [f"the skill needs {need}, which the template doesn't have" for need in needs if need not in known])
+
+
+def needs_of(args):
+    """What a skill needs, the words of `args`, its command line, after
+    --needs, up to the next option."""
+    if "--needs" not in args:
+        return []
+    rest = args[args.index("--needs") + 1:]
+    return rest[:next((i for i, word in enumerate(rest) if word.startswith("-")), len(rest))]
+
+
 def main():
     args = sys.argv[1:]
     if args in (["-h"], ["--help"]):
         print(HELP)
         return
-    init = "--init" in args
+    init, sensitive = "--init" in args, "--sensitive" in args
+    needs = needs_of(args)
     result = {"path": CONFIG_PATH, "template": TEMPLATE_PATH}
-    created, sources, company = False, {}, {}
-    errors = [f'unknown argument "{a}" (usage: check_config.py [--init])'
-              for a in args if a != "--init"]
-    if not errors:
-        try:
-            template = load_json(TEMPLATE_PATH)
+    created, sources, company, mismatch = False, {}, {}, []
+    try:
+        template = load_json(TEMPLATE_PATH)
+        errors = mismatch = argument_errors(args, template)
+        if not errors:
             if init and not os.path.lexists(CONFIG_PATH):
                 os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
                 try:
@@ -244,17 +310,25 @@ def main():
             if not errors:
                 sources = _list_sources(config, template)
                 company = _list_company(config, template)
-        except (ValueError, OSError) as e:
-            errors = [str(e)]
+    except (ValueError, OSError) as e:
+        errors = [str(e)]
     if errors:
-        missing = not os.path.lexists(CONFIG_PATH)
+        steps = REINSTALL if mismatch else CREATE if not os.path.lexists(
+            CONFIG_PATH) else FIX_STEPS
         print(json.dumps({"ok": False, **result, "created": created,
-                          "errors": errors, "next_steps": CREATE if missing else FIX_STEPS}))
+                          "errors": errors, "next_steps": steps}))
+        sys.exit(1)
+    created_steps = CREATED + " " if created else ""
+    if missing := missing_needs(needs, sources, company):
+        print(json.dumps({"ok": False, **result, "created": created, "missing": missing,
+                          "next_steps": created_steps + MISSING}))
         sys.exit(1)
     result = {"ok": True, **result, "created": created,
               "sources": sources, "company": company}
-    if created:
-        result["next_steps"] = CREATED
+    if sensitive:
+        result["notice"] = NOTICE
+    result["next_steps"] = created_steps + \
+        (SENSITIVE if sensitive else "") + READY
     print(json.dumps(result))
 
 

@@ -364,8 +364,26 @@ class RulesTest(LedgerCase):
         self.assertIn("| 🟩 Live |", self.text())
 
 
+class NoProject:
+    """A Jira site that has none of the projects asked about."""
+    base_url = "https://acme.atlassian.net"
+
+    def project(self, key):
+        return None
+
+
 class LinksTest(LedgerCase):
     """Links, ticket keys and pull requests, linked on write."""
+
+    def setUp(self):
+        # Unless a test gives its own, Jira knows no project, so a key links
+        # only from the ledger's own tracker sources.
+        super().setUp()
+        patcher = mock.patch.object(ledger, "JiraClient", NoProject)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        ledger.SITES.clear()
+        self.addCleanup(ledger.SITES.clear)
 
     def test_inline_links_become_reference_links(self):
         # A URL keeps one key, however many times it is written inline.
@@ -396,7 +414,7 @@ class LinksTest(LedgerCase):
                 return {"key": key} if key == "PROJ" else None
         ledger.SITES.clear()
         self.addCleanup(ledger.SITES.clear)
-        with mock.patch.object(ledger, "JiraClient", Site), mock.patch.object(ledger, "is_enabled", return_value=True):
+        with mock.patch.object(ledger, "JiraClient", Site):
             self.prose("PROJ-7 and PROJ-8 use SHA-256.")
         self.assertIn(
             "| [PROJ-7][proj-7] and [PROJ-8][proj-8] use `SHA-256`. |", self.text())
@@ -404,10 +422,9 @@ class LinksTest(LedgerCase):
             "[proj-7]: https://acme.atlassian.net/browse/PROJ-7", self.text())
         self.assertEqual(asked, ["PROJ", "SHA"])
 
-    def test_ticket_keys_without_jira(self):
-        # Without jira-api, or with its settings not filled in, every key is
-        # written as code; a Jira failure stops the write with Jira's
-        # message, writing nothing.
+    def test_a_jira_failure_stops_the_write(self):
+        # A key Jira couldn't be asked about isn't taken for no ticket: the
+        # write stops with Jira's message, writing nothing.
         failed = "Jira returned 500 for /rest/api/3/project/PROJ."
 
         class Failing:
@@ -415,25 +432,13 @@ class LinksTest(LedgerCase):
 
             def project(self, key):
                 raise JiraError(failed)
-        # name: (jira-api enabled, the client, the error it raises or None)
-        cases = [("not enabled", False, Failing, None),
-                 ("settings not filled in", True, mock.Mock(
-                     side_effect=SystemExit("not filled in")), None),
-                 ("Jira fails", True, Failing, JiraError)]
-        for name, enabled, client, stop in cases:
-            with self.subTest(name):
-                ledger.SITES.clear()
-                self.addCleanup(ledger.SITES.clear)
-                before = self.text()
-                with mock.patch.object(ledger, "JiraClient", client), \
-                        mock.patch.object(ledger, "is_enabled", return_value=enabled):
-                    if stop:
-                        with self.assertRaises(stop):
-                            self.prose("PROJ-7 is done.")
-                        self.assertEqual(self.text(), before)
-                    else:
-                        self.prose("PROJ-7 is done.")
-                        self.assertIn("| `PROJ-7` is done. |", self.text())
+        ledger.SITES.clear()
+        self.addCleanup(ledger.SITES.clear)
+        before = self.text()
+        with mock.patch.object(ledger, "JiraClient", Failing):
+            with self.assertRaisesRegex(JiraError, failed):
+                self.prose("PROJ-7 is done.")
+        self.assertEqual(self.text(), before)
 
     def test_tickets_and_pull_requests_are_linked_on_write(self):
         # A ticket links once the ledger links one of its project, else it is code;

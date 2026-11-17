@@ -102,24 +102,6 @@ class InitTest(unittest.TestCase):
         self.assertEqual(signed_in.call_args.args[0], [
                          "gh", "auth", "status"])
 
-    def test_every_group_needs_a_usable_source_before_anything_is_created(self):
-        # Any enabled source serves the code and the documentation; the tracker
-        # is read by tickets.py, so only jira-api serves it. gh isn't asked
-        # when a group has none.
-        unused = mock.Mock()
-        cases = [("no tracker", {"documentation": ["notion-mcp"], "source_control": ["github-cli"]}, "tracker"),
-                 ("a tracker other than Jira", {"documentation": ["notion-mcp"], "workflow": ["linear-api"],
-                                                "source_control": ["github-cli"]}, "tracker"),
-                 ("nothing enabled", {}, "code, tracker, documentation")]
-        for name, enabled, missing in cases:
-            with self.subTest(name):
-                self.sources(**enabled)
-                with self.assertRaisesRegex(SystemExit, f"No usable source for: {missing}\\."):
-                    init_investigation.init(
-                        "Acme-Search", today=TODAY, run=unused)
-                self.assertFalse(os.path.exists(self.folder))
-        unused.assert_not_called()
-
     def test_gh_must_be_usable_before_anything_is_created(self):
         every = {"documentation": ["notion-mcp"], "workflow": ["jira-api"]}
         self.sources(source_control=["github-cli"], **every)

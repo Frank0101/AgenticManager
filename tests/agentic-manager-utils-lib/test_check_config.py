@@ -230,6 +230,48 @@ class ListSourcesTest(unittest.TestCase):
                     check_config._list_sources(config, TEMPLATE)))
 
 
+class NeedsTest(unittest.TestCase):
+    def test_missing_needs(self):
+        # A group needs any source enabled, a source itself, a company
+        # setting to be set; each lacking one says how to fix it.
+        config = {"sources": {"workflow": {
+            "jira-api": {"enabled": True, "api-token": "s3cret"}}}}
+        sources = check_config._list_sources(config, TEMPLATE)
+        company = check_config._list_company(config, TEMPLATE)
+        cases = [("a group with a source enabled", ["workflow"], {}),
+                 ("a group with none", ["messaging"], {
+                     "messaging": "enable one of its sources: slack-mcp: "
+                     'add "messaging": {"slack-mcp": {"enabled": true}} inside "sources"'}),
+                 ("a source enabled", ["jira-api"], {}),
+                 ("a source disabled", ["azure-devops-cli"], {
+                     "azure-devops-cli": 'add "azure-devops-cli": {"enabled": true} inside "sources.workflow"'}),
+                 ("a company setting not set", ["company.perf-review-ratings"], {
+                     "company.perf-review-ratings": company["perf-review-ratings"]["setup"]}),
+                 ("nothing needed", [], {})]
+        for name, needs, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(check_config.missing_needs(
+                    needs, sources, company), expected)
+
+    def test_argument_errors(self):
+        # A skill's command line names only the check's options and needs the
+        # template has, wherever --needs stands.
+        usage = "(usage: check_config.py [--init] [--needs NEED ...] [--sensitive])"
+        cases = [("none", [], []),
+                 ("known needs", ["--init", "--needs", "workflow", "jira-api", "company.perf-review-ratings",
+                                  "--sensitive"], []),
+                 ("needs the template lacks", ["--needs", "jira-cli", "company.x", "output.root"],
+                  [f"the skill needs {need}, which the template doesn't have"
+                   for need in ("jira-cli", "company.x", "output.root")]),
+                 ("a misspelt option", ["--sensitve"],
+                  [f'unknown argument "--sensitve" {usage}']),
+                 ("a need without --needs", ["workflow"], [f'unknown argument "workflow" {usage}'])]
+        for name, args, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(check_config.argument_errors(
+                    args, TEMPLATE), expected)
+
+
 class MainTest(unittest.TestCase):
     def test_init_preserves_a_config_created_after_the_existence_check(self):
         with tempfile.TemporaryDirectory() as folder:

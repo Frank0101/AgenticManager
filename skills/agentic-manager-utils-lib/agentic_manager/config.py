@@ -29,18 +29,24 @@ def read_source(group, source, keys, lists=()):
     names what's wrong, never a value."""
     where = f"sources.{group}.{source}"
     if not is_enabled(group, source):
-        raise SystemExit(f"{where} is not enabled in {CONFIG_PATH}. {FIX}")
+        raise SystemExit(
+            f"{where} is not enabled in {CONFIG_PATH}. {_fix(source)}")
     settings = load_config()["sources"][group][source]
     missing = [k for k in keys if not is_filled(settings.get(k))]
     if missing:
         raise SystemExit(
-            f"{where} setting(s) not filled in: {', '.join(missing)}. {FIX}")
+            f"{where} setting(s) not filled in: {', '.join(missing)}. {_fix(source)}")
     wrong = [k for k in lists if not is_text_list(settings.get(k, []))]
     if wrong:
         raise SystemExit(
-            f"{where} setting(s) not a list of strings: {', '.join(wrong)}. {FIX}")
+            f"{where} setting(s) not a list of strings: {', '.join(wrong)}. {_fix(source)}")
     return {**{k: settings[k].strip() for k in keys},
             **{k: [v.strip() for v in settings.get(k, [])] for k in lists}}
+
+
+def _fix(need):
+    """The hint for a missing need, by the check that names how to meet it."""
+    return f"Run agentic_manager/check_config.py --needs {need} to see how to fix it."
 
 
 def company_setting(key):
@@ -50,7 +56,8 @@ def company_setting(key):
     company = load_config().get("company")
     entries = company.get(key) if isinstance(company, dict) else None
     if not (isinstance(entries, list) and has_filled_entry(entries)):
-        raise SystemExit(f"company.{key} is not set in {CONFIG_PATH}. {FIX}")
+        raise SystemExit(
+            f"company.{key} is not set in {CONFIG_PATH}. {_fix(f'company.{key}')}")
     return [{field: value.strip() for field, value in entry.items()} for entry in entries]
 
 

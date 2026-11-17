@@ -179,30 +179,55 @@ class CheckConfigTest(ScriptTest):
                         self.config_path)), ["config.json"])
 
     def test_next_steps(self):
-        # The script tells the agent what to do about the config, so no skill
-        # repeats it: ask before creating a missing config, and never edit
-        # one that has problems. A valid config needs no next steps.
+        # The script always tells the agent what to do, so no skill explains
+        # its result: ask before creating a missing config, never edit one that
+        # has problems, reinstall when the skill and the library don't match,
+        # stop on what the skill needs and lacks, show the notice of a
+        # sensitive skill, else go on.
+        def enabled(c):
+            self.enable_jira(c)
+            c["source_control"]["github-cli"]["enabled"] = True
+        # name: (the config, the arguments, the exit code, in next_steps,
+        # notice and missing as given)
         cases = [
-            ("missing", lambda: self.clear_config(), [],
-             1, "run this script again with --init"),
-            ("created", lambda: self.clear_config(), [
-             "--init"], 0, "was created from the template"),
-            ("problems", lambda: self.write_raw(
-                '{"x": 1}'), [], 1, "Never edit the config yourself"),
-            ("valid", lambda: self.write_config(), [], 0, None),
+            ("missing", self.clear_config, [], 1,
+             "run the same command again with --init added", None, None),
+            ("created", self.clear_config, ["--init"], 0,
+             "was created from the template", None, None),
+            ("created, lacking a need", self.clear_config, ["--init", "--needs", "jira-api"], 1,
+             "lacks what the skill needs", None, ["jira-api"]),
+            ("problems", lambda: self.write_raw('{"x": 1}'), [], 1,
+             "Never edit the config yourself", None, None),
+            ("a need the template lacks", self.write_config, ["--needs", "jira-cli"], 1,
+             "reinstall every skill", None, None),
+            ("a misspelt option", self.clear_config, ["--need", "jira-api"], 1,
+             "reinstall every skill", None, None),
+            ("a need not met", self.write_config, ["--needs", "workflow"], 1,
+             "lacks what the skill needs", None, ["workflow"]),
+            ("several not met, sensitive", self.write_config,
+             ["--sensitive", "--needs", "messaging",
+                 "logseq-fs", "company.values"], 1,
+             "lacks what the skill needs", None, ["messaging", "logseq-fs", "company.values"]),
+            ("needs met", lambda: self.write_config(enabled),
+             ["--needs", "workflow", "github-cli"], 0, "Go on with the skill", None, None),
+            ("sensitive", self.write_config, ["--sensitive"], 0,
+             "`notice`, word for word", "zero data retention", None),
+            ("valid", self.write_config, [], 0,
+             "Go on with the skill", None, None),
         ]
-        for name, make, args, code, expected in cases:
+        for name, make, args, code, expected, notice, missing in cases:
             with self.subTest(name):
                 make()
                 got, out = self.run_script(*args)
                 self.assertEqual(got, code, out)
-                if expected:
-                    self.assertIn(expected, out["next_steps"])
-                else:
-                    self.assertNotIn("next_steps", out)
+                self.assertIn(expected, out["next_steps"])
+                self.assertEqual("notice" in out, bool(notice), out)
+                if notice:
+                    self.assertIn(notice, out["notice"])
+                self.assertEqual(list(out.get("missing", [])), missing or [])
 
     def test_unknown_argument(self):
-        out = self.assert_error('unknown argument "workflow" (usage: check_config.py [--init])',
+        out = self.assert_error('unknown argument "workflow" (usage: check_config.py [--init] [--needs NEED ...] [--sensitive])',
                                 "--init", "workflow")
         self.assertEqual(len(out["errors"]), 1, out["errors"])
         self.assertFalse(os.path.exists(self.config_path))

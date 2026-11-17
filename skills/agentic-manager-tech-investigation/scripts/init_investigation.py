@@ -2,8 +2,8 @@
 
 Every run starts from scratch, so a report is always built from fresh research:
 a folder of the same topic and day is deleted first, and nothing an earlier run
-left is read. The script stops before creating anything when a source group has
-no usable source, or when the code comes through gh and gh can't be used. Every
+left is read. The script stops before creating anything when the code comes
+through gh and gh can't be used, which the config check can't know. Every
 investigation starts the same way, so the script writes the ledger's skeleton
 with its first questions, the first orienting the rest.
 """
@@ -42,11 +42,6 @@ def init(topic, today=None, run=subprocess.run):
         raise SystemExit(f"{topic!r} must be words of letters and digits joined by hyphens, "
                          "such as Payments-Retry-Service")
     sources = usable_sources()
-    missing = [GROUPS[group] for group, names in sources.items() if not names]
-    if missing:
-        raise SystemExit(f"No usable source for: {', '.join(missing)}. The investigation needs the code, the "
-                         "tracker and the documentation: enable a source for each in the config, as "
-                         "check_config.py shows, then run investigate.py start again")
     if GITHUB_CLI in sources["source_control"]:
         require_gh(run, "the code is read", "investigate.py start")
     folder, temporary, relative, replaced = new_run(

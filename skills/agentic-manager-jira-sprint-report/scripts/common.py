@@ -1,4 +1,4 @@
-"""Helpers shared by the sprint-report scripts: the report's files and scripts, a
+"""Helpers shared by the sprint-report scripts: the report's files, a
 ticket's events and what they say at a past moment (its state, sprint moves,
 whether it was a blocker candidate), the report's vocabulary and formats, goal
 verdicts' words, epics and commentary groups, and a description's pieces.
@@ -141,14 +141,22 @@ LEFT_OUT_REASONS = {"non_delivery": "resolved without delivery",
 # A pull request's states as at the end, in the order the section counts them.
 PULL_STATES = ("merged", "open", "declined")
 
-# The heading of the Status to Verify section, and the class of its cells
+# The report's other section headings, which the generator writes and the
+# checker finds.
+EPICS_HEADING = "Delivery by Epic"
+METRICS_HEADING = "Sprint Metrics"
+TIMELINE_HEADING = "Scope Timeline"
+RETRO_HEADING = "Notes for Sprint Retro"
+# The heading of the Status to Verify section, the line it shows when no
+# ticket's status needs verifying, and the class of its cells
 # that hold text copied from Jira (epic names and statuses), which the
 # report's vocabulary doesn't apply to.
 STATUS_HEADING = "Status to Verify"
+NOTHING_TO_VERIFY = "Every ticket's status agrees with its pull requests."
 JIRA_CELL = "jira"
 # The section of the pull requests merged during the sprint on none of its
 # tickets, under Delivery by Epic, with what it shows in a line under its
-# heading, as perf-review-prep's sections have; the class of its cells copied from GitHub,
+# heading; the class of its cells copied from GitHub,
 # which the report's vocabulary doesn't apply to; and how many pull requests
 # a repository's list shows open, more folding into an accordion.
 UNTRACKED_HEADING = "Untracked Delivery"

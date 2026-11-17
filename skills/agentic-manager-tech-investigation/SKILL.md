@@ -2,7 +2,7 @@
 name: agentic-manager-tech-investigation
 disable-model-invocation: true
 description: Investigates a technical system, proposal, capability or engineering problem and writes an evidence-backed report of its vision, purpose and impact, its current status, done and in progress, and its direction and target architecture, cross-checking the team's code, tracker and documentation.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/investigate.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/tickets.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py --needs source_control jira-api documentation) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/investigate.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/tickets.py *)
 ---
 
 # Tech Investigation
@@ -28,11 +28,9 @@ tech-investigations/
 
 ## Prerequisite
 
-Run the config check, `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py`, pre-approved in the frontmatter. If it fails, stop here and follow its `next_steps`. If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ as `python3`; if the script is missing, tell them to reinstall every skill.
+Run the config check, `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py --needs source_control jira-api documentation`, pre-approved in the frontmatter, and follow its `next_steps`. If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ as `python3`; if the script is missing, tell them to reinstall every skill.
 
 This skill reads three kinds of source: the code, from any enabled `source_control` source; the tracker, from the `jira-api` source, read through this skill's `tickets.py`; and the documentation, from any enabled `documentation` source.
-
-All three are required. If any of them isn't enabled, stop and tell the user how to enable it, showing its `setup` and the config `path`. The scripts read the config's settings themselves: never read the config file, or pass or show a setting.
 
 ## Run the investigation
 

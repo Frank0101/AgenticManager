@@ -31,9 +31,9 @@ slides-decks/
 
 ## Prerequisite
 
-Run the config check, `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py`, pre-approved in the frontmatter. If it fails, stop here and follow its `next_steps`. If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ as `python3`; if the script is missing, tell them to reinstall every skill.
+Run the config check, `python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py`, pre-approved in the frontmatter, and follow its `next_steps`. If `python3` is unavailable, tell the user AgenticManager needs Python 3.14+ as `python3`; if the script is missing, tell them to reinstall every skill.
 
-This skill needs no source: its material is the conversation and any file the user gives you. The scripts read the config's settings themselves: never read the config file, or pass or show a setting.
+This skill needs no source: its material is the conversation and any file the user gives you.
 
 ## 1. Understand the request
 
@@ -72,7 +72,7 @@ When you have enough, say "I have enough for a first draft. Generating now — w
 python3 ${CLAUDE_SKILL_DIR}/scripts/init_deck.py --name <Name>
 ```
 
-It creates the deck's folder, replacing one of the same name and day, and prints its name (`deck`, the `<deck>` later steps pass) and the `slides_path` step 3 writes to, then lists the `examples` and the `assets` (images earlier decks added) with what each is for or shows. Run it once per deck, never to revise one. Every deck starts from scratch: never read or reuse another deck's folder; only `_assets` and `_examples` are shared.
+It creates the deck's folder, replacing one of the same name and day, and prints its name (`deck`, the `<deck>` later steps pass) and the `slides_path` step 3 writes to, then lists the `examples` and the `assets`. Run it once per deck, never to revise one. Every deck starts from scratch: never read or reuse another deck's folder; only `_assets` and `_examples` are shared.
 
 ## 3. Write slides.json
 

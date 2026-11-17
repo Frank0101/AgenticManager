@@ -16,7 +16,7 @@ import re
 from typing import cast
 
 from common import (browse_url, epic_title, SENTENCE_BREAK, CHART_FILES, COMMENTARY_WORDS, CONTENT_FILE, DATA_FILE, EPIC_COMMENTARY_WORDS, FIELD_HEADER,
-                    GITHUB_CELL, JIRA_CELL, NO_EPIC, NOTHING_UNTRACKED, OUTCOME_COLOURS, UNTRACKED_HEADING, UNTRACKED_OPEN_PULLS, UNTRACKED_SUBTITLE, PULL_STATES, RETRO_NOTES, SCOPE_GROUPS, STATUS_HEADING,
+                    EPICS_HEADING, GITHUB_CELL, JIRA_CELL, METRICS_HEADING, NO_EPIC, NOTHING_TO_VERIFY, NOTHING_UNTRACKED, RETRO_HEADING, TIMELINE_HEADING, OUTCOME_COLOURS, UNTRACKED_HEADING, UNTRACKED_OPEN_PULLS, UNTRACKED_SUBTITLE, PULL_STATES, RETRO_NOTES, SCOPE_GROUPS, STATUS_HEADING,
                     ACHIEVEMENTS_WORDS, BLOCKERS_WORDS, GOAL_REASON_WORDS, SMALL_TYPE, ai_marked, chart_image, html_table, latest_points,
                     display_date, epic_groups, estimate, key_order, known_sum, no_work_text, read_json, parse_ts, plural, pts, qty, ratio,
                     report_file, scope_group_label, sprint_key, text_rule_problems, ticket_ref, unit, whole_percentage,
@@ -37,7 +37,6 @@ TAGS = {
 
 
 # What the section says when no ticket needs checking.
-NOTHING_TO_VERIFY = "Every ticket's status agrees with its pull requests."
 
 # Phrases of the commentary, each with the shorter form used when the text is
 # over its word limit: one place for both, so they can't drift apart.
@@ -567,24 +566,24 @@ class Report:
                          f"{self.days_left()}. \"Open\" means not completed yet.")
         parts += [
             self.header_table(),
-            "## Delivery by Epic",
+            f"## {EPICS_HEADING}",
             self.epic_table(),
             f"## {UNTRACKED_HEADING}",
             UNTRACKED_SUBTITLE,
             self.untracked_table(),
-            "## Sprint Metrics",
+            f"## {METRICS_HEADING}",
             self.metrics_table(),
             chart_image(CHART_FILES["outcome_tickets"],
                         "Sprint outcome in tickets"),
             chart_image(CHART_FILES["outcome_pts"], "Sprint outcome in pts"),
-            "## Scope Timeline",
+            f"## {TIMELINE_HEADING}",
             chart_image(CHART_FILES["burndown"], "Sprint burndown"),
             self.timeline_table(),
             self.commentary(),
             f"## {STATUS_HEADING}",
             self.status_table(),
             self.bullets(
-                f"## {ai_marked('Notes for Sprint Retro')}", c["retro_notes"]),
+                f"## {ai_marked(RETRO_HEADING)}", c["retro_notes"]),
         ]
         return "\n\n".join(parts).rstrip() + "\n"
 

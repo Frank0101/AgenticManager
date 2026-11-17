@@ -9,11 +9,11 @@ check_report.py applies to the whole ledger at handover.
 import os
 import re
 
-from common import (CITATION, DESIGN, DESIGN_ORDER, FOLDER_NAME, INLINE_LINK, JIRA_API, LEDGER, LINKS,
+from common import (CITATION, DESIGN, DESIGN_ORDER, FOLDER_NAME, INLINE_LINK, LEDGER, LINKS,
                     CODE_SPAN, QUEUE_HEADER, QUEUE_TABLES, ROW_START, RULED_OUT, SOURCE_FINDINGS_COLUMN, SOURCE_HEADER,
                     TABLES, UNUSED, anchored, autolink, backtick_error, citation, cited_sources, claim_length_problem,
                     design_evidence, finding_problem, flow_states, free_name, id_order, identity_states, ids,
-                    inline_links, investigation_dir, is_enabled, JiraClient, ledger_rows, link_definitions, link_text,
+                    inline_links, investigation_dir, JiraClient, ledger_rows, link_definitions, link_text,
                     links, plain, read_in_part, row_problem, same_document, section_span, slug, table,
                     table_cells, table_row, ticket_sites, unlinked_backticks, unrecorded_citations,
                     unresolved_message, upgraded_tickets, write_output_file)
@@ -222,19 +222,14 @@ def set_link(lines, key, url):
 
 
 def jira_site(project):
-    """The Jira site that has `project`, or None: without jira-api or with
-    its settings not filled in, when the site has no such project, or it is
-    one the user excludes. Raises JiraError when Jira fails, which stops the
-    write: a key Jira couldn't be asked about isn't taken for no ticket."""
+    """The Jira site that has `project`, or None when the site has no such
+    project, or it is one the user excludes. Raises JiraError when Jira
+    fails, which stops the write: a key Jira couldn't be asked about isn't
+    taken for no ticket."""
     if project not in SITES:
-        SITES[project] = None
-        if is_enabled("workflow", JIRA_API):
-            try:
-                client = JiraClient()
-            except SystemExit:
-                return None
-            if client.project(project) is not None:
-                SITES[project] = client.base_url
+        client = JiraClient()
+        SITES[project] = client.base_url if client.project(
+            project) is not None else None
     return SITES[project]
 
 

@@ -24,8 +24,8 @@ def write_brief(report_dir):
 
 
 def build_brief(data):
-    """The brief: the sprint, each epic's tickets, goal_tickets, report_facts
-    and ticket_events. Tickets are grouped by epic, each with its commentary
+    """The brief: the sprint, each epic's tickets, goal_tickets, report_facts,
+    ticket_events and untracked_delivery. Tickets are grouped by epic, each with its commentary
     group, scope, latest estimate, flag and, for blocker candidates, the
     comments up to the end. Work the sprint didn't do (data.json's left_out)
     isn't listed under the epics, so the commentary doesn't describe it as this

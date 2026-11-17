@@ -17,7 +17,7 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
 sys.path.insert(0, LIB_DIR)
 from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.commands import library_command, script_command, stdin_json  # noqa: E402,F401
-from agentic_manager.config import enabled_sources, is_enabled  # noqa: E402,F401
+from agentic_manager.config import enabled_sources  # noqa: E402,F401
 from agentic_manager.github import NAME as GITHUB_CLI, GH_UNAVAILABLE, GhError, gh_available, require_gh, gh_found, gh_hosts, pull_parts  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
 from agentic_manager.jira import BROWSE_URL as TICKET_URL, NAME as JIRA_API, PROJECT_KEY, JiraClient, browse_url, plain_text, project_of  # noqa: E402,F401

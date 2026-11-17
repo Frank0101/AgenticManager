@@ -37,13 +37,13 @@
   "company": {
     "perf-review-ratings": [
       {
-        "rating": "<rating>",
+        "rating": "<a performance review rating, the lowest listed first>",
         "meaning": "<what it means>"
       }
     ],
     "values": [
       {
-        "value": "<value>",
+        "value": "<a company value>",
         "meaning": "<what it means>"
       }
     ]
