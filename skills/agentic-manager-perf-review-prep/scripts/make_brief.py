@@ -55,7 +55,7 @@ def build_view_check_brief(person, data):
     """The brief of the view check, from `person`, person.json, and `data`,
     data.json: the person, each table's points by period_entries(), with
     their ids, and view, data.json's manager's view, its points with their
-    ids, or null when it has none."""
+    ids."""
     return {"person": person["person"], **period_entries(data["observations"]), "view": data["view"]}
 
 

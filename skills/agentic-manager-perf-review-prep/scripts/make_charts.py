@@ -22,9 +22,8 @@ LEFT, RIGHT, TOP, BOTTOM = 30, 12, 12, 36
 # The table's charts' text, small, so the plot has the room: the axes', the
 # caption under them and the legend's. A pie keeps its own, larger.
 AXIS_FONT, CAPTION_FONT, LEGEND_FONT = 10, 11, 9
-# Each point's or bar's value written over it, as the sprint report's
-# burndown does, smaller still, and none for a zero, which would only crowd
-# the axis.
+# Each point's or bar's value written over it, smaller still, and none for a
+# zero, which would only crowd the axis.
 VALUE_FONT = 6
 # The total's line and area are grey, as the groups' lines take the colours.
 LINE, AREA, AVERAGE = "#3d3d3d", "#e4e2dd", "#d92d20"

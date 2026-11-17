@@ -340,6 +340,8 @@ class CommonTest(unittest.TestCase):
                   S[0], {**S[1], "results": S[0]["results"][2:]}, *S[2:]], None),
                  ("a page without its url", [{**S[0], "results": [
                      {k: v for k, v in PLAN_RESULT.items() if k != "url"}]}, *S[1:]], "its title and url"),
+                 ("a result without its type", [{**S[0], "results": [
+                     {k: v for k, v in PLAN_RESULT.items() if k != "type"}]}, *S[1:]], "must have its type"),
                  ("pages instead of results", [{**S[0], "pages": [], "results": None}, *S[1:]],
                   "its results as it returned them"),
                  ("a month at once", [{**S[0], "end": "2026-09-06"}, *S[4:]],

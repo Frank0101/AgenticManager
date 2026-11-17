@@ -6,7 +6,7 @@ A reminder or a to-do about the review's process, such as updating objectives be
 
 A judgement of the person's character or intentions, such as "has a negative attitude", becomes the behaviours and their effects the source describes; when it describes none, keep it as the source puts it.
 
-A `going_well` point names every company value it clearly shows, and a `to_improve` point every value it calls for, the ones the person would show by doing what it asks: at most two, judged from what it says and each value's meaning, or none when none fits, the one it shows or calls for most first. Consider every value, not only the most common one, and never stretch a point to fit one. For example:
+A `going_well` point names every company value it clearly shows, and a `to_improve` point every value it calls for, the ones the person would show by doing what it asks: at most {{max_values}}, judged from what it says and each value's meaning, or none when none fits, the one it shows or calls for most first. Consider every value, not only the most common one, and never stretch a point to fit one. For example:
 
 | Point                                                      | Values               | Why                                                      |
 | ---------------------------------------------------------- | -------------------- | -------------------------------------------------------- |

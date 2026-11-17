@@ -13,7 +13,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Callable
 
-from common import (FOLDER_NAME, newest_key, PERSON, POINT_LIMITS, PROTOCOL, json_text, RAW_DIR, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
+from common import (FOLDER_NAME, MAX_VALUES, WEB_LINK, newest_key, PERSON, POINT_LIMITS, PROTOCOL, json_text, RAW_DIR, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
                     fill_protocol, is_point, library_command, point_fields, point_shape, prep_dir, script_command, read_json, stdin_json,
                     submit_section, summary_problems, task_line, word_count, work_folder, write_raw,
                     write_prep_file, write_task_file)
@@ -218,7 +218,7 @@ def merge_answer(link, item):
     as `link`, such as "/path/to/note.md", and whose items are each an `item`,
     such as "note"."""
     return ('{"going_well": [{"point": "...", "values": ["<each company value it clearly shows or calls for, '
-            'at most two>"],\n'
+            f'at most {MAX_VALUES}>"],\n'
             f'                 "links": ["{link}", ...]}}],\n'
             f' "to_improve": [{{"point": "...", "values": [], "links": ["{link}"]}}],\n'
             f' "context": [{{"point": "...", "links": ["{link}", ...]}}],\n'
@@ -317,7 +317,7 @@ def items_problems(answer, notes=None, days=None):
         if item["date"] not in (days or []):
             problems.append(
                 f"{what}'s date, {item['date']!r}, must be the day of what it comes from")
-        if not (isinstance(item["link"], str) and item["link"].startswith("https://")):
+        if not (isinstance(item["link"], str) and item["link"].startswith(WEB_LINK)):
             problems.append(
                 f"{what}'s link, {item['link']!r}, must be the address of what it comes from")
     if notes is not None and not problems:
@@ -342,7 +342,7 @@ def in_doubt_problems(in_doubt):
 
 def work_dir(source, prep):
     """The prep `prep`'s working folder for `source`, in the system's
-    temporary folder, as the tech investigation keeps its own: the material,
+    temporary folder: the material,
     the tasks and what the merge left out in doubt, needed only while a run
     lasts. start empties it, never finding what an earlier run left. Exits
     when the prep isn't there."""

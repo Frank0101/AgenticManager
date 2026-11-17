@@ -81,11 +81,12 @@ SUMMARY_PARTS = {"going_well": "what is going well or exceeding",
 VALUED_PARTS = ("going_well", "to_improve")
 POINT_WORDS = 25
 MAX_POINT_WORDS = 40
-# The lengths the protocol's point rules give, filled from the two above.
-POINT_LIMITS = {"point_words": POINT_WORDS, "max_point_words": MAX_POINT_WORDS}
+MAX_VALUES = 2
+# The limits the protocol's point rules give, filled from the three above.
+POINT_LIMITS = {"point_words": POINT_WORDS,
+                "max_point_words": MAX_POINT_WORDS, "max_values": MAX_VALUES}
 VALUES = "values"
 RATINGS = "perf-review-ratings"
-MAX_VALUES = 2
 # A point's evidence links: a Slack message's address, or a note's file, by
 # its absolute path, which a Markdown preview opens where a file:// address
 # isn't.
@@ -194,7 +195,7 @@ PAGES_HEADING = "Pages created"
 # The Observations section: under its heading, OBSERVATIONS_SUBTITLE, the
 # script's, so not marked as the agent's, then a table for each part, by its
 # heading, in order.
-# A valued part's puts each point under the first company value it names, the
+# A valued part's table puts each point under the first company value it names, the
 # one it shows most, so it shows once, the second value it names beside it,
 # the values with the most points first, those naming none under NO_VALUE,
 # last, as it is no value; context names no value, so its table isn't
@@ -418,7 +419,8 @@ def raw_work_problems(source, raw, days):
 def notion_searches_problems(searches, days):
     """Why `searches`, Notion's searches for created pages, aren't those of
     the period of `days`, empty when they are: each {start, end, results}, its
-    results as the search returned them, a page with its title and url; their
+    results as the search returned them, each with its type, which tells a
+    page from a database, and a page with its title and url; their
     ranges covering the period day by day, with no gap or overlap, each within
     a calendar week; none full but a single day, marked "full": true; and no
     page found by two of them."""
@@ -426,6 +428,11 @@ def notion_searches_problems(searches, days):
                and search.get("full", True) is True and isinstance(search["results"], list)
                and all(isinstance(result, dict) for result in search["results"]) for search in searches):
         return ['each Notion search must be {"start", "end", "results": [...]}, its results as it returned them']
+    if not all(isinstance(result.get("type"), str) and result["type"]
+               for search in searches for result in search["results"]):
+        # Without its type a page isn't counted, so it would go missing quietly.
+        return ["each result of a Notion search must have its type, as the search gave it: pass the results "
+                "unchanged, every field included"]
     searches = sorted(searches, key=lambda search: str(search["start"]))
     pages = [result for search in searches for result in search["results"]
              if is_notion_page(result)]

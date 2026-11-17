@@ -9,7 +9,7 @@ import os
 
 from build_data import data_problems
 from check_report import report_problems
-from common import (CHART_FILES, CHARTS_DIR, CONTENT, FEEDBACK, STEP_CHANGE, VIEW_CHECK, content_problems, step_change_problems, view_check_problems, folder_problem, NOTES, ORIENTATION, PERSON, RATINGS, RAW_DIR, REVIEWS, SLACK, SOURCES,
+from common import (CHART_FILES, CHARTS_DIR, CONTENT, FEEDBACK, STEP_CHANGE, VIEW_CHECK, content_problems, data_comparison_problems, STEP_CHANGE_COMPARISON, VIEW_CHECK_COMPARISON, folder_problem, NOTES, ORIENTATION, PERSON, RATINGS, RAW_DIR, REVIEWS, SLACK, SOURCES,
                     SUMMARY_FILES, VALUES, DATA, company_names, expected_files, feedback_problems, notes_problems,
                     orientation_problems, period_days, person_problems, prep_dir, read_json, read_raw_work,
                     report_name, reviews_problems, slack_problems, sources_problems)
@@ -67,12 +67,10 @@ def check_prep(prep, today=None):
     if data_passes and CONTENT in read:
         errors += [f"{CONTENT}: {problem}" for problem in content_problems(
             read[CONTENT], read[DATA]["observations"])]
-    if data_passes and STEP_CHANGE in read:
-        errors += [f"{STEP_CHANGE}: {problem}" for problem in step_change_problems(
-            read[STEP_CHANGE], read[DATA]["observations"], read[DATA]["reviews"])]
-    if data_passes and VIEW_CHECK in read:
-        errors += [f"{VIEW_CHECK}: {problem}" for problem in view_check_problems(
-            read[VIEW_CHECK], read[DATA]["observations"], read[DATA]["view"])]
+    for comparison in (STEP_CHANGE_COMPARISON, VIEW_CHECK_COMPARISON):
+        if data_passes and comparison.file in read:
+            errors += [f"{comparison.file}: {problem}" for problem in data_comparison_problems(
+                comparison, read[comparison.file], read[DATA])]
     if data_passes and {report, CHARTS_DIR, CONTENT, STEP_CHANGE, VIEW_CHECK} <= files and not any(
             error.startswith((CONTENT, STEP_CHANGE, VIEW_CHECK)) for error in errors):
         with open(os.path.join(folder, report), encoding="utf-8") as f:
