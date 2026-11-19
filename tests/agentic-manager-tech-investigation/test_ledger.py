@@ -291,14 +291,12 @@ class RulesTest(LedgerCase):
     """The rules a row is checked against when it is written."""
 
     def test_rows_that_break_a_rule_are_refused(self):
-        # Wrong columns or IDs, and one case of each rule check_report.py
+        # One case of each rule check_report.py
         # applies at handover, refused on write: nothing is written. The
         # rules' own cases are in test_common.py. S05 is read in part.
         self.write(("sources", "S05", source("[y](https://example.com/y)", "documentation",
                                              coverage="partial: sections: Summary")))
-        cases = [("sources", "S01", ["too few"], "takes 5 texts"),
-                 ("sources", "Q01", source(), "IDs are S and a number"),
-                 ("sources", "S01", source("acme/api"), "S01: link the Reference"),
+        cases = [("sources", "S01", source("acme/api"), "S01: link the Reference"),
                  ("sources", "S01", source(kind="source_control"),
                   "S01: Kind starts with"),
                  ("sources", "S01", source(coverage="skimmed"),

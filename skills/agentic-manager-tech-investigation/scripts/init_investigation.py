@@ -14,7 +14,7 @@ import subprocess
 from common import (DESIGN, citation, DESIGN_SUBSECTIONS, GITHUB_CLI, GROUPS, JIRA_API, QUEUE,
                     FOLDER_NAME, LEDGER, LEDGER_SECTIONS, QUEUE_HEADER,
                     QUEUE_SUBSECTIONS, TOPIC, anchored, enabled_sources, new_run, require_gh, table,
-                    write_output_file)
+                    topic_words, write_output_file)
 
 # The first questions, as (kind of source, question), X the topic in words. The
 # first orients: what the topic is and what sits next to it, so the user decides
@@ -65,7 +65,7 @@ def usable_sources():
 def first_questions(topic):
     """The first research questions, as rows: SEED_QUESTIONS about the topic,
     each after the first waiting for it."""
-    return [[f"Q{number:02d}", f"Seed ({GROUPS[group]})", question.replace("X", topic.replace("-", " ")),
+    return [[f"Q{number:02d}", f"Seed ({GROUPS[group]})", question.replace("X", topic_words(topic)),
              "None" if number == 1 else citation("Q01"), ""]
             for number, (group, question) in enumerate(SEED_QUESTIONS, 1)]
 
@@ -73,7 +73,7 @@ def first_questions(topic):
 def ledger_skeleton(topic, ready=()):
     """The ledger's fixed sections and tables, empty but for the `ready`
     questions, as rows."""
-    parts = [f"# {topic.replace('-', ' ')} research ledger"]
+    parts = [f"# {topic_words(topic)} research ledger"]
     for section in LEDGER_SECTIONS:
         parts.append(f"## {section}")
         if section == QUEUE:

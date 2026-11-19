@@ -1,34 +1,31 @@
-"""Writes a prep's report, <Person>_Review_Prep.md, from data.json, content.json, step_change.json and view_check.json: the observations, going well and to improve by company value, then the context, then the step change from the latest previous review, then the check of the manager's view, each table under its summary, then the person's GitHub, Jira and Notion figures.
+"""Writes a prep's report, <Person>_Review_Prep.md, from data.json, observations_content.json and step_change_content.json: the observations, going well and to improve by company value, then the context, then the step change from the previous feedback, each table under its summary, then the person's GitHub, Jira and Notion figures.
 
 Every figure is one of data.json's facts, and every link one of its search
 addresses, so the report can't count differently from the model; the charts
 it shows are make_charts.py's.
 """
-from common import (CHARTS_DIR, EPICS_CHART, OBSERVATION_HEADINGS, OBSERVATIONS_SUBTITLE, OBSERVATION_SOURCES, FOCUS_SHARE, FOLDER_NAME, GITHUB_CELLS, HEADINGS, JIRA_CELLS, NO_VALUE, PAGES_HEADING, PIECE_SOURCES, REPOS_CHART,
-                    STEP_CHANGE_COMPARISON, VALUED_PARTS, VIEW_CHECK_COMPARISON, ai_marked, chart_image, html_table, period_points, baseline_points, average_text, details_text, display_date, esc, link_href, reference_text, number, prep_dir, report_name, repo_code, repos_text, shown, size_text, types_text, week_text,
+from common import (CHARTS_DIR, EPICS_CHART, OBSERVATION_HEADINGS, OBSERVATIONS_SUBTITLE, OBSERVATION_SOURCES, FOCUS_SHARE, FOLDER_NAME, GITHUB_CELLS, HEADINGS, JIRA_CELLS, NO_VALUE, PAGES_HEADING, REPOS_CHART,
+                    NOT_RAISED, STEP_CHANGE_HEADING, STEP_CHANGE_NOT_APPLICABLE, STEP_CHANGE_ROW, STEP_CHANGE_SUBTITLE, STEP_CHANGES, VALUED_PARTS, ai_marked, chart_image, html_table, period_points, baseline_points, average_text, details_text, esc, link_href, reference_text, number, prep_dir, report_name, repo_code, repos_text, shown, size_text, types_text, week_text,
                     write_output_file)
 
 
-def write_report(prep, person, data, content, step_change, view_check):
+def write_report(prep, person, data, observations_content, step_change_content):
     """Write the prep `prep`'s report from `person`, its person.json, `data`,
-    its data.json, `content`, its content.json, `step_change`, its
-    step_change.json, and `view_check`, its view_check.json; returns its
-    path."""
+    its data.json, `observations_content`, its observations_content.json, and `step_change_content`, its
+    step_change_content.json; returns its path."""
     path, _ = write_output_file(FOLDER_NAME, f"{prep}/{report_name(prep)}",
-                                render(person, data, prep_dir(prep), content, step_change,
-                                       view_check).encode("utf-8"))
+                                render(person, data, prep_dir(prep), observations_content, step_change_content).encode("utf-8"))
     return path
 
 
 # The report.
 
-def render(person, data, folder, content, step_change, view_check):
+def render(person, data, folder, observations_content, step_change_content):
     """The report's text: the person and the period, then the Observations,
     under OBSERVATIONS_SUBTITLE, what is going well, what to improve and the
     context, each summarised as
-    `content`, content.json, says, then the step change, `step_change`,
-    step_change.json, then the check of the manager's view, `view_check`,
-    view_check.json, these first, as what the review is about, a note
+    `observations_content`, observations_content.json, says, then the step change, `step_change_content`,
+    step_change_content.json, these first, as what the review is about, a note
     they cite linked relative to `folder`, the report's, then
     their GitHub work and their Jira work, each its main focus,
     then its figures, then the Notion pages they created. GitHub comes before
@@ -38,12 +35,9 @@ def render(person, data, folder, content, step_change, view_check):
     return "\n".join([f"# {person['person']}: performance review prep", "",
                       f"Period: {shown(person['start'], person['end'])}", "", "## Observations", "",
                       OBSERVATIONS_SUBTITLE, "", *observations_section(data["observations"],
-                                                                       folder, content), "",
-                      *comparison_section(STEP_CHANGE_COMPARISON, step_change, data["observations"],
-                                          latest := data["reviews"] and data["reviews"]["latest"], folder,
-                                          review_name(latest)),
-                      "", *comparison_section(VIEW_CHECK_COMPARISON, view_check, data["observations"],
-                                              data["view"], folder, ""),
+                                                                       folder, observations_content), "",
+                      *step_change_section(step_change_content, data["observations"],
+                                           data["previous"], folder),
                       "", "## GitHub", "",
                       *repos_section(data["github"]), "", *
                       github_section(data["github"]), "", "## Jira", "",
@@ -52,19 +46,19 @@ def render(person, data, folder, content, step_change, view_check):
                       *notion_section(data["notion"])]) + "\n"
 
 
-def observations_section(observations, folder, content):
+def observations_section(observations, folder, observations_content):
     """The Observations section's lines: for each part of OBSERVATION_HEADINGS,
     a divider apart from the one before, its heading, marked as the agent's, as
-    its summary, `content`'s, follows, then, folded under it as the detail,
+    its summary, `observations_content`'s, follows, then, folded under it as the detail,
     with how many points it holds, a table of them, in small type, by
     observation_rows(), the most recent first, each with its source and its
-    reference: a piece's period, as the source names it, or a reading's
+    reference: – for a feedback, which has none, or a reading's
     evidence, the most recent first, each linked to its note or message."""
     lines = []
     for part, heading in OBSERVATION_HEADINGS.items():
         heads, rows, count = observation_rows(part, observations[part], folder)
         lines += [*(["", "---", ""] if lines else []), ai_marked(f"<b>{heading}</b>") if rows else f"<b>{heading}</b>",
-                  *(["", content[part].strip(), "", f"<details><summary>{details_text(count)}</summary>", "",
+                  *(["", observations_content[part].strip(), "", f"<details><summary>{details_text(count)}</summary>", "",
                      *html_table(heads, *rows, small=True), "", "</details>"] if rows else [])]
     return lines
 
@@ -96,71 +90,59 @@ def observation_heads(columns):
 
 
 def reference(point, folder):
-    """Where an observation comes from, as its row writes it: its piece's
-    period, – when the piece names none, or its evidence, each by
-    reference_text(), such as "Slack 14 Oct", linked to its message or note."""
-    if point["source"] in PIECE_SOURCES:
-        return esc(point["period"] or "–")
+    """Where an observation comes from, as its row writes it: its evidence,
+    each by reference_text(), such as "Slack 14 Oct", linked to its message
+    or note, or – when it has none, as a feedback."""
     return ", ".join(f'<a href="{esc(link_href(item["link"], folder))}">{esc(reference_text(point["source"], item))}</a>'
-                     for item in point["evidence"])
+                     for item in point["evidence"]) or "–"
 
 
-def comparison_section(comparison, value, observations, baseline, folder, name):
-    """A comparison's section's lines, `comparison` a Comparison: its
-    heading, marked as the agent's, its subtitle, the script's, unmarked,
-    `name` the baseline's, its summary, `value`'s, its file, then,
+def step_change_section(value, observations, previous, folder):
+    """The step change section's lines: its heading, marked as the agent's,
+    its subtitle, the script's, unmarked, its summary, `value`'s, step_change_content.json's, then,
     folded under it with how many rows it holds, a table, in small type, of
-    its rows by comparison_rows(); with no `baseline`, data.json's latest
-    previous review or manager's view, the heading, unmarked, and its
-    not_applicable alone, as there is nothing to compare."""
-    if baseline is None:
-        return [f"## {comparison.heading}", "", comparison.not_applicable]
-    rows = comparison_rows(
-        comparison, value["rows"], observations, baseline, folder)
-    point_column, kind_column = comparison.columns
-    return [f"## {ai_marked(comparison.heading)}", "", comparison.subtitle.format(name=name), "",
+    its rows by step_change_rows(); with no `previous`, data.json's previous
+    feedback, the heading, unmarked, and STEP_CHANGE_NOT_APPLICABLE alone, as
+    there is nothing to compare."""
+    if previous is None:
+        return [f"## {STEP_CHANGE_HEADING}", "", STEP_CHANGE_NOT_APPLICABLE]
+    rows = step_change_rows(value["rows"], observations, previous, folder)
+    return [f"## {ai_marked(STEP_CHANGE_HEADING)}", "", STEP_CHANGE_SUBTITLE, "",
             value["summary"].strip(),
-            *(["", f"<details><summary>{details_text(len(rows), comparison.counted)}</summary>", "",
-               *html_table(observation_heads(((point_column, 35), (ai_marked(kind_column), 15), ("Evidence", 50))),
+            *(["", f"<details><summary>{details_text(len(rows), ('change', 'changes'))}</summary>", "",
+               *html_table(observation_heads(((ai_marked("Previous feedback point"), 35),
+                                              (ai_marked("Change"), 15), (ai_marked("Evidence"), 50))),
                            *rows, small=True), "", "</details>"] if rows else [])]
 
 
-def review_name(review):
-    """The name of `review`, data.json's latest previous review, as the step
-    change's subtitle writes it after the review: ", " and its period, or
-    ", of " and its date, DD/MM/YYYY, when it names no period, or nothing
-    when it names neither or there is no review."""
-    if not review:
-        return ""
-    if review["period"]:
-        return f", {esc(review['period'])}"
-    return f", of {display_date(review['date'])}" if review["date"] else ""
-
-
-def comparison_rows(comparison, rows, observations, baseline, folder):
-    """A comparison's table's rows, each of `rows`, its file's: the point of
-    `baseline` it names, after its part, such as "To improve: …", or – for
-    none; its kind's label; and each period point it cites, by its id in
+def step_change_rows(rows, observations, previous, folder):
+    """The step change table's rows, each of `rows`, step_change_content.json's: the point of
+    `previous` it names, after its part, such as "To improve: …", or – for
+    none; its change's label; and each period point it cites, by its id in
     `observations`, data.json's, its text, source and references as its own
-    row gives them, or, citing none, the comparison's no_evidence. Ordered
-    by kind, in the order of its labels, then by the baseline point's order,
+    row gives them, or, citing none, NOT_RAISED. Ordered
+    by change, in the order of STEP_CHANGES, then by the previous point's order,
     those with none last, in the order given."""
-    point_field, kind_field, _ = comparison.row
-    points, period = baseline_points(baseline), period_points(observations)
+    point_field, change_field, _ = STEP_CHANGE_ROW
+    points, period = baseline_points(previous), period_points(observations)
     order = [*points, None]
-    ordered = sorted(rows, key=lambda row: (list(comparison.labels).index(row[kind_field]),
+    ordered = sorted(rows, key=lambda row: (list(STEP_CHANGES).index(row[change_field]),
                                             order.index(row[point_field])))
 
     def cited(point):
-        return f'{esc(point["point"])} ({OBSERVATION_SOURCES[point["source"]]}: {reference(point, folder)})'
+        # A feedback has no reference: its source alone says where it is from.
+        source = OBSERVATION_SOURCES[point["source"]]
+        if point["evidence"]:
+            source += f": {reference(point, folder)}"
+        return f'{esc(point["point"])} ({source})'
     return [f'<td>{esc(point_label(*points[row[point_field]])) if row[point_field] else "–"}</td>'
-            f'<td>{comparison.labels[row[kind_field]]}</td>'
-            f'<td>{"<br>".join(cited(period[item][1]) for item in row["evidence"]) or comparison.no_evidence}</td>'
+            f'<td>{STEP_CHANGES[row[change_field]]}</td>'
+            f'<td>{"<br>".join(cited(period[item][1]) for item in row["evidence"]) or NOT_RAISED}</td>'
             for row in ordered]
 
 
 def point_label(part, point):
-    """A point of a comparison's baseline as its table names it, after its
+    """A point of the previous feedback as the step change table names it, after its
     part: "To improve: Could lead a design review alone"."""
     return f'{OBSERVATION_HEADINGS[part]}: {point["point"]}'
 

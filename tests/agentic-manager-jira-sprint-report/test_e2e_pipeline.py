@@ -297,13 +297,14 @@ class BriefTest(ReportTest):
         # candidate's comments still come from data.json.
         data = self.build()
         self.assertEqual(data["blocker_comments"], {
-                         "PROJ-7": [{"at": None, "date": None, "text": "Waiting on a dependency."}]})
+                         "PROJ-7": [{"at": "2026-03-11T10:00:00.000+0000", "date": "2026-03-11",
+                                     "text": "Waiting on a dependency."}]})
         shutil.rmtree(os.path.join(self.dir, "_raw"))
         self.assert_runs("make_brief.py")
         with open(os.path.join(self.dir, "brief.json"), encoding="utf-8") as f:
             brief = json.load(f)
         self.assertEqual([t["comments"] for e in brief["epics"] for t in e["tickets"] if t["key"] == "PROJ-7"],
-                         [[{"date": None, "text": "Waiting on a dependency."}]])
+                         [[{"date": "11/03/2026", "text": "Waiting on a dependency."}]])
 
 
 class ReopenedAtTheStartTest(ReportTest):

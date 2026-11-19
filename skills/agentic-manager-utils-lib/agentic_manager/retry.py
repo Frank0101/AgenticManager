@@ -44,10 +44,5 @@ def retried(attempt, passing, note, rate_wait=None):
                 wait = None
             if wait is None or wait > LONGEST_RATE_WAIT:
                 raise
-            wait_out(note(error), wait)
-
-
-def wait_out(what, seconds):
-    """Says on stderr what failed and how long the call waits, then waits."""
-    print(f"{what}, trying again in {seconds} s", file=sys.stderr)
-    time.sleep(seconds)
+            print(f"{note(error)}, trying again in {wait} s", file=sys.stderr)
+            time.sleep(wait)

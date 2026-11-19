@@ -79,25 +79,15 @@ class HelpersTest(unittest.TestCase):
                     self.assertEqual(c.report(), code)
                 self.assertEqual(out.getvalue(), printed)
 
-    def test_ratio_units_with_fractional_operands(self):
+    def test_vocabulary_applies_the_text_rules(self):
+        # The rules themselves are tested in test_common.py's
+        # test_text_rule_problems; one shows they are wired in.
         data = {"spells": [], "membership_cross_check_excluded": {
             "count": 0, "points": 0, "keys": []}}
-        for ratio in ("2/3", "2/2.5", "0.5/2", "0.5/2.5", "0/0.5"):
-            for suffix in (" ticket", " tickets", " pts", "", ".", " ptsx"):
-                with self.subTest(ratio=ratio, suffix=suffix):
-                    c = check_report.Checker()
-                    check_report.check_vocabulary(c, ratio + suffix, data)
-                    failures = [f for f in c.failures if f.startswith(
-                        "vocabulary: ratios only as")]
-                    if suffix in (" ticket", " tickets", " pts"):
-                        self.assertEqual(failures, [])
-                    else:
-                        self.assertEqual(failures, [
-                            f"vocabulary: ratios only as N/M tickets (N/M pts) ['{ratio}']"])
         c = check_report.Checker()
-        check_report.check_vocabulary(c, "02/03/2026", data)
-        self.assertFalse(any(f.startswith("vocabulary: ratios only as")
-                         for f in c.failures))
+        check_report.check_vocabulary(c, "2/2.5 ptsx", data)
+        self.assertIn(
+            "vocabulary: ratios only as N/M tickets (N/M pts) ['2/2.5']", c.failures)
 
 
 class ChecksTest(unittest.TestCase):

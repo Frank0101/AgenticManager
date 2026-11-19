@@ -6,7 +6,6 @@ deck shares, listed from their descriptions each time so the lists can't go
 stale. Scripts import the shared library's names from here, so they don't
 depend on the order of their imports.
 """
-import glob
 import os
 import re
 import sys
@@ -20,8 +19,8 @@ from agentic_manager.config import is_text_list  # noqa: E402,F401
 from agentic_manager.json_path import is_number  # noqa: E402,F401
 from agentic_manager.output_file import json_text, read_json, write_output_file  # noqa: E402,F401
 from agentic_manager.svg import arc_segment, coordinate  # noqa: E402,F401
-from agentic_manager.output_folder import DESCRIPTION, folder_problem, KEPT_EXAMPLES, description, read_description, clear_folder, new_run, output_folder, run_document, run_folder, work_folder  # noqa: E402,F401
-from agentic_manager.text import NAME, SLUG, free_name, slug  # noqa: E402,F401
+from agentic_manager.output_folder import DESCRIPTION, folder_problem, KEPT_EXAMPLES, description, read_description, clear_folder, free_folder_name, list_examples, new_run, output_folder, run_document, run_folder, work_folder  # noqa: E402,F401
+from agentic_manager.text import NAME, SLUG, slug  # noqa: E402,F401
 from agentic_manager.web import ssl_context  # noqa: E402,F401
 
 # The skill's output folder, and a deck folder's files in it: the slides the
@@ -61,7 +60,6 @@ CHART_JS = "https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"
 
 # {{chart:<id>}} or {{ring:<id>}} in a slide's HTML, replaced by the chart or
 # ring of that id; {{asset:<name>}}, by the link to that image in _assets.
-ELEMENT_ID = SLUG
 TOKEN = re.compile(r"\{\{(chart|ring|asset):([^{}]*)\}\}")
 # {{page}}, replaced by the slide's number, so adding, removing or moving a
 # slide never leaves a page number to correct by hand.
@@ -112,18 +110,9 @@ def examples():
     """[{folder, source, title, use_for}] of every example, the skill's then
     the user's, each by name: its folder's absolute path, "built-in" or
     "yours", its description's heading and what it is good for."""
-    found = []
-    folders = (("built-in", EXAMPLES_DIR),
-               ("yours", user_examples_dir()))
-    for source, folder in folders:
-        for path in sorted(glob.glob(os.path.join(folder, "*", DESCRIPTION))):
-            example = os.path.dirname(path)
-            if os.path.basename(example).startswith("_"):
-                continue
-            title, fields = read_description(path)
-            found.append({"folder": os.path.realpath(example), "source": source,
-                          "title": title, "use_for": fields.get(USE_FOR, "")})
-    return found
+    return [{"folder": folder, "source": source, "title": title, "use_for": fields.get(USE_FOR, "")}
+            for source, root in (("built-in", EXAMPLES_DIR), ("yours", user_examples_dir()))
+            for folder, title, fields in list_examples(root)]
 
 
 def user_examples_dir():
@@ -132,7 +121,7 @@ def user_examples_dir():
     return os.path.join(output_folder(FOLDER_NAME)[0], KEPT_EXAMPLES)
 
 
-def asset_link(name, depth=1):
+def asset_link(name, depth):
     """The link to the image `name` in _assets from a page `depth` folders
     below the skill's output folder: 1 for a deck, 2 for a kept example."""
     return "../" * depth + f"{ASSETS}/{name}/{asset_image(name) or 'image'}"

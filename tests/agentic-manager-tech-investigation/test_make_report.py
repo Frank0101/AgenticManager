@@ -147,6 +147,10 @@ class MakeReportTest(unittest.TestCase):
              "summary: the report doesn't show this section"),
             ("unknown field in a stage", lambda d: stage(d, "target").update(risks=["A risk."]),
              "architecture.target.risks: the report doesn't show this section"),
+            ("undefined reference link", lambda d: d["purpose"].append(
+                "See [x][nokey] [F01](ledger:F01)."), "purpose paragraph 2: unresolved Markdown link reference [x][nokey]"),
+            ("missing local target", lambda d: d["purpose"].append(
+                "See [x](absent.md) [F01](ledger:F01)."), "purpose paragraph 2: local link target is missing: absent.md"),
         ]
         for name, edit, expected in cases:
             with self.subTest(name):

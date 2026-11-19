@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import build_data  # noqa: E402
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import (DATA, DATA_BY_PROJECT, DATA_NO_EPIC_FIRST, ORIENTATION, PERSON, PREP, SUMMARIES, VALUE_NAMES, VIEW, WEEKS, WORK_RAW,  # noqa: E402
+from prep_fixture import (DATA, DATA_BY_PROJECT, DATA_NO_EPIC_FIRST, PERSON, PREP, SUMMARIES, VALUE_NAMES, WEEKS, WORK_RAW,  # noqa: E402
                           temp_output, write_prep)
 
 
@@ -46,18 +46,22 @@ class BuildDataTest(unittest.TestCase):
         write_prep(folder, data=None, report=False)
         self.assertEqual(common.read_json(build_data.build_data(PREP)), DATA)
 
-    def test_week_groups(self):
-        # Calendar weeks, Monday to Sunday, the first and last clipped to the
-        # period; a long period groups them, always the same weeks, so there
-        # are at most twenty.
-        self.assertEqual(build_data.week_groups(
-            "2026-08-10", "2026-11-10"), WEEKS)
-        self.assertEqual(build_data.week_groups(
-            "2026-09-02", "2026-09-02"), [["2026-09-02", "2026-09-02"]])
-        year = build_data.week_groups("2026-01-01", "2026-12-31")
-        self.assertLessEqual(len(year), build_data.MAX_POINTS)
-        self.assertEqual((year[0][0], year[-1][1]),
-                         ("2026-01-01", "2026-12-31"))
+    def test_weeks_are_the_calendar_weeks_of_the_period(self):
+        # data.json's weeks are the period's calendar weeks, Monday to
+        # Sunday, the first and last clipped to it, and never grouped, however
+        # long the period: a year is its fifty-three weeks.
+        folder = temp_output(self)
+        write_prep(folder, data=None, report=False)
+        self.assertEqual(common.read_json(
+            build_data.build_data(PREP))["weeks"], WEEKS)
+        for start, end, count in (("2026-09-02", "2026-09-02", 1), ("2026-01-01", "2026-12-31", 53)):
+            with self.subTest(start):
+                person = {**PERSON, "start": start, "end": end}
+                weeks = build_data.build(
+                    {}, person, SUMMARIES, VALUE_NAMES)["weeks"]
+                self.assertEqual((weeks, len(weeks)),
+                                 (common.calendar_weeks(start, end), count))
+                self.assertEqual((weeks[0][0], weeks[-1][1]), (start, end))
 
     def test_series(self):
         # Each week's issues in all, by epic in the epics' order, of any
@@ -77,18 +81,6 @@ class BuildDataTest(unittest.TestCase):
                          ["PROJ-2", "PROJ-9"])
         self.assertEqual(build_data.chart_order([f"PROJ-{n}" for n in range(12)], set()), [
                          f"PROJ-{n}" for n in range(common.MAX_GROUPS)])
-
-    def test_calendar_week(self):
-        # The Monday to Sunday of the day, clipped to the period: a page a
-        # search of part of a week found shares its week with the others.
-        cases = [("mid-week", "2026-08-12", ["2026-08-10", "2026-08-16"]),
-                 ("the period's first week", "2026-08-03",
-                  ["2026-08-05", "2026-08-09"]),
-                 ("the period's last day, a Monday", "2026-11-09", ["2026-11-09", "2026-11-09"])]
-        for name, day, expected in cases:
-            with self.subTest(name):
-                self.assertEqual(build_data.calendar_week(
-                    day, "2026-08-05", "2026-11-09"), expected)
 
     def test_github_facts(self):
         # The merged pull requests by repository, the most first, those
@@ -150,120 +142,101 @@ class BuildDataTest(unittest.TestCase):
                                  (slices, other))
 
     def test_observations(self):
-        # name: (the feedback's pieces, the notes' points going well, the
-        # values, (value, point) of each going well, in order): a point
-        # under its first value, the company's order, those naming none
-        # last; the most recent first, an undated piece first of all.
-        def piece(date, point, values):
-            return {"period": None, "date": date, "going_well": [{"point": point, "values": values}],
-                    "to_improve": [], "context": []}
+        # name: (the current manager feedback's going well, the other
+        # feedback's, the notes' points going well, the values, (value, point)
+        # of each going well, in order): a point under its first value, the
+        # company's order, those naming none last; the most recent first, the
+        # feedbacks, which have no date, first of all, the manager's before
+        # the other's.
+        def feedback(point, values):
+            return {"point": point, "values": values}
 
         def note(day, point, values):
             return {"point": point, "values": values, "evidence": [{"date": day, "link": f"/{day}.md"}]}
-        cases = [("first value only", [piece("2026-09-30", "a", ["Teamwork", "Ownership"])], [],
+        cases = [("first value only", [], [feedback("a", ["Teamwork", "Ownership"])], [],
                   ["Ownership", "Teamwork"], [("Teamwork", "a")]),
-                 ("the company's order", [piece("2026-09-30", "a", ["Teamwork"])],
+                 ("the company's order", [], [feedback("a", ["Teamwork"])],
                   [note("2026-08-01", "b", ["Ownership"])
                    ], ["Ownership", "Teamwork"],
                   [("Ownership", "b"), ("Teamwork", "a")]),
-                 ("no value last", [piece("2026-09-30", "a", [])], [note("2026-08-01", "b", ["Teamwork"])],
+                 ("no value last", [], [feedback("a", [])], [note("2026-08-01", "b", ["Teamwork"])],
                   ["Ownership", "Teamwork"], [("Teamwork", "b"), (None, "a")]),
-                 ("most recent first, undated first of all",
-                  [piece("2026-08-15", "a", ["Teamwork"]),
-                   piece(None, "b", ["Teamwork"])],
-                  [note("2026-09-01", "c", ["Teamwork"])], ["Teamwork"],
-                  [("Teamwork", "b"), ("Teamwork", "c"), ("Teamwork", "a")])]
-        for name, pieces, notes, values, expected in cases:
+                 ("most recent first, undated first of all", [],
+                  [feedback("a", ["Teamwork"])],
+                  [note("2026-09-01", "c", ["Teamwork"]),
+                   note("2026-08-15", "d", ["Teamwork"])], ["Teamwork"],
+                  [("Teamwork", "a"), ("Teamwork", "c"), ("Teamwork", "d")]),
+                 ("the manager's before the other's", [feedback("m", ["Teamwork"])], [feedback("a", ["Teamwork"])],
+                  [note("2026-08-01", "b", ["Teamwork"])], ["Teamwork"],
+                  [("Teamwork", "m"), ("Teamwork", "a"), ("Teamwork", "b")]),
+                 ("the manager's with no value last", [feedback("m", [])], [feedback("a", ["Ownership"])], [],
+                  ["Ownership", "Teamwork"], [("Ownership", "a"), (None, "m")])]
+        for name, managers, others, notes, values, expected in cases:
             with self.subTest(name):
-                summaries = {"feedback": {"pieces": pieces},
+                summaries = {"manager": {"going_well": managers, "to_improve": [], "context": []},
+                             "other": {"going_well": others, "to_improve": [], "context": []},
                              "notes": {"going_well": notes, "to_improve": [], "context": []},
                              "slack": {"going_well": [], "to_improve": [], "context": []}}
                 groups = build_data.observations(
-                    summaries, [], values)["going_well"]
+                    summaries, values)["going_well"]
                 self.assertEqual([(group["value"], point["point"]) for group in groups for point in group["points"]],
                                  expected)
 
     def test_context(self):
-        # name: (the feedback's pieces, the notes' context points, the
-        # context's points, in order, each (point, source, date, period, the
-        # days of its evidence)): a piece's context a sentence alone; a
-        # reading's dated by its latest dated evidence, a page's undated;
-        # the most recent first, undated first of all, its evidence too.
-        def piece(date, *points):
-            return {"period": "Q3 2026", "date": date, "going_well": [], "to_improve": [], "context": list(points)}
-
+        # name: (the current manager feedback's context points, the other
+        # feedback's, the notes' context points, the context's points, in
+        # order, each (point, source, date, the days of its evidence)): the
+        # feedbacks' a sentence alone, undated; a reading's dated by its
+        # latest dated evidence, a page's undated; the most recent first,
+        # undated first of all, its evidence too.
         def note(point, *days):
             return {"point": point, "evidence": [{"date": day, "link": f"/vault/{day or 'pages/Jane'}.md"}
                                                  for day in days]}
-        cases = [("a piece's sentences", [piece("2026-09-30", "a", "b")], [],
-                  [("a", "feedback", "2026-09-30", "Q3 2026", []), ("b", "feedback", "2026-09-30", "Q3 2026", [])]),
-                 ("a page undated, first", [piece("2026-09-30", "a")], [note("b", None)],
-                  [("b", "notes", None, None, [None]), ("a", "feedback", "2026-09-30", "Q3 2026", [])]),
-                 ("dated by the latest dated evidence", [piece("2026-09-30", "a")],
-                  [note("b", "2026-08-01", None, "2026-10-02")],
-                  [("b", "notes", "2026-10-02", None, [None, "2026-10-02", "2026-08-01"]),
-                   ("a", "feedback", "2026-09-30", "Q3 2026", [])])]
-        for name, pieces, notes, expected in cases:
+        cases = [("the sentences of the other feedback", [], ["a", "b"], [],
+                  [("a", "other", None, []), ("b", "other", None, [])]),
+                 ("a page undated, after the other feedback", [], ["a"], [note("b", None)],
+                  [("a", "other", None, []), ("b", "notes", None, [None])]),
+                 ("dated by the latest dated evidence", [], ["a"], [note("b", "2026-08-01", None, "2026-10-02")],
+                  [("a", "other", None, []), ("b", "notes", "2026-10-02", [None, "2026-10-02", "2026-08-01"])]),
+                 ("the manager feedback's sentences first", ["m"], ["a"], [note("b", None)],
+                  [("m", "manager", None, []), ("a", "other", None, []), ("b", "notes", None, [None])])]
+        for name, managers, others, notes, expected in cases:
             with self.subTest(name):
-                summaries = {"feedback": {"pieces": pieces},
+                summaries = {"manager": {"going_well": [], "to_improve": [], "context": managers},
+                             "other": {"going_well": [], "to_improve": [], "context": others},
                              "notes": {"going_well": [], "to_improve": [], "context": notes},
                              "slack": {"going_well": [], "to_improve": [], "context": []}}
-                points = build_data.observations(summaries, [], [])["context"]
-                self.assertEqual([(point["point"], point["source"], point["date"], point["period"],
+                points = build_data.observations(summaries, [])["context"]
+                self.assertEqual([(point["point"], point["source"], point["date"],
                                    [item["date"] for item in point["evidence"]]) for point in points], expected)
 
-    def test_split_reviews(self):
-        # name: (the reviews' dates, in their order, the in-period ones', the
-        # previous ones'): a review dated within the period is the period's,
-        # one before it or undated, the most recent, a previous one, in the
-        # order given, one after it neither.
-        cases = [("in the period, edges included", ["2026-11-10", "2026-10-15", "2026-08-10"],
-                  ["2026-11-10", "2026-10-15", "2026-08-10"], []),
-                 ("before the period", [
-                  "2026-08-09", "2025-12-31"], [], ["2026-08-09", "2025-12-31"]),
-                 ("undated, the latest previous one", [None, "2026-09-01", "2026-06-30"], ["2026-09-01"],
-                  [None, "2026-06-30"]),
-                 ("previous given oldest first", ["2025-12-31", "2026-06-30"], [],
-                  ["2026-06-30", "2025-12-31"]),
-                 ("after the period, neither", ["2026-11-11"], [], [])]
-        for name, dates, in_period, previous in cases:
-            with self.subTest(name):
-                found = build_data.split_reviews(
-                    [{"date": day} for day in dates], "2026-08-10", "2026-11-10")
-                self.assertEqual(([piece["date"] for piece in found[0]], [piece["date"] for piece in found[1]]),
-                                 (in_period, previous))
+    def test_the_manager_feedback_is_a_source_of_every_part(self):
+        # The current manager feedback's points, like the other feedback's,
+        # carry their source, no date and no evidence in going well, to
+        # improve and context alike.
+        feedback = {"going_well": [{"point": "g", "values": []}], "to_improve": [{"point": "i", "values": []}],
+                    "context": ["c"]}
+        empty = {"going_well": [], "to_improve": [], "context": []}
+        observed = build_data.observations(
+            {"manager": feedback, "other": empty, "notes": empty, "slack": empty}, [])
+        points = [point for part in ("going_well", "to_improve") for group in observed[part] for point in group["points"]
+                  ] + observed["context"]
+        self.assertEqual([(point["id"], point["point"], point["source"], point["date"], point["evidence"])
+                          for point in points],
+                         [("G1", "g", "manager", None, []), ("I1", "i", "manager", None, []),
+                          ("C1", "c", "manager", None, [])])
 
-    def test_review_points(self):
-        # An in-period review's points join the observations as a piece's,
-        # by its period, with ids by part and place; the previous reviews
-        # give the step change its baseline, the first of them, its points
-        # with ids, the earlier ones' as texts; none, null.
-        def review(day, period, point):
-            return {"period": period, "date": day, "rating": None, "going_well": [],
-                    "to_improve": [{"point": point, "values": ["Teamwork"]}], "context": [f"{point} context"]}
-        summaries = {"feedback": {"pieces": []}, **{source: {"going_well": [], "to_improve": [], "context": []}
-                                                    for source in ("notes", "slack")}}
-        found = build_data.observations(
-            summaries, [review("2026-09-01", "Q3", "a")], ["Teamwork"])
-        self.assertEqual((found["to_improve"], found["context"]), (
-            [{"value": "Teamwork", "points": [{"id": "I1", "point": "a", "also": None, "source": "reviews",
-                                               "date": "2026-09-01", "period": "Q3", "evidence": []}]}],
-            [{"id": "C1", "point": "a context", "source": "reviews", "date": "2026-09-01", "period": "Q3",
-              "evidence": []}]))
-        self.assertEqual(build_data.previous_reviews(
-            [review(None, None, "b"), review("2026-06-30", "H1", "c")]),
-            {"latest": {"period": None, "date": None, "rating": None, "going_well": [],
-                        "to_improve": [{"id": "R-I1", "point": "b", "values": ["Teamwork"]}],
-                        "context": [{"id": "R-C1", "point": "b context"}]},
-             "earlier": [{"period": "H1", "date": "2026-06-30", "going_well": [], "to_improve": ["c"],
-                          "context": ["c context"]}]})
-        self.assertIsNone(build_data.previous_reviews([]))
-
-    def test_manager_view(self):
-        # The manager's view the view check compares with the period: its
-        # points with ids by part and place, prefixed V-, a context point's
-        # text alone.
-        self.assertEqual(build_data.manager_view(ORIENTATION), VIEW)
+    def test_baselines(self):
+        # The previous feedback, which the step change compares with the
+        # period: its points with ids by part and place, prefixed P-, a context
+        # point's text alone; null when it has no points.
+        empty = {"going_well": [], "to_improve": [], "context": []}
+        feedback = {"going_well": [], "to_improve": [{"point": "b", "values": ["Teamwork"]}],
+                    "context": ["b context"]}
+        self.assertEqual(build_data.baseline_parts(feedback),
+                         {"going_well": [], "to_improve": [{"id": "P-I1", "point": "b", "values": ["Teamwork"]}],
+                          "context": [{"id": "P-C1", "point": "b context"}]})
+        self.assertIsNone(build_data.baseline_parts(empty))
 
     def test_model_fixtures(self):
         # name: (a model the report's tests use, worked out by hand): its

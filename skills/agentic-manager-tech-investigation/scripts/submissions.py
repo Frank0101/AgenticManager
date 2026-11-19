@@ -12,7 +12,7 @@ import re
 from common import (DESIGN_ORDER, COVERAGE, coverage_fields, OUTSIDE_SCOPE, SCOPE_ANSWERS, SCOPE_QUESTION, TABLES, USER_DECIDED,
                     RECORD_ID, citation, ids, read_in_part, recorded_ids)
 from ledger import (as_written, input_columns, basis, duplicate_of, finish_write, find_row,
-                    header_of, move_row, next_id, put_row, refuse_cited, search_reference, set_design_basis,
+                    move_row, next_id, put_row, refuse_cited, search_reference, set_design_basis,
                     table_rows, write_rows)
 
 # A submission's fields for each kind of record, in the order of the ledger's
@@ -107,7 +107,7 @@ def submit_research(lines, question, data):
     sources = problems.items(data, "sources", required=False)
     findings = problems.items(data, "findings", required=False)
     questions = problems.items(data, "new_questions", required=False)
-    outcome = data.get("outcome") if isinstance(data, dict) else None
+    outcome = data.get("outcome")
     # Every key first, so records can cite each other in any order.
     keys = {}
     claim_reading(lines, sources, findings, keys, allocator, problems)
@@ -192,7 +192,7 @@ def submit_design(lines, data):
         allocator.claim(keys, "questions", item,
                         f"new_questions[{number}]", problems)
     for table in DESIGN_ORDER:
-        write_rows(lines, table, [], header_of(lines, table))
+        write_rows(lines, table, [])
     written = []
     for table in DESIGN_ORDER:
         for number, item in enumerate(items[table]):
@@ -304,7 +304,7 @@ def read_before(lines, item):
 def key_of(item):
     """The key a record `item` declares, without its brackets: a new one, such
     as f1, or the ID of a row it keeps, such as C03."""
-    return referenced(item.get("key") if isinstance(item, dict) else None)
+    return referenced(item.get("key"))
 
 
 def referenced(text):
@@ -358,12 +358,12 @@ def partial_limits(lines, item, cells, where, problems, keys):
     return " ".join(["" if notes and cells[2] == "None" else cells[2], *notes]).strip()
 
 
-def add_questions(lines, questions, keys, problems, where="new_questions"):
+def add_questions(lines, questions, keys, problems):
     """Write each new question as a ready one, one with "for": "user" as a
     scope question; returns the values written."""
     written = []
     for number, item in enumerate(questions):
-        at = f"{where}[{number}]"
+        at = f"new_questions[{number}]"
         cells = problems.cells(item, "questions", at,
                                keys, extra=["key", "for"])
         if cells is not None and item.get("for", "user") != "user":

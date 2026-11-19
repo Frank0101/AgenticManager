@@ -44,9 +44,9 @@ class ScriptTest(unittest.TestCase):
         self.home.cleanup()
 
     # Runs the script and returns (exit code, parsed JSON output).
-    def run_script(self, *args, script=SCRIPT):
+    def run_script(self, *args):
         env = dict(os.environ, HOME=self.home.name)
-        proc = subprocess.run([sys.executable, script, *args], env=env,
+        proc = subprocess.run([sys.executable, SCRIPT, *args], env=env,
                               capture_output=True, text=True)
         return proc.returncode, json.loads(proc.stdout)
 
@@ -376,23 +376,6 @@ class CheckConfigTest(ScriptTest):
         for name, documented, expected in cases:
             with self.subTest(name):
                 self.assertEqual(documented, expected)
-
-
-# An install with the template missing, run against a copy of the package.
-class InstallTest(ScriptTest):
-    # Runs a copy of the package without its template, as an install with the
-    # template missing.
-    def run_without_template(self, *args):
-        package = os.path.join(self.home.name, "copy", "agentic_manager")
-        shutil.copytree(PACKAGE_DIR, package,
-                        ignore=shutil.ignore_patterns("__pycache__"))
-        os.remove(os.path.join(package, "config-template.json"))
-        return self.run_script(*args, script=os.path.join(package, "check_config.py"))
-
-    def test_missing_template(self):
-        code, out = self.run_without_template()
-        self.assertEqual(code, 1, out)
-        self.assertIn("config-template.json not found", out["errors"][0])
 
 
 if __name__ == "__main__":

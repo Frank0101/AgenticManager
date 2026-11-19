@@ -182,7 +182,8 @@ SPRINT_REPORT = {"contents": {
     "puntedIssues": [entry(k) for k in ("PROJ-3", "PROJ-4", "PROJ-8", "PROJ-11")],
 }}
 
-COMMENTS = {"PROJ-7": [{"id": "1", "body": "Waiting on a dependency."}]}
+COMMENTS = {
+    "PROJ-7": [{"id": "1", "created": ts(11), "body": "Waiting on a dependency."}]}
 
 # The pull requests the fetch found, as fetch_sprint.py stores them, the
 # ticket's own before its sub-tasks': PROJ-1's own, one opened after the close

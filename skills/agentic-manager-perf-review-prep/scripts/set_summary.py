@@ -1,35 +1,26 @@
-"""Records a summary of what the manager gives: their view of a prep's person, the person's previous reviews, or the period's feedback.
+"""Records a summary of what the manager gives: the current manager feedback on a prep's person, the other feedback given in the period, or the previous feedback.
 
 One script serves the three, as they are recorded the same way and differ
-only in their file and rules. The agent writes the summary as JSON on stdin,
-a quoted here-document, so nothing in it needs escaping. A point's values,
-and a review's rating, must be the company's, as rules.py prints them. It is
-checked before anything is written, by the rules the final check applies,
-and written whole each time, in the order given, so a correction is one
-more call with all of it.
+only in their file. The agent writes the summary as JSON on stdin, a quoted
+here-document, so nothing in it needs escaping. A point's values must be the
+company's, as rules.py prints them. It is checked before anything is
+written, by the rules the final check applies, and written whole each time,
+in the order given, so a correction is one more call with all of it.
 """
 import argparse
 import json
 
-from common import (FEEDBACK, ORIENTATION, RATINGS, REVIEWS, SUMMARY_HELP, VALUES, company_names, feedback_problems,
-                    orientation_problems, prep_dir, reviews_problems, stdin_json, write_prep_file)
+from common import (FEEDBACK_FILES, SUMMARY_HELP, VALUES, company_names, feedback_problems, prep_dir, stdin_json,
+                    write_prep_file)
 
-PIECES_HELP = """
-Each part is a list of points, [] when the piece says nothing of it. Write
-{"pieces": []} when the manager has none. List them from the most recent,
-those with no date first: they're written in the order given."""
-DATE_HELP = """\
-  date        the last day of that period, as YYYY-MM-DD, as you read it from
-              the source, such as 2026-06-30 for a mid-year review, or null
-              when it gives no hint of one; it only orders the evidence, and
-              the report shows the period
-"""
-# Each kind: the file it's written to, why a value isn't one, and its input.
-KINDS = {
-    "orientation": (ORIENTATION, lambda value: orientation_problems(value, company_names(VALUES)), """\
-the manager's view, summarised in its parts, such as:
+# What each kind is of, as the manager gives it.
+KINDS = {"manager": "the current manager feedback on the person",
+         "other": "the other feedback given in the period",
+         "previous": "the previous feedback, usually the previous official feedback"}
+INPUT = """\
+the text summarised in its parts, such as:
 
-  python3 set_summary.py --prep Jane-Doe_26-11-10 --of orientation <<'END_OF_INPUT'
+  python3 set_summary.py --prep Jane-Doe_26-11-10 --of other <<'END_OF_INPUT'
   {
     "going_well": [{"point": "Jane has led the billing migration well since May", "values": ["Ownership"]}],
     "to_improve": [{"point": "Jane could share progress with the wider team more often", "values": ["Teamwork"]}],
@@ -39,52 +30,10 @@ the manager's view, summarised in its parts, such as:
 
 """ + SUMMARY_HELP + """
 
-Each part is a list of points, [] when the manager said nothing of it."""),
-    "reviews": (REVIEWS, lambda value: reviews_problems(value, company_names(RATINGS), company_names(VALUES)), """\
-every previous review, such as:
+Each part is a list of points, [] when the text says nothing of it, all three
+when it says nothing of the person.
 
-  python3 set_summary.py --prep Jane-Doe_26-11-10 --of reviews <<'END_OF_INPUT'
-  {"pieces": [
-    {"period": null, "date": null, "rating": null,
-     "going_well": [{"point": "Jane built a community of practice that reaches other teams",
-                     "values": ["Teamwork", "Ownership"]}],
-     "to_improve": [], "context": []},
-    {"period": "Mid Year Review 2026", "date": "2026-06-30", "rating": "Meets",
-     "going_well": [{"point": "Jane delivered the billing migration on time", "values": ["Ownership"]}],
-     "to_improve": [{"point": "Jane could lead a design review alone", "values": []}],
-     "context": ["Jane moved to the payments team in March"]}
-  ]}
-  END_OF_INPUT
-
-  period      the period the review covers, as it names it, such as a date
-              or "Mid Year Review 2026", or null when it names none
-""" + DATE_HELP + """\
-  rating      the rating it gave, one of the company's, as rules.py prints
-              them, or null when it gives none of them
-""" + SUMMARY_HELP + PIECES_HELP),
-    "feedback": (FEEDBACK, lambda value: feedback_problems(value, company_names(VALUES)), """\
-every piece of the period's feedback, such as:
-
-  python3 set_summary.py --prep Jane-Doe_26-11-10 --of feedback <<'END_OF_INPUT'
-  {"pieces": [
-    {"period": "Q3 2026", "date": "2026-09-30",
-     "going_well": [{"point": "Jane agreed to own the billing migration and has kept to its plan",
-                     "values": ["Ownership"]}],
-     "to_improve": [{"point": "Jane agreed to share progress with the wider team every week",
-                     "values": ["Teamwork"]}],
-     "context": []},
-    {"period": null, "date": null,
-     "going_well": [{"point": "Jane fixed a billing bug the same day, as the support team thanked them for",
-                     "values": ["Ownership"]}],
-     "to_improve": [], "context": []}
-  ]}
-  END_OF_INPUT
-
-  period      the period the piece covers, as it names it, such as a date,
-              "Q3 2026" or "1:1 of 08/10/2026", or null when it names none
-""" + DATE_HELP + SUMMARY_HELP + PIECES_HELP),
-}
-OUTPUT = "Prints one line of JSON: path, the file written."
+Prints one line of JSON: path, the file written."""
 
 
 def set_summary(prep, kind, value):
@@ -92,27 +41,25 @@ def set_summary(prep, kind, value):
     prep `prep`'s file for it, after checking it; returns the file's path.
     Exits, writing nothing, with every problem."""
     prep_dir(prep)  # exits if the prep isn't there
-    name, problems_of, _ = KINDS[kind]
-    if problems := problems_of(value):
+    if problems := feedback_problems(value, kind, company_names(VALUES)):
         raise SystemExit("; ".join(problems) + "\n\n" + input_help(kind))
-    return write_prep_file(prep, name, value)
+    return write_prep_file(prep, FEEDBACK_FILES[kind], value)
 
 
 def input_help(kind):
     """What to send on stdin for the kind `kind`, with a command to copy."""
-    return f"Input, on stdin, for --of {kind}: {KINDS[kind][2]}\n\n{OUTPUT}"
+    return f"Input, on stdin, for --of {kind}: {INPUT}"
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Record a summary of what the manager gave: their view of the prep's person "
-        "(orientation), the person's previous reviews (reviews), or the period's feedback (feedback).",
-        epilog="\n\n".join(input_help(kind) for kind in KINDS), formatter_class=argparse.RawDescriptionHelpFormatter)
+        description="Record a summary of what the manager gave: " + "; ".join(
+            f"{kind}, {what}" for kind, what in KINDS.items()) + ".",
+        epilog=input_help("other"), formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--prep", required=True,
                         help="the prep's folder, <Person>_<YY-MM-DD>, as init_prep.py printed it")
     parser.add_argument("--of", required=True, choices=list(KINDS),
-                        help="what the summary is of: orientation, the manager's view; reviews, the previous reviews; or "
-                        "feedback, the period's feedback")
+                        help="what the summary is of: " + "; ".join(f"{kind}, {what}" for kind, what in KINDS.items()))
     args = parser.parse_args(argv)
     value = stdin_json(input_help(args.of))
     print(json.dumps({"path": set_summary(

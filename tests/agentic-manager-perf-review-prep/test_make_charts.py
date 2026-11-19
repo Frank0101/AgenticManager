@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import unittest
+from datetime import date
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
@@ -52,7 +53,7 @@ class MakeChartsTest(unittest.TestCase):
                                  (expected, [*expected[1:], "average"]))
 
     def test_over_time_chart(self):
-        # A point per week, each month named once, under its first week, even
+        # A point per week, each month named in the middle of its days, even
         # when the period starts mid-week; a thin line for each group, in its
         # colour, those with none left out, under the total's.
         chart = make_charts.over_time_chart([1, 0, 1], [("#123456", [1, 0, 0]), (make_charts.OTHER, [0, 0, 0]),
@@ -127,6 +128,48 @@ class MakeChartsTest(unittest.TestCase):
         plot = make_charts.WIDTH - make_charts.LEFT - make_charts.RIGHT
         self.assertAlmostEqual(
             float(line[1]), make_charts.LEFT + plot / 2, places=0)
+
+    def test_over_time_points_sit_at_their_week_ends_on_a_date_scale(self):
+        # name: (the period's first and last day, the places of the points, of
+        # the month separators and of the month names, each as a day's offset
+        # from the first day, over the period's span): a point at the date of
+        # its week's last day, so a short week at an edge is close to its
+        # neighbour; a separator at each month's first day, on the same scale;
+        # each month named in the middle of its days in the period.
+        plot = make_charts.WIDTH - make_charts.LEFT - make_charts.RIGHT
+
+        def x(offset, span):
+            return make_charts.LEFT + plot * offset / span
+        cases = [("a clipped first and last week", "2026-07-01", "2026-08-05",
+                  [4, 11, 18, 25, 32, 35], [31], [15, 33]),
+                 ("whole weeks over a month's turn", "2026-07-27", "2026-08-09",
+                  [6, 13], [5], [2, 9]),
+                 ("a one-day last week", "2026-07-06", "2026-07-20", [6, 13, 14], [], [7])]
+        for name, first, last, points, separators, names in cases:
+            with self.subTest(name):
+                weeks = common.calendar_weeks(first, last)
+                chart = make_charts.over_time_chart(
+                    [1] * len(weeks), [], weeks, "created", [], 200)
+                span = (date.fromisoformat(last) -
+                        date.fromisoformat(first)).days
+                found = re.search(
+                    r'<polyline points="([^"]+)" fill="none" stroke="#3d3d3d"', chart)
+                assert found is not None, "the chart has no total line"
+                line = found[1]
+                self.assertEqual([float(point.split(",")[0]) for point in line.split()],
+                                 [round(x(offset, span), 1) for offset in points])
+                dividers = re.findall(
+                    r'<line x1="([\d.]+)" y1="12" [^>]*stroke-dasharray="3 3"', chart)
+                self.assertEqual([float(place) for place in dividers],
+                                 [round(x(offset, span), 1) for offset in separators])
+                named = re.findall(
+                    r'<text x="([\d.]+)"[^>]*>(?:Jul|Aug)<', chart)
+                self.assertEqual([float(place) for place in named],
+                                 [round(x(offset, span), 1) for offset in names])
+        # A lone week is centred, as a single point has no scale.
+        lone = make_charts.over_time_chart(
+            [3], [], [["2026-07-06", "2026-07-12"]], "created", [], 200)
+        self.assertIn(f'{make_charts.LEFT + plot / 2:.1f},', lone)
 
     def test_value_labels(self):
         # Each point of the total and each bar has its value written over

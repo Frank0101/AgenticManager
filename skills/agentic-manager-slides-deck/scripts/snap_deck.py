@@ -112,7 +112,7 @@ def sheet_page(pictures):
     return page, (width, height)
 
 
-def chrome_command(chrome, profile, picture, page, size=(SLIDE_WIDTH, SLIDE_HEIGHT)):
+def chrome_command(chrome, profile, picture, page, size):
     """The command that shoots the page file `page` into the PNG `picture`, at
     the window size `size`, with the throwaway profile folder `profile`."""
     return [chrome, "--headless", f"--user-data-dir={profile}", "--no-first-run", "--hide-scrollbars",

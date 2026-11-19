@@ -22,22 +22,16 @@ CHARTS_DATA = re.compile(r"const charts = (.*);\n")
 
 
 def check_deck(deck):
-    """{"ok", "errors", "placeholders", "stand_ins"} of the deck folder `deck`."""
+    """{"ok", "errors", "placeholders", "stand_ins"} of the deck folder `deck`,
+    against the slides.json it was built from."""
     folder = deck_dir(deck)
-    errors, placeholders, stand_ins = check(
-        folder, deck, read_json(os.path.join(folder, SLIDES)))
-    return {"ok": not errors, "errors": errors, "placeholders": placeholders, "stand_ins": stand_ins}
-
-
-def check(folder, deck, content):
-    """(errors, placeholders, stand-ins) of the deck in `folder` against
-    `content`, the slides.json it was built from."""
+    content = read_json(os.path.join(folder, SLIDES))
     errors = []
     if problem := folder_problem(folder, expected_files(deck)):
         errors.append(problem)
     path = os.path.join(folder, deck_file(deck))
     if not os.path.isfile(path):
-        return errors, [], []
+        return {"ok": not errors, "errors": errors, "placeholders": [], "stand_ins": []}
     page, raw = read_page(path)
     if page.title.strip() != content["title"].strip():
         errors.append(
@@ -104,7 +98,8 @@ def check(folder, deck, content):
     if token or PAGE in raw:
         errors.append(
             f"the page still holds a token: {token[0] if token else PAGE}")
-    return errors, PLACEHOLDER.findall("".join(page.text)), page.stand_ins
+    return {"ok": not errors, "errors": errors, "placeholders": PLACEHOLDER.findall("".join(page.text)),
+            "stand_ins": page.stand_ins}
 
 
 def read_page(path):

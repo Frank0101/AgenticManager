@@ -10,13 +10,13 @@ extension.
 from pathlib import Path
 import re
 
-from common import (folder_problem, CELL_PIPE, CITATION, DEFINITION, DESIGN_ORDER, FLOW_HEADER, HEADING, IDENTITY_HEADER, LEDGER,
+from common import (folder_problem, CELL_PIPE, DEFINITION, DESIGN_ORDER, FLOW_HEADER, HEADING, IDENTITY_HEADER, LEDGER,
                     LEDGER_SECTIONS, LINKS, CODE_SPAN, QUEUE, QUEUE_SUBSECTIONS, REFERENCE_LINK, SOURCE_FINDINGS_COLUMN,
-                    TABLE_HEADINGS, UNUSED, anchor_ids, backtick_error, cited_sources, claim_length_problem,
-                    design_evidence, expected_files, flow_states, headings, id_order, identity_states, ids,
-                    ledger_rows, link_definitions, links, listed, local_link, markdown, records, reference_key,
-                    report_headings, row_problem, section_span, strip_anchors, table_cells, unlinked_backticks,
-                    unlinked_references, unrecorded_ids, without_code)
+                    TABLE_HEADINGS, UNUSED, backtick_error, cited_sources,
+                    design_evidence, expected_files, flow_states, headings, id_order, identity_states, ids, is_separator,
+                    ledger_rows, link_definitions, link_problems, links, listed, markdown, records, reference_key,
+                    report_headings, row_problem, section_span, strip_anchors, unlinked_backticks,
+                    unlinked_references, unrecorded_citations, without_code)
 
 
 def check_report(report):
@@ -41,33 +41,8 @@ def check_report(report):
         errors.append("H2/H3 headings must occur exactly in this order: " +
                       " → ".join("#" * level + " " + title for level, title in expected))
     definitions = link_definitions(prose)
-    all_links = list(links(prose, definitions))
-    checked, headings_of = set(), {}
-    for start, _, _, target in all_links:
-        line = text.count("\n", 0, start) + 1
-        if target is None:
-            errors.append(f"Line {line}: unresolved Markdown link reference.")
-            continue
-        local = local_link(report, target)
-        if local is None or local[0] == report:
-            continue
-        path, anchor = local
-        if anchor and path.suffix.lower() == ".md" and path.is_file():
-            if path not in headings_of:
-                try:
-                    headings_of[path] = anchors(path)
-                except (OSError, UnicodeError):
-                    headings_of[path] = set()
-            if anchor not in headings_of[path]:
-                file, _, fragment = target.partition("#")
-                errors.append(
-                    f"Line {line}: {file} has no heading for #{fragment}")
-        if path in checked:
-            continue
-        checked.add(path)
-        if not path.exists():
-            errors.append(
-                f"Line {line}: local link target is missing: {target}")
+    for start, problem in link_problems(prose, definitions, report):
+        errors.append(f"Line {text.count(chr(10), 0, start) + 1}: {problem}.")
     ledger_text = ""
     if not (report.parent / LEDGER).is_file():
         errors.append(f"Missing research artifact: {LEDGER}.")
@@ -103,8 +78,8 @@ def check_report(report):
 
 def check_ledger(path):
     """(errors, warnings) of the ledger's structure: its sections and the
-    queue's in order, findings written once, within their length, and every
-    one cited written, reference links defined, and every ticket and pull
+    queue's in order, findings written once, reference links
+    defined, and every ticket and pull
     request linked."""
     errors, warnings = [], []
     try:
@@ -138,16 +113,6 @@ def check_ledger(path):
     if duplicates:
         errors.append(f"{LEDGER}: findings written more than once: " +
                       ", ".join(duplicates) + "; keep one row each")
-    for row in findings:
-        too_long = claim_length_problem(row[0], row[1])
-        if too_long:
-            errors.append(f"{LEDGER}: {too_long}")
-    # Only a citation refers to a finding; a bare F-shaped word is prose.
-    undefined = sorted({m[1] for m in CITATION.finditer(body) if m[1].startswith("F")} - set(written),
-                       key=id_order)
-    if undefined:
-        errors.append(
-            f"{LEDGER}: findings cited but never written: " + ", ".join(undefined))
     missing_keys, unused_keys = reference_problems(body)
     if missing_keys:
         errors.append(
@@ -168,8 +133,7 @@ def handover_problems(body):
     outside their rules, IDs cited but not recorded, columns the script writes
     edited by hand, and references in backticks without a link."""
     errors = [f"{LEDGER}: {p}" for p in closing_problems(body)]
-    # Findings are checked against their own table by check_ledger, once.
-    unrecorded = [i for i in unrecorded_ids(body) if not i.startswith("F")]
+    unrecorded = unrecorded_citations([body], body)
     if unrecorded:
         errors.append(
             f"{LEDGER}: IDs cited but never recorded: " + ", ".join(unrecorded))
@@ -196,23 +160,13 @@ def report_table_rows(prose):
     lines = prose.splitlines()
     active = False
     for index, line in enumerate(lines):
-        cells = table_cells(line)
-        separator = len(cells) > 1 and all(
-            re.fullmatch(r":?-+:?", cell) for cell in cells)
-        if separator and index and "|" in lines[index - 1]:
+        if is_separator(line) and index and "|" in lines[index - 1]:
             active = True
             continue
         if active and "|" in line and line.strip():
             yield index + 1, line
         else:
             active = False
-
-
-def anchors(path):
-    """Every anchor of a Markdown file: its headings', with -1, -2... for
-    repeats, and the HTML anchors of the ledger's IDs."""
-    text = path.read_text(encoding="utf-8")
-    return {anchor for _, _, anchor in headings(text)} | anchor_ids(text)
 
 
 def reference_problems(body):

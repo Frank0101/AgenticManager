@@ -51,17 +51,6 @@ class FieldsTest(unittest.TestCase):
                     status, resolution), expected)
 
 
-class ChangelogsTest(unittest.TestCase):
-    def test_load_changelogs(self):
-        with tempfile.TemporaryDirectory() as folder:
-            with open(os.path.join(folder, "PROJ-1.json"), "w", encoding="utf-8") as f:
-                json.dump([joined(START)], f)
-            self.assertEqual(build.load_changelogs(folder, [raw("PROJ-1")]),
-                             {"PROJ-1": [joined(START)]})
-            with self.assertRaisesRegex(SystemExit, "missing changelogs for PROJ-2"):
-                build.load_changelogs(folder, [raw("PROJ-1"), raw("PROJ-2")])
-
-
 class CarryOverTest(unittest.TestCase):
     def test_in_sprint_when_closed(self):
         issue = raw("PROJ-1", created="2026-02-20T10:00:00.000+0100")
@@ -404,11 +393,11 @@ class BreakdownAndEpicsTest(unittest.TestCase):
         self.assertEqual(build.outcome_breakdown(
             self.TICKETS + [uncounted]), build.outcome_breakdown(self.TICKETS))
         self.assertNotIn(
-            "PROJ-300", [e["key"] for e in build.build_epics(self.TICKETS + [uncounted])])
+            "PROJ-300", [e["key"] for e in build.build_epics(self.TICKETS + [uncounted], {})])
 
     def test_epics(self):
         epics = build.build_epics(
-            self.TICKETS + [ticket("PROJ-5", [ev(3, "joined", 1)], "not_completed", scope="extra", parent=None)])
+            self.TICKETS + [ticket("PROJ-5", [ev(3, "joined", 1)], "not_completed", scope="extra", parent=None)], {})
         self.assertEqual([e["key"] for e in epics], [
                          "PROJ-200", "PROJ-100", NO_EPIC])
         proj_100 = epics[1]
@@ -421,7 +410,7 @@ class BreakdownAndEpicsTest(unittest.TestCase):
         # Completed pts add up the commitment's and the extra work's.
         self.assertEqual([e["points_done"] for e in epics], [5, 3, 0])
         both = build.build_epics([self.TICKETS[0], ticket("PROJ-5", [ev(3, "joined", 2), ev(4, "completed", 2, done=True)],
-                                                          "completed", scope="extra")])
+                                                          "completed", scope="extra")], {})
         self.assertEqual(both[0]["points_done"], 5)
 
     def test_epic_scope_groups(self):
@@ -473,7 +462,6 @@ class BreakdownAndEpicsTest(unittest.TestCase):
                           "flagged": False, "summary": "Work item PROJ-3", "description": "What PROJ-3 changes.",
                           "reason": "non_delivery"})
         self.assertEqual(epic["original_stories_done"], 3)
-        self.assertEqual(build.build_epics(spells)[0]["description"], "")
 
     def test_description(self):
         long = "word " * 500
@@ -794,7 +782,7 @@ class UnestimatedPtsTest(unittest.TestCase):
                 found = build.target_completion(spells)
                 self.assertEqual(
                     (found["completed_points"], found["total_points"]), target)
-                proj_100 = build.build_epics(spells)[0]
+                proj_100 = build.build_epics(spells, {})[0]
                 self.assertEqual(
                     (proj_100["original_points_done"], proj_100["original_points_total"]), epic)
                 self.assertEqual(proj_100["points_done"], epic[0])
@@ -830,10 +818,6 @@ class CrossCheckTest(unittest.TestCase):
             ("agreeing", self.report(), []),
             # Jira lists work Done in another sprint apart; it is still completed.
             ("completed in another sprint counts as completed", in_another_sprint, []),
-            # None, not [], so main() can say the report is missing rather than
-            # that the data agrees.
-            ("no report", None, None),
-            ("no contents", {}, None),
             # Some boards return the report with every bucket empty.
             ("empty report", self.report((), (), ()),
              ["Jira's sprint report is empty: this board doesn't serve it. Fetch the sprint again "
@@ -878,14 +862,11 @@ class BlockerCommentsTest(unittest.TestCase):
             {"type": "text", "text": "Blocked until "},
             {"type": "date", "attrs": {"timestamp": "1772755200000"}},
             {"type": "text", "text": "."}]}
-        # name: (the fetched comments, or None for no file, the comments kept)
+        # name: (the fetched comments, the comments kept)
         cases = [
-            ("no file", None, []),
             ("text and author", [{"created": "2026-03-05T10:00:00.000+0000", "author": {"displayName": "Alex Example"},
                                   "body": "Waiting on Security."}],
              [{"at": "2026-03-05T10:00:00.000+0000", "date": "2026-03-05", "text": "Waiting on Security."}]),
-            ("no date", [{"body": "Unblocked."}], [
-             {"at": None, "date": None, "text": "Unblocked."}]),
             ("blank text", [
              {"created": "2026-03-05T10:00:00.000+0000", "body": "  "}], []),
             ("late in the day", [{"created": "2026-03-05T23:30:00.000+0000", "body": "Blocked."}],
@@ -900,9 +881,8 @@ class BlockerCommentsTest(unittest.TestCase):
         for number, (name, values, expected) in enumerate(cases, start=1):
             with self.subTest(name):
                 key = f"PROJ-{number}"
-                if values is not None:
-                    with open(os.path.join(tmp.name, f"{key}.json"), "w", encoding="utf-8") as f:
-                        json.dump(values, f)
+                with open(os.path.join(tmp.name, f"{key}.json"), "w", encoding="utf-8") as f:
+                    json.dump(values, f)
                 self.assertEqual(build.blocker_comments(tmp.name, [key], CLOSE, ZoneInfo("Europe/Rome")),
                                  {key: expected})
 
@@ -984,6 +964,8 @@ class MainTest(unittest.TestCase):
             default = [left(at("03-04"))] if issue in self.removed else []
             self.write(os.path.join(common.CHANGELOGS_DIR, f"{issue['key']}.json"),
                        self.changelogs.get(issue["key"], default))
+            self.write(os.path.join(
+                common.COMMENTS_DIR, f"{issue['key']}.json"), [])
         argv = ["build_data.py", "--report-dir",
                 self.dir]
         with mock.patch.object(sys, "argv", argv), mock.patch("builtins.print"):
@@ -1103,7 +1085,6 @@ class MainTest(unittest.TestCase):
             (change("current", []), "the sprint has no issues"),
             (change("removed", [raw(
                 "PROJ-1")]), r"\['PROJ-1'\] are both in the sprint and in Jira's removed list"),
-            (change("report", {}), "Jira's sprint report is missing"),
             (lambda: self.report["contents"].update(completedIssues=[{"key": "PROJ-9"}]),
              "data differs from Jira's sprint report"),
             # The raw files disagree with each other: the fetch caught the

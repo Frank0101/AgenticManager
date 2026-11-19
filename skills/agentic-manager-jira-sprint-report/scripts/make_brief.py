@@ -10,7 +10,7 @@ never reads the raw files, so every fact it gives is the model's.
 import argparse
 import os
 
-from common import (BRIEF_FILE, DATA_FILE, SCOPE_GROUPS, chunks, pull_chunks, display_date,
+from common import (BRIEF_FILE, DATA_FILE, SCOPE_GROUPS, description_chunks, pull_chunks, display_date,
                     epic_title, link_text, read_json, spell_epic, write_json)
 from make_report import Report
 
@@ -49,11 +49,11 @@ def build_brief(data):
                     # with, whichever of its stays this is.
                     **{k: ticket[k] for k in ("scope", "status", "flagged", "summary")},
                     "points": latest[ticket["key"]],
-                    **first_chunk(chunks(ticket["description"])),
+                    **first_chunk(description_chunks(ticket["description"])),
                     **({"comments": brief_comments(comments[ticket["key"]])} if ticket["key"] in comments else {}),
                 })
         if tickets:
-            epics.append((epic["points_done"] or 0, {"key": epic["key"], "name": epic["name"], **first_chunk(chunks(epic["description"])),
+            epics.append((epic["points_done"] or 0, {"key": epic["key"], "name": epic["name"], **first_chunk(description_chunks(epic["description"])),
                                                      "tickets": tickets}))
     # By completed pts, commitment and extra together: the order Key
     # Achievements takes after the goal's themes. The figure itself stays out
@@ -97,7 +97,7 @@ def brief_events(events):
 def brief_comments(comments):
     """A blocker candidate's comments, as data.json holds them, without
     authors, dated as the brief dates everything."""
-    return [{"date": display_date(c["date"]) if c["date"] else None, "text": c["text"]} for c in comments]
+    return [{"date": display_date(c["date"]), "text": c["text"]} for c in comments]
 
 
 def first_chunk(pieces):

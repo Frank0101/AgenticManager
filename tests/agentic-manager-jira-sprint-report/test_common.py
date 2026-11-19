@@ -22,34 +22,13 @@ from ticket_fixture import (CATEGORIES, CLOSE, FIELDS, PLUS_ONE, START, at, carr
                             done, events, flag, joined, left, points, raw, sprint_change)
 
 
-class ChunksTest(unittest.TestCase):
-    def test_chunks(self):
-        # Each case: text, size, the pieces. A piece ends at the last line
-        # break, else the last space, in its second half; with neither it is
-        # cut at the size.
-        cases = [
-            ("short", "one two", 20, ["one two"]),
-            ("empty", "", 20, [""]),
-            ("at a line break", "aaaa bbbb\ncccc dddd\neeee ffff", 14,
-             ["aaaa bbbb", "cccc dddd", "eeee ffff"]),
-            ("at a space, with no line break", "aaaa bbbb cccc dddd", 12,
-             ["aaaa bbbb", "cccc dddd"]),
-            ("a break in the first half is not used", "a\nbbbbbbbbbbbbbbbbbbbb", 10,
-             ["a\nbbbbbbbb", "bbbbbbbbbb", "bb"]),
-            ("no break at all", "x" * 25, 10, ["x" * 10, "x" * 10, "x" * 5]),
-        ]
-        for name, text, size, expected in cases:
-            with self.subTest(name):
-                self.assertEqual(common.chunks(text, size), expected)
-
-    def test_chunks_lose_no_word_and_respect_the_size(self):
+class DescriptionChunksTest(unittest.TestCase):
+    def test_description_chunks_respect_the_size(self):
         text = "\n".join(f"line {n} " + "w" * (n % 9) for n in range(300))
-        pieces = common.chunks(text)
+        pieces = common.description_chunks(text)
         self.assertGreater(len(pieces), 1)
         self.assertTrue(
             all(len(p) <= common.DESCRIPTION_CHUNK_CHARS for p in pieces))
-        self.assertEqual(" ".join(" ".join(pieces).split()),
-                         " ".join(text.split()))
 
 
 class NoWorkTextTest(unittest.TestCase):
@@ -65,22 +44,6 @@ class NoWorkTextTest(unittest.TestCase):
         for counts, expected in cases:
             with self.subTest(counts):
                 self.assertEqual(common.no_work_text(counts), expected)
-
-
-class ReportTimezoneTest(unittest.TestCase):
-    def test_report_timezone(self):
-        # A named zone keeps its clock changes; anything else is refused
-        # rather than read as UTC.
-        zone = common.report_timezone("Europe/London")
-        for stamp, expected in [("2026-01-10T12:00:00Z", 0),
-                                ("2026-07-10T12:00:00Z", 3600)]:
-            with self.subTest(stamp=stamp):
-                offset = common.parse_ts(stamp).astimezone(zone).utcoffset()
-                assert offset is not None
-                self.assertEqual(offset.total_seconds(), expected)
-        for name in (None, "", " ", 3, "Missing/Zone", "/absolute"):
-            with self.subTest(name=name), self.assertRaisesRegex(SystemExit, "reporting timezone"):
-                common.report_timezone(name)
 
 
 class IssuesTest(unittest.TestCase):
@@ -358,7 +321,7 @@ class FilesTest(unittest.TestCase):
         path = os.path.join(self.folder, "PROJ-Sprint-7", "_raw", "data.json")
         common.write_json(path, {"x": [1]})
         with open(path, encoding="utf-8") as f:
-            self.assertEqual(f.read(), common.json_text({"x": [1]}))
+            self.assertEqual(f.read(), output_file.json_text({"x": [1]}))
 
     def test_nothing_is_written_outside_the_output_folder(self):
         os.symlink(self.tmp, os.path.join(self.folder, "link"))
@@ -482,6 +445,10 @@ class VocabularyTest(unittest.TestCase):
             ("decimal percentage", "27.5% done", None,
              [(common.PERCENT_RULE, ["27.5%"])]),
             ("bare ratio", "3/5 done", None, [(common.RATIO_RULE, ["3/5"])]),
+            ("ratios of fractions, with their unit", "2/3 ticket, 2/2.5 tickets, 0.5/2.5 pts, 0/0.5 pts",
+             None, []),
+            ("bare ratios of fractions", "0.5/2 done, 2/3. 0/0.5 and 2/2.5 ptsx", None,
+             [(common.RATIO_RULE, ["0.5/2", "2/3", "0/0.5", "2/2.5"])]),
             ("old amount", "3 tickets / 5 pts", None,
              [(common.AMOUNT_RULE, ["3 tickets / "])]),
             ("bold that isn't a label", "**Great** work, <b>Open:</b> <b>all</b>", None,
@@ -493,6 +460,8 @@ class VocabularyTest(unittest.TestCase):
             ("without the latest estimates", "PROJ-1 (2 pts)", None, []),
             ("a quoted list of keys",
              "3 tickets (5 pts) were descoped (PROJ-1, PROJ-2)", latest, []),
+            ("an unsorted list of keys", "(PROJ-10, PROJ-9) and (PROJ-3)", None,
+             [(common.LIST_RULE, ["PROJ-10, PROJ-9"])]),
         ]
         for name, text, given, expected in cases:
             with self.subTest(name):

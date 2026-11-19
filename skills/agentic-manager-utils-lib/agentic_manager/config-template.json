@@ -35,12 +35,6 @@
     "root": "<path>"
   },
   "company": {
-    "perf-review-ratings": [
-      {
-        "rating": "<a performance review rating, the lowest listed first>",
-        "meaning": "<what it means>"
-      }
-    ],
     "values": [
       {
         "value": "<a company value>",

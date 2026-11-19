@@ -9,6 +9,7 @@ beside the runs, such as the kept examples, is the user's own: runs read it and
 none deletes it; the description.md saying what it holds is handled here.
 """
 import argparse
+import glob
 import json
 import os
 import re
@@ -22,6 +23,7 @@ if not __package__:
     sys.path.insert(0, os.path.dirname(
         os.path.dirname(os.path.realpath(__file__))))
 from agentic_manager.config import is_filled, load_config  # noqa: E402
+from agentic_manager.text import free_name  # noqa: E402
 
 # Where skills write their files when the config sets no output root.
 TEMP_ROOT = os.path.join(tempfile.gettempdir(), "agentic-manager")
@@ -30,8 +32,8 @@ DESCRIPTION = "description.md"
 # The folder beside a skill's runs that holds the examples the user kept.
 KEPT_EXAMPLES = "_examples"
 # Inside a run's folder, the folders that support its document: what it is
-# built from but doesn't read directly, such as what the sources gave and a
-# subagent's synopsis of a source, and the charts the document shows. Their _
+# built from but doesn't read directly, such as what the sources gave and the
+# list of conversations an agent found, and the charts the document shows. Their _
 # sets them apart from the document and the files the run reads and writes;
 # unlike a _ folder beside the runs, they belong to the run.
 RAW_DIR = "_raw"
@@ -108,8 +110,7 @@ def output_folder(name):
 def output_root():
     """The folder where skills write their files, with ~ expanded, or None if
     the config doesn't set one. Exits if the config can't be read."""
-    output = load_config().get("output")
-    root = output.get("root") if isinstance(output, dict) else None
+    root = load_config().get("output", {}).get("root")
     if not is_filled(root):
         return None
     return os.path.expanduser(root.strip())
@@ -209,6 +210,26 @@ def description(title, labelled, *more):
     lines = [f"# {title}", *(f"**{label}:** {text}" for label,
                              text in labelled.items()), *more]
     return "\n\n".join(lines) + "\n"
+
+
+def list_examples(folder):
+    """[(path, title, {label: text})] of the examples in `folder`, sorted by
+    name: each subfolder holding a description.md, as read_description()
+    reads it, with the path of the example's folder, absolute. A name starting
+    with _ is left out: it is a folder of the user's own, not an example."""
+    found = []
+    for path in sorted(glob.glob(os.path.join(folder, "*", DESCRIPTION))):
+        example = os.path.dirname(path)
+        if os.path.basename(example).startswith("_"):
+            continue
+        found.append((os.path.realpath(example), *read_description(path)))
+    return found
+
+
+def free_folder_name(folder, base):
+    """A name from `base` that nothing in `folder` has, such as for a new
+    example: `base`, else `base-2`, `base-3`."""
+    return free_name(base, lambda name: os.path.lexists(os.path.join(folder, name)))
 
 
 def read_description(path):

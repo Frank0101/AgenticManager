@@ -119,7 +119,7 @@ def day_argument(text):
 def is_day(value):
     """Whether `value` is a day written as YYYY-MM-DD, and only so."""
     try:
-        return isinstance(value, str) and len(value) == 10 and date.fromisoformat(value).isoformat() == value
+        return date.fromisoformat(value).isoformat() == value
     except ValueError:
         return False
 
@@ -128,6 +128,36 @@ def days(first, last):
     """Every day from the date `first` to the date `last`, both included, as
     dates."""
     return [first + timedelta(days=n) for n in range((last - first).days + 1)]
+
+
+def calendar_weeks(start, end):
+    """[[first, last]]: every calendar week, Monday to Sunday, of the period
+    from `start` to `end`, as YYYY-MM-DD, the first and last clipped to it."""
+    weeks, day = [], date.fromisoformat(start)
+    while day <= date.fromisoformat(end):
+        weeks.append(calendar_week(day.isoformat(), start, end))
+        day = date.fromisoformat(weeks[-1][1]) + timedelta(days=1)
+    return weeks
+
+
+def calendar_week(day, start, end):
+    """[first, last]: the calendar week, Monday to Sunday, of the day `day`,
+    clipped to the period from `start` to `end`, all as YYYY-MM-DD."""
+    monday = date.fromisoformat(
+        day) - timedelta(days=date.fromisoformat(day).weekday())
+    return [max(monday.isoformat(), start), min((monday + timedelta(days=6)).isoformat(), end)]
+
+
+def months_of(first, last):
+    """{YYYY-MM: {start, end}}: each month from `first` to `last`, its days
+    within them, as YYYY-MM-DD."""
+    months, day = {}, first
+    while day <= last:
+        following = (day.replace(day=28) + timedelta(days=4)).replace(day=1)
+        months[f"{day:%Y-%m}"] = {"start": day.isoformat(),
+                                  "end": min(last, following - timedelta(days=1)).isoformat()}
+        day = following
+    return months
 
 
 def main():

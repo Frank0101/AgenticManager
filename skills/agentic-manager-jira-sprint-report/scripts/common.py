@@ -11,22 +11,21 @@ import os
 import re
 import sys
 from datetime import tzinfo
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 LIB_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                        "..", "..", "agentic-manager-utils-lib")
 sys.path.insert(0, LIB_DIR)
-from agentic_manager.output_file import json_text, read_json, write_output_file, write_output_json  # noqa: E402,F401
-from agentic_manager.text import CHART_IMAGE, HEADING, INLINE_LINK, SMALL_TYPE, ai_marked, chart_image, html_table, as_name, display_date, link_text, number, plural, word_count  # noqa: E402,F401
+from agentic_manager.output_file import read_json, write_output_file, write_output_json  # noqa: E402,F401
+from agentic_manager.text import CHART_IMAGE, chunks, HEADING, INLINE_LINK, SMALL_TYPE, ai_marked, chart_image, html_table, as_name, display_date, link_text, number, plural, word_count  # noqa: E402,F401
 from agentic_manager.svg import GRID, INK, MUTED, SURFACE, legend, nice_step, svg, text, text_width  # noqa: E402,F401
 from agentic_manager.output_folder import CHARTS_DIR, RAW_DIR, document_name, folder_problem, new_run, output_folder  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
 from agentic_manager.jira import (ISSUE_KEY, JiraClient, browse_url, key_order,  # noqa: E402,F401
-                                  is_sub_task, parse_ts, plain_text, project_of)
+                                  is_sub_task, parse_ts, plain_text, project_of, report_timezone)
 from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.period import days  # noqa: E402,F401
 from agentic_manager.failures import GITHUB_FAILED, stops_on_failure  # noqa: E402,F401
-from agentic_manager.github import authored_searches, gh_orgs, pull_fields, pull_parts, require_gh, search_pulls  # noqa: E402,F401
+from agentic_manager.github import authored_searches, gh_orgs, pull_fields, repository_url, require_gh, search_pulls  # noqa: E402,F401
 from agentic_manager.ticket_pulls import pulls_by_ticket, read_events  # noqa: E402,F401
 
 # The skill's output folder, which holds the report folders (see output_folder.py).
@@ -96,10 +95,12 @@ RATIO_RULE = "ratios only as N/M tickets (N/M pts)"
 AMOUNT_RULE = "amounts only as N tickets (N pts)"
 BOLD_RULE = "bold only for labels"
 DATE_RULE = "no ISO dates"
+LIST_RULE = "ticket lists are sorted"
 ESTIMATE_RULE = "a single ticket reads KEY (N pts), its latest estimate"
 
 # The format rules, in the order they are reported.
-FORMAT_RULES = (PERCENT_RULE, RATIO_RULE, AMOUNT_RULE, BOLD_RULE, DATE_RULE)
+FORMAT_RULES = (PERCENT_RULE, RATIO_RULE, AMOUNT_RULE,
+                BOLD_RULE, DATE_RULE, LIST_RULE)
 
 # A ticket key with the estimate that may follow it: "KEY (N pts)", "KEY
 # (old → N pts)" or "KEY (– pts)"; group 1 is the key, group 2 the estimate
@@ -227,20 +228,6 @@ def _relative(path):
     """`path` relative to the skill's output folder, for the shared writer."""
     folder, _ = output_folder(REPORTS_FOLDER)
     return os.path.relpath(os.path.realpath(path), os.path.realpath(folder))
-
-
-def report_timezone(name):
-    """The reporting timezone named by the Jira API account's profile, as
-    fetched or as saved in the raw files and data.json."""
-    if not isinstance(name, str) or not name.strip():
-        raise SystemExit(
-            "no reporting timezone: check the Jira API account's timezone and fetch the sprint again")
-    try:
-        return ZoneInfo(name)
-    except (ZoneInfoNotFoundError, ValueError):
-        raise SystemExit("reporting timezone is unavailable: check the Jira API account's timezone, "
-                         "install timezone data with python3 -m pip install tzdata if needed, "
-                         "and fetch the sprint again")
 
 
 def blocker_candidates(events_of, sprint_id, moment):
@@ -649,6 +636,8 @@ def text_rule_problems(text, latest=None):
         AMOUNT_RULE: re.findall(r"\d+ (?:tickets?|stories|story) / ", text),
         BOLD_RULE: [b for b in bold if not b.endswith(":")],
         DATE_RULE: re.findall(r"\b\d{4}-\d\d-\d\d\b", text),
+        LIST_RULE: [group for group in KEY_LIST.findall(text) if ", " in group
+                    and group.split(", ") != sorted(group.split(", "), key=key_order)],
     }
     formats = [(rule, breaking[rule]) for rule in FORMAT_RULES]
     if latest is not None:
@@ -706,30 +695,13 @@ def no_work_text(counts):
         for reason, text in LEFT_OUT_REASONS.items() if counts.get(reason))
 
 
-def repository_url(pull_url):
-    """The address of the repository of the pull request at `pull_url`."""
-    parts = pull_parts(pull_url)
-    assert parts, pull_url
-    return f"https://{parts['host']}/{parts['owner']}/{parts['name']}"
-
-
 def pull_chunks(body):
     """A pull request's description in pieces, as the brief and
     read_description.py cut it: PULL_DESCRIPTION_CHUNK_CHARS each."""
     return chunks(body, PULL_DESCRIPTION_CHUNK_CHARS)
 
 
-def chunks(text, size=DESCRIPTION_CHUNK_CHARS):
-    """`text` in pieces of at most `size` characters. A piece ends at the last
-    line break, else the last space, in its second half, so it stops at the end
-    of a line when the text has one to use."""
-    pieces = []
-    while len(text) > size:
-        cut = text.rfind("\n", size // 2, size + 1)
-        if cut < 0:
-            cut = text.rfind(" ", size // 2, size + 1)
-        if cut < 0:
-            cut = size
-        pieces.append(text[:cut].rstrip())
-        text = text[cut:].lstrip()
-    return [*pieces, text]
+def description_chunks(text):
+    """A ticket's or epic's description in pieces, as the brief and
+    read_description.py cut it: DESCRIPTION_CHUNK_CHARS each."""
+    return chunks(text, DESCRIPTION_CHUNK_CHARS)

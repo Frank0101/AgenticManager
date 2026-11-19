@@ -58,8 +58,9 @@ def main(argv=None):
     parser.add_argument("--prep", required=True,
                         help="the prep's folder, <Person>_<YY-MM-DD>, as init_prep.py printed it")
     args = parser.parse_args(argv)
-    raw = set_notion(args.prep, stdin_json(INPUT))
-    pages = work_items("notion", read_json(raw))["created"]
+    found = stdin_json(INPUT)
+    raw = set_notion(args.prep, found)
+    pages = work_items("notion", found)["created"]
     print(json.dumps({"raw": raw, "pages": len(pages)}, ensure_ascii=False))
 
 

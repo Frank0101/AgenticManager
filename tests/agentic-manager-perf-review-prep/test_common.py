@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import (STEP_CHANGE, VIEW, VIEW_CHECK, OBSERVATIONS, PREVIOUS_REVIEWS, NOTE, NOTES, VALUE_NAMES, ORIENTATION, PERSON, PIECE, PREP, SLACK, NOTION_SEARCHES, PLAN_RESULT, WORK_ITEMS, WORK_RAW,  # noqa: E402
+from prep_fixture import (STEP_CHANGE_CONTENT, OBSERVATIONS, PREVIOUS, NOTES, VALUE_NAMES, MANAGER_FEEDBACK, PERSON, PREP, SLACK, NOTION_SEARCHES, PLAN_RESULT, WORK_ITEMS, WORK_RAW,  # noqa: E402
                            temp_output, write_prep)  # noqa: E402
 
 TODAY = date(2026, 11, 10)
@@ -93,186 +93,156 @@ class CommonTest(unittest.TestCase):
                     self.assertIn(expected, " ".join(problems))
 
     def test_summary_problems(self):
-        # name: (changes to the summary, or a value instead of it, expected in
-        # its problems, or None for none)
-        long_point = " ".join(["word"] * (common.MAX_POINT_WORDS + 1))
-        cases = [("valid", {}, None),
-                 ("parts left empty", {"to_improve": [], "context": []}, None),
-                 ("a point at the limit", {"context": [
-                  " ".join(["word"] * common.MAX_POINT_WORDS)]}, None),
-                 ("no points", {"going_well": [], "to_improve": [],
-                  "context": []}, "has no points"),
-                 ("a part missing", {
-                  "context": None}, "must have the parts going_well, to_improve, context"),
-                 ("not an object", "Strong half overall.", "must have the parts"),
-                 ("text, not a list", {
-                  "going_well": "Strong half"}, "going_well must be a list of points"),
-                 ("a blank point", {"to_improve": [{"point": " ", "values": []}]},
-                  'to_improve must be a list of points, each {"point": "...", "values": ["...", ...] or []}'),
-                 ("a point twice", {"context": [
-                  "Back in May", "Back in May"]}, "more than once"),
-                 ("a valued point twice", {"going_well": [{"point": "Led it", "values": ["Ownership"]},
-                                                          {"point": "Led it", "values": []}]}, "more than once"),
-                 ("a point too long", {"going_well": [{"point": long_point, "values": []}]},
-                  f"at most {common.MAX_POINT_WORDS}"),
-                 ("a value left out", {"going_well": [
-                  {"point": "Led it", "values": []}]}, None),
-                 ("two values", {"going_well": [
-                  {"point": "Led it", "values": ["Teamwork", "Ownership"]}]}, None),
-                 ("a value twice", {"going_well": [{"point": "Led it", "values": ["Ownership", "Ownership"]}]},
-                  "listed once, at most 2"),
-                 ("three values", {"going_well": [{"point": "Led it", "values": ["Ownership", "Teamwork", "Grit"]}]},
-                  "listed once, at most 2"),
-                 ("a value not the company's", {"going_well": [{"point": "Led it", "values": ["Grit"]}]},
-                  "['Grit'], must each be one of the company's: Ownership, Teamwork, listed once, at most 2, or [] when none fits"),
-                 ("a value's field missing", {"going_well": [{"point": "Led it"}]},
-                  "going_well must be a list of points"),
-                 ("text where a value is due", {
-                  "to_improve": ["Could share more"]}, "to_improve must be a list of points"),
-                 ("a value on context", {"context": [{"point": "Back in May", "values": []}]},
-                  "context must be a list of points, each a sentence")]
-        for name, changes, expected in cases:
-            with self.subTest(name):
-                summary = {key: value for key, value in {**ORIENTATION, **changes}.items() if value is not None} \
-                    if isinstance(changes, dict) else changes
-                problems = common.summary_problems(
-                    summary, "the orientation", VALUE_NAMES)
-                if expected is None:
-                    self.assertEqual(problems, [])
-                else:
-                    self.assertIn(expected, " ".join(problems))
-        # The orientation is a summary, by the same rule.
-        self.assertEqual(common.orientation_problems(
-            ORIENTATION, VALUE_NAMES), [])
+        # name: (the check, the summary, or a value instead of it, expected
+        # in its problems, or None for none). Every summary follows one rule,
+        # summary_problems(): a feedback, named after its kind, may
+        # have no points, as the text may say nothing of the person; a
+        # reading's, the notes' or Slack's, has every point's evidence, each
+        # {date, link}, the date one of the days given, or null in a notes
+        # context point, from a page, and it may be empty.
+        def feedback(kind):
+            return lambda summary: common.feedback_problems(summary, kind, VALUE_NAMES)
+        manager, note_days, slack_days = feedback("manager"), ["2026-08-20", "2026-09-02", "2026-10-01"], \
+            common.period_days(PERSON)
 
-    def test_notes_problems(self):
-        # The notes summary is a reading's: every point has its evidence,
-        # each {date, link}, the date one of the days given, or null in a
-        # context point, from a page, and it may be empty. name: (changes to
-        # it, expected in its problems, or None).
+        def notes(summary):
+            return common.summary_problems(summary, "the notes summary", VALUE_NAMES, note_days, undated_context=True)
+
+        def slack(summary):
+            return common.summary_problems(summary, "the Slack summary", VALUE_NAMES, slack_days)
+
+        def changed(base, changes):
+            # `base` with `changes`, a part set to None left out.
+            return {key: value for key, value in {**base, **changes}.items() if value is not None}
+
         def evidence(*dates):
             return [{"date": date, "link": f"/vault/{date}.md"} for date in dates]
-        days = ["2026-08-20", "2026-09-02", "2026-10-01"]
-        cases = [("valid", {}, None),
-                 ("empty", {"going_well": [], "to_improve": [],
-                  "context": []}, None),
-                 ("no evidence", {"going_well": [{"point": "Presented it", "values": []}]},
+        long_point = " ".join(["word"] * (common.MAX_POINT_WORDS + 1))
+        empty = {"going_well": [], "to_improve": [], "context": []}
+        slack_link = "https://acme.slack.com/archives/C2/p2"
+        cases = [("valid", manager, MANAGER_FEEDBACK, None),
+                 ("parts left empty", manager, changed(
+                     MANAGER_FEEDBACK, {"to_improve": [], "context": []}), None),
+                 ("a point at the limit", manager,
+                  changed(MANAGER_FEEDBACK, {"context": [" ".join(["word"] * common.MAX_POINT_WORDS)]}), None),
+                 ("a part missing", manager, changed(MANAGER_FEEDBACK, {"context": None}),
+                  "must have the parts going_well, to_improve, context"),
+                 ("not an object", manager,
+                  "Strong half overall.", "must have the parts"),
+                 ("text, not a list", manager, changed(MANAGER_FEEDBACK, {"going_well": "Strong half"}),
+                  "going_well must be a list of points"),
+                 ("a blank point", manager, changed(MANAGER_FEEDBACK, {"to_improve": [{"point": " ", "values": []}]}),
+                  'to_improve must be a list of points, each {"point": "...", "values": ["...", ...] or []}'),
+                 ("a point twice", manager, changed(MANAGER_FEEDBACK, {"context": ["Back in May", "Back in May"]}),
+                  "more than once"),
+                 ("a valued point twice", manager,
+                  changed(MANAGER_FEEDBACK, {"going_well": [{"point": "Led it", "values": ["Ownership"]},
+                                                            {"point": "Led it", "values": []}]}), "more than once"),
+                 ("a point too long", manager,
+                  changed(MANAGER_FEEDBACK, {"going_well": [
+                          {"point": long_point, "values": []}]}),
+                  f"up to {common.POINT_WORDS}"),
+                 ("a value left out", manager,
+                  changed(MANAGER_FEEDBACK, {"going_well": [{"point": "Led it", "values": []}]}), None),
+                 ("two values", manager,
+                  changed(MANAGER_FEEDBACK, {"going_well": [
+                          {"point": "Led it", "values": ["Teamwork", "Ownership"]}]}),
+                  None),
+                 ("a value twice", manager,
+                  changed(MANAGER_FEEDBACK, {"going_well": [
+                          {"point": "Led it", "values": ["Ownership", "Ownership"]}]}),
+                  "listed once, at most 2"),
+                 ("three values", manager,
+                  changed(MANAGER_FEEDBACK, {"going_well": [{"point": "Led it",
+                                                             "values": ["Ownership", "Teamwork", "Grit"]}]}),
+                  "listed once, at most 2"),
+                 ("a value not the company's", manager,
+                  changed(MANAGER_FEEDBACK, {"going_well": [
+                          {"point": "Led it", "values": ["Grit"]}]}),
+                  "['Grit'], must each be one of the company's: Ownership, Teamwork, listed once, at most 2, or [] "
+                  "when none fits"),
+                 ("a value's field missing", manager, changed(MANAGER_FEEDBACK, {"going_well": [{"point": "Led it"}]}),
+                  "going_well must be a list of points"),
+                 ("text where a value is due", manager, changed(MANAGER_FEEDBACK, {"to_improve": ["Could share more"]}),
+                  "to_improve must be a list of points"),
+                 ("a value on context", manager,
+                  changed(MANAGER_FEEDBACK, {"context": [
+                          {"point": "Back in May", "values": []}]}),
+                  "context must be a list of points, each a sentence"),
+                 ("a feedback with no points", feedback("other"), empty, None),
+                 ("a feedback named after its kind", feedback("previous"), {"going_well": []},
+                  "the previous feedback must have the parts going_well, to_improve, context"),
+                 ("a feedback's value named after its kind", feedback("other"),
+                  {**empty,
+                      "going_well": [{"point": "Led it", "values": ["Grit"]}]},
+                  "the other feedback's going_well: 'Led it'...'s values"),
+                 ("notes valid", notes, NOTES, None),
+                 ("notes empty", notes, empty, None),
+                 ("notes with no evidence", notes,
+                  changed(NOTES, {"going_well": [
+                          {"point": "Presented it", "values": []}]}),
                   'going_well must be a list of points, each {"point": "...", "values": ["...", ...] or [], '
                   '"evidence": [{"date": "YYYY-MM-DD", "link"'),
-                 ("evidence empty", {"going_well": [{"point": "Presented it", "values": [], "evidence": []}]},
+                 ("notes' evidence empty", notes,
+                  changed(NOTES, {"going_well": [
+                          {"point": "Presented it", "values": [], "evidence": []}]}),
                   "going_well must be a list of points"),
-                 ("a link not a file's or a web page's", {"going_well": [
-                     {"point": "Presented it", "values": [],
-                      "evidence": [{"date": "2026-09-02", "link": "journals/x.md"}]}]},
+                 ("a link not a file's or a web page's", notes,
+                  changed(NOTES, {"going_well": [{"point": "Presented it", "values": [],
+                                                  "evidence": [{"date": "2026-09-02", "link": "journals/x.md"}]}]}),
                   "going_well must be a list of points"),
-                 ("a file:// address", {"going_well": [
-                     {"point": "Presented it", "values": [],
-                      "evidence": [{"date": "2026-09-02", "link": "file:///vault/x.md"}]}]},
+                 ("a file:// address", notes,
+                  changed(NOTES, {"going_well": [{"point": "Presented it", "values": [],
+                                                  "evidence": [{"date": "2026-09-02", "link": "file:///vault/x.md"}]}]}),
                   "going_well must be a list of points"),
-                 ("a day no note was taken on", {"going_well": [
-                     {"point": "Presented it", "values": [], "evidence": evidence("2026-09-03")}]},
+                 ("a day no note was taken on", notes,
+                  changed(NOTES, {"going_well": [{"point": "Presented it", "values": [],
+                                                  "evidence": evidence("2026-09-03")}]}),
                   "evidence must each be of a day the source was read on, each link once"),
-                 ("a link twice", {"to_improve": [{"point": "Late", "values": [],
-                                                   "evidence": evidence("2026-08-20", "2026-08-20")}]}, "each link once"),
-                 ("valued undated", {"going_well": [{"point": "Presented it", "values": [], "evidence": evidence(None)}]},
+                 ("a link twice", notes,
+                  changed(NOTES, {"to_improve": [{"point": "Late", "values": [],
+                                                  "evidence": evidence("2026-08-20", "2026-08-20")}]}),
+                  "each link once"),
+                 ("a valued notes point undated", notes,
+                  changed(NOTES, {"going_well": [
+                          {"point": "Presented it", "values": [], "evidence": evidence(None)}]}),
                   "must each be of a day the source was read on, each link once"),
-                 ("context dated", {"context": [
-                  {"point": "Moved", "evidence": evidence("2026-08-20")}]}, None),
-                 ("context undated", {"context": [
-                  {"point": "Moved", "evidence": evidence(None)}]}, None),
-                 ("context a sentence alone", {"context": ["Moved"]}, "context must be a list of points")]
-        for name, changes, expected in cases:
+                 ("a notes context point dated", notes,
+                  changed(NOTES, {"context": [{"point": "Moved", "evidence": evidence("2026-08-20")}]}), None),
+                 ("a notes context point undated", notes,
+                  changed(NOTES, {"context": [{"point": "Moved", "evidence": evidence(None)}]}), None),
+                 ("a notes context point a sentence alone", notes, changed(NOTES, {"context": ["Moved"]}),
+                  "context must be a list of points"),
+                 ("Slack valid", slack, SLACK, None),
+                 ("a Slack point with no evidence", slack,
+                  changed(SLACK, {"context": [{**SLACK["context"][0], "evidence": []}]}), "must be a list of points"),
+                 ("a Slack context point undated, as a message always has a day", slack,
+                  changed(SLACK, {"context": [
+                          {**SLACK["context"][0], "evidence": [{"date": None, "link": slack_link}]}]}),
+                  "must each be of a day the source was read on")]
+        for name, check, summary, expected in cases:
             with self.subTest(name):
-                problems = common.notes_problems(
-                    {**NOTES, **changes}, VALUE_NAMES, days)
+                problems = check(summary)
                 if expected is None:
                     self.assertEqual(problems, [])
                 else:
                     self.assertIn(expected, " ".join(problems))
 
-    def test_reviews_problems(self):
-        # name: (the reviews, expected in their problems, or None for none).
-        # A period is a label, never checked against the prep's, nor is a
-        # review's age: what the manager gives counts.
-        ratings = ["Below", "Meets", "Exceeds"]
-        unnamed = {**PIECE, "period": None, "rating": None}
-        cases = [("one review", [PIECE], None), ("none", [], None),
-                 ("no period and no rating", [unnamed], None),
-                 ("a date as period", [
-                  {**PIECE, "period": "30/06/2020"}], None),
-                 ("the same period twice", [
-                  PIECE, {**PIECE, "rating": "Exceeds"}], None),
-                 ("a blank period", [
-                  {**PIECE, "period": " "}], "must be a text"),
-                 ("a period not a text", [
-                  {**PIECE, "period": 2026}], "must be a text"),
-                 ("no date", [{**PIECE, "date": None}], None),
-                 ("a date not a day", [
-                  {**PIECE, "date": "2026-06"}], "must be the last day of its period"),
-                 ("a rating not the company's", [{**PIECE, "rating": "Good"}],
-                  "'Good', must be one of the company's: Below, Meets, Exceeds, or null"),
-                 ("a field missing", [
-                  {k: v for k, v in PIECE.items() if k != "rating"}], "must have the fields"),
-                 ("a summary that breaks a rule", [{**PIECE, "going_well": [], "to_improve": []}],
-                  "review 1 has no points")]
-        for name, pieces, expected in cases:
-            with self.subTest(name):
-                problems = common.reviews_problems(
-                    {"pieces": pieces}, ratings, VALUE_NAMES)
-                if expected is None:
-                    self.assertEqual(problems, [])
-                else:
-                    self.assertIn(expected, " ".join(problems))
-        for name, feedback in [("a list", [PIECE]), ("a key more", {"pieces": [], "notes": "x"})]:
-            with self.subTest(name):
-                self.assertIn('must be {"pieces": [...]}',
-                              " ".join(common.reviews_problems(feedback, ratings, VALUE_NAMES)))
-
-    def test_feedback_problems_of_the_period(self):
-        # name: (the feedback, expected in its problems, or None for none).
-        # The rules all pieces share are tested with the reviews'.
-        cases = [("one piece", [NOTE], None), ("none", [], None),
-                 ("no period", [{**NOTE, "period": None}], None),
-                 ("a rating", [{**NOTE, "rating": None}],
-                  "must have the fields period, date, going_well")]
-        for name, notes, expected in cases:
-            with self.subTest(name):
-                problems = common.feedback_problems(
-                    {"pieces": notes}, VALUE_NAMES)
-                if expected is None:
-                    self.assertEqual(problems, [])
-                else:
-                    self.assertIn(expected, " ".join(problems))
-        self.assertIn('the feedback must be {"pieces": [...]}',
-                      " ".join(common.feedback_problems([NOTE], VALUE_NAMES)))
-
-    def test_months_of(self):
-        # Each month of the period, clipped to it.
-        self.assertEqual(common.months_of(date(2026, 8, 10), date(2026, 10, 3)), {
-            "2026-08": {"start": "2026-08-10", "end": "2026-08-31"},
-            "2026-09": {"start": "2026-09-01", "end": "2026-09-30"},
-            "2026-10": {"start": "2026-10-01", "end": "2026-10-03"}})
+    def test_day_ranges(self):
+        # Consecutive days make one range, a day alone stays alone, and the
+        # ranges are named in order.
+        cases = [([], ""), (["2026-09-01"], "2026-09-01"), (["2026-09-01", "2026-09-02"], "2026-09-01 to 2026-09-02"),
+                 (["2026-08-31", "2026-09-01", "2026-09-02", "2026-09-05", "2026-10-01", "2026-10-02"],
+                  "2026-08-31 to 2026-09-02, 2026-09-05, 2026-10-01 to 2026-10-02")]
+        for days, expected in cases:
+            with self.subTest(days):
+                self.assertEqual(common.day_ranges(days), expected)
 
     def test_period_days(self):
         # Every day of the period, its first and last too.
         days = common.period_days(PERSON)
         self.assertEqual((days[0], days[1], days[-1], len(days)),
                          ("2026-08-10", "2026-08-11", "2026-11-10", 93))
-
-    def test_slack_problems(self):
-        # Every point, context too, has its evidence, each of a day: a
-        # message always has one.
-        days = common.period_days(PERSON)
-        self.assertEqual(common.slack_problems(SLACK, VALUE_NAMES, days), [])
-        link = "https://acme.slack.com/archives/C2/p2"
-        for name, change, expected in [("no evidence", {"evidence": []}, "must be a list of points"),
-                                       ("undated", {"evidence": [{"date": None, "link": link}]},
-                                        "must each be of a day the source was read on")]:
-            with self.subTest(name):
-                broken = {
-                    **SLACK, "context": [{**SLACK["context"][0], **change}]}
-                self.assertIn(expected, " ".join(
-                    common.slack_problems(broken, VALUE_NAMES, days)))
 
     def test_work_problems_links(self):
         # name: (a resolved issue's url, whether the work is accepted): a
@@ -328,8 +298,13 @@ class CommonTest(unittest.TestCase):
                 for n in range(common.NOTION_LIMIT)]
         cases = [("valid", S, None),
                  ("a gap", S[:2] + S[3:],
-                  "the Notion searches must cover 2026-08-10 to 2026-11-10 day by day"),
-                 ("an overlap", S + [{**S[1], "results": []}], "must cover"),
+                  "the Notion searches don't cover 2026-08-24 to 2026-08-30: search those days, and add them"),
+                 ("two gaps", S[1:5] + S[6:],
+                  "don't cover 2026-08-10 to 2026-08-16, 2026-09-14 to 2026-09-20: search those days"),
+                 ("an overlap", S + [{**S[1], "results": []}],
+                  "overlap on 2026-08-17 to 2026-08-23: each day is in one search only"),
+                 ("beyond the period", S + [{"start": "2026-11-11", "end": "2026-11-11", "results": []}],
+                  "go beyond the period, on 2026-11-11"),
                  ("a full search", [{**S[0], "results": full}, *S[1:]],
                   "search that range again in shorter ranges"),
                  ("a page found twice", [S[0], {**S[1], "results": [PLAN_RESULT]}, *S[2:]],
@@ -384,8 +359,8 @@ class CommonTest(unittest.TestCase):
             with self.subTest(name), self.assertRaisesRegex(SystemExit, expected):
                 common.prep_dir(prep)
 
-    def test_content_problems(self):
-        # name: (content.json, the tables' points, going well's and to
+    def test_observations_content_problems(self):
+        # name: (observations_content.json, the tables' points, going well's and to
         # improve's groups and context's points, expected in its problems, or
         # None for none): each table's summary, empty exactly when the table
         # holds no point, not longer than MAX_OBSERVATIONS_WORDS words, and a
@@ -423,86 +398,95 @@ class CommonTest(unittest.TestCase):
                           for n in valued]
                 observations = {**dict(zip(("going_well", "to_improve"), groups)),
                                 "context": [{"point": "Moved team"}] * context}
-                problems = " ".join(common.content_problems(
+                problems = " ".join(common.observations_content_problems(
                     content, observations))
                 if expected is None:
                     self.assertEqual(problems, "")
                 else:
                     self.assertIn(expected, problems)
 
-    def test_step_change_problems(self):
+    def test_step_change_content_problems(self):
         # name: (a change to the fixture's step change, the previous
-        # reviews, expected in its problems, or None for none): against the
-        # latest review, each to-improve point has a row, improved,
-        # still_to_improve or worsened; a going-well point held or worsened;
-        # a review context point context_change; a row with no review point
+        # feedback, expected in its problems, or None for none): against the
+        # previous feedback, each to-improve point has at least one row,
+        # improved, still_to_improve or worsened, a row for each aspect that
+        # went differently, which may conflict; a going-well point held or worsened;
+        # a previous context point context_change; a row with no previous point
         # new_context, citing a period context point; each change but improved cites period
-        # points by id, each once; no review point twice; the summary not
-        # empty nor over its ceiling; null exactly when there is no review.
-        step = STEP_CHANGE
+        # points by id, each once; the summary not
+        # empty nor over its ceiling; null exactly when there is no previous point.
+        step = STEP_CHANGE_CONTENT
         rows = step["rows"]
 
-        def row(review_point, change, *evidence):
-            return {"review_point": review_point, "change": change, "evidence": list(evidence)}
-        context_review = {**PREVIOUS_REVIEWS, "latest": {**PREVIOUS_REVIEWS["latest"],
-                                                         "context": [{"id": "R-C1", "point": "Was new to billing"}]}}
+        def row(previous_point, change, *evidence):
+            return {"previous_point": previous_point, "change": change, "evidence": list(evidence)}
+        context_review = {
+            **PREVIOUS, "context": [{"id": "P-C1", "point": "Was new to billing"}]}
         long = "word " * (common.MAX_OBSERVATIONS_WORDS["step_change"] + 1)
-        cases = [("as written", step, PREVIOUS_REVIEWS, None),
-                 ("only the to-improve rows", {**step, "rows": [row("R-I1", "improved"),
-                                                                row("R-I2", "worsened", "I2")]},
-                  PREVIOUS_REVIEWS, None),
-                 ("improved with evidence", {**step, "rows": [row("R-I1", "improved", "G2"),
-                                                              row("R-I2", "improved")]}, PREVIOUS_REVIEWS, None),
-                 ("a review context point", {**step, "rows": [*rows, row("R-C1", "context_change", "C2")]},
+        cases = [("as written", step, PREVIOUS, None),
+                 ("only the to-improve rows", {**step, "rows": [row("P-I1", "improved"),
+                                                                row("P-I2", "worsened", "I2")]},
+                  PREVIOUS, None),
+                 ("improved with evidence", {**step, "rows": [row("P-I1", "improved", "G2"),
+                                                              row("P-I2", "improved")]}, PREVIOUS, None),
+                 ("a previous context point", {**step, "rows": [*rows, row("P-C1", "context_change", "C2")]},
                   context_review, None),
-                 ("a review context point new", {**step, "rows": [*rows, row("R-C1", "new_context", "C2")]},
+                 ("a previous context point new", {**step, "rows": [*rows, row("P-C1", "new_context", "C2")]},
                   context_review, "row 5's change, 'new_context', must be context_change for a context point"),
-                 ("two rows with no review point", {**step, "rows": [*rows, row(None, "new_context", "C2")]},
-                  PREVIOUS_REVIEWS, None),
-                 ("no previous review, null", None, None, None),
-                 ("no previous review, a step change", step, None, "must be null"),
-                 ("a previous review, null", None,
-                  PREVIOUS_REVIEWS, "must be {\"summary\""),
-                 ("a to-improve point with no row", {**step, "rows": rows[:1]}, PREVIOUS_REVIEWS,
-                  "no row for R-I1, R-I2"),
-                 ("a to-improve point held", {**step, "rows": [*rows[:3], row("R-I1", "held", "G1")]},
-                  PREVIOUS_REVIEWS, "row 4's change, 'held', must be improved or still_to_improve or worsened"),
-                 ("a going-well point improved", {**step, "rows": [row("R-G1", "improved"), *rows[1:]]},
-                  PREVIOUS_REVIEWS, "row 1's change, 'improved', must be held or worsened"),
-                 ("a row with no review point not context", {**step, "rows": [*rows, row(None, "worsened", "I1")]},
-                  PREVIOUS_REVIEWS, "must be new_context for a row with no review_point"),
-                 ("a row with no review point changed", {**step, "rows": [*rows, row(None, "context_change", "C2")]},
-                  PREVIOUS_REVIEWS, "row 5's change, 'context_change', must be new_context for a row with no "
-                  "review_point"),
-                 ("a row with no review point citing no context",
+                 ("two rows with no previous point", {**step, "rows": [*rows, row(None, "new_context", "C2")]},
+                  PREVIOUS, None),
+                 ("no previous feedback, null", None, None, None),
+                 ("no previous feedback, a step change", step, None, "must be null"),
+                 ("a previous feedback, null", None,
+                  PREVIOUS, "must be {\"summary\""),
+                 ("a to-improve point with no row", {**step, "rows": rows[:1]}, PREVIOUS,
+                  "no row for P-I1, P-I2"),
+                 ("a to-improve point held", {**step, "rows": [*rows[:3], row("P-I1", "held", "G1")]},
+                  PREVIOUS, "row 4's change, 'held', must be improved or still_to_improve or worsened"),
+                 ("a going-well point improved", {**step, "rows": [row("P-G1", "improved"), *rows[1:]]},
+                  PREVIOUS, "row 1's change, 'improved', must be held or worsened"),
+                 ("a row with no previous point not context", {**step, "rows": [*rows, row(None, "worsened", "I1")]},
+                  PREVIOUS, "must be new_context for a row with no previous_point"),
+                 ("a row with no previous point changed", {**step, "rows": [*rows, row(None, "context_change", "C2")]},
+                  PREVIOUS, "row 5's change, 'context_change', must be new_context for a row with no "
+                  "previous_point"),
+                 ("a row with no previous point citing no context",
                   {**step, "rows": [*rows,
-                                    row(None, "new_context", "G1")]}, PREVIOUS_REVIEWS,
-                  "row 5 has no review_point, so its evidence must cite the period context point"),
-                 ("still to improve with no evidence", {**step, "rows": [*rows[:1], row("R-I2", "still_to_improve"),
+                                    row(None, "new_context", "G1")]}, PREVIOUS,
+                  "row 5 has no previous_point, so its evidence must cite the period context point"),
+                 ("still to improve with no evidence", {**step, "rows": [*rows[:1], row("P-I2", "still_to_improve"),
                                                                          *rows[2:]]},
-                  PREVIOUS_REVIEWS, "row 2's evidence is empty"),
-                 ("held with no evidence", {**step, "rows": [row("R-G1", "held"), *rows[1:]]},
-                  PREVIOUS_REVIEWS, "row 1's evidence is empty"),
-                 ("an id that isn't a period point", {**step, "rows": [row("R-G1", "held", "G9"), *rows[1:]]},
-                  PREVIOUS_REVIEWS, "row 1's evidence names G9, not points of the period"),
-                 ("an id cited twice", {**step, "rows": [row("R-G1", "held", "G3", "G3"), *rows[1:]]},
-                  PREVIOUS_REVIEWS, "row 1's evidence names a point more than once"),
-                 ("a review point that isn't one", {**step, "rows": [*rows, row("R-G2", "held", "G1")]},
-                  PREVIOUS_REVIEWS, "row 5's review_point, 'R-G2', must be one of the latest review's points"),
-                 ("a review point twice", {**step, "rows": [*rows, row("R-I1", "improved")]},
-                  PREVIOUS_REVIEWS, "row 5's review_point, R-I1, has a row already"),
-                 ("a row's field missing", {**step, "rows": [*rows, {"review_point": "R-I1", "change": "improved"}]},
-                  PREVIOUS_REVIEWS, "row 5 must be"),
+                  PREVIOUS, "row 2's evidence is empty"),
+                 ("held with no evidence", {**step, "rows": [row("P-G1", "held"), *rows[1:]]},
+                  PREVIOUS, "row 1's evidence is empty"),
+                 ("an id that isn't a period point", {**step, "rows": [row("P-G1", "held", "G9"), *rows[1:]]},
+                  PREVIOUS, "row 1's evidence names G9, not points of the period"),
+                 ("an id cited twice", {**step, "rows": [row("P-G1", "held", "G3", "G3"), *rows[1:]]},
+                  PREVIOUS, "row 1's evidence names a point more than once"),
+                 ("a previous point that isn't one", {**step, "rows": [*rows, row("P-G2", "held", "G1")]},
+                  PREVIOUS, "row 5's previous_point, 'P-G2', must be one of the previous feedback's points"),
+                 ("a previous point twice, an aspect each", {**step, "rows": [
+                     row("P-I1", "improved", "G2"), row("P-I1", "still_to_improve", "I1"), *rows[1:3]]},
+                  PREVIOUS, None),
+                 ("a previous point twice, the same change", {**step, "rows": [*rows, row("P-I1", "improved")]},
+                  PREVIOUS, None),
+                 ("a previous point twice, one with no evidence to cite", {**step, "rows": [
+                     *rows, row("P-I1", "still_to_improve")]}, PREVIOUS, "row 5's evidence is empty"),
+                 ("a to-improve point with only the other's rows", {**step, "rows": [
+                     row("P-I1", "improved", "G2"), row("P-I1", "still_to_improve", "I1"), rows[0]]},
+                  PREVIOUS, "no row for P-I2"),
+                 ("a row's field missing", {**step, "rows": [*rows, {"previous_point": "P-I1", "change": "improved"}]},
+                  PREVIOUS, "row 5 must be"),
                  ("an empty summary", {**step, "summary": " "},
-                  PREVIOUS_REVIEWS, "summary is empty"),
-                 ("a summary too long", {**step, "summary": long}, PREVIOUS_REVIEWS,
+                  PREVIOUS, "summary is empty"),
+                 ("a summary too long", {**step, "summary": long}, PREVIOUS,
                   f"summary has {common.MAX_OBSERVATIONS_WORDS['step_change'] + 1} words, more than "
                   f"{common.OBSERVATIONS_WORDS['step_change']}: cut it to about "
                   f"{common.OBSERVATIONS_WORDS['step_change']}")]
-        for name, step_change, reviews, expected in cases:
+        for name, step_change, previous, expected in cases:
             with self.subTest(name):
-                problems = " ".join(common.step_change_problems(
-                    step_change, OBSERVATIONS, reviews))
+                problems = " ".join(common.step_change_content_problems(
+                    step_change, {"observations": OBSERVATIONS, "previous": previous}))
                 if expected is None:
                     self.assertEqual(problems, "")
                 else:
@@ -510,82 +494,12 @@ class CommonTest(unittest.TestCase):
                     self.assertNotIn(
                         str(common.MAX_OBSERVATIONS_WORDS["step_change"]), problems)
 
-    def test_view_check_problems(self):
-        # name: (a change to the fixture's view check, the manager's view,
-        # expected in its problems, or None for none): every point of the
-        # view, context too, has one row, confirmed, little_support or
-        # contradicted; a row with no view point not_in_view; each check but
-        # little_support cites period points by id, each once; no view
-        # point twice; the summary not empty nor over its ceiling; never
-        # null, as the view always has points.
-        check = VIEW_CHECK
-        rows = check["rows"]
-
-        def row(view_point, kind, *evidence):
-            return {"view_point": view_point, "check": kind, "evidence": list(evidence)}
-        long = "word " * (common.MAX_OBSERVATIONS_WORDS["view_check"] + 1)
-        cases = [("as written", check, VIEW, None),
-                 ("an id in the summary", {**check, "summary": "Jane's ownership is confirmed (G1, G3)."}, VIEW,
-                  "summary names G1, G3"),
-                 ("little support citing the little there is", {**check, "rows": [
-                     *rows[:2], row("V-C1", "little_support", "C2"), *rows[3:]]}, VIEW, None),
-                 ("no theme missing from the view", {
-                  **check, "rows": [rows[0], *rows[2:]]}, VIEW, None),
-                 ("null", None,
-                  VIEW, 'must be {"summary"'),
-                 ("a context point with no row", {**check, "rows": [*rows[:2], rows[3]]}, VIEW,
-                  "no row for V-C1: give every point of the manager's view one"),
-                 ("a point of the view not_in_view", {**check, "rows": [*rows[:3], row("V-G1", "not_in_view", "G3")]},
-                  VIEW, "row 4's check, 'not_in_view', must be confirmed or little_support or contradicted for a "
-                  "going_well point of the view"),
-                 ("a row with no view point confirmed", {**check, "rows": [*rows, row(None, "confirmed", "G1")]},
-                  VIEW, "row 5's check, 'confirmed', must be not_in_view for a row with no view_point"),
-                 ("confirmed with no evidence", {**check, "rows": [*rows[:3], row("V-G1", "confirmed")]},
-                  VIEW, "row 4's evidence is empty"),
-                 ("contradicted with no evidence", {**check, "rows": [row("V-I1", "contradicted"), *rows[1:]]},
-                  VIEW, "row 1's evidence is empty"),
-                 ("not in view with no evidence", {**check, "rows": [rows[0], row(None, "not_in_view"), *rows[2:]]},
-                  VIEW, "row 2's evidence is empty"),
-                 ("an id that isn't a period point", {**check, "rows": [row("V-I1", "contradicted", "G9"), *rows[1:]]},
-                  VIEW, "row 1's evidence names G9, not points of the period"),
-                 ("a view point cited as evidence", {**check, "rows": [row("V-I1", "contradicted", "V-G1"),
-                                                                       *rows[1:]]},
-                  VIEW, "row 1's evidence names V-G1, not points of the period"),
-                 ("an id cited twice", {**check, "rows": [row("V-I1", "contradicted", "G2", "G2"), *rows[1:]]},
-                  VIEW, "row 1's evidence names a point more than once"),
-                 ("a view point that isn't one", {**check, "rows": [*rows, row("V-G2", "confirmed", "G1")]},
-                  VIEW, "row 5's view_point, 'V-G2', must be one of the view's points: V-G1, V-I1, V-C1"),
-                 ("a review point", {**check, "rows": [*rows, row("R-I1", "confirmed", "G1")]},
-                  VIEW, "row 5's view_point, 'R-I1', must be one of the view's points"),
-                 ("a view point twice", {**check, "rows": [*rows, row("V-C1", "little_support")]},
-                  VIEW, "row 5's view_point, V-C1, has a row already"),
-                 ("a row's field missing", {**check, "rows": [*rows, {"view_point": "V-I1", "check": "confirmed"}]},
-                  VIEW, "row 5 must be"),
-                 ("an empty summary", {
-                  **check, "summary": " "}, VIEW, "summary is empty"),
-                 ("a summary too long", {**check, "summary": long}, VIEW,
-                  f"summary has {common.MAX_OBSERVATIONS_WORDS['view_check'] + 1} words, more than "
-                  f"{common.OBSERVATIONS_WORDS['view_check']}: cut it to about "
-                  f"{common.OBSERVATIONS_WORDS['view_check']}")]
-        for name, view_check, view, expected in cases:
-            with self.subTest(name):
-                problems = " ".join(common.view_check_problems(
-                    view_check, OBSERVATIONS, view))
-                if expected is None:
-                    self.assertEqual(problems, "")
-                else:
-                    self.assertIn(expected, problems)
-                    self.assertTrue(problems.startswith("view_check.json"))
-                    self.assertNotIn(
-                        str(common.MAX_OBSERVATIONS_WORDS["view_check"]), problems)
-
     def test_point_ids(self):
-        # name: (part, place, prefix, id): by part and place, a review's
-        # and a view's prefixed.
+        # name: (part, place, prefix, id): by part and place, a previous
+        # feedback's prefixed.
         cases = [("going well", "going_well", 1, "", "G1"), ("to improve", "to_improve", 2, "", "I2"),
-                 ("context", "context", 3, "", "C3"), ("a review's",
-                                                       "to_improve", 1, common.REVIEW_ID, "R-I1"),
-                 ("a view's", "context", 1, common.VIEW_ID, "V-C1")]
+                 ("context", "context", 3, "", "C3"), ("a previous feedback's",
+                                                       "to_improve", 1, common.PREVIOUS_ID, "P-I1")]
         for name, part, number, prefix, expected in cases:
             with self.subTest(name):
                 self.assertEqual(common.point_id(

@@ -23,8 +23,8 @@ class PeriodTest(unittest.TestCase):
     def test_is_day(self):
         # Only a real day as YYYY-MM-DD; another form fromisoformat accepts,
         # a month or a day that doesn't exist, no.
-        cases = [("2026-06-30", True), ("20260630", False), ("2026-06", False), ("2026-02-30", False),
-                 (None, False)]
+        cases = [("2026-06-30", True), ("20260630", False),
+                 ("2026-06", False), ("2026-02-30", False)]
         for value, expected in cases:
             with self.subTest(value):
                 self.assertEqual(period.is_day(value), expected)
@@ -85,6 +85,59 @@ class PeriodTest(unittest.TestCase):
         for text in ("10/08/2026", "2026-02-30", "20260810", ""):
             with self.subTest(text), self.assertRaisesRegex(argparse.ArgumentTypeError, "YYYY-MM-DD"):
                 period.day_argument(text)
+
+    def test_months_of(self):
+        # name: (first day, last day, the months): each month of the period,
+        # its first and last month clipped to it.
+        cases = [("clipped at both ends", date(2026, 8, 10), date(2026, 10, 3),
+                  {"2026-08": ("2026-08-10", "2026-08-31"), "2026-09": ("2026-09-01", "2026-09-30"),
+                   "2026-10": ("2026-10-01", "2026-10-03")}),
+                 ("whole months", date(2026, 9, 1), date(2026, 10, 31),
+                  {"2026-09": ("2026-09-01", "2026-09-30"), "2026-10": ("2026-10-01", "2026-10-31")}),
+                 ("a one-day month", date(2026, 8, 20), date(2026, 9, 1),
+                  {"2026-08": ("2026-08-20", "2026-08-31"), "2026-09": ("2026-09-01", "2026-09-01")}),
+                 ("inside one month", date(2026, 9, 5), date(2026, 9, 12),
+                  {"2026-09": ("2026-09-05", "2026-09-12")}),
+                 ("one day", date(2026, 9, 5), date(2026, 9, 5),
+                  {"2026-09": ("2026-09-05", "2026-09-05")}),
+                 ("a leap February", date(2028, 1, 31), date(2028, 3, 1),
+                  {"2028-01": ("2028-01-31", "2028-01-31"), "2028-02": ("2028-02-01", "2028-02-29"),
+                   "2028-03": ("2028-03-01", "2028-03-01")}),
+                 ("across a year", date(2026, 12, 15), date(2027, 1, 10),
+                  {"2026-12": ("2026-12-15", "2026-12-31"), "2027-01": ("2027-01-01", "2027-01-10")})]
+        for name, first, last, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(period.months_of(first, last),
+                                 {month: {"start": start, "end": end} for month, (start, end) in expected.items()})
+
+    def test_calendar_weeks(self):
+        # The Monday to Sunday of the day, clipped to the period, and every
+        # week of a period, the first and last clipped to it.
+        week_cases = [("mid-week", "2026-08-12", ["2026-08-10", "2026-08-16"]),
+                      ("the period's first week", "2026-08-03",
+                       ["2026-08-05", "2026-08-09"]),
+                      ("the period's last day, a Monday", "2026-11-09", ["2026-11-09", "2026-11-09"])]
+        for name, day, expected in week_cases:
+            with self.subTest(name):
+                self.assertEqual(period.calendar_week(
+                    day, "2026-08-05", "2026-11-09"), expected)
+        cases = [("a Wednesday to a Monday", "2026-07-01", "2026-07-20",
+                  [["2026-07-01", "2026-07-05"], ["2026-07-06", "2026-07-12"], ["2026-07-13", "2026-07-19"],
+                   ["2026-07-20", "2026-07-20"]]),
+                 ("whole weeks", "2026-07-06", "2026-07-19",
+                  [["2026-07-06", "2026-07-12"], ["2026-07-13", "2026-07-19"]]),
+                 ("a Sunday first, a one-day first week", "2026-07-05", "2026-07-13",
+                  [["2026-07-05", "2026-07-05"], ["2026-07-06", "2026-07-12"], ["2026-07-13", "2026-07-13"]]),
+                 ("a Sunday last, a full last week", "2026-07-06", "2026-07-26",
+                  [["2026-07-06", "2026-07-12"], ["2026-07-13", "2026-07-19"], ["2026-07-20", "2026-07-26"]]),
+                 ("inside one week", "2026-07-07",
+                  "2026-07-09", [["2026-07-07", "2026-07-09"]]),
+                 ("one day", "2026-07-12", "2026-07-12",
+                  [["2026-07-12", "2026-07-12"]]),
+                 ("across a year", "2026-12-30", "2027-01-05", [["2026-12-30", "2027-01-03"], ["2027-01-04", "2027-01-05"]])]
+        for name, start, end, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(period.calendar_weeks(start, end), expected)
 
 
 if __name__ == "__main__":

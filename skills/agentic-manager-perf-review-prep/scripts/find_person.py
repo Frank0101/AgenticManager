@@ -1,9 +1,9 @@
 """Looks a prep's person up in GitHub and the vault, read-only, and prints who they could be in each.
 
 Who the person is in a source is the manager's to confirm, so the script lists
-candidates and never chooses. A GitHub login can't be told from a name, so one
-commit search by the email of the Jira account the manager confirmed finds
-the accounts that authored its commits. The vault offers every page and link
+candidates and never chooses. A GitHub login can't be told from a name, so a
+commit search by the email of the person's Jira account, one in each
+organisation gh belongs to, finds the accounts that authored its commits. The vault offers every page and link
 with a word that starts a word of the manager's name for the person, or that
 one starts, such as Al for Alan, and every alias such a page declares, as it
 can differ. Notion and Slack are reached through their MCPs.

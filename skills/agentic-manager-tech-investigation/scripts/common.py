@@ -6,6 +6,7 @@ ID carries and the links to them, the linking of tickets and pull requests,
 and how to find an investigation's folder. Scripts import the shared library's
 names from here, so they don't depend on the order of their imports.
 """
+from pathlib import Path
 import os
 import re
 import sys
@@ -18,16 +19,16 @@ sys.path.insert(0, LIB_DIR)
 from agentic_manager.batch import gather  # noqa: E402,F401
 from agentic_manager.commands import library_command, script_command, stdin_json  # noqa: E402,F401
 from agentic_manager.config import enabled_sources  # noqa: E402,F401
-from agentic_manager.github import NAME as GITHUB_CLI, GH_UNAVAILABLE, GhError, gh_available, require_gh, gh_found, gh_hosts, pull_parts  # noqa: E402,F401
+from agentic_manager.github import NAME as GITHUB_CLI, GH_UNAVAILABLE, gh_available, require_gh, gh_found, gh_hosts, pull_parts  # noqa: E402,F401
 from agentic_manager.failures import stops_on_failure  # noqa: E402,F401
 from agentic_manager.jira import BROWSE_URL as TICKET_URL, NAME as JIRA_API, PROJECT_KEY, JiraClient, browse_url, plain_text, project_of  # noqa: E402,F401
 from agentic_manager.json_path import nested  # noqa: E402,F401
-from agentic_manager.output_file import json_text, read_json, write_output_file, write_output_json  # noqa: E402,F401
+from agentic_manager.output_file import read_json, write_output_file, write_output_json  # noqa: E402,F401
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
 from agentic_manager.period import is_day  # noqa: E402,F401
 from agentic_manager.tasks import submit_section, write_task  # noqa: E402,F401
 from agentic_manager.output_folder import clear_folder, folder_problem, document_name, folder_day, folder_subject, new_run, output_folder, target, work_folder  # noqa: E402,F401
-from agentic_manager.text import CELL_PIPE, DEFINITION, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, ai_marked, display_date, free_name, headings, inline_links, link_definitions, link_text, links, local_link, markdown, reference_key, same_document, slug, table, table_row, word_count  # noqa: E402,F401
+from agentic_manager.text import CELL_PIPE, DEFINITION, FENCE, HEADING, INLINE_LINK, NAME, REFERENCE_LINK, ai_marked, display_date, free_name, headings, inline_links, is_separator, link_definitions, link_text, links, local_link, markdown, reference_key, same_document, slug, table, table_row, word_count  # noqa: E402,F401
 from agentic_manager.text import table_cells as row_cells  # noqa: E402
 from agentic_manager.ticket_pulls import pulls_by_ticket  # noqa: E402,F401
 
@@ -335,6 +336,12 @@ def topic_of(folder):
     return topic
 
 
+def topic_words(topic):
+    """The <Topic> `topic` as words, its hyphens spaces, as the ledger's and
+    the report's titles and the questions write it."""
+    return topic.replace("-", " ")
+
+
 def unlinked_references(text):
     """The ticket keys and pull requests of `text` written outside a link, in order."""
     found = []
@@ -442,6 +449,43 @@ def unresolved_message(unresolved):
     return "; ".join(reasons)
 
 
+def link_problems(prose, definitions, document):
+    """(start, problem) of each link of `prose`, as written in the Markdown
+    file `document`, that doesn't resolve: a reference nothing in
+    `definitions` defines, a local file that doesn't exist, a heading of a
+    local Markdown file that isn't there. A missing file is named once."""
+    checked, anchors_of = set(), {}
+    for start, end, _, target in links(prose, definitions):
+        if target is None:
+            yield start, f"unresolved Markdown link reference {prose[start:end]}"
+            continue
+        local = local_link(document, target)
+        if local is None or local[0] == Path(document):
+            continue
+        path, anchor = local
+        if anchor and path.suffix.lower() == ".md" and path.is_file():
+            if path not in anchors_of:
+                try:
+                    anchors_of[path] = anchors(path)
+                except (OSError, UnicodeError):
+                    anchors_of[path] = set()
+            if anchor not in anchors_of[path]:
+                file, _, fragment = target.partition("#")
+                yield start, f"{file} has no heading for #{fragment}"
+        if path in checked:
+            continue
+        checked.add(path)
+        if not path.exists():
+            yield start, f"local link target is missing: {target}"
+
+
+def anchors(path):
+    """Every anchor of a Markdown file: its headings', with -1, -2... for
+    repeats, and the HTML anchors of the ledger's IDs."""
+    text = path.read_text(encoding="utf-8")
+    return {anchor for _, _, anchor in headings(text)} | anchor_ids(text)
+
+
 def unlinked_backticks(prose, linked_text=""):
     """The backticked spans of `prose` that sit outside a link, in order. Backticks
     mark a reference to code or a source, so each is a link to its pinned
@@ -487,7 +531,8 @@ def row_problem(name, row, evidence, blocked):
         sources = evidence["sources"]
         partial = {ident for ident, source in sources.items()
                    if read_in_part(source)}
-        return (finding_problem(row) or partial_read_problem(row, partial)
+        return (finding_problem(row) or claim_length_problem(row[0], row[1])
+                or partial_read_problem(row, partial)
                 or unread_lines_problem(row, sources))
     if name == "gaps":
         return gap_problem(row) or cited_evidence_problem(row[0], row[GAP_HEADER.index("Evidence")])
@@ -593,10 +638,10 @@ def coverage_problem(row):
     """Why a source row's Coverage breaks the rule COVERAGE states, or None:
     it starts with one of COVERAGE, and a partial read names what was read,
     the lines or files of code, the sections of a document or a ticket."""
-    if not any(row[4].strip().casefold().startswith(c) for c in COVERAGE):
+    if not coverage_read(row).startswith(tuple(COVERAGE)):
         return (f"{row[0]}: Coverage starts with one of: {', '.join(COVERAGE)}, then any detail, such as "
                 "'partial: lines 1-80, 200-240 of 352'")
-    if not row[4].strip().casefold().startswith("partial"):
+    if not coverage_read(row).startswith("partial"):
         return None
     fields = coverage_fields(row[4])
     if group_of(row) == "source_control" and not (fields.get("lines") or fields.get("files")):
@@ -606,6 +651,12 @@ def coverage_problem(row):
         return (f'{row[0]}: Coverage partial of a document or a ticket names the sections read, '
                 '"sections": ["Description", "Comments"]')
     return None
+
+
+def coverage_read(row):
+    """How much of it a source row's Coverage says was read, in lower case,
+    such as "partial", as coverage_fields() reads it."""
+    return coverage_fields(row[4])["read"].casefold()
 
 
 def coverage_fields(text):
@@ -686,7 +737,7 @@ def source_reference_missing(row):
     query: a search, the one source whose Coverage is a search hit, is its
     query between backticks; any other text in backticks links nothing."""
     is_query = CODE_SPAN.fullmatch(
-        row[2].strip()) and row[4].strip().startswith("search hit")
+        row[2].strip()) and coverage_read(row).startswith("search hit")
     return not LINK.search(without_code(row[2])) and not is_query
 
 
@@ -764,7 +815,7 @@ def read_in_part(row):
     """Whether a source row's Coverage leaves part of it unread (partial,
     listing or search hit), so a finding citing it must say why the unread part
     can't change the claim."""
-    return row[4].strip().casefold().startswith(PART_COVERAGE)
+    return coverage_read(row).startswith(PART_COVERAGE)
 
 
 def claim_length_problem(ident, claim):
@@ -965,7 +1016,7 @@ def sources_reached(cited, findings, sources):
 def read_enough(row):
     """Whether a source row's Coverage says it was read at READ_COVERAGE,
     enough to establish what the code does."""
-    return row[4].strip().casefold().startswith(READ_COVERAGE)
+    return coverage_read(row).startswith(READ_COVERAGE)
 
 
 def connection_code_problem(row, findings, sources, definitions):
@@ -1111,7 +1162,7 @@ def code_read(row, definitions):
     isn't code. Any other link is itself, with no revision."""
     if group_of(row) != "source_control" or not read_enough(row):
         return []
-    full = row[4].strip().casefold().startswith("full")
+    full = coverage_read(row).startswith("full")
     files = [f.strip() for f in coverage_fields(row[4]).get("files", [])
              if f.strip()]
     read = []
@@ -1252,7 +1303,7 @@ def ledger_rows(text, heading):
     if span is None:
         return []
     section = lines[span[0] + 1:span[1]]
-    separator = [bool(re.match(r"^\|\s*:?-", line)) for line in section]
+    separator = [is_separator(line) for line in section]
     return [table_cells(line) for i, line in enumerate(section)
             if line.startswith("|") and not separator[i]
             and not (i + 1 < len(section) and separator[i + 1])]
@@ -1307,11 +1358,6 @@ def ids(text, letters):
     """The IDs in `text` of the kinds `letters` names, such as "Q" or "GD", in
     order."""
     return re.findall(IDS_OF.format(letters), text)
-
-
-def unrecorded_ids(body):
-    """The IDs the ledger cites but never records in a table row."""
-    return sorted({m[1] for m in CITATION.finditer(body)} - recorded_ids(body), key=id_order)
 
 
 def unrecorded_citations(values, body):

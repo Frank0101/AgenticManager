@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import check_prep  # noqa: E402
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import (CONTENT, STEP_CHANGE, VIEW_CHECK, FEEDBACK, REVIEWS, NOTE, NOTES, ORIENTATION, PERSON, PIECE, PREP,
+from prep_fixture import (OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT, MANAGER_FEEDBACK, NOTES, OTHER_FEEDBACK, PERSON, PREVIOUS_FEEDBACK, PREP,
                           SLACK, DATA, WORK_RAW, temp_output, write_prep)  # noqa: E402
 
 TODAY = date(2026, 11, 10)
@@ -38,12 +38,12 @@ class CheckTest(unittest.TestCase):
         cases = [("a file more", {}, "notes.md", "move notes.md to your own scratch folder"),
                  ("no person", {"person": None},
                   None, "_charts, person.json"),
-                 ("no orientation", {"orientation": None},
-                  None, "missing orientation.json"),
-                 ("no reviews", {"reviews": None},
-                  None, "missing reviews.json"),
-                 ("no feedback", {"feedback": None},
-                  None, "missing feedback.json"),
+                 ("no current manager feedback", {"manager": None},
+                  None, "missing manager_feedback.json"),
+                 ("no other feedback", {"other": None},
+                  None, "missing other_feedback.json"),
+                 ("no previous feedback", {"previous": None},
+                  None, "missing previous_feedback.json"),
                  ("no notes", {"notes": None}, None, "missing notes.json"),
                  ("no Slack summary", {"slack": None},
                   None, "missing slack.json"),
@@ -54,12 +54,14 @@ class CheckTest(unittest.TestCase):
                   None, "person.json: the sources must be jira-api, github-cli, notion-mcp, slack-mcp, logseq-fs"),
                  ("a source that breaks a rule", {"person": {**PERSON, "sources": {
                      **PERSON["sources"], "slack-mcp": {}}}}, None, "person.json: slack-mcp must be"),
-                 ("an orientation that breaks a rule", {"orientation": {"text": "Strong"}}, None,
-                  "orientation.json: the orientation must have the parts"),
-                 ("reviews that break a rule", {"reviews": {"pieces": [{**PIECE, "rating": "Good"}]}}, None,
-                  "reviews.json: review 1's rating, 'Good', must be one of the company's"),
-                 ("feedback that breaks a rule", {"feedback": {"pieces": [{**NOTE, "period": ""}]}},
-                  None, "feedback.json: feedback piece 1's period, '', must be a text"),
+                 ("a current manager feedback that breaks a rule", {"manager": {"text": "Strong"}}, None,
+                  "manager_feedback.json: the current manager feedback must have the parts"),
+                 ("a previous feedback that breaks a rule",
+                  {"previous": {**PREVIOUS_FEEDBACK,
+                                "going_well": [{"point": "a", "values": ["Good"]}]}}, None,
+                  "previous_feedback.json: the previous feedback's going_well"),
+                 ("an other feedback that breaks a rule", {"other": {**OTHER_FEEDBACK, "context": [""]}}, None,
+                  "other_feedback.json: the other feedback's context must be a list of points"),
                  ("notes dated outside the period", {"notes": {**NOTES, "going_well": [
                      {**NOTES["going_well"][0], "evidence": [
                          {**NOTES["going_well"][0]["evidence"][0], "date": "2026-06-30"}]}]}},
@@ -72,18 +74,14 @@ class CheckTest(unittest.TestCase):
                   None, "data.json: the work's raw files are missing"),
                  ("a raw file that breaks its rules", {"raw_work": {**WORK_RAW, "github": {
                      **WORK_RAW["github"], "start": "2026-08-01"}}}, None, "data.json: the github raw file is for"),
-                 ("no content", {"content": None},
-                  None, "missing content.json"),
-                 ("content that breaks a rule", {"content": {**CONTENT, "to_improve": ""}}, None,
-                  "content.json: content.json's to_improve is empty"),
-                 ("no step change", {"step_change": None},
-                  None, "missing step_change.json"),
-                 ("a step change row missing", {"step_change": {**STEP_CHANGE, "rows": STEP_CHANGE["rows"][:1]}},
-                  None, "step_change.json: step_change.json has no row for R-I1, R-I2"),
-                 ("no view check", {"view_check": None},
-                  None, "missing view_check.json"),
-                 ("a view check with no summary", {"view_check": {**VIEW_CHECK, "summary": ""}},
-                  None, "view_check.json: view_check.json's summary is empty"),
+                 ("no observations content", {"observations_content": None},
+                  None, "missing observations_content.json"),
+                 ("observations content that breaks a rule", {"observations_content": {**OBSERVATIONS_CONTENT, "to_improve": ""}}, None,
+                  "observations_content.json: observations_content.json's to_improve is empty"),
+                 ("no step change", {"step_change_content": None},
+                  None, "missing step_change_content.json"),
+                 ("a step change row missing", {"step_change_content": {**STEP_CHANGE_CONTENT, "rows": STEP_CHANGE_CONTENT["rows"][:1]}},
+                  None, "step_change_content.json: step_change_content.json has no row for P-I1, P-I2"),
                  ("no report", {"report": False},
                   None, "_Review_Prep.md, _charts"),
                  ("a chart more", {}, "_charts/extra.svg",
@@ -96,8 +94,8 @@ class CheckTest(unittest.TestCase):
         for i, (name, changes, extra, expected) in enumerate(cases):
             with self.subTest(name):
                 prep = f"Case-{i}_26-11-10"
-                files = {"person": PERSON, "orientation": ORIENTATION,
-                         "reviews": REVIEWS, "feedback": FEEDBACK, "notes": NOTES, "data": DATA, "slack": SLACK,
+                files = {"person": PERSON, "manager": MANAGER_FEEDBACK, "other": OTHER_FEEDBACK,
+                         "previous": PREVIOUS_FEEDBACK, "notes": NOTES, "data": DATA, "slack": SLACK,
                          **changes}
                 write_prep(self.folder, prep=prep, **files)
                 if isinstance(extra, tuple):

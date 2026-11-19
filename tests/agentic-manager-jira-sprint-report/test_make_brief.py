@@ -72,7 +72,7 @@ class BriefTest(unittest.TestCase):
         epic["description"] = long
         brief = make_brief.build_brief(data)
         first = brief["epics"][0]["tickets"][0]
-        pieces = common.chunks(long)
+        pieces = common.description_chunks(long)
         self.assertGreater(len(pieces), 1)
         self.assertEqual((first["description"], first["description_chunks"]),
                          (pieces[0], len(pieces)))
@@ -210,14 +210,11 @@ class BriefTest(unittest.TestCase):
 
 class HelpersTest(unittest.TestCase):
     def test_brief_comments(self):
-        # Dated as the brief dates everything; a comment Jira gives no date
-        # keeps its text.
+        # Dated as the brief dates everything.
         cases = [
             ("none", [], []),
             ("dated", [{"at": "2026-03-05T23:30:00.000+0000", "date": "2026-03-06", "text": "Blocked."}],
              [{"date": "06/03/2026", "text": "Blocked."}]),
-            ("no date", [{"at": None, "date": None, "text": "Unblocked."}],
-             [{"date": None, "text": "Unblocked."}]),
         ]
         for name, comments, expected in cases:
             with self.subTest(name):

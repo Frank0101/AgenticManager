@@ -208,9 +208,13 @@ class InvestigateTest(unittest.TestCase):
                      for row in ledger.table_rows(self.lines(), "queue-completed")}
         self.assertEqual(completed["Q08"], "Decided by the user: [U02](#u02)")
         self.assertTrue(self.next_text().startswith("# Task research:Q02"))
+        # --max counts the questions in progress: with one out, one more
+        # needs --max 2.
+        self.assertTrue(self.next_text().startswith(
+            "Nothing new to hand out: Q02 in progress."))
         # The research task shows what the user decided.
         self.assertIn("## The scope the user decided so far\n\n- U01: The payments gateway: mention only",
-                      self.next_text())
+                      self.next_text(2))
 
     def test_a_scope_question_waits_for_the_research_it_depends_on(self):
         # Asked with the others only once the question it depends on is
@@ -277,6 +281,33 @@ class InvestigateTest(unittest.TestCase):
         for name, task, expected in cases:
             with self.subTest(name), self.assertRaisesRegex(SystemExit, expected):
                 self.submit(task, answer())
+
+    def test_the_input_help_shows_each_answer_with_a_command_to_copy(self):
+        # task: the --task values whose command and shape it shows; none, or
+        # one taking no answer, shows every one.
+        every = ["scope", "research:Q03", "design", "write"]
+        cases = [(None, every), ("finished", every), ("scope", ["scope"]),
+                 ("research:Q06", ["research:Q03"]), ("write", ["write"])]
+        for task, shown in cases:
+            with self.subTest(task):
+                text = investigate.input_help(task)
+                for name in every:
+                    command = f"submit --investigation {investigate.EXAMPLE_INVESTIGATION} --task {name} " \
+                        + ("--input <your file>" if name ==
+                           "write" else "<<'END_OF_INPUT'")
+                    self.assertEqual(command in text, name in shown, name)
+                    shape = investigate.answer_shape(name.partition(":")[0])
+                    self.assertEqual(shape.split(
+                        "\n")[1].strip() in text, name in shown, name)
+
+    def test_an_answer_that_isnt_an_object_shows_its_shape(self):
+        for task in ("research:Q01", "write"):
+            with self.subTest(task), self.assertRaises(SystemExit) as raised:
+                self.submit(task, ["a list"])
+            self.assertIn("the answer is a JSON object",
+                          str(raised.exception.code))
+            self.assertIn(
+                f"--task {task.replace('Q01', 'Q03')}", str(raised.exception.code))
 
     def test_a_question_can_be_answered_out_of_turn_while_open(self):
         # A subagent's answer may come back after another's.

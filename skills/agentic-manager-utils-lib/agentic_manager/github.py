@@ -269,7 +269,14 @@ def pull_parts(url):
     return PULL_URL.fullmatch(url or "")
 
 
-def _batch_pulls(host, urls, fields, run=subprocess.run):
+def repository_url(pull_url):
+    """The address of the repository of the pull request at `pull_url`."""
+    parts = pull_parts(pull_url)
+    assert parts, pull_url
+    return f"https://{parts['host']}/{parts['owner']}/{parts['name']}"
+
+
+def _batch_pulls(host, urls, fields, run):
     """({url: its `fields`}, {url: GhError}) of the pull requests at `urls`, all
     on `host`, read in one GraphQL call: a repository by alias r<i>, its pull
     requests by p<j>, each one's owner, name and number a variable, never in

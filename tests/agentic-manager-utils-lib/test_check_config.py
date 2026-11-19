@@ -5,12 +5,9 @@ They call the script's functions directly with small templates and configs.
 test_e2e_check_config.py runs the whole script against real files.
 """
 
-import json
 import os
 import sys
-import tempfile
 import unittest
-from unittest import mock
 
 # tests/<skill>/ mirrors skills/<skill>/.
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -26,7 +23,7 @@ TEMPLATE = {"sources": {
     },
     "messaging": {"slack-mcp": {"enabled": False}},
 }, "output": {"root": "<path>"},
-    "company": {"perf-review-ratings": [{"rating": "<rating>", "meaning": "<what it means>"}]}}
+    "company": {"values": [{"value": "<value>", "meaning": "<what it means>"}]}}
 GROUPS = TEMPLATE["sources"]
 
 
@@ -136,27 +133,27 @@ class CheckSettingsTest(unittest.TestCase):
         # Each list is optional: left out, empty or still the template's
         # unfilled entry, it isn't set. Once one entry is filled in, every
         # entry must be, each listed once.
-        where = "company.perf-review-ratings"
-        shape = f'{where} must be a list of {{"rating": "...", "meaning": "..."}}'
-        low = {"rating": "Below", "meaning": "Misses most expectations"}
-        high = {"rating": "Above", "meaning": "Goes beyond them"}
-        cases = [("not set", {}, []), ("empty", {"perf-review-ratings": []}, []),
+        where = "company.values"
+        shape = f'{where} must be a list of {{"value": "...", "meaning": "..."}}'
+        low = {"value": "Care", "meaning": "Looks after users"}
+        high = {"value": "Craft", "meaning": "Takes pride in the work"}
+        cases = [("not set", {}, []), ("empty", {"values": []}, []),
                  ("the template's", TEMPLATE["company"], []),
-                 ("filled in", {"perf-review-ratings": [low, high]}, []),
+                 ("filled in", {"values": [low, high]}, []),
                  ("not an object", [], ["company must be an object of settings"]),
                  ("an unknown setting", {"levels": []},
-                  ['unknown setting "company.levels" (supported: perf-review-ratings)']),
+                  ['unknown setting "company.levels" (supported: values)']),
                  ("not a list", {
-                  "perf-review-ratings": "Below, Above"}, [shape]),
+                  "values": "Below, Above"}, [shape]),
                  ("a field missing", {
-                  "perf-review-ratings": [{"rating": "Below"}]}, [shape]),
+                  "values": [{"value": "Care"}]}, [shape]),
                  ("a field not text", {
-                  "perf-review-ratings": [{**low, "meaning": 1}]}, [shape]),
-                 ("the template's entry left in", {"perf-review-ratings": [low, *TEMPLATE["company"]["perf-review-ratings"]]},
-                  [f"{where}, entry 2: rating is not filled in: fill it in, or remove the entry",
+                  "values": [{**low, "meaning": 1}]}, [shape]),
+                 ("the template's entry left in", {"values": [low, *TEMPLATE["company"]["values"]]},
+                  [f"{where}, entry 2: value is not filled in: fill it in, or remove the entry",
                    f"{where}, entry 2: meaning is not filled in: fill it in, or remove the entry"]),
-                 ("a rating twice", {"perf-review-ratings": [low, {**high, "rating": " Below"}]},
-                  [f'{where} lists "Below" more than once: list each once'])]
+                 ("a value twice", {"values": [low, {**high, "value": " Care"}]},
+                  [f'{where} lists "Care" more than once: list each once'])]
         for name, company, expected in cases:
             with self.subTest(name):
                 self.assertEqual(check_config._check_settings(
@@ -190,21 +187,21 @@ class ListCompanyTest(unittest.TestCase):
     def test_every_company_setting_is_listed(self):
         # Whether each is set and, if not, how to set it from the user's
         # config, never its entries.
-        shape = '[{"rating": "<rating>", "meaning": "<what it means>"}]'
-        then = ", with an entry for each rating"
-        rated = [{"rating": "Below", "meaning": "Misses most expectations"}]
-        cases = [({}, {"set": False, "setup": f'add "perf-review-ratings": {shape} inside "company", an object you add at the top level{then}'}),
+        shape = '[{"value": "<value>", "meaning": "<what it means>"}]'
+        then = ", with an entry for each value"
+        rated = [{"value": "Care", "meaning": "Looks after users"}]
+        cases = [({}, {"set": False, "setup": f'add "values": {shape} inside "company", an object you add at the top level{then}'}),
                  ({"company": {}}, {"set": False,
-                  "setup": f'add "perf-review-ratings": {shape} inside "company"{then}'}),
-                 ({"company": {"perf-review-ratings": []}}, {"set": False,
-                  "setup": f'fill in "company.perf-review-ratings"{then}'}),
+                  "setup": f'add "values": {shape} inside "company"{then}'}),
+                 ({"company": {"values": []}}, {"set": False,
+                  "setup": f'fill in "company.values"{then}'}),
                  (TEMPLATE, {
-                  "set": False, "setup": f'fill in "company.perf-review-ratings"{then}'}),
-                 ({"company": {"perf-review-ratings": rated}}, {"set": True})]
+                  "set": False, "setup": f'fill in "company.values"{then}'}),
+                 ({"company": {"values": rated}}, {"set": True})]
         for config, expected in cases:
             with self.subTest(config=config):
                 self.assertEqual(check_config._list_company(
-                    config, TEMPLATE), {"perf-review-ratings": expected})
+                    config, TEMPLATE), {"values": expected})
 
 
 class ListSourcesTest(unittest.TestCase):
@@ -245,8 +242,8 @@ class NeedsTest(unittest.TestCase):
                  ("a source enabled", ["jira-api"], {}),
                  ("a source disabled", ["azure-devops-cli"], {
                      "azure-devops-cli": 'add "azure-devops-cli": {"enabled": true} inside "sources.workflow"'}),
-                 ("a company setting not set", ["company.perf-review-ratings"], {
-                     "company.perf-review-ratings": company["perf-review-ratings"]["setup"]}),
+                 ("a company setting not set", ["company.values"], {
+                     "company.values": company["values"]["setup"]}),
                  ("nothing needed", [], {})]
         for name, needs, expected in cases:
             with self.subTest(name):
@@ -258,7 +255,7 @@ class NeedsTest(unittest.TestCase):
         # template has, wherever --needs stands.
         usage = "(usage: check_config.py [--init] [--needs NEED ...] [--sensitive])"
         cases = [("none", [], []),
-                 ("known needs", ["--init", "--needs", "workflow", "jira-api", "company.perf-review-ratings",
+                 ("known needs", ["--init", "--needs", "workflow", "jira-api", "company.values",
                                   "--sensitive"], []),
                  ("needs the template lacks", ["--needs", "jira-cli", "company.x", "output.root"],
                   [f"the skill needs {need}, which the template doesn't have"
@@ -270,29 +267,6 @@ class NeedsTest(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(check_config.argument_errors(
                     args, TEMPLATE), expected)
-
-
-class MainTest(unittest.TestCase):
-    def test_init_preserves_a_config_created_after_the_existence_check(self):
-        with tempfile.TemporaryDirectory() as folder:
-            path = os.path.join(folder, "config.json")
-            existing = '{"sources": {}}'
-
-            def appeared(_):
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(existing)
-                return False
-
-            with mock.patch.object(check_config, "CONFIG_PATH", path), \
-                    mock.patch.object(sys, "argv", ["check_config.py", "--init"]), \
-                    mock.patch.object(check_config.os.path, "lexists", side_effect=appeared), \
-                    mock.patch("builtins.print") as printed:
-                check_config.main()
-            with open(path, encoding="utf-8") as f:
-                self.assertEqual(f.read(), existing)
-            result = json.loads(printed.call_args.args[0])
-            self.assertTrue(result["ok"])
-            self.assertFalse(result["created"])
 
 
 if __name__ == "__main__":

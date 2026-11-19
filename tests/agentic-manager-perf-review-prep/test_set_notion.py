@@ -30,7 +30,7 @@ class SetNotionTest(unittest.TestCase):
 
     def test_refuses_wrong_searches(self):
         # Writing nothing, with the input's shape to follow.
-        with self.assertRaisesRegex(SystemExit, "must cover(.|\n)*Input, on stdin"):
+        with self.assertRaisesRegex(SystemExit, "don't cover 2026-08-10 to 2026-08-16: search those days(.|\n)*Input, on stdin"):
             set_notion.set_notion(PREP, {"created": NOTION_SEARCHES[1:]})
 
 

@@ -4,7 +4,7 @@ where it lives, how it's loaded and when a setting counts as filled in.
 check_config.py validates the whole config with these rules, but never returns
 setting values, which can be secrets such as tokens. A script that needs a
 source's settings reads them with read_source(), so the values never reach the
-agent or the chat. A company setting, such as the review ratings, holds no
+agent or the chat. A company setting, such as the company values, holds no
 secrets, so a skill may show what company_setting() reads. The folder a skill
 writes its files to is in output_folder.py.
 """
@@ -19,43 +19,33 @@ CONFIG_PATH = os.path.join(os.path.expanduser(
 # A setting still holding its template placeholder, e.g. "<token>".
 PLACEHOLDER = re.compile(r"^<.*>$")
 
-FIX = "Run agentic_manager/check_config.py to see how to fix it."
-
 
 def read_source(group, source, keys, lists=()):
-    """The given settings of one source, for a script that needs them itself:
-    `keys` are text settings, which must be filled in, and `lists` lists of
-    text, which may be left out and then are empty. Exits with a message that
-    names what's wrong, never a value."""
-    where = f"sources.{group}.{source}"
+    """The given settings of one source, trimmed, for a script that needs them
+    itself: `keys` are text settings and `lists` lists of text, which may be
+    left out and then are empty. Their shape is the config check's to enforce,
+    which every skill's prerequisite runs. Exits if the source isn't
+    enabled."""
     if not is_enabled(group, source):
         raise SystemExit(
-            f"{where} is not enabled in {CONFIG_PATH}. {_fix(source)}")
+            f"sources.{group}.{source} is not enabled in {CONFIG_PATH}. {_fix(source)}")
     settings = load_config()["sources"][group][source]
-    missing = [k for k in keys if not is_filled(settings.get(k))]
-    if missing:
-        raise SystemExit(
-            f"{where} setting(s) not filled in: {', '.join(missing)}. {_fix(source)}")
-    wrong = [k for k in lists if not is_text_list(settings.get(k, []))]
-    if wrong:
-        raise SystemExit(
-            f"{where} setting(s) not a list of strings: {', '.join(wrong)}. {_fix(source)}")
     return {**{k: settings[k].strip() for k in keys},
             **{k: [v.strip() for v in settings.get(k, [])] for k in lists}}
 
 
-def _fix(need):
-    """The hint for a missing need, by the check that names how to meet it."""
-    return f"Run agentic_manager/check_config.py --needs {need} to see how to fix it."
+def _fix(need=None):
+    """The hint for a problem with the config, by the check that names how to
+    fix it; with a missing `need`, how to meet that one."""
+    return f"Run agentic_manager/check_config.py{f' --needs {need}' if need else ''} to see how to fix it."
 
 
 def company_setting(key):
-    """The entries of the company setting `key`, such as perf-review-ratings,
+    """The entries of the company setting `key`, such as values,
     each field trimmed, in the config's order, for a script that needs them.
     Exits, naming the setting, when it isn't set."""
-    company = load_config().get("company")
-    entries = company.get(key) if isinstance(company, dict) else None
-    if not (isinstance(entries, list) and has_filled_entry(entries)):
+    entries = load_config().get("company", {}).get(key, [])
+    if not has_filled_entry(entries):
         raise SystemExit(
             f"company.{key} is not set in {CONFIG_PATH}. {_fix(f'company.{key}')}")
     return [{field: value.strip() for field, value in entry.items()} for entry in entries]
@@ -72,10 +62,8 @@ def enabled_sources(group):
     """The names of a group's enabled sources in the user's config, such as
     ["github-cli"], for a script that picks which to use. Exits if the config
     can't be read."""
-    groups = load_config().get("sources")
-    entries = groups.get(group) if isinstance(groups, dict) else None
-    return [name for name, settings in (entries.items() if isinstance(entries, dict) else ())
-            if isinstance(settings, dict) and settings.get("enabled") is True]
+    entries = load_config().get("sources", {}).get(group, {})
+    return [name for name, settings in entries.items() if settings.get("enabled") is True]
 
 
 def tool_channel(name):
@@ -91,7 +79,7 @@ def load_config():
     try:
         return load_json(CONFIG_PATH)
     except (ValueError, OSError):
-        raise SystemExit(f"could not read {CONFIG_PATH}. {FIX}")
+        raise SystemExit(f"could not read {CONFIG_PATH}. {_fix()}")
 
 
 def load_json(path):
@@ -120,6 +108,13 @@ def _reject_duplicates(pairs):
     return seen
 
 
+def has_filled_entry(entries):
+    """Whether a list setting of entries, such as company.values, holds a
+    value: one field of one entry is filled in. A list with none counts as
+    not set."""
+    return any(is_filled(value) for entry in entries if isinstance(entry, dict) for value in entry.values())
+
+
 def is_filled(value) -> TypeGuard[str]:
     """Whether `value` is a string holding a value, not a blank or a
     placeholder."""
@@ -127,13 +122,6 @@ def is_filled(value) -> TypeGuard[str]:
         return False
     value = value.strip()
     return bool(value) and not PLACEHOLDER.match(value)
-
-
-def has_filled_entry(entries):
-    """Whether a list setting of entries, such as company.values, holds a
-    value: one field of one entry is filled in. A list with none counts as
-    not set."""
-    return any(is_filled(value) for entry in entries if isinstance(entry, dict) for value in entry.values())
 
 
 def is_text_list(value) -> TypeGuard[list[str]]:

@@ -2,13 +2,13 @@
 
 The brief gives each description as its first chunk, and says how many there
 are when there are more. Reading the others costs tokens only when the agent
-asks, so its reading stays bounded and nothing is cut off. common.chunks cuts
-the pieces, as it does for the brief.
+asks, so its reading stays bounded and nothing is cut off. common's
+description_chunks and pull_chunks cut the pieces, as they do for the brief.
 """
 import argparse
 import os
 
-from common import DATA_FILE, chunks, pull_chunks, read_json
+from common import DATA_FILE, description_chunks, pull_chunks, read_json
 
 
 def descriptions(data):
@@ -17,7 +17,7 @@ def descriptions(data):
     cuts it."""
     found = {s["key"]: s["description"] for s in data["spells"]}
     found.update({e["key"]: e["description"] for e in data["epics"]})
-    pieces = {key: chunks(text) for key, text in found.items()}
+    pieces = {key: description_chunks(text) for key, text in found.items()}
     pieces.update({pr["url"]: pull_chunks(pr["body"])
                    for pr in data["other_pull_requests"] if pr["untracked"]})
     return pieces

@@ -14,11 +14,12 @@ import fcntl
 import json
 import os
 import re
+import textwrap
 
 from common import (BLOCKED_BY, CONTENT, DESIGN_ORDER, FOLDER_NAME, LEDGER, SCOPE_QUESTION, TABLES,
                     clear_folder, ids, investigation_dir, plain, report_path, read_json, library_command, script_command,
                     stdin_json, stops_on_failure, submit_section, write_task,
-                    topic_of, work_folder, write_output_json)
+                    topic_of, topic_words, work_folder, write_output_json)
 from init_investigation import init, usable_sources
 from ledger import (as_written, basis, brief, design_basis, depends_on, load, move_row, save, scope_decisions,
                     table_rows)
@@ -30,6 +31,15 @@ import protocol
 
 # A question's task, such as research:Q03.
 RESEARCH_TASK = re.compile(r"research:(Q\d+)")
+# The tasks whose answer submit takes, by the name of their worked answer,
+# each as the --task of the command the help shows.
+ANSWERED = {"scope": "scope", "research": "research:Q03",
+            "design": "design", "write": "write"}
+# What introduces a research answer's blocked outcome, in its task and in
+# the help.
+BLOCKED = "A blocked answer has this outcome instead:"
+# The investigation the help's commands name.
+EXAMPLE_INVESTIGATION = "Payments-Retry-Service_26-11-19"
 
 
 def start(topic):
@@ -68,8 +78,8 @@ def next_tasks(relative, maximum=1, resume=False):
     with the path of its file, or why nothing is handed out. Each question in
     a task is moved to in progress:
     the scope questions, as one task, when any is new or nothing else is left;
-    else up to `maximum` ready research questions, those that don't wait on
-    the user's answers. A question in progress is someone's already, so it is
+    else ready research questions, those that don't wait on the user's
+    answers, up to `maximum` in progress at once. A question in progress is someone's already, so it is
     handed out again only with `resume`, as after a break; one task in any
     other phase."""
     lines = load(relative).split("\n")
@@ -77,8 +87,9 @@ def next_tasks(relative, maximum=1, resume=False):
     if phase != "research":
         return write_tasks(relative, lines, [task_of(lines, phase)])
     if scope_due(lines):
-        # Only those whose dependencies are completed: one waiting on research
-        # is asked once that research is done.
+        # questions_to_work() holds only those whose dependencies are
+        # completed, so one waiting on research is asked once it is done; of
+        # those, only the ready ones move, as the rest are in progress already.
         ready = table_rows(lines, "queue-ready")
         for row in scope_questions(questions_to_work(lines)):
             if row in ready:
@@ -89,13 +100,15 @@ def next_tasks(relative, maximum=1, resume=False):
         lines) if not is_scope_question(row)]
     working = [row for row in research if row in table_rows(
         lines, "queue-in-progress")]
-    handed = (working if resume else [
-              row for row in research if row not in working])[:maximum]
+    # `maximum` is how many are worked at once: those already in progress
+    # count, so running next after each answer keeps the number steady.
+    handed = working[:maximum] if resume else [
+        row for row in research if row not in working][:max(0, maximum - len(working))]
     if not handed:
         return (f"Nothing new to hand out: {', '.join(row[0] for row in working)} in progress. Run next again once "
                 "an answer is submitted; if no one is working on them, as after a break, run next with --resume.")
-    for row in handed:
-        if row not in working:
+    if not resume:
+        for row in handed:
             move_row(lines, row[0], "queue-in-progress")
     save(relative, lines)
     return write_tasks(relative, lines, [f"research:{row[0]}" for row in handed])
@@ -111,6 +124,8 @@ def write_tasks(relative, lines, tasks):
 def submit(relative, task, data):
     """Check and write the answer `data` to `task`, which must be one the
     investigation hands out now; returns what was written."""
+    if not isinstance(data, dict):
+        raise SystemExit(f"the answer is a JSON object\n\n{input_help(task)}")
     lines = load(relative).split("\n")
     phase = phase_of(relative, lines)
     current = task_of(lines, phase)
@@ -200,8 +215,7 @@ def render(relative, lines, task):
         body = [protocol.text("scope", **values), "", *scope_context(lines)]
     elif task.startswith("research:"):
         body = [protocol.text("research", **values), "", *question_context(lines, task.removeprefix("research:")),
-                "", "A blocked answer has this outcome instead:",
-                json.dumps(protocol.example("research-blocked"), ensure_ascii=False)]
+                "", BLOCKED, answer_shape("research-blocked")]
     elif task == "design":
         body = [protocol.text("design", **values), "", *design_context(lines)]
     elif task == "write":
@@ -218,8 +232,7 @@ def render(relative, lines, task):
                           f"- The folder is {'temporary' if temporary else 'kept'}"])
     # Where the task keeps its files: one rule for every task, written once.
     body += ["", protocol.text("_work", **values)]
-    name = task.partition(":")[0]
-    example = protocol.compact(protocol.example(name))
+    example = answer_shape(task.partition(":")[0])
     if task == "write":
         submit = ["## Submit", "", "Submit your file with this command:", "",
                   f"{call()} submit --investigation {relative} --task write --input <your file>",
@@ -228,6 +241,12 @@ def render(relative, lines, task):
         submit = [submit_section(
             f"{call()} submit --investigation {relative} --task {task}", example)]
     return "\n".join([*head, *body, "", *submit])
+
+
+def answer_shape(name):
+    """The worked answer `name`, such as research, as a task and the help
+    show it: one record per line."""
+    return protocol.compact(protocol.example(name))
 
 
 def work_dir(relative):
@@ -257,7 +276,7 @@ def fills(relative):
     return {"tickets": script_command(__file__, "tickets.py"),
             "extract_saved": library_command(__file__, "extract_saved.py"),
             "investigation": relative, "ledger": os.path.join(folder, LEDGER),
-            "topic": topic_of(folder).replace("-", " "),
+            "topic": topic_words(topic_of(folder)),
             "documentation": " or ".join(f"the {name} source" for name in sources["documentation"]),
             "code": " or ".join(f"the {name} source" for name in sources["source_control"]),
             "repos": repos_dir(relative)}
@@ -375,11 +394,41 @@ def submit_report(relative, data):
     """Write content.json, then finish the report from it; returns the
     report's path, whether the folder is temporary and the warnings, or exits
     with the problems unless the report passes."""
-    if not isinstance(data, dict):
-        raise SystemExit(
-            "the text is a JSON object, in the shape the write task shows")
     write_output_json(FOLDER_NAME, f"{relative}/{CONTENT}", data)
     return finish(relative)
+
+
+def input_help(task=None):
+    """What submit takes as the answer to `task`, or to every task when it
+    names none that takes one: the answer's shape, from its worked answer,
+    and a command to copy, the answer in a quoted here-document, or for
+    write, in the file passed with --input."""
+    name = (task or "").partition(":")[0]
+    return "\n\n".join(answer_help(each) for each in ([name] if name in ANSWERED else ANSWERED))
+
+
+def answer_help(name):
+    """The shape of the answer to the task `name` and the command that
+    submits it, as input_help() shows them."""
+    command = f"  {call()} submit --investigation {EXAMPLE_INVESTIGATION} --task {ANSWERED[name]}"
+    shape = textwrap.indent(answer_shape(name), "  ")
+    if name == "write":
+        return (f"Input for --task write, the report's text, in a file passed with --input:\n\n"
+                f"{command} --input <your file>\n\nThe file holds:\n\n{shape}")
+    shown = f"Input, on stdin, for --task {name}:\n\n{command} <<'END_OF_INPUT'\n{shape}\n  END_OF_INPUT"
+    if name == "research":
+        shown += (f"\n\n{BLOCKED}\n\n"
+                  + textwrap.indent(answer_shape("research-blocked"), "  "))
+    return shown
+
+
+def answer_file(path, task):
+    """The answer in the file `path`; exits, showing the input `task` takes,
+    when the file is missing or isn't JSON."""
+    try:
+        return read_json(path)
+    except SystemExit as error:
+        raise SystemExit(f"{error.code}\n\n{input_help(task)}")
 
 
 def next_command(relative):
@@ -413,15 +462,17 @@ def main(argv=None):
     take.add_argument("--investigation", required=True,
                       help="<Topic>_<YY-MM-DD>, as start printed it")
     take.add_argument("--max", type=int, default=1,
-                      help="how many research questions at most, such as 4 to give each to a subagent")
+                      help="how many research questions in progress at once at most, those already handed out "
+                      "included, such as 4 to give each to a subagent")
     take.add_argument("--resume", action="store_true",
                       help="hand out the research questions in progress again, when no one is working on them, "
                       "as after a break")
-    give = commands.add_parser("submit", help="check a task's answer and write it",
+    give = commands.add_parser("submit", help="check a task's answer and write it", epilog=input_help(),
+                               formatter_class=argparse.RawDescriptionHelpFormatter,
                                description="Check a task's answer, given as JSON on standard input or in --input, "
                                "and write everything it implies; nothing is written while any problem is left, but for the "
                                "report's text, and each problem is named by its field. Each task next prints ends with its answer's shape and "
-                               "the command to copy. Prints one line of JSON.")
+                               "the command to copy, as below. Prints one line of JSON.")
     give.add_argument("--investigation", required=True,
                       help="<Topic>_<YY-MM-DD>, as start printed it")
     give.add_argument("--task", required=True,
@@ -437,8 +488,8 @@ def main(argv=None):
                 print(next_tasks(args.investigation,
                       max(1, args.max), args.resume))
         else:
-            data = read_json(args.input) if args.input else stdin_json(
-                "Each task ends with its answer's shape and the command to copy.")
+            data = answer_file(args.input, args.task) if args.input else stdin_json(
+                input_help(args.task))
             with locked(args.investigation):
                 print(json.dumps(submit(args.investigation,
                       args.task, data), ensure_ascii=False))

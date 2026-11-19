@@ -28,7 +28,7 @@ class SetIdentitiesTest(unittest.TestCase):
     def setUp(self):
         self.folder = temp_output(self)
         write_prep(self.folder, person=AFTER_STEP_1,
-                   orientation=None, reviews=None)
+                   manager=None, other=None, previous=None)
         self.path = os.path.join(self.folder, PREP, "person.json")
 
     def read(self):
@@ -54,7 +54,7 @@ class SetIdentitiesTest(unittest.TestCase):
         # send. The Jira account is step 1's.
         cases = [("a source that breaks a rule", {**CONFIRMED, "slack-mcp": {}}, "slack-mcp must be"),
                  ("the Jira account", PERSON["sources"],
-                  "leave jira-api out: the Jira account was confirmed with the period in step 1")]
+                  "leave jira-api out: the Jira account was found in step 1")]
         for name, identities, expected in cases:
             with self.subTest(name), self.assertRaisesRegex(SystemExit, f"{expected}(.|\n)*END_OF_INPUT"):
                 set_identities.set_identities(PREP, identities)

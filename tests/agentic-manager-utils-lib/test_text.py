@@ -204,6 +204,22 @@ class TextTest(unittest.TestCase):
                 self.assertEqual(text.table_row(cells), row)
                 self.assertEqual(text.table_cells(row), cells)
 
+    def test_is_separator(self):
+        # Dashes in every cell, aligned by a colon at either end; a row, a
+        # thematic break or an empty cell isn't one.
+        cases = [("| --- | --- |", True),
+                 ("|:---|---:|:-:|", True),
+                 ("--- | ---", True),
+                 ("| --- |", True),
+                 ("| a | --- |", False),
+                 ("| - item | b |", False),
+                 ("|  | --- |", False),
+                 ("---", False),
+                 ("| -- - | --- |", False)]
+        for line, expected in cases:
+            with self.subTest(line):
+                self.assertEqual(text.is_separator(line), expected)
+
     def test_html_table(self):
         # The full width, every row aligned to the top; small type on request.
         cases = [({}, ['<table width="100%">', '<tr valign="top"><th>A</th></tr>',
@@ -221,9 +237,37 @@ class TextTest(unittest.TestCase):
                          '<a href="_charts/a.svg" target="_blank"><img src="_charts/a.svg" width="100%" '
                          'alt="Burndown"></a>')
         # CHART_IMAGE reads back what chart_image() writes, path first.
-        found = text.CHART_IMAGE.fullmatch(text.chart_image("_charts/a.svg", "Burndown"))
+        found = text.CHART_IMAGE.fullmatch(
+            text.chart_image("_charts/a.svg", "Burndown"))
         assert found is not None
         self.assertEqual(found[1], "_charts/a.svg")
+
+    def test_chunks(self):
+        # Each case: text, size, the pieces. A piece ends at the last line
+        # break, else the last space, in its second half; with neither it is
+        # cut at the size.
+        cases = [
+            ("short", "one two", 20, ["one two"]),
+            ("empty", "", 20, [""]),
+            ("at a line break", "aaaa bbbb\ncccc dddd\neeee ffff", 14,
+             ["aaaa bbbb", "cccc dddd", "eeee ffff"]),
+            ("at a space, with no line break", "aaaa bbbb cccc dddd", 12,
+             ["aaaa bbbb", "cccc dddd"]),
+            ("a break in the first half is not used", "a\nbbbbbbbbbbbbbbbbbbbb", 10,
+             ["a\nbbbbbbbb", "bbbbbbbbbb", "bb"]),
+            ("no break at all", "x" * 25, 10, ["x" * 10, "x" * 10, "x" * 5]),
+        ]
+        for name, value, size, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(text.chunks(value, size), expected)
+
+    def test_chunks_lose_no_word_and_respect_the_size(self):
+        value = "\n".join(f"line {n} " + "w" * (n % 9) for n in range(300))
+        pieces = text.chunks(value, 100)
+        self.assertGreater(len(pieces), 1)
+        self.assertTrue(all(len(p) <= 100 for p in pieces))
+        self.assertEqual(" ".join(" ".join(pieces).split()),
+                         " ".join(value.split()))
 
 
 if __name__ == "__main__":

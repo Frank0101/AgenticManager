@@ -33,15 +33,6 @@ class ProblemsTest(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(len(texts), 3)
 
-    def test_svg_fragment_urls_are_allowed(self):
-        # An SVG paint server, such as a gradient, is a url() to a fragment
-        # of the page itself, not a file.
-        data = content()
-        data["slides"][0] = slide("<svg><defs><linearGradient id='g'/></defs>"
-                                  "<rect style='fill: url(#g)' width='1' height='1'/></svg>")
-        data["style"] = [".a { fill: url(#g); }"]
-        self.assertEqual(make_deck.problems(data)[0], [])
-
     def test_problems_name_the_field(self):
         # Each case: a change to the fixture, and the problem it raises.
         def ring(**changes):
@@ -187,51 +178,58 @@ class ProblemsTest(unittest.TestCase):
                 self.assertTrue(any(expected in error for error in errors),
                                 f"{expected!r} not in {errors}")
 
-    def test_accepted_slides(self):
-        # Each case: the slides replacing the fixture's first and third.
-        # Void elements, self-closed SVG and entities need no closing tag, a
-        # link to a page is fine (only loading a remote file isn't), and an
-        # image in _assets can be placed on several slides.
+    def test_accepted(self):
+        # Each case: a change to the fixture that raises no problem, with
+        # acme-logo in _assets. Void elements, self-closed SVG and entities
+        # need no closing tag, a link to a page is fine (only loading a remote
+        # file isn't), an image in _assets can be placed on several slides,
+        # an SVG paint server is a url() to a fragment of the page itself, not
+        # a file, a shadow with no blur prints as it shows, and a selector
+        # merely like the page's own restyles none of it.
+        def slides(first, third):
+            def change(data):
+                data["slides"][0], data["slides"][2] = first, third
+            return change
+
+        def styled(style, html="<p>x</p>"):
+            def change(data):
+                data["style"], data["slides"][0] = style, slide(html)
+            return change
+
         cases = [
-            ("html", slide("<p>a<br>b</p><img src='data:image/png;base64,AA'>",
-                           "<svg viewBox='0 0 10 10'><path d='M0,0 L10,10' /><circle cx='5' cy='5' r='2'></circle></svg>",
-                           "<a href='https://example.com'>Q&amp;A</a>"),
-             slide("<p>Thanks</p>")),
-            ("an image twice", slide("<img src='{{asset:acme-logo}}'>"),
-             slide("<p>Thanks</p>", "<img src='{{asset:acme-logo}}'>")),
+            ("html", slides(
+                slide("<p>a<br>b</p><img src='data:image/png;base64,AA'>",
+                      "<svg viewBox='0 0 10 10'><path d='M0,0 L10,10' /><circle cx='5' cy='5' r='2'></circle></svg>",
+                      "<a href='https://example.com'>Q&amp;A</a>"),
+                slide("<p>Thanks</p>"))),
+            ("an image twice", slides(
+                slide("<img src='{{asset:acme-logo}}'>"),
+                slide("<p>Thanks</p>", "<img src='{{asset:acme-logo}}'>"))),
+            ("svg fragment urls", styled(
+                [".a { fill: url(#g); }"],
+                "<svg><defs><linearGradient id='g'/></defs>"
+                "<rect style='fill: url(#g)' width='1' height='1'/></svg>")),
+            ("shadow with no blur", styled(
+                [".a { box-shadow: 4px 4px 0 #1e3a8a, inset 0 0 0 1px #ddd; }"])),
+            ("text-shadow with no blur", styled(
+                ["h1 { text-shadow: 2px 2px #000; }"])),
+            ("no shadow", styled(
+                [".a { box-shadow: none; filter: blur(2px) drop-shadow(3px 3px 0 red); }"])),
+            ("custom property with no blur", styled(
+                [":root { --offset: 6px 6px 0 #0f172a; }", ".a { box-shadow: var(--offset); }"])),
+            ("inline shadow with no blur", styled(
+                [], "<div style='box-shadow: 3px 3px 0 0 #000'></div>")),
+            ("shadow in a comment", styled(
+                ["/* box-shadow: 0 2px 8px #000; */", "body-text { color: red; }"])),
+            ("selectors like the page's", styled(
+                [".toolbar-row, .body, #body, .slides-wrapper-x, .slide .toolbox { color: red; }"])),
         ]
-        for name, first, third in cases:
+        for name, change in cases:
             with self.subTest(name):
                 data = content()
-                data["slides"][0], data["slides"][2] = first, third
+                change(data)
                 self.assertEqual(make_deck.problems(
                     data, frozenset({"acme-logo"}))[0], [])
-
-    def test_accepted_style(self):
-        # Each case: the deck's style and the first slide's html. A shadow
-        # with no blur prints as it shows, and a selector merely like the
-        # page's own restyles none of it.
-        cases = [
-            ("shadow with no blur", [
-             ".a { box-shadow: 4px 4px 0 #1e3a8a, inset 0 0 0 1px #ddd; }"], "<p>x</p>"),
-            ("text-shadow with no blur",
-             ["h1 { text-shadow: 2px 2px #000; }"], "<p>x</p>"),
-            ("no shadow", [
-             ".a { box-shadow: none; filter: blur(2px) drop-shadow(3px 3px 0 red); }"], "<p>x</p>"),
-            ("custom property with no blur", [":root { --offset: 6px 6px 0 #0f172a; }", ".a { box-shadow: var(--offset); }"],
-             "<p>x</p>"),
-            ("inline shadow with no blur", [],
-             "<div style='box-shadow: 3px 3px 0 0 #000'></div>"),
-            ("shadow in a comment", [
-             "/* box-shadow: 0 2px 8px #000; */", "body-text { color: red; }"], "<p>x</p>"),
-            ("selectors like the page's", [".toolbar-row, .body, #body, .slides-wrapper-x, .slide .toolbox { color: red; }"],
-             "<p>x</p>"),
-        ]
-        for name, style, html in cases:
-            with self.subTest(name):
-                data = content()
-                data["style"], data["slides"][0] = style, slide(html)
-                self.assertEqual(make_deck.problems(data)[0], [])
 
 
 class RingTest(unittest.TestCase):

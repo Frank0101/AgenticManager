@@ -1,9 +1,9 @@
 """Prepares a prep's new folder, <Person>_<YY-MM-DD> for today, replacing one of the same person and day, and starts its person.json.
 
 Every run starts from scratch: nothing an earlier run left is read. The
-person as the manager named them, the period and the Jira account they
-confirmed are checked by the final check's rules before they are written;
-the other sources are added once the manager confirms them, so the only
+person as the manager named them, the period and the Jira account found
+for them are checked by the final check's rules before they are written;
+the other sources are added once they are found, so the only
 source here is Jira's. The account's name and email are read from Jira by its
 id, never copied by hand, and the folder is named after its name, so the same
 person always gets the same folder, however the manager calls them.
@@ -37,7 +37,7 @@ def init(person, account, period_start, period_end, today=None, client=None):
     user = (client or JiraClient()).user(account)
     if user is None:
         raise SystemExit(f"Jira has no person's account {account}: look the person up again with "
-                         "find_jira_account.py, and pass the accountId of the account the manager confirmed")
+                         "find_jira_account.py, and pass the accountId of the account found")
     if not user["emailAddress"]:
         raise SystemExit(f"Jira hides the email of {user['displayName']}'s account, and the person is found in "
                          "the other sources by it: tell the manager, who can ask a Jira admin to show it")
@@ -55,8 +55,8 @@ def init(person, account, period_start, period_end, today=None, client=None):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Prepare a prep's folder for a person, on the Jira account and over the period the manager "
-        "confirmed.",
+        description="Prepare a prep's folder for a person, on the Jira account found and over the period the manager "
+        "gave.",
         epilog=OUTPUT, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--person", required=True,
                         help="the person's name as the manager gives it, such as 'Jane Doe'")

@@ -105,9 +105,6 @@ def build_data(report_dir):
     in_scope, completed, removed = membership_sets(
         events_of, sprint_id, moment)
     problems = cross_check(report, in_scope, completed, removed, later_moves)
-    if problems is None:
-        raise SystemExit("Jira's sprint report is missing, so the scope can't be cross-checked; "
-                         "no data written. Fetch the sprint again.")
     if problems:
         raise SystemExit("data differs from Jira's sprint report; no data written. Unless said otherwise "
                          "below, the sprint changed during the fetch: fetch it again.\n  - "
@@ -263,17 +260,8 @@ def description(fields):
 
 def load_changelogs(changelog_dir, raw_issues):
     """{key: the changes fetch_sprint.py stored for it}."""
-    changes, missing = {}, []
-    for raw in raw_issues:
-        path = os.path.join(changelog_dir, f"{raw['key']}.json")
-        if os.path.exists(path):
-            changes[raw["key"]] = read_json(path)
-        else:
-            missing.append(raw["key"])
-    if missing:
-        raise SystemExit("missing changelogs for " + ", ".join(sorted(missing)) +
-                         "; fetch the sprint again rather than guessing when they joined")
-    return changes
+    return {raw["key"]: read_json(os.path.join(changelog_dir, f"{raw['key']}.json"))
+            for raw in raw_issues}
 
 
 def membership_sets(events_of, sprint_id, moment):
@@ -294,16 +282,13 @@ def membership_sets(events_of, sprint_id, moment):
     return in_scope, completed, removed
 
 
-def cross_check(report, in_scope, completed, removed, later_moves=()):
+def cross_check(report, in_scope, completed, removed, later_moves):
     """Compare our in-scope, completed and removed key sets with Jira's
-    sprint report, which buckets the same issues independently. Returns None
-    if the report has no contents, else a list of discrepancies (empty when
-    they agree). Issues moved after the cutoff are excluded from this
+    sprint report, which buckets the same issues independently: the
+    discrepancies, empty when they agree. Issues moved after the cutoff are excluded from this
     comparison: Jira's current membership buckets cannot verify their
     historical membership."""
-    contents = (report or {}).get("contents")
-    if not contents:
-        return None
+    contents = report["contents"]
     if not any(contents.get(bucket) for bucket in ("completedIssues", "issuesNotCompletedInCurrentSprint",
                                                    "issuesCompletedInAnotherSprint", "puntedIssues")):
         return ["Jira's sprint report is empty: this board doesn't serve it. Fetch the sprint again "
@@ -546,12 +531,11 @@ def target_completion(spells):
             "total_points": known_sum(s["points"] for s in original)}
 
 
-def build_epics(spells, descriptions=None):
+def build_epics(spells, descriptions):
     """Per-epic delivery of the counted spells: done is completed; the total
     adds not completed and descoped. The pts follow known_sum's rule. Each epic also carries its
     description, its spells sorted into the commentary's groups (see
     scope_group) and how many each reason left out."""
-    descriptions = descriptions or {}
     epics, estimates = {}, {}
     for spell in (s for s in spells if s["counted"]):
         key, name = spell_epic(spell)
@@ -855,16 +839,14 @@ def days_left(status, end_date, today):
 def blocker_comments(comment_dir, keys, moment, zone):
     """{key: its comments} of each blocker candidate of `keys`, from the
     comment files in `comment_dir`: those comments_as_of() keeps, each as
-    {at, date, text}, its creation, local date (None without one) and plain
-    text, without a blank one. Their authors are left out, as no part of the
-    report names colleagues. A candidate whose comments weren't fetched has
-    none."""
+    {at, date, text}, its creation, local date and plain text, without a
+    blank one. Their authors are left out, as no part of the report names
+    colleagues."""
     found = {}
     for key in keys:
-        path = os.path.join(comment_dir, f"{key}.json")
-        values = comments_as_of(read_json(path), parse_ts(
-            moment)) if os.path.exists(path) else []
-        found[key] = [{"at": c.get("created"), "date": sprint_date(c.get("created"), zone), "text": text}
+        values = comments_as_of(read_json(os.path.join(
+            comment_dir, f"{key}.json")), parse_ts(moment))
+        found[key] = [{"at": c["created"], "date": sprint_date(c["created"], zone), "text": text}
                       for c in values if (text := plain_text(c.get("body"))).strip()]
     return found
 

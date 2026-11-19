@@ -1,12 +1,12 @@
-"""Builds a prep's data.json from its raw files and the summaries of the manager's view, the reviews, the feedback, the notes and Slack: the one model its report reads, every item and every fact worked out from them, once.
+"""Builds a prep's data.json from its raw files and the summaries of the current manager feedback, the other feedback, the previous feedback, the notes and Slack: the one model its report reads, every item and every fact worked out from them, once.
 
 The report and its charts read these facts and never work them out again,
 and the final check rebuilds the file from the same files and works the
 report's figures out again from the items and the summaries' points, apart
 from this code. It needs no network, so rerunning it rebuilds the model
-from what was gathered. Weeks are calendar weeks, Monday
-to Sunday, counted from a fixed Monday, so a day falls in the same week
-whatever the period, a few at a time when there would be more than MAX_POINTS.
+from what was gathered. Weeks are calendar weeks, clipped to the period and
+never grouped: a short week at an edge counts its own days, so its lower
+value is for the charts to show by where they place it, not to change.
 """
 import argparse
 import json
@@ -14,23 +14,20 @@ import math
 import os
 import statistics
 from collections import Counter
-from datetime import date, timedelta
 
-from common import (BINS_PER_DECADE, newest_key, DATA, FOCUS_SHARE, MAX_GROUPS, OBSERVATION_HEADINGS, PIECE_SOURCES, SUMMARY_FILES, SUMMARY_PARTS, VALUED_PARTS, VALUES, REVIEW_ID, VIEW_ID, point_id, project_of, PERSON, WORK_LISTS, company_names, epic_of, jira_search_url, pull_search_url, period_days, prep_dir, raw_work_problems,
+from common import (BINS_PER_DECADE, calendar_week, calendar_weeks, latest_day, newest_key, DATA, FOCUS_SHARE, MAX_GROUPS, OBSERVATION_HEADINGS, SUMMARY_FILES, SUMMARY_PARTS, VALUED_PARTS, VALUES, PREVIOUS_ID, point_id, project_of, PERSON, WORK_LISTS, company_names, epic_of, jira_search_url, pull_search_url, period_days, prep_dir, raw_work_problems,
                     is_sub_task, read_json, read_raw_work, work_items, write_prep_file)
 
 # The searches data.json links to, by what they find: each list's, and the
 # resolved issues that are estimated, whose points are summed.
 SEARCH_URLS = {"jira": ("created", "resolved",
                         "resolved_points"), "github": ("opened", "merged")}
-EPOCH_MONDAY = date(2001, 1, 1)
-MAX_POINTS = 20
 
 
 def build_data(prep):
     """Build the prep `prep`'s data.json from its raw files and the summaries
-    of the manager's view, the reviews, the feedback, the notes and Slack;
-    returns its path. Exits, writing
+    of the current manager feedback, the other feedback, the previous feedback, the
+    notes and Slack; returns its path. Exits, writing
     nothing, when a raw file is missing or breaks a rule, or a summary is
     missing."""
     person = read_json(os.path.join(prep_dir(prep), PERSON))
@@ -40,13 +37,13 @@ def build_data(prep):
     summaries = read_summaries(prep)
     if missing := [name for name, summary in summaries.items() if summary is None]:
         raise SystemExit(f"{', '.join(SUMMARY_FILES[name] for name in missing)} missing: record the manager's "
-                         "view, the reviews and the feedback and read the notes and Slack, steps 3 to 6, first")
+                         "feedback, the other feedback and the previous feedback and read the notes and Slack "
+                         "first")
     return write_prep_file(prep, DATA, build(raws, person, summaries, company_names(VALUES)))
 
 
 def read_summaries(prep):
-    """The summaries the report's observations, step change and view check
-    are built from, in the prep `prep`, by SUMMARY_FILES' names, each None while it is
+    """The summaries the report's observations and step change are built from, in the prep `prep`, by SUMMARY_FILES' names, each None while it is
     missing."""
     folder = prep_dir(prep)
     return {name: read_json(os.path.join(folder, file)) if os.path.exists(os.path.join(folder, file)) else None
@@ -63,14 +60,14 @@ def raws_problems(raws, days):
 
 def build(raws, person, summaries, values):
     """data.json from `raws`, every source's raw file, for the period in
-    `person`: weeks, the period's weeks as the charts group it, and for each
+    `person`: weeks, the period's calendar weeks, and for each
     source its items, its facts and its searches' addresses; a Notion page
     with its calendar week, by calendar_week(), as its search may span only
-    part of one; observations, the points of `summaries`, the reviews in the
-    period among them, by observations(), with `values`, the company's;
-    reviews, the previous ones, by previous_reviews(); and view, the
-    manager's, by manager_view()."""
-    weeks = week_groups(person["start"], person["end"])
+    part of one; observations, the points of `summaries`' current manager
+    feedback, other feedback, notes and Slack, by observations(), with `values`, the company's;
+    previous, the previous feedback, by baseline_parts(), null when it has
+    no points."""
+    weeks = calendar_weeks(person["start"], person["end"])
     data: dict = {"weeks": weeks}
     for source, raw in raws.items():
         lists = work_items(source, raw)
@@ -79,11 +76,8 @@ def build(raws, person, summaries, values):
                                  for page in lists["created"]]}
         data[source] = {
             **lists, **source_facts(source, lists, weeks), **search_urls(source, raw)}
-    in_period, previous = split_reviews(
-        summaries["reviews"]["pieces"], person["start"], person["end"])
-    data["observations"] = observations(summaries, in_period, values)
-    data["reviews"] = previous_reviews(previous)
-    data["view"] = manager_view(summaries["orientation"])
+    data["observations"] = observations(summaries, values)
+    data["previous"] = baseline_parts(summaries["previous"])
     return data
 
 
@@ -100,30 +94,20 @@ def data_problems(data, raws, person, summaries, values):
 
 # The observations.
 
-def split_reviews(pieces, start, end):
-    """(in the period, previous): the review `pieces` dated from `start` to
-    `end`, the period's first and last day, in their order, and those dated
-    before it or undated, by newest(), so the first is the latest, an
-    undated one counting as the most recent; one dated after it is
-    neither."""
-    return ([piece for piece in pieces if piece["date"] and start <= piece["date"] <= end],
-            newest([piece for piece in pieces if not piece["date"] or piece["date"] < start]))
-
-
-def observations(summaries, reviews, values):
-    """The points of `summaries`, the feedback's pieces, the notes' summary
-    and Slack's, and of `reviews`, the review pieces in the period, for each
+def observations(summaries, values):
+    """The points of `summaries`, the current manager feedback's, the other
+    feedback's, the notes' summary and Slack's, for each
     part of OBSERVATION_HEADINGS, by part_points(), each with its id, by
     point_id(), in its table's order: a
     part of VALUED_PARTS as a group for each of `values` that a point names
     first, those with the most points first, in their order when as many,
     then one, its value null, of the points that name none, each point
-    {id, point, also, source, date, period, evidence}, also the second value it
+    {id, point, also, source, date, evidence}, also the second value it
     names, null when it names one or none, so it shows though the point sits
     under its first; context, which names no value, as its points alone."""
     result = {}
     for part in OBSERVATION_HEADINGS:
-        points = part_points(summaries, reviews, part)
+        points = part_points(summaries, part)
         if part not in VALUED_PARTS:
             result[part] = numbered(points, part)
             continue
@@ -140,28 +124,25 @@ def observations(summaries, reviews, values):
 
 def numbered(points, part, prefix=""):
     """`points` of `part`, each with its id first, by point_id(), in their
-    order, after `prefix`, such as REVIEW_ID for the latest previous
-    review's."""
+    order, after `prefix`, such as PREVIOUS_ID for the previous
+    feedback's."""
     return [{"id": point_id(part, number, prefix), **point} for number, point in enumerate(points, 1)]
 
 
-def part_points(summaries, reviews, part):
-    """The points of `part` in `summaries` and `reviews`, the review pieces in
-    the period, the most recent first, those with
-    no date first, as the most recent of all, by their date, a piece's or the
-    latest of their dated evidence's, null when none is dated: each {point,
-    source, date, period, evidence}, and in VALUED_PARTS its also and its
+def part_points(summaries, part):
+    """The points of `part` in `summaries`, the current manager feedback's,
+    the other feedback's, the notes' and Slack's, the most recent first,
+    those with no date first, as
+    the most recent of all, by the latest of their dated evidence's: each
+    {point, source, date, evidence}, and in VALUED_PARTS its also and its
     value, the first it names or null; its source a key of SUMMARY_FILES,
-    its period its piece's, null for a reading's, and its evidence a
-    reading's, the most recent first the same way, those of a day in the
-    order given, empty for a piece's."""
-    pieces = {"feedback": summaries["feedback"]["pieces"], "reviews": reviews}
-    points = [{**point_text(point, part), "source": source, "date": piece["date"], "period": piece["period"],
-               "evidence": []}
-              for source in PIECE_SOURCES for piece in pieces[source] for point in piece[part]]
+    and its evidence a reading's, the most recent first the same way, those
+    of a day in the order given, empty for the feedbacks'."""
+    points = [{**point_text(point, part), "source": source, "date": None, "evidence": []}
+              for source in ("manager", "other") for point in summaries[source][part]]
     points += [{**point_text(point, part), "source": source,
-                "date": max((item["date"] for item in point["evidence"] if item["date"]), default=None),
-                "period": None, "evidence": newest(point["evidence"])}
+                "date": latest_day(point["evidence"]),
+                "evidence": newest(point["evidence"])}
                for source in ("notes", "slack") for point in summaries[source][part]]
     return newest(points)
 
@@ -169,7 +150,7 @@ def part_points(summaries, reviews, part):
 def point_text(point, part):
     """{point}, the text of `point`, a point of `part`, and in VALUED_PARTS
     {also, value}: the second company value it names and the first, each
-    null when it names fewer. A piece's context point is a sentence alone."""
+    null when it names fewer. A feedback's context point is a sentence alone."""
     if part not in VALUED_PARTS:
         return {"point": summary_text(point)}
     return {"point": point["point"], "also": point["values"][1] if len(point["values"]) > 1 else None,
@@ -182,38 +163,16 @@ def newest(dated):
     return sorted(dated, key=lambda item: newest_key(item["date"]), reverse=True)
 
 
-def previous_reviews(previous):
-    """{latest, earlier}: the `previous` reviews, the most recent first, the
-    step change compares the period with, or null when there are none: the
-    latest, the first, {period, date, rating} and its parts by
-    baseline_parts(), REVIEW_ID before each id; and the earlier ones, which
-    only weigh a point raised again, {period, date} and their parts, each
-    point's text."""
-    if not previous:
+def baseline_parts(summary):
+    """{part: points}: each part of SUMMARY_PARTS of `summary`, the previous
+    feedback the period is compared with, each point with its id, by
+    numbered(), after PREVIOUS_ID, its text and, in VALUED_PARTS, its values;
+    null when it has no points, as there is then nothing to compare."""
+    if not any(summary.values()):
         return None
-    latest = previous[0]
-    return {"latest": {"period": latest["period"], "date": latest["date"], "rating": latest["rating"],
-                       **baseline_parts(latest, REVIEW_ID)},
-            "earlier": [{"period": piece["period"], "date": piece["date"],
-                         **{part: [summary_text(point) for point in piece[part]] for part in SUMMARY_PARTS}}
-                        for piece in previous[1:]]}
-
-
-def manager_view(orientation):
-    """The manager's view, `orientation`, orientation.json, that the view
-    check compares with the period, its parts by baseline_parts(), VIEW_ID
-    before each id: it always has points, as its summary is refused without
-    one."""
-    return baseline_parts(orientation, VIEW_ID)
-
-
-def baseline_parts(summary, prefix):
-    """{part: points}: each part of SUMMARY_PARTS of `summary`, a summary
-    compared with the period, each point with its id, by numbered(), after
-    `prefix`, its text and, in VALUED_PARTS, its values."""
     return {part: numbered([{"point": summary_text(point), **({"values": point["values"]}
                                                               if part in VALUED_PARTS else {})}
-                            for point in summary[part]], part, prefix)
+                            for point in summary[part]], part, PREVIOUS_ID)
             for part in SUMMARY_PARTS}
 
 
@@ -436,31 +395,6 @@ def weekly(items, weeks):
     return [sum(1 for item in items if first <= item["date"] <= last) for first, last in weeks]
 
 
-def calendar_week(day, start, end):
-    """[first, last]: the calendar week, Monday to Sunday, of the day `day`,
-    clipped to the period from `start` to `end`, all as YYYY-MM-DD."""
-    monday = date.fromisoformat(
-        day) - timedelta(days=date.fromisoformat(day).weekday())
-    return [max(monday.isoformat(), start), min((monday + timedelta(days=6)).isoformat(), end)]
-
-
-def week_groups(start, end):
-    """[[start, end]]: the calendar weeks, Monday to Sunday, from the day
-    `start` to the day `end`, as YYYY-MM-DD, a few at a time when there would be
-    more than MAX_POINTS of them, each group always the same weeks, the first
-    and last clipped to `start` and `end`."""
-    first, last = date.fromisoformat(start), date.fromisoformat(end)
-
-    def week(day):
-        return (day - EPOCH_MONDAY).days // 7
-    width = 1
-    while week(last) // width - week(first) // width + 1 > MAX_POINTS:
-        width += 1
-    return [[max(first, EPOCH_MONDAY + timedelta(weeks=group * width)).isoformat(),
-             min(last, EPOCH_MONDAY + timedelta(weeks=(group + 1) * width, days=-1)).isoformat()]
-            for group in range(week(first) // width, week(last) // width + 1)]
-
-
 # The searches.
 
 def search_urls(source, raw):
@@ -522,8 +456,8 @@ def epic_search_urls(raw):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Build the prep's data.json, the model its report reads, from the raw files step 7 wrote and "
-        "the summaries of the manager's view, the reviews, the feedback, the notes and Slack.",
+        description="Build the prep's data.json, the model its report reads, from the raw files fetched from Jira, GitHub and Notion and "
+        "the summaries of the current manager feedback, the other feedback, the previous feedback, the notes and Slack.",
         epilog="Prints one line of JSON: data, data.json's path. Needs no network: run it again to rebuild it.")
     parser.add_argument("--prep", required=True,
                         help="the prep's folder, <Person>_<YY-MM-DD>, as init_prep.py printed it")

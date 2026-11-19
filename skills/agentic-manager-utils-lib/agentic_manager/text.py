@@ -46,8 +46,8 @@ DISPLAY_DATE = "%d/%m/%Y"
 NOTION_PAGE = re.compile(
     r"([0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12})(?![0-9a-f])", re.I)
 NOTION_HOST = re.compile(r"(^|\.)notion\.(so|site|com)$")
-# A repository's folder path, /owner/repo/tree/..., which names the same files
-# as its /blob/ path.
+# A repository's folder path in GitHub's form, /owner/repo/tree/..., which
+# names the same files as its /blob/ path.
 TREE_PATH = re.compile(r"^(/[^/]+/[^/]+)/tree/")
 # Query parameters that say how a page was reached, not which page it is.
 TRACKING = re.compile(r"^(pvs|utm_\w+)$")
@@ -59,6 +59,9 @@ FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)", re.M)
 # A pipe that separates table cells: one escaped as \| stays inside its cell,
 # so a table cell's text, kept on one line, never splits its row.
 CELL_PIPE = re.compile(r"(?<!\\)\|")
+# A cell of a table's separator line: dashes, a colon at either end aligning
+# the column.
+SEPARATOR_CELL = re.compile(r":?-+:?")
 
 
 def word_count(text):
@@ -138,8 +141,8 @@ def same_document(url):
     document compare equal: a Notion page by its ID, whatever its URL form,
     the row opened in a database's side peek (?p=) included; otherwise the URL
     in lower-case scheme and host, without its #fragment, tracking parameters
-    or a trailing slash, and a repository's tree path as the blob path it names,
-    on any code host."""
+    or a trailing slash, and a repository's tree path in GitHub's form,
+    /owner/repo/tree/..., as the blob path it names."""
     parts = urlsplit(url.strip())
     host = parts.netloc.casefold().removeprefix("www.")
     if NOTION_HOST.search(host.split(":")[0]):
@@ -255,6 +258,13 @@ def table_row(cells):
     return "| " + " | ".join(CELL_PIPE.sub(r"\\|", str(cell)) for cell in cells) + " |"
 
 
+def is_separator(line):
+    """Whether `line` is a Markdown table's separator line, below its header:
+    a pipe, and in each cell only dashes, with a colon at either end to align
+    the column."""
+    return "|" in line and all(SEPARATOR_CELL.fullmatch(cell) for cell in table_cells(line))
+
+
 def table_cells(line):
     """The cells of the Markdown table row `line`, trimmed; a pipe escaped
     as \\| stays inside its cell, read as |."""
@@ -283,3 +293,19 @@ def ai_marked(title):
     the title; its size is in rem, so it reads the same after a heading and
     in a table cell."""
     return f'{title} <sup style="font-size:0.6rem;font-weight:normal">{AI_LABEL}</sup>'
+
+
+def chunks(text, size):
+    """`text` in pieces of at most `size` characters. A piece ends at the last
+    line break, else the last space, in its second half, so it stops at the end
+    of a line when the text has one to use."""
+    pieces = []
+    while len(text) > size:
+        cut = text.rfind("\n", size // 2, size + 1)
+        if cut < 0:
+            cut = text.rfind(" ", size // 2, size + 1)
+        if cut < 0:
+            cut = size
+        pieces.append(text[:cut].rstrip())
+        text = text[cut:].lstrip()
+    return [*pieces, text]

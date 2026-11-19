@@ -11,8 +11,8 @@ import re
 
 from common import (CITATION, DESIGN, DESIGN_ORDER, FOLDER_NAME, INLINE_LINK, LEDGER, LINKS,
                     CODE_SPAN, QUEUE_HEADER, QUEUE_TABLES, ROW_START, RULED_OUT, SOURCE_FINDINGS_COLUMN, SOURCE_HEADER,
-                    TABLES, UNUSED, anchored, autolink, backtick_error, citation, cited_sources, claim_length_problem,
-                    design_evidence, finding_problem, flow_states, free_name, id_order, identity_states, ids,
+                    TABLES, UNUSED, anchored, autolink, backtick_error, citation, cited_sources,
+                    design_evidence, flow_states, free_name, id_order, identity_states, ids,
                     inline_links, investigation_dir, JiraClient, ledger_rows, link_definitions, link_text,
                     links, plain, read_in_part, row_problem, same_document, section_span, slug, table,
                     table_cells, table_row, ticket_sites, unlinked_backticks, unrecorded_citations,
@@ -46,7 +46,7 @@ BASIS = re.compile(
 def brief(lines):
     """What writing the report reads, from the ledger as it stands: the
     scope boundaries, each source's reference with its coverage, every finding, the
-    components, the system design, decisions and gaps, and the findings resting
+    system design, decisions and gaps, and the findings resting
     on a source read in part. The queue is for research, and makes up much
     of a long ledger, and a design row ruled out is kept to show it doesn't
     exist, not to be reported. Links show their text, IDs are plain, and a source's
@@ -139,26 +139,12 @@ def section(lines, heading):
 
 def put_row(lines, name, row_id, cells):
     """Write the row `row_id` of the table `name`, replacing one with the same
-    ID, and return its cells as written; exits on an ID or cells the table
-    doesn't take."""
-    letters = TABLES[name][2]
-    if not re.fullmatch(rf"{letters}\d+", row_id):
-        raise SystemExit(
-            f"{name} IDs are {letters} and a number, such as {letters}07")
-    columns = input_columns(name)
-    if not isinstance(cells, list) or not all(isinstance(c, str) for c in cells) or len(cells) != len(columns):
-        raise SystemExit(
-            f"{name} takes {len(columns)} texts after the ID: {' | '.join(columns)}")
+    ID, and return its cells as written."""
     written = linked(lines, [c.replace("\n", " ") for c in cells])
     if name in GENERATED:
         # Written by sync_sources or sync_states once the row is in.
         written.insert(TABLES[name][1].index(GENERATED[name]) - 1, "None")
     set_row(lines, name, row_id, written)
-    # A question is in one part of the queue: writing it in one takes it out of the others.
-    for other in QUEUE_TABLES if name in QUEUE_TABLES else ():
-        if other != name and any(row[0] == row_id for row in table_rows(lines, other)):
-            write_rows(lines, other, [row for row in table_rows(lines, other) if row[0] != row_id],
-                       header_of(lines, other))
     return written
 
 
@@ -211,8 +197,6 @@ def reference_links(lines, text):
 
 def set_link(lines, key, url):
     """Define the link `key` as `url` in the Links section, sorted by key."""
-    if LINKS_HEADING not in [line.strip() for line in lines]:
-        lines += ["", LINKS_HEADING, "", "None yet."]
     start, end = section(lines, LINKS_HEADING)
     definitions = links_section(lines)
     definitions[key] = url
@@ -236,25 +220,19 @@ def jira_site(project):
 def set_row(lines, name, row_id, cells):
     """Write the row `row_id` of `name` after checking its cells, replacing
     one with the same ID, rows in ID order."""
-    header = header_of(lines, name)
     row = [row_id, *cells]
     check_cells(lines, name, row)
     rows = [r for r in table_rows(lines, name) if r[0] != row_id] + [row]
     rows.sort(key=lambda row: id_order(row[0]))
-    write_rows(lines, name, rows, header)
+    write_rows(lines, name, rows)
 
 
 def check_cells(lines, name, row):
-    """Exit if a row breaks a rule of its table, as row_problem() and, for a
-    finding, claim_length_problem() find it; check_report applies the same at
-    handover."""
-    # A finding's claim length comes right after its own rules, before the
-    # rules on what it cites.
-    problem = name == "findings" and (finding_problem(row)
-                                      or claim_length_problem(row[0], row[1]))
+    """Exit if a row breaks a rule of its table, as row_problem() finds it;
+    check_report applies the same at handover."""
     blocked = {r[0] for r in table_rows(lines, "queue-blocked")}
-    problem = problem or row_problem(name, row, design_evidence(
-        "\n".join(lines)), blocked)
+    problem = row_problem(
+        name, row, design_evidence("\n".join(lines)), blocked)
     if problem:
         raise SystemExit(f"{name} {problem}")
     # A search's query is the one backticked text allowed outside a link.
@@ -270,7 +248,7 @@ def check_backticks(lines, values, where):
         raise SystemExit(backtick_error(where, spans))
 
 
-def write_rows(lines, name, rows, header=None):
+def write_rows(lines, name, rows):
     """Put `rows` in the table `name`, creating it under its heading if there is none."""
     heading, default, _ = TABLES[name]
     span = table_span(lines, heading)
@@ -281,8 +259,7 @@ def write_rows(lines, name, rows, header=None):
         # brings its own.
         while start + 1 < len(lines) and not lines[start + 1].strip() and not lines[start + 1].startswith("#"):
             del lines[start + 1]
-        block = ["", render(header or default), render(
-            ["---"] * len(header or default))]
+        block = ["", render(default), render(["---"] * len(default))]
         block += [render(r) for r in rows] + [""]
         lines[start + 1:start + 1] = block
         return
@@ -367,7 +344,7 @@ def sync_sources(lines):
         row[SOURCE_FINDINGS_COLUMN] = ", ".join(
             citation(f) for f in found) or "None"
     if rows:
-        write_rows(lines, "sources", rows, header_of(lines, "sources"))
+        write_rows(lines, "sources", rows)
 
 
 def sync_states(lines):
@@ -380,7 +357,7 @@ def sync_states(lines):
         for row in rows:
             row[column] = states.get(row[0], UNUSED)
         if rows:
-            write_rows(lines, name, rows, header_of(lines, name))
+            write_rows(lines, name, rows)
 
 
 def check_dependencies(lines):
@@ -426,7 +403,7 @@ def move_row(lines, row_id, target, cells=None):
     row = [(cells or {}).get(column, value)
            for column, value in zip(header, row)]
     write_rows(lines, source, [r for r in table_rows(
-        lines, source) if r[0] != row_id], header)
+        lines, source) if r[0] != row_id])
     set_row(lines, target, row[0], row[1:])
 
 

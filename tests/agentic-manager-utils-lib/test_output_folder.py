@@ -45,7 +45,7 @@ class OutputFolderTest(unittest.TestCase):
                      "output": {"root": "<path>"}}, None),
                  ({"output": {"root": " "}}, None), ({
                      "output": {"root": " <path> "}}, None),
-                 ({"output": {"root": 5}}, None), ({"output": []}, None)]
+                 ({"output": {"root": 5}}, None)]
         for data, expected in cases:
             with self.subTest(data=data):
                 self.write(data)
@@ -246,6 +246,36 @@ class DescriptionTest(unittest.TestCase):
                         f.write(text)
                 self.assertEqual(
                     output_folder.read_description(path), expected)
+
+    def test_list_examples(self):
+        # By name; a folder starting with _ or holding no description.md is
+        # not an example; each one's title and labelled lines are read.
+        with tempfile.TemporaryDirectory() as root:
+            for name, text in [("b-one", "# Second\n\n**Use for:** a cover\n"),
+                               ("a-two", "# First\n"),
+                               ("_mine", "# Not an example\n"),
+                               ("empty", None)]:
+                os.makedirs(os.path.join(root, name))
+                if text:
+                    with open(os.path.join(root, name, output_folder.DESCRIPTION), "w", encoding="utf-8") as f:
+                        f.write(text)
+            real = os.path.realpath(root)
+            self.assertEqual(output_folder.list_examples(root),
+                             [(os.path.join(real, "a-two"), "First", {}),
+                              (os.path.join(real, "b-one"), "Second", {"Use for": "a cover"})])
+            self.assertEqual(output_folder.list_examples(
+                os.path.join(root, "missing")), [])
+
+    def test_free_folder_name(self):
+        with tempfile.TemporaryDirectory() as root:
+            cases = [([], "cover", "cover"), (["cover"], "cover", "cover-2"),
+                     (["cover", "cover-2"], "cover", "cover-3")]
+            for taken, base, expected in cases:
+                with self.subTest(taken):
+                    for name in taken:
+                        os.makedirs(os.path.join(root, name), exist_ok=True)
+                    self.assertEqual(
+                        output_folder.free_folder_name(root, base), expected)
 
     def test_a_written_description_reads_back(self):
         text = output_folder.description("A slide", {"Use for": "a cover", "Why it's good": "clear"},

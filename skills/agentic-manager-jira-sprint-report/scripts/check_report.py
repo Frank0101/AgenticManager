@@ -15,7 +15,7 @@ import sys
 from datetime import date
 
 from common import (folder_problem, days, BLOCKED_STATUSES, GOAL_VERDICTS, HIGH_PRIORITIES, CHARTS_DIR, CHART_IMAGE, HEADING, INLINE_LINK, SENTENCE_BREAK, link_text, BANNED_WORDS, expected_files, CHART_FILES, COMMENTARY_WORDS, DATA_FILE, FIELD_HEADER, ISSUE_KEY,
-                    BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, GITHUB_CELL, JIRA_CELL, KEY_LIST, LEFT_OUT_REASONS,
+                    BOLD_RULE, DATE_RULE, ESTIMATE_RULE, FORMAT_RULES, GITHUB_CELL, JIRA_CELL, KEY_LIST, LEFT_OUT_REASONS, LIST_RULE,
                     EPICS_HEADING, METRICS_HEADING, NOTHING_TO_VERIFY, NOTHING_UNTRACKED, RETRO_HEADING, STATUS_HEADING, TIMELINE_HEADING, UNTRACKED_HEADING, UNTRACKED_OPEN_PULLS, UNTRACKED_SUBTITLE,
                     TICKET_ESTIMATE,
                     TICKET_EVENT_TYPES,
@@ -373,12 +373,12 @@ def check_ticket_events(c, data):
         instants = [parse_ts(e["at"]) for e in events]
         c.check(instants == sorted(instants), "model",
                 f"{key}'s ticket events are in time order")
-    sprint_id = str(data["sprint_id"])
+    sprint_id, sound = str(data["sprint_id"]), sound_events(data)
     for spell in data["spells"]:
-        events = tickets.get(spell["key"])
-        if events is None or ticket_event_problems(events, zone, cutoff):
+        if spell["key"] not in sound:
             continue
-        wrong = spell_event_problems(spell, events, sprint_id, cutoff)
+        wrong = spell_event_problems(
+            spell, sound[spell["key"]], sprint_id, cutoff)
         c.check(not wrong, "model",
                 f"{spell['key']}'s spell events are what its ticket events give {wrong[:2] or ''}".strip())
 
@@ -681,6 +681,11 @@ def field_rows(table):
         cells = [content for _, content in cells_with_attributes(row)]
         rows.append((cells[0], cells[1]) if len(cells) == 2 else (row, None))
     return rows
+
+
+def cells_with_attributes(row):
+    """[(attributes, content)] of a row's <td> or <th> cells."""
+    return re.findall(r"<t[dh]\b([^>]*)>(.*?)</t[dh]>", row, re.S)
 
 
 def check_commentary(c, md, data):
@@ -1062,11 +1067,6 @@ def untracked_by_repository(data):
     return sorted(found.items(), key=lambda item: (-len(item[1]), item[0].lower()))
 
 
-def cells_with_attributes(row):
-    """[(attributes, content)] of a row's <td> or <th> cells."""
-    return re.findall(r"<t[dh]\b([^>]*)>(.*?)</t[dh]>", row, re.S)
-
-
 def check_style(c, md, data):
     generated = generated_text(md)
     c.check("—" not in generated, "em dashes", "none in generated text")
@@ -1105,8 +1105,9 @@ def check_vocabulary(c, md, data):
     words = strip_tags(text)
     found = dict(text_rule_problems(words.replace("(sprint closed)", "")))
     found[BOLD_RULE] = dict(text_rule_problems(text)).get(BOLD_RULE, [])
-    # Dates are checked with the style, on the whole generated text.
-    for rule in [f"no {rule}" for rule, _ in BANNED_WORDS] + [r for r in FORMAT_RULES if r != DATE_RULE]:
+    # Dates are checked with the style, on the whole generated text, and
+    # ticket lists below, on the prose.
+    for rule in [f"no {rule}" for rule, _ in BANNED_WORDS] + [r for r in FORMAT_RULES if r not in (DATE_RULE, LIST_RULE)]:
         c.check(not found.get(rule), "vocabulary",
                 f"{rule} {found.get(rule, [])[:3] or ''}".strip())
     # Tickets in running text: one as KEY (N pts), with its latest estimate;
@@ -1118,11 +1119,9 @@ def check_vocabulary(c, md, data):
             prose = prose.replace(table, "", 1)
     prose = strip_tags(prose)
     latest = latest_estimates(data)
-    lists = [group for group in KEY_LIST.findall(prose) if ", " in group]
-    unsorted = [group for group in lists if group.split(
-        ", ") != sorted(group.split(", "), key=key_order)]
+    unsorted = dict(text_rule_problems(prose)).get(LIST_RULE, [])
     c.check(not unsorted, "vocabulary",
-            f"ticket lists are sorted {unsorted[:2] or ''}".strip())
+            f"{LIST_RULE} {unsorted[:2] or ''}".strip())
     rest = KEY_LIST.sub("", prose)
     # Commentary has fixed historical phrases; AI text uses the latest estimate.
     commentary = commentary_of(md) or ""

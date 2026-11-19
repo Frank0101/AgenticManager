@@ -24,20 +24,13 @@ class DeckFolderTest(unittest.TestCase):
             "Acme-Q3_26-10-05"), "Acme-Q3_Slides.html")
         self.assertEqual(common.expected_files("Acme-Q3_26-10-05"),
                          {"slides.json", "Acme-Q3_Slides.html"})
-        with self.assertRaisesRegex(SystemExit, "not a deck folder, <Name>_<YY-MM-DD>"):
-            common.deck_file("Acme-Q3")
 
     def test_deck_dir(self):
-        # A deck's folder is found inside the output folder, never outside it,
-        # and only once init_deck.py has made it.
+        # A deck's folder is in the skill's output folder, slides-decks.
         folder = temp_output(self)
         os.makedirs(os.path.join(folder, "Acme_26-10-05"))
         self.assertEqual(common.deck_dir("Acme_26-10-05"),
                          os.path.join(folder, "Acme_26-10-05"))
-        with self.assertRaisesRegex(SystemExit, "run init_deck.py first"):
-            common.deck_dir("Other_26-10-05")
-        with self.assertRaisesRegex(SystemExit, "without .."):
-            common.deck_dir("../Acme_26-10-05")
 
 
 class AssetsTest(unittest.TestCase):

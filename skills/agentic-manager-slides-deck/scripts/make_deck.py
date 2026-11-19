@@ -1,5 +1,5 @@
-"""Writes the deck's <Name>_Slides.html from <deck>/slides.json, once its
-`problems` finds none.
+"""Validates <deck>/slides.json field by field, with `problems`, and writes
+the deck's <Name>_Slides.html from it once it finds none.
 
 The page around the slides is fixed, and this module owns it: the slide's
 size, the grey page behind the slides, the toolbar with zoom and PDF export,
@@ -14,7 +14,7 @@ import json
 import re
 from html.parser import HTMLParser
 
-from common import (CHART_JS, ELEMENT_ID, FOLDER_NAME, PAGE, SLIDE_HEIGHT, SLIDE_WIDTH, TOKEN, URL_ATTRIBUTES, VOID,
+from common import (CHART_JS, FOLDER_NAME, PAGE, SLIDE_HEIGHT, SLIDE_WIDTH, SLUG, TOKEN, URL_ATTRIBUTES, VOID,
                     arc_segment, asset_link, coordinate, credit_line, deck_file, is_number, is_text_list, link_kind,
                     placed_images, write_output_file)
 
@@ -223,14 +223,6 @@ CHART_SCRIPT = """    <script src="{src}"></script>
     </script>"""
 
 
-def write_deck(deck, content, texts, image_credits):
-    """Writes the deck `deck` from slides.json's `content`, whose slides' HTML
-    `problems` returned as `texts`, crediting the downloaded images by
-    `image_credits`; returns (path, temporary) as output_file.py does."""
-    return write_output_file(FOLDER_NAME, f"{deck}/{deck_file(deck)}",
-                             build(content, texts, image_credits).encode("utf-8"))
-
-
 def problems(content, assets=frozenset()):
     """(errors, slides' HTML) of slides.json's content, `assets` being the
     images in _assets; errors name the field to fix."""
@@ -241,18 +233,19 @@ def problems(content, assets=frozenset()):
     title = content.get("title")
     if not isinstance(title, str) or not title.strip() or "\n" in title:
         errors.append("title: must be one nonempty line")
-    style = lines(content.get("style", []), "style", errors, required=False)
-    if style and (css_loads_file(style) or re.search(r"</style", style, re.I)):
+    style = lines(content.get("style", []), "style",
+                  errors, required=False) or ""
+    if css_loads_file(style) or re.search(r"</style", style, re.I):
         errors.append(f"style: must not load files (a url() of a file, or @import), {IMAGE_IN_IMG}, "
                       "or close the style element")
-    if style and TOKEN.search(style):
+    if TOKEN.search(style):
         errors.append(
             "style: holds a {{...}} token, which only a slide's html can")
-    variables = css_variables(style or "")
-    for line, selector in page_selectors(style or ""):
+    variables = css_variables(style)
+    for line, selector in page_selectors(style):
         errors.append(f"style: line {line}: `{selector}` restyles the page around the deck: never style "
                       "body, .slides-wrapper or .toolbar")
-    for line, declaration in blurred_shadows(style or "", variables):
+    for line, declaration in blurred_shadows(style, variables):
         errors.append(f"style: line {line}: `{declaration}` {BLURRED}")
     elements = {}
     for kind, check in (("chart", check_chart), ("ring", check_ring)):
@@ -262,7 +255,7 @@ def problems(content, assets=frozenset()):
             errors.append(f"{field}: must be an object of {kind}s by id")
             continue
         for ident, item in items.items():
-            if not ELEMENT_ID.fullmatch(ident):
+            if not SLUG.fullmatch(ident):
                 errors.append(
                     f"{field}.{ident}: an id is lowercase words joined by hyphens, such as revenue-by-quarter")
             check(item, f"{field}.{ident}", errors)
@@ -510,11 +503,11 @@ def check_ring(ring, where, errors):
                           f"{narrowest:g}° wide")
 
 
-def read_slide(text, variables=None):
+def read_slide(text, variables):
     """The first problem with one slide's HTML, or None, `variables` being the
     deck's custom properties (from css_variables()). Every tag it opens must
     close, since one unclosed tag would swallow every slide after it."""
-    parser = SlideParser(variables or {})
+    parser = SlideParser(variables)
     parser.feed(text)
     parser.finish()
     return parser.problem
@@ -582,6 +575,14 @@ class SlideParser(HTMLParser):
         if self.open and not self.problem:
             tag, line = self.open[-1]
             self.problem = f"<{tag}> opened on line {line} is never closed"
+
+
+def write_deck(deck, content, texts, image_credits):
+    """Writes the deck `deck` from slides.json's `content`, whose slides' HTML
+    `problems` returned as `texts`, crediting the downloaded images by
+    `image_credits`; returns (path, temporary) as output_file.py does."""
+    return write_output_file(FOLDER_NAME, f"{deck}/{deck_file(deck)}",
+                             build(content, texts, image_credits).encode("utf-8"))
 
 
 def build(content, texts, image_credits, depth=1):

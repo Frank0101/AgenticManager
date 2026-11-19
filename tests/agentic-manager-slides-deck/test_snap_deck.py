@@ -73,7 +73,7 @@ class OneSlidePageTest(unittest.TestCase):
 
     def test_chrome_shoots_the_page_at_the_slides_size(self):
         command = snap_deck.chrome_command(
-            "chrome", "/p", "/out/slide-1.png", "/out/slide-1.html")
+            "chrome", "/p", "/out/slide-1.png", "/out/slide-1.html", (common.SLIDE_WIDTH, common.SLIDE_HEIGHT))
         self.assertEqual(command[0], "chrome")
         for part in ("--headless", "--user-data-dir=/p", "--screenshot=/out/slide-1.png",
                      f"--window-size={common.SLIDE_WIDTH},{common.SLIDE_HEIGHT}", "file:///out/slide-1.html"):

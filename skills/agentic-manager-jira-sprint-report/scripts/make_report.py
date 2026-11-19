@@ -421,7 +421,7 @@ class Report:
         keys = group["keys"]
         return f" ({', '.join(self.md_key(k) for k in keys)})" if len(keys) <= name_up_to else ""
 
-    def mentioned(self, group, one, many, name_up_to=3):
+    def mentioned(self, group, one, many, name_up_to):
         """Tickets in running text, from a group as data.json's scope_changes
         stores it: one ticket as "KEY (N pts) <one>", a list as "N tickets (N
         pts) <many> (KEY, KEY)", the keys left out above `name_up_to`. A

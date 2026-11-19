@@ -1,7 +1,9 @@
 """Draws a prep's report charts as SVG from data.json: for Jira, the issues created and resolved week by week, the story points of the resolved ones and the resolved issues by epic; for GitHub, the pull requests opened and merged week by week, the merged ones' size and their repositories.
 
 It draws data.json's series and works none out, as the model's facts are
-worked out once and checked. An epic, or a repository, has one colour in
+worked out once and checked. A week's point sits at its last day's date on a
+scale over the period, so a clipped week at an edge sits near its neighbour
+and its lower count reads as partial. An epic, or a repository, has one colour in
 every chart of its source, its pie slice's, by data.json's order, so one
 legend reads them all; those beyond it are drawn together as others. They
 are drawn as SVG by hand, as skills install nothing.
@@ -9,7 +11,7 @@ are drawn as SVG by hand, as skills install nothing.
 import math
 from datetime import date
 
-from common import (BINS_PER_DECADE, CHARTS_DIR, EPICS_CHART, FOLDER_NAME, GITHUB_CELLS, GRID, HEADINGS, INK, JIRA_CELLS, MUTED,
+from common import (BINS_PER_DECADE, months_of, CHARTS_DIR, EPICS_CHART, FOLDER_NAME, GITHUB_CELLS, GRID, HEADINGS, INK, JIRA_CELLS, MUTED,
                     REPOS_CHART, SURFACE, arc_segment, legend, repo_code, nice_step, number, svg, text, text_width, write_output_file)
 
 # A chart's size, its plot's height, below which its legend adds rows; the
@@ -161,16 +163,26 @@ def value_position(value, values):
 
 
 def over_time_chart(total, thin, weeks, label, entries, height):
-    """A line_chart() over `weeks` of `total` and `thin`, each month named
-    under its first week and set apart from the one before by a dashed line,
-    `label` under the axis, with the legend of `entries`, the chart `height`
-    tall."""
-    xs = [index / (len(weeks) - 1) if len(weeks) >
-          1 else 0.5 for index in range(len(weeks))]
-    starts = [date.fromisoformat(first) for first, _ in weeks]
-    months = [(x, f"{first:%b}") for index, (x, first) in enumerate(zip(xs, starts))
-              if index == 0 or first.month != starts[index - 1].month]
-    return line_chart(total, thin, xs, months, label, entries, height, dividers=[x for x, _ in months[1:]])
+    """A line_chart() over `weeks` of `total` and `thin`, each point at the
+    date of its week's last day, on a scale linear from the first day of the
+    first week to the last of the last, each month named in the middle of its
+    days within the period and set apart from the one before by a dashed line
+    at its first day, on the same scale, `label` under the axis, with the
+    legend of `entries`, the chart `height` tall. A lone week is centred."""
+    first, last = date.fromisoformat(
+        weeks[0][0]), date.fromisoformat(weeks[-1][1])
+    span = (last - first).days
+
+    def place(day):
+        return (day - first).days / span if span else 0.5
+    xs = [0.5] if len(weeks) == 1 else [place(
+        date.fromisoformat(end)) for _, end in weeks]
+    months = [(date.fromisoformat(month["start"]), date.fromisoformat(month["end"]))
+              for month in months_of(first, last).values()]
+    ticks = [((place(start) + place(end)) / 2,
+              f"{start:%b}") for start, end in months]
+    return line_chart(total, thin, xs, ticks, label, entries, height,
+                      dividers=[place(start) for start, _ in months[1:]])
 
 
 def distribution_chart(series, median, label, colours, entries, height):

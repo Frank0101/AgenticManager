@@ -149,7 +149,7 @@ class CheckReportTest(unittest.TestCase):
             ("duplicate finding", LEDGER.replace(FINDING_ROW, FINDING_ROW + "\n" + FINDING_ROW),
              "findings written more than once: F01; keep one row each"),
             ("undefined finding", LEDGER.replace(
-                "None yet.", "See [F07](#f07).", 1), "never written: F07"),
+                "None yet.", "See [F07](#f07).", 1), "IDs cited but never recorded: F07"),
         ]
         for name, text, error in cases:
             with self.subTest(name=name):
@@ -359,8 +359,9 @@ class CheckReportTest(unittest.TestCase):
         ledger = self.folder / "ledger.md"
         ledger.write_text(LEDGER.replace(f"| {FINDING_ROWS[0][1]} |", "| " + "word " * 160 + "|"),
                           encoding="utf-8")
-        errors, _ = check_report.check_ledger(ledger)
-        self.assertIn("claim is 160 words", " ".join(errors))
+        errors = check_report.check_report(self.report)["errors"]
+        self.assertEqual(
+            [e for e in errors if "160 words" in e], ["ledger.md: F01's claim is 160 words; split it into findings of one claim each"])
         # A citation is a link to a record's anchor; a bare ID-shaped word,
         # such as P95 or F150, is prose, a finding's number included.
         ledger.write_text(with_prose(LEDGER, "See [S07](#s07) and [Q03](#q03); P95 is a latency and the F150 a "
@@ -370,12 +371,12 @@ class CheckReportTest(unittest.TestCase):
         errors = check_report.check_report(self.report)["errors"]
         self.assertIn("IDs cited but never recorded: Q03, S07",
                       " ".join(errors))
-        # A finding cited but never written is reported once, by its own check.
+        # A finding cited but never written is reported once, like any record.
         ledger.write_text(with_prose(LEDGER, "See [F07](#f07)."),
                           encoding="utf-8")
         errors = check_report.check_report(self.report)["errors"]
         self.assertEqual([e for e in errors if "F07" in e], [
-                         "ledger.md: findings cited but never written: F07"])
+                         "ledger.md: IDs cited but never recorded: F07"])
 
     def test_unreadable_and_missing_report(self):
         self.assertFalse(check_report.check_report(

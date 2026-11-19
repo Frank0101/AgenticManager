@@ -180,4 +180,4 @@ Only when the user asks, or says yes when the handover offers it. Give the slide
 python3 ${CLAUDE_SKILL_DIR}/scripts/save_example.py --deck <deck> --slide <n> --title '<title>' --use-for '<what it is good for>'
 ```
 
-It saves the slide as it is in `_examples`, where every later deck finds it. Give the user the link to its `page`.
+It saves the slide as it is in `_examples`, where every later deck finds it. Give the user the link to its `page`; if `temporary` is true, add that the folder is temporary and setting `output.root` in the config keeps examples.

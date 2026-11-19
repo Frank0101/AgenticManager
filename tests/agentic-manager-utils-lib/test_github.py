@@ -425,6 +425,16 @@ class GithubTest(unittest.TestCase):
                 self.assertEqual(parts and (parts["host"], parts["owner"], parts["name"], parts["number"]),
                                  expected)
 
+    def test_repository_url(self):
+        # The repository's address from a pull request's, on any host.
+        cases = [(PR.format(41), "https://github.com/acme/api"),
+                 ("https://github.com/acme/api/pull/41/files",
+                  "https://github.com/acme/api"),
+                 ("https://git.acme.test:8443/acme/api/pull/7", "https://git.acme.test:8443/acme/api")]
+        for url, expected in cases:
+            with self.subTest(url):
+                self.assertEqual(github.repository_url(url), expected)
+
     def test_pull_fields_reads_events(self):
         # Many pull requests in one GraphQL call, grouped by repository, each
         # value a variable; split into calls of a batch each, one host

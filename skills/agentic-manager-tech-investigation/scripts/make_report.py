@@ -13,7 +13,7 @@ import os
 import re
 
 from common import (CONTENT, folder_day, is_day, display_date, FENCE, backtick_error, TABLE_HEADINGS, ledger_rows, FOLDER_NAME, HEADING, HEADINGS, LEDGER,
-                    WORD_TARGETS, ai_marked, anchor_tag, autolink, investigation_dir, report_path, link_definitions, markdown, read_json, table, topic_of, unlinked_backticks, unresolved_message, word_count, write_output_file)
+                    WORD_TARGETS, ai_marked, anchor_tag, autolink, investigation_dir, link_problems, report_path, link_definitions, markdown, read_json, table, topic_of, topic_words, unlinked_backticks, unresolved_message, word_count, write_output_file)
 
 # content.json's fields, and those of each architecture stage: any other is an
 # error naming it, as a field the report doesn't show would be dropped silently.
@@ -65,12 +65,10 @@ class Content:
     """content.json, checked as it is read: problems collect in `errors`."""
 
     def __init__(self, data, ledger, folder):
-        self.data = data if isinstance(data, dict) else {}
+        self.data = data
         self.ledger = ledger
         self.folder = folder
         self.errors, self.warnings = [], []
-        if not isinstance(data, dict):
-            self.errors.append("content.json must be a JSON object")
 
     def unknown(self, given, known, prefix=""):
         """Record an error for each key of `given` not in `known`, named with
@@ -98,6 +96,9 @@ class Content:
             self.errors.append(
                 f"{where}: one line, for a table cell or list item")
         value = self.links(self.linked(value.strip(), where), where)
+        # The final check's link rules, applied here so a field is named.
+        self.errors += [f"{where}: {problem}" for _, problem in link_problems(
+            value, self.ledger.definitions, report_path(self.folder))]
         # The handover check's backtick rule, applied here so it fails first.
         if spans := unlinked_backticks(value, self.ledger.text):
             self.errors.append(backtick_error(where, spans))
@@ -190,7 +191,7 @@ def build(content):
                 content.errors.append(f"architecture.{key}: missing")
             continue
         sections[key] = architect_section(content, key, stage)
-    parts = [f"# {topic_of(content.folder).replace('-', ' ')}",
+    parts = [f"# {topic_words(topic_of(content.folder))}",
              f"Evidence snapshot: {snapshot(content)}. Code links pin inspected "
              "commits; ticket, PR and document links may display later changes. Each source's revision "
              f"and how much of it was read are recorded in the [Research ledger]({LEDGER}).",

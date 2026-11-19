@@ -13,7 +13,7 @@ import json
 import re
 import socket
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
@@ -71,6 +71,9 @@ DEV_STATUS = "/rest/dev-status/latest/issue"
 # The type of Jira Software's Sprint field. A site can have other fields named
 # Sprint, so the field is found by its type.
 SPRINT_TYPE = "com.pyxis.greenhopper.jira:gh-sprint"
+# The sprint report's map of the issue keys added after the sprint started:
+# its only part keyed by issue, beside its lists of issues.
+ADDED_KEYS = "issueKeysAddedDuringSprint"
 # Where a JQL query's ordering starts: a clause added to the query goes before it.
 ORDER_BY = re.compile(r"\border\s+by\b", re.I)
 
@@ -189,6 +192,7 @@ class JiraClient:
         return _person(found) if found and found.get("accountType") == "atlassian" else None
 
     def fields(self):
+        """Every field of the site, as Jira lists them, with each one's id, name and schema."""
         return self._get("/rest/api/3/field")
 
     def field_ids(self):
@@ -206,6 +210,7 @@ class JiraClient:
                      if nested(f, ["schema", "custom"]) == SPRINT_TYPE), None)
 
     def statuses(self):
+        """Every status of the site, as Jira lists them, with each one's name and category."""
         return self._get("/rest/api/3/status")
 
     def find_sprint(self, sprint_id=None, board_id=None, project=None, name=None, active=False,
@@ -275,17 +280,21 @@ class JiraClient:
         return max(candidates, key=ended)
 
     def sprint(self, sprint_id):
+        """The sprint `sprint_id`, as Jira's agile API gives it."""
         return self._get(f"/rest/agile/1.0/sprint/{sprint_id}")
 
     def boards_for_project(self, project_key):
+        """The boards of the project `project_key`; refuses an excluded project."""
         self._refuse_excluded(project_key)
         return self._paginate("/rest/agile/1.0/board", {"projectKeyOrId": project_key}, "values")
 
     def sprints_for_board(self, board_id, state=None):
+        """The sprints of a board, only those in `state` (such as active or closed) if given."""
         params = {"state": state} if state else {}
         return self._paginate(f"/rest/agile/1.0/board/{board_id}/sprint", params, "values")
 
     def sprint_issues(self, sprint_id, fields):
+        """The issues in the sprint `sprint_id` with the given `fields`, those of excluded projects left out."""
         params = {"fields": ",".join(fields)}
         if clause := self._not_excluded(""):
             params["jql"] = clause
@@ -298,7 +307,8 @@ class JiraClient:
         longer mentions it, so the public API can't find it. The endpoint is
         internal (greenhopper), not part of Atlassian's documented API, so a
         changed shape fails rather than return a report without its
-        removals."""
+        removals. Issues of excluded projects are left out of its issue lists
+        and its map of keys added during the sprint."""
         data = self._get("/rest/greenhopper/1.0/rapid/charts/sprintreport",
                          {"rapidViewId": board_id, "sprintId": sprint_id})
         contents = nested(data, ["contents"])
@@ -307,6 +317,13 @@ class JiraClient:
                 "Jira's sprint report came back in an unexpected shape (no contents.puntedIssues). "
                 "This internal endpoint may have changed. Removed issues can't be found any other "
                 "way, so this fails rather than return the sprint report without them.")
+        for name, value in contents.items():
+            if isinstance(value, list):
+                contents[name] = [issue for issue in value
+                                  if not self._is_excluded(issue.get("key", ""))]
+        if added := contents.get(ADDED_KEYS):
+            contents[ADDED_KEYS] = {key: flag for key, flag in added.items()
+                                    if not self._is_excluded(key)}
         return data
 
     def flagged_and_points_fields(self, board_id):
@@ -445,10 +462,11 @@ class JiraClient:
         any request, an issue of an excluded project. The batched read gives
         a change's time in milliseconds, so it is written as the per-issue
         changelog writes it, in the account's time zone, and the two give the
-        same changes."""
+        same changes; it exits, by report_timezone(), when the account names
+        no known time zone."""
         for issue in issues:
             self._refuse_excluded(issue["key"])
-        zone = ZoneInfo(self.time_zone() or "UTC") if issues else None
+        zone = report_timezone(self.time_zone()) if issues else None
         keys = {str(issue["id"]): issue["key"] for issue in issues}
         histories = {issue_id: [] for issue_id in keys}
         logged = set()
@@ -475,6 +493,7 @@ class JiraClient:
                  for issue_id, key in keys.items() if key not in gone}, gone)
 
     def comments(self, issue_key):
+        """Every comment on the issue `issue_key`, as Jira gives them; refuses an excluded project."""
         self._refuse_excluded(issue_key)
         return self._paginate(f"/rest/api/3/issue/{issue_key}/comment", {}, "comments")
 
@@ -555,6 +574,21 @@ class JiraClient:
     def _issues_where(self, clause, values, fields):
         """Issues whose `clause` is one of `values`."""
         return self.search(f"{clause} in ({','.join(values)})", fields) if values else []
+
+
+def report_timezone(name):
+    """The time zone `name`, such as the one a Jira account's profile names
+    (time_zone()) or one saved from it, as a ZoneInfo. Exits with advice when
+    there is none or it is unknown, never reading it as UTC."""
+    if not isinstance(name, str) or not name.strip():
+        raise SystemExit(
+            "no reporting timezone: check the Jira API account's timezone and run it again")
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise SystemExit("reporting timezone is unavailable: check the Jira API account's timezone, "
+                         "install timezone data with python3 -m pip install tzdata if needed, "
+                         "and run it again")
 
 
 def jira_stamp(created, zone):

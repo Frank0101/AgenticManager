@@ -1,10 +1,10 @@
 """End-to-end tests for skills/agentic-manager-perf-review-prep/scripts/find_jira_account.py,
 init_prep.py, find_person.py, set_identities.py, rules.py, set_summary.py,
-read_notes.py, fetch_work.py, set_notion.py, read_slack.py, prepare_report.py,
-set_content.py, set_comparison.py and finish_report.py: they run each as a script, as the agent does, from looking the person up in Jira and
-starting the prep on the account the manager confirmed, through who the
-person is in each other source, their view, the person's previous reviews
-and the period's feedback, the manager's notes, the person's work and their Slack
+read_notes.py, fetch_work.py, read_notion.py, set_notion.py, read_slack.py, prepare_report.py,
+set_observations.py, set_step_change.py and finish_report.py: they run each as a script, as the agent does, from looking the person up in Jira and
+starting the prep on the account found, through who the
+person is in each other source, the current manager feedback, the other feedback
+and the previous feedback, the manager's notes, the person's work and their Slack
 messages, to the report and the final check. Each script's functions have unit tests of
 their own, in test_<script>.py.
 Run with: python3 tests/run.py agentic-manager-perf-review-prep
@@ -29,7 +29,6 @@ import sys
 import tempfile
 import unittest
 from datetime import date
-from pathlib import Path
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
@@ -37,6 +36,8 @@ SCRIPTS = os.path.join(REPO_ROOT, "skills",
                        os.path.basename(TEST_DIR), "scripts")
 FAKES = os.path.join(os.path.dirname(TEST_DIR), "agentic-manager-utils-lib")
 sys.path.insert(0, FAKES)
+sys.path.insert(0, SCRIPTS)
+import common  # noqa: E402
 import jira_fake  # noqa: E402
 from gh_fake import FAKE_GH  # noqa: E402
 from jira_fake import FakeJira  # noqa: E402
@@ -50,10 +51,11 @@ RULES_SCRIPT = os.path.join(SCRIPTS, "rules.py")
 NOTES_SCRIPT = os.path.join(SCRIPTS, "read_notes.py")
 WORK_SCRIPT = os.path.join(SCRIPTS, "fetch_work.py")
 NOTION_SCRIPT = os.path.join(SCRIPTS, "set_notion.py")
+NOTION_TASK_SCRIPT = os.path.join(SCRIPTS, "read_notion.py")
 REPORT_SCRIPT = os.path.join(SCRIPTS, "finish_report.py")
 PREPARE_SCRIPT = os.path.join(SCRIPTS, "prepare_report.py")
-CONTENT_SCRIPT = os.path.join(SCRIPTS, "set_content.py")
-COMPARISON_SCRIPT = os.path.join(SCRIPTS, "set_comparison.py")
+OBSERVATIONS_SCRIPT = os.path.join(SCRIPTS, "set_observations.py")
+STEP_CHANGE_SCRIPT = os.path.join(SCRIPTS, "set_step_change.py")
 SLACK_SCRIPT = os.path.join(SCRIPTS, "read_slack.py")
 TOKEN = "s3cret-token"
 JANE = {"accountId": "5b10ac8d82e05b22cc7d4ef5", "accountType": "atlassian", "displayName": "Jane Doe",
@@ -90,14 +92,12 @@ CONFIRMED = {"github-cli": {"id": "janedoe", "name": "Jane Doe"},
              "notion-mcp": {"id": "2a4c1e8f-1234-4abc-9def-0123456789ab", "name": "Jane Doe"},
              "slack-mcp": {"id": "U012AB3CD", "name": "Jane Doe"},
              "logseq-fs": {"links": ["Jane"]}}
-ORIENTATION = {"going_well": [{"point": "Has \"led\" the billing migration well since May, $quoted",
-                               "values": ["Ownership"]}],
-               "to_improve": [], "context": ["Came back from a long leave in May"]}
+MANAGER_FEEDBACK = {"going_well": [{"point": "Has \"led\" the billing migration well since May, $quoted",
+                                    "values": ["Ownership"]}],
+                    "to_improve": [], "context": ["Came back from a long leave in May"]}
 VALUES = [{"value": "Ownership", "meaning": "Sees work through to its end"}]
-RATINGS = [{"rating": "Below", "meaning": "Misses most expectations"},
-           {"rating": "Meets", "meaning": "Meets every expectation"}]
-PIECE = {"period": "Mid Year Review", "date": "2026-06-30", "rating": "Meets", "going_well": [{"point": "Delivered the billing migration on time", "values": []}],
-         "to_improve": [], "context": []}
+FEEDBACK = {"going_well": [{"point": "Delivered the billing migration on time", "values": []}],
+            "to_improve": [], "context": []}
 PAGE = {"title": "Billing plan",
         "url": "https://www.notion.so/billing-plan", "path": "Engineering"}
 LINK = "https://acme.slack.com/archives/C1/p1"
@@ -144,7 +144,7 @@ class ScriptsTest(unittest.TestCase):
                                    "source_control": {"github-cli": {"enabled": True}},
                                    "local_vault": {"logseq-fs": {"enabled": True, "path": os.path.dirname(graph)}}},
                        "output": {"root": os.path.join(self.root, "out")},
-                       "company": {"perf-review-ratings": RATINGS, "values": VALUES}}, f)
+                       "company": {"values": VALUES}}, f)
         self.bin_dir = os.path.join(self.root, "bin")
         os.makedirs(self.bin_dir)
         with open(os.path.join(self.bin_dir, "gh"), "w", encoding="utf-8") as f:
@@ -172,30 +172,35 @@ class ScriptsTest(unittest.TestCase):
 
     def read_slack(self, prep):
         """Runs the Slack reading as the agent does, its subagents
-        answering: a task a month, then the merge, then finished."""
+        answering: a task for the month, then the judge's, which cites the
+        items the month listed."""
         started = self.run_ok(SLACK_SCRIPT, "start", "--prep", prep)
-        for line in started["tasks"]:
-            self.run_ok(SLACK_SCRIPT, "submit", "--prep", prep, "--task", line.split(": ")[0].removeprefix("Task "),
-                        stdin=json.dumps({"items": [{"date": TODAY.isoformat(), "link": LINK,
-                                                     "synopsis": "Posted the billing rollout plan"}]}))
-        merged = {"going_well": [], "to_improve": [],
-                  "context": [{"point": "Posted the billing rollout plan", "links": [LINK]}], "in_doubt": []}
-        self.run_ok(SLACK_SCRIPT, "submit", "--prep", prep,
-                    "--task", "merge", stdin=json.dumps(merged))
-        self.assertEqual(self.run_ok(SLACK_SCRIPT, "finished",
-                         "--prep", prep)["finished"], True)
+        month = f"month:{TODAY:%Y-%m}"
+        self.assertEqual(([line.split(": ")[0] for line in started["tasks"]], started["judge"].split(": ")[0]),
+                         ([f"Task {month}"], "Task slack"))
+        listed = {"searched": [{"search": search, "from": TODAY.isoformat(), "to": TODAY.isoformat(), "pages": 1}
+                               for search in ("sent", "mentioned")],
+                  "items": [{"date": TODAY.isoformat(), "link": LINK, "description": "Posted the billing rollout plan"}]}
+        read = self.run_ok(SLACK_SCRIPT, "submit", "--prep",
+                           prep, "--task", month, stdin=json.dumps(listed))
+        self.assertEqual(read["judge"], started["judge"])
+        self.assertTrue(os.path.exists(read["judge"].split(": ", 1)[1]))
+        summary = {"going_well": [], "to_improve": [],
+                   "context": [{"point": "Posted the billing rollout plan", "cites": [1]}]}
+        self.assertTrue(os.path.exists(self.run_ok(SLACK_SCRIPT, "submit", "--prep",
+                        prep, stdin=json.dumps(summary))["path"]))
 
     def test_starts_the_prep_and_checks_it(self):
         # As the skill runs them: find_jira_account.py looks the person up,
-        # init_prep.py starts the prep on the account the manager
-        # confirmed, find_person.py looks them up in GitHub and the vault,
+        # init_prep.py starts the prep on the account
+        # found, find_person.py looks them up in GitHub and the vault,
         # set_identities.py records who they are, rules.py prints what the
         # summaries follow, set_summary.py records the summaries of the
-        # manager's view, the previous reviews and the period's feedback, read_notes.py hands out the notes'
-        # tasks and takes their answers, fetch_work.py and set_notion.py
+        # current manager feedback, the other feedback and the previous feedback, read_notes.py hands out the notes'
+        # task and takes its summary, fetch_work.py and set_notion.py
         # record the work, read_slack.py the Slack messages, prepare_report.py
-        # builds data.json from the raw files and the briefs, set_content.py
-        # and set_comparison.py record the agent's text and finish_report.py
+        # builds data.json from the raw files and the briefs, set_observations.py
+        # and set_step_change.py record the agent's text and finish_report.py
         # the report from them, checking the whole prep, which fails once the folder holds
         # a file of the agent's.
         found = self.run_ok(ACCOUNT_SCRIPT, "--person", "Jane Doe")
@@ -217,29 +222,18 @@ class ScriptsTest(unittest.TestCase):
             "vault": [{"link": "Jane", "mentions": 1, "page": False, "alias_of": None}]})
         self.assertEqual(self.run_ok(IDENTITIES_SCRIPT, "--prep", prep, stdin=json.dumps(CONFIRMED))["sources"],
                          {**jira, **CONFIRMED})
-        self.assertEqual({key: value for key, value in self.run_ok(RULES_SCRIPT, "--prep", prep).items()
-                          if key in ("values", "ratings")}, {"values": VALUES, "ratings": RATINGS})
-        feedback = {"pieces": [
-            {**{k: v for k, v in PIECE.items() if k != "rating"}, "period": None}]}
-        for kind, recorded in [("orientation", ORIENTATION), ("reviews", {"pieces": [PIECE]}), ("feedback", feedback)]:
+        self.assertEqual({key: value for key, value in self.run_ok(RULES_SCRIPT).items()
+                          if key == "values"}, {"values": VALUES})
+        for kind, recorded in [("manager", MANAGER_FEEDBACK), ("other", FEEDBACK), ("previous", FEEDBACK)]:
             with open(self.run_ok(SUMMARY_SCRIPT, "--prep", prep, "--of", kind, stdin=json.dumps(recorded))["path"],
                       encoding="utf-8") as f:
                 self.assertEqual(json.load(f), recorded)
         started = self.run_ok(NOTES_SCRIPT, "start", "--prep", prep)
-        month = f"month:{TODAY:%Y-%m}"
-        self.assertEqual(([line.split(": ")[0] for line in started["tasks"]], started["merge"].split(": ")[0]),
-                         ([f"Task {month}"], "Task merge"))
-        item = {"note": 1, "synopsis": "Presented the migration to the team"}
-        self.run_ok(NOTES_SCRIPT, "submit", "--prep", prep, "--task",
-                    month, stdin=json.dumps({"items": [item]}))
-        self.assertTrue(os.path.exists(started["merge"].split(": ", 1)[1]))
-        merged = {"going_well": [{"point": item["synopsis"], "values": ["Ownership"],
-                                  "links": [str(Path(self.root, "graph", "journals", f"{TODAY:%Y_%m_%d}.md"))]}],
-                  "to_improve": [], "context": [], "in_doubt": []}
-        self.run_ok(NOTES_SCRIPT, "submit", "--prep", prep,
-                    "--task", "merge", stdin=json.dumps(merged))
-        self.assertEqual(self.run_ok(NOTES_SCRIPT, "finished",
-                         "--prep", prep)["finished"], True)
+        self.assertTrue(started["task"].startswith("Task notes: "))
+        summary = {"going_well": [{"point": "Presented the migration to the team", "values": ["Ownership"],
+                                   "cites": [1]}], "to_improve": [], "context": []}
+        self.assertTrue(os.path.exists(self.run_ok(NOTES_SCRIPT, "submit", "--prep",
+                        prep, stdin=json.dumps(summary))["path"]))
         # The work: Jira searched by the person's account there, both lists, the
         # pull request, opened and merged, and the Notion pages a search
         # found.
@@ -259,12 +253,28 @@ class ScriptsTest(unittest.TestCase):
             github = json.load(f)
         self.assertEqual(
             (github["opened"], github["merged"], github["orgs"]), ([PR], [PR], ["acme"]))
+        # The task for the subagent that searches Notion lists the week's
+        # arguments, with the person's Notion id; it records what it found.
+        notion_task = self.run_ok(NOTION_TASK_SCRIPT, "start", "--prep", prep)
+        self.assertEqual(notion_task["searches"], 1)
+        with open(notion_task["task"].split(": ", 1)[1], encoding="utf-8") as f:
+            task_text = f.read()
+        self.assertIn(
+            f'"created_by_user_ids": ["{CONFIRMED["notion-mcp"]["id"]}"]', task_text)
+        self.assertIn(
+            f"- {TODAY.isoformat()} to {TODAY.isoformat()}: `", task_text)
         day = {"start": TODAY.isoformat(), "end": TODAY.isoformat()}
         recorded = self.run_ok(NOTION_SCRIPT, "--prep", prep, stdin=json.dumps(
             {"created": [{**day, "results": [{**PAGE, "type": "page"}, {**PAGE, "type": "page", "url": PAGE["url"] + "-2"},
                                              {**PAGE, "type": "database", "url": PAGE["url"] + "-db"}]}]}))
         self.assertEqual(recorded["pages"], 2)
         self.read_slack(prep)
+        # The listed conversations are kept in _raw, and every file the prep
+        # holds so far is one it may hold.
+        self.assertTrue(os.path.exists(os.path.join(
+            result["prep_dir"], "_raw", "slack_items.json")))
+        self.assertLessEqual({name for name in os.listdir(result["prep_dir"]) if not name.startswith(".")},
+                             common.expected_files(prep))
         # The data, built from the raw files with no network, then the
         # briefs and a task for each.
         prepared = self.run_ok(PREPARE_SCRIPT, "--prep", prep)
@@ -274,9 +284,9 @@ class ScriptsTest(unittest.TestCase):
         for path in prepared["briefs"]:
             with open(path, encoding="utf-8") as f:
                 briefs.append(json.load(f))
-        brief, step_change_brief, view_check_brief = briefs
+        brief, step_change_brief = briefs
         self.assertEqual([line.split(":", 1)[0] for line in prepared["tasks"]],
-                         ["Task observations", "Task step-change", "Task view-check"])
+                         ["Task observations", "Task step-change"])
         self.assertEqual(work["jira"]["resolved"], [
             {"key": "PROJ-12", "title": "Migrate invoices", "type": "Story",
              "epic": {"key": "PROJ-1", "title": "Billing migration", "url": f"{self.base_url}/browse/PROJ-1"},
@@ -287,48 +297,34 @@ class ScriptsTest(unittest.TestCase):
                 "url": f"{self.base_url}/browse/PROJ-1", "issues": 1, "share": 100}],
             [{"repo": "acme/billing", "number": 7, "title": PR["title"], "url": PR["url"], "date": TODAY.isoformat(),
               "lines": 48, "files": 3}]))
-        # No report until content.json, step_change.json and view_check.json
-        # are written,
+        # No report until observations_content.json and step_change_content.json are written,
         # then the report, from data.json: one resolved issue of 5 points,
         # one created, each linked to its search.
         code, out, _ = self.run_script(REPORT_SCRIPT, "--prep", prep)
         self.assertEqual((code, json.loads(out)["report"]), (1, None))
-        self.assertIn("content.json is missing", out)
-        self.assertIn("step_change.json is missing", out)
-        self.assertIn("view_check.json is missing", out)
+        self.assertIn("observations_content.json is missing", out)
+        self.assertIn("step_change_content.json is missing", out)
         # Each valued summary names the values its table groups points under.
         content: dict[str, object] = {part: " ".join(["Jane did well, showing", *sorted({point["values"][0] for point in brief[part]
                                                                                          if point["values"]})])
                                       if brief[part] else "" for part in ("going_well", "to_improve")}
         content["context"] = "Jane moved team." if brief["context"] else ""
-        code, _, err = self.run_script(CONTENT_SCRIPT, "--prep", prep, stdin=json.dumps(
+        code, _, err = self.run_script(OBSERVATIONS_SCRIPT, "--prep", prep, stdin=json.dumps(
             {**content, "going_well": "Jane did well."}))
         self.assertEqual(code, 1)
         self.assertIn("doesn't name", err)
-        self.run_ok(CONTENT_SCRIPT, "--prep", prep, stdin=json.dumps(content))
-        # The review of June is before the period, so the step change
-        # compares with it: it raised nothing to improve, so it needs no row.
+        self.run_ok(OBSERVATIONS_SCRIPT, "--prep",
+                    prep, stdin=json.dumps(content))
+        # The step change compares with the previous feedback: it raised
+        # nothing to improve, so it needs no row.
         self.assertEqual(
-            step_change_brief["reviews"]["latest"]["period"], PIECE["period"])
+            step_change_brief["previous"]["going_well"][0]["point"], FEEDBACK["going_well"][0]["point"])
         code, _, err = self.run_script(
-            COMPARISON_SCRIPT, "--of", "step-change", "--prep", prep, stdin="null")
+            STEP_CHANGE_SCRIPT, "--prep", prep, stdin="null")
         self.assertEqual(code, 1)
-        self.assertIn("step_change.json must be {", err)
-        self.run_ok(COMPARISON_SCRIPT, "--of", "step-change", "--prep", prep, stdin=json.dumps(
+        self.assertIn("step_change_content.json must be {", err)
+        self.run_ok(STEP_CHANGE_SCRIPT, "--prep", prep, stdin=json.dumps(
             {"summary": "Jane kept delivering on time.", "rows": []}))
-        # The manager's view, as step 3 recorded it, each point with its id:
-        # every one needs a row, so one left out is refused.
-        view = [point["id"] for part in ("going_well", "to_improve", "context")
-                for point in view_check_brief["view"][part]]
-        self.assertEqual(view, ["V-G1", "V-C1"])
-        rows = [{"view_point": point, "check": "little_support",
-                 "evidence": []} for point in view]
-        code, _, err = self.run_script(COMPARISON_SCRIPT, "--of", "view-check", "--prep", prep, stdin=json.dumps(
-            {"summary": "The manager's view finds little support.", "rows": rows[1:]}))
-        self.assertEqual(code, 1)
-        self.assertIn("view_check.json has no row for V-G1", err)
-        self.run_ok(COMPARISON_SCRIPT, "--of", "view-check", "--prep", prep, stdin=json.dumps(
-            {"summary": "The manager's view finds little support.", "rows": rows}))
         made = self.run_ok(REPORT_SCRIPT, "--prep", prep)
         with open(made["report"], encoding="utf-8") as f:
             report = f.read()
@@ -363,16 +359,16 @@ class ScriptsTest(unittest.TestCase):
                   "--prep", "Jane-Doe_26-01-01"], 1, "run init_prep.py first"),
                  ("identities that aren't JSON", IDENTITIES_SCRIPT, ["--prep", "Jane-Doe_26-01-01"], 1,
                   "the input isn't JSON"),
-                 ("an orientation that isn't JSON", SUMMARY_SCRIPT, ["--prep", "Jane-Doe_26-01-01", "--of", "orientation"], 1,
+                 ("a current manager feedback that isn't JSON", SUMMARY_SCRIPT, ["--prep", "Jane-Doe_26-01-01", "--of", "manager"], 1,
                   "the input isn't JSON"),
-                 ("reviews that aren't JSON", SUMMARY_SCRIPT, ["--prep", "Jane-Doe_26-01-01", "--of", "reviews"], 1,
+                 ("an other feedback that isn't JSON", SUMMARY_SCRIPT, ["--prep", "Jane-Doe_26-01-01", "--of", "other"], 1,
                   "the input isn't JSON"),
-                 ("feedback that isn't JSON", SUMMARY_SCRIPT, ["--prep", "Jane-Doe_26-01-01", "--of", "feedback"], 1,
+                 ("a previous feedback that isn't JSON", SUMMARY_SCRIPT, ["--prep", "Jane-Doe_26-01-01", "--of", "previous"], 1,
                   "the input isn't JSON"),
-                 ("finished for no prep", NOTES_SCRIPT, ["finished", "--prep", "Jane-Doe_26-01-01"], 1,
+                 ("a notes reading for no prep", NOTES_SCRIPT, ["start", "--prep", "Jane-Doe_26-01-01"], 1,
                   "run init_prep.py first"),
-                 ("rules for no prep", RULES_SCRIPT, ["--prep", "Jane-Doe_26-01-01"], 1,
-                  "run init_prep.py first")]
+                 ("a Slack summary that isn't JSON", SLACK_SCRIPT, ["submit", "--prep", "Jane-Doe_26-01-01"], 1,
+                  "the input isn't JSON")]
         for name, script, args, expected_code, expected in cases:
             with self.subTest(name):
                 code, out, err = self.run_script(

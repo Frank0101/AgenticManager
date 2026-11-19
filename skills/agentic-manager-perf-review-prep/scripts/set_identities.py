@@ -48,15 +48,12 @@ def set_identities(prep, identities):
     source it records. Exits, writing nothing, with every problem."""
     path = os.path.join(prep_dir(prep), PERSON)
     if isinstance(identities, dict) and JIRA_SOURCE in identities:
-        raise SystemExit(f"leave {JIRA_SOURCE} out: the Jira account was confirmed with the period in step 1, "
+        raise SystemExit(f"leave {JIRA_SOURCE} out: the Jira account was found in step 1, "
                          f"and init_prep.py recorded it\n\n{INPUT}")
     if problems := sources_problems(identities, OTHER_SOURCES):
         raise SystemExit("; ".join(problems) + "\n\n" + INPUT)
     person = read_json(path)
-    sources = {JIRA_SOURCE: person["sources"].get(JIRA_SOURCE), **identities}
-    if problems := sources_problems(sources, SOURCES):
-        raise SystemExit("; ".join(problems) +
-                         ": start the prep again with init_prep.py")
+    sources = {JIRA_SOURCE: person["sources"][JIRA_SOURCE], **identities}
     return write_prep_file(prep, PERSON, {**person, "sources": sources}), sources
 
 

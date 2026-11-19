@@ -140,7 +140,7 @@ def _type_name(value):
 # Returns the problems with a top-level object of settings that aren't sources,
 # such as "output" or "company". Each setting is optional: left out, blank or
 # still a placeholder, it counts as not set. A text setting must be text; a list
-# setting, such as the company's review ratings, a list of entries with the
+# setting, such as the company's values, a list of entries with the
 # fields of the template's one entry. Once one entry is filled in, every entry
 # fills in every field, and no two share their first one.
 def _check_settings(name, section, template_section):
@@ -296,14 +296,10 @@ def main():
         if not errors:
             if init and not os.path.lexists(CONFIG_PATH):
                 os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-                try:
-                    with open(CONFIG_PATH, "xb") as destination:
-                        with open(TEMPLATE_PATH, "rb") as source:
-                            shutil.copyfileobj(source, destination)
-                    created = True
-                except FileExistsError:
-                    # Another process created it; validate without overwriting.
-                    pass
+                with open(CONFIG_PATH, "xb") as destination:
+                    with open(TEMPLATE_PATH, "rb") as source:
+                        shutil.copyfileobj(source, destination)
+                created = True
             config = load_json(CONFIG_PATH)
             errors = check_config(config, template)
             if not errors:

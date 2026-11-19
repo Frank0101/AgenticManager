@@ -1,0 +1,1 @@
+A manager is preparing a performance review of the person named below. Most of what you read below isn't feedback: decide what in it is, and write one summary of what it shows about the person, in the parts and by the rules below.

@@ -13,7 +13,7 @@ import json
 import os
 
 from common import (DESCRIPTION, EXAMPLE_PAGE, FOLDER_NAME, SLIDES, json_text, TOKEN, USE_FOR, KEPT_EXAMPLES, asset_names, credits,
-                    deck_dir, description, free_name, read_json, slug, user_examples_dir, write_output_file)
+                    deck_dir, description, free_folder_name, read_json, slug, user_examples_dir, write_output_file)
 from make_deck import build, problems
 
 
@@ -59,7 +59,7 @@ def example_name(folder, title):
     base = slug(title)
     if not base:
         raise SystemExit("--title must hold letters or digits")
-    return free_name(base, lambda name: os.path.lexists(os.path.join(folder, name)))
+    return free_folder_name(folder, base)
 
 
 def main(argv=None):

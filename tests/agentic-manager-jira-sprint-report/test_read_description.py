@@ -31,7 +31,7 @@ class ReadDescriptionTest(unittest.TestCase):
         with open(os.path.join(self.tmp.name, common.DATA_FILE), "w", encoding="utf-8") as f:
             json.dump(data, f)
         self.key = data["spells"][0]["key"]
-        self.pieces = common.chunks(self.long)
+        self.pieces = common.description_chunks(self.long)
 
     def read(self, *args):
         out = io.StringIO()

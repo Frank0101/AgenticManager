@@ -42,7 +42,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py <selector>
 | a board id                | `--board 42` (add `--active` as needed)   |
 | a sprint name             | `--sprint-name "PROJ Sprint 3"`           |
 
-If the user names no sprint, project or board, ask; don't guess. If they name only a sprint, run it alone first, and ask for the project or board only when the script says it couldn't find the sprint. If the script fails, report its message and follow any fix it gives; when it asks for another board, keep the sprint by passing its `--sprint-id` with the `--board`.
+If the user names no sprint, project or board, ask; don't guess. If they name only a sprint, run it alone first, and ask for the project or board only when the script says it couldn't find the sprint. If the script fails, report its message and follow any fix it gives.
 
 ## 2. Write content.json
 

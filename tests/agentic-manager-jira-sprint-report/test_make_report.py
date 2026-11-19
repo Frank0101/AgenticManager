@@ -638,6 +638,8 @@ class ValidateContentTest(unittest.TestCase):
              {"retro_notes": ["PROJ-1 (3 pts) closed late: why?"]}),
             ("retro_notes[0]: no issue or issues", {
              "retro_notes": ["Was it an issue?"]}),
+            ("retro_notes[0]: ticket lists are sorted, found ['PROJ-2, PROJ-1']",
+             {"retro_notes": ["2 tickets (5 pts) were descoped (PROJ-2, PROJ-1): why?"]}),
             # The report's formats, as the final check applies them.
             ("key_achievements: whole percentages only, found ['27.5%']",
              {"key_achievements": "27.5% of the commitment shipped."}),

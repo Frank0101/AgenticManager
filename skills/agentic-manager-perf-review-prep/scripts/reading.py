@@ -1,205 +1,214 @@
-"""Runs a reading done by subagents: one task per part of a source, such as a month, then a merge into one summary.
+"""Runs a reading done by subagents: the source's items are listed, by the script or by readers, and one judge writes the summary, each point citing the items it rests on.
 
-Notes and messages are too many to read in one go: a fresh subagent writes a
-synopsis of everything in a part, and judges nothing, so the merge sees all
-there is and alone decides what is feedback, with one threshold for the
-period: only the merge sees a small thing repeat into a pattern. Notes are
-numbered, so a reader can't skip one. What differs by source is a Source;
-the flow lives here once. _raw keeps only each reader's answer, which the
-merge is built from: the rest lasts only a run, so it sits in work_dir().
+Notes and messages are many and mostly not feedback, so fresh subagents read
+them, never the main agent, whose context stays small. A long source is read
+in parts, one reader each, who list everything that could matter and judge
+nothing: only the judge sees every part, so only it sees a small thing repeat
+into a pattern. The summary is checked as the manager's are; what a point
+cites decides its evidence, each with its day and link, which the script adds.
+What differs by source is a Source; the flow lives here once.
 """
+import argparse
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
-from common import (FOLDER_NAME, MAX_VALUES, WEB_LINK, newest_key, PERSON, POINT_LIMITS, PROTOCOL, json_text, RAW_DIR, SUMMARY_PARTS, VALUES, clear_folder, company_names, company_setting,
-                    fill_protocol, is_point, library_command, point_fields, point_shape, prep_dir, script_command, read_json, stdin_json,
-                    submit_section, summary_problems, task_line, word_count, work_folder, write_raw,
-                    write_prep_file, write_task_file)
+from common import (FOLDER_NAME, DESCRIPTION_WORDS, MAX_DESCRIPTION_WORDS, PERSON, PROTOCOL, POINT_LIMITS, RAW_DIR, SUMMARY_HELP,
+                    SUMMARY_PARTS, VALUES, WEB_LINK, clear_folder, company_names, company_setting, days_between,
+                    fill_protocol, is_point, json_text, latest_day, library_command, newest_key, period_days, point_fields,
+                    point_shape, prep_dir, read_json, script_command, stdin_json, submit_section, summary_problems,
+                    task_line, word_count, work_folder, write_prep_file, write_task_file)
 
-MATERIAL = "material.json"
 ANSWER = "answer.json"
-MERGE = "merge"
-SYNOPSIS_WORDS = 60
-MAX_SYNOPSIS_WORDS = 120
+CITES_HELP = ("  cites       the numbers of what the point rests on, {what}, at least one, each once: the script "
+              "adds each one's day and link")
 
 
 @dataclass
 class Source:
-    """What a reading needs to know about its source. `gather(prep)` returns
-    the material, with `tasks`, the reading tasks in order; `task_text(prep,
-    task, material)` the protocol and body of a reading task. A reading
-    task's items are either numbered, when `task_notes(material, task)`
-    gives the {date, link} of each note it shows, the date null for an
-    undated one, or else each {date, link}, the date one of
-    `task_days(material, task)`; `undated_context` whether a context point
-    may rest on an undated item, as one from a page."""
+    """What a reading needs to know about its source. The judge's task, or
+    the only task, reads the items, each {number, date, link} and what it
+    shows, the date null for a page, numbered from 1 and kept in the prep's
+    _raw: `gather(prep)` lists them when the script can, returning `empty`,
+    whether there is nothing to read, `content`, {items}, and any fact start
+    prints; else `readers` list them. `task_text(prep, content)` returns the
+    protocol and body of the judge's task; `answer_shape` its answer's JSON
+    shape; `cites` what a number cites, for its help; `terms` the words the
+    shared parts of its protocol take, `cited`, what a point cites, and
+    `citations_more`, what else to say of it; `undated_context` whether a context
+    point may rest on an undated item, as one from a page."""
     name: str
     script: str
     output: str
     what: str
-    gather: Callable
     task_text: Callable
-    task_notes: Callable | None = None
-    task_days: Callable | None = None
+    answer_shape: str
+    cites: str
+    terms: dict
+    gather: Callable | None = None
+    readers: "Readers | None" = None
     undated_context: bool = False
-    answers: dict = field(default_factory=dict)
+
+
+@dataclass
+class Readers:
+    """How a source is read in parts, each by a subagent that lists items and
+    declares what it searched. `parts(prep)` returns {task: {start, end}},
+    the days each part covers; `task_text(prep, task, part)` a part's
+    protocol and body; `answer_shape` and `help` what a part submits;
+    `coverage_problems(searched, days)` why what a part declares searched
+    isn't all of its `days`."""
+    parts: Callable
+    task_text: Callable
+    answer_shape: str
+    help: str
+    coverage_problems: Callable
 
 
 # The commands.
 
 def command_line(source, description, argv=None):
-    """The command line of a reading: start, submit, finished and remerge."""
-    import argparse
-    parser = argparse.ArgumentParser(description=description)
+    """The command line of a reading: start and submit."""
+    parser = argparse.ArgumentParser(
+        description=description, epilog=input_help(source), formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name, help in (("start", f"gather the {source.what}'s source, emptying the working folder, and write the "
-                        "reading tasks; prints one line of JSON: what was gathered, tasks, a line 'Task <name>: "
-                        "<path>' for each, and merge, the merge task's line"),
-                       ("submit", "check a task's answer, JSON on stdin, and write it; the task's file shows its "
-                        "shape and the command to copy. Prints one line of JSON: the task, and its items or, for "
-                        f"the merge, the {source.name} file's path"),
-                       ("finished", f"once the merge is submitted: prints one line of JSON: {source.name}, the "
-                        "summary's path, in_doubt, what the merge left out in doubt, and correct, the command that "
-                        "submits a correction"),
-                       ("remerge", "once every reading task is answered: write the merge task again, from the "
-                        "answers kept in _raw and the merge's protocol as it is now, dropping the merge's earlier "
-                        "answer; prints one line of JSON: merge, the merge task's line")):
+    start_help = (f"gather the {source.what}'s source and write the tasks, for the subagents that read it; prints one "
+                  "line of JSON: what was gathered, and the tasks' lines, 'Task <name>: <path>'"
+                  + (", and judge, the judge's, its file written once every part is submitted, unless none listed anything" if source.readers
+                     else ", or path, the empty summary's, with nothing to read"))
+    submit_help = ("check the answer, JSON on stdin, and write it; prints one line of JSON: path, the summary's"
+                   if not source.readers else
+                   "check the answer, JSON on stdin: a part's items, or, with no --task, the judge's summary; prints "
+                   "one line of JSON: the task, and the judge's line once every part is in, or path, the summary's, "
+                   "when the judge's isn't needed")
+    for name, help in (("start", start_help), ("submit", submit_help)):
         command = commands.add_parser(name, help=help, description=help)
         command.add_argument("--prep", required=True,
                              help="the prep's folder, <Person>_<YY-MM-DD>, as init_prep.py printed it")
-        if name == "submit":
-            command.add_argument("--task", required=True,
-                                 help="the task's name, as start printed it, such as month:2026-07")
+        if name == "submit" and source.readers:
+            command.add_argument("--task", help="a part's task, as start printed it, such as month:2026-09; "
+                                 "without it, the answer is the judge's")
     args = parser.parse_args(argv)
     if args.command == "start":
         print(json.dumps(start(source, args.prep), ensure_ascii=False))
-    elif args.command == "finished":
-        if not answered(source, args.prep, MERGE) and load_material(source, args.prep)["tasks"]:
-            raise SystemExit(
-                "The merge isn't submitted yet: run finished once its subagent has finished")
-        print(json.dumps(finished(source, args.prep), ensure_ascii=False))
-    elif args.command == "remerge":
-        print(json.dumps(remerge(source, args.prep), ensure_ascii=False))
     else:
-        answer = stdin_json("The answer's shape:\n" +
-                            answer_shape(source, args.task))
-        print(json.dumps(submit(source, args.prep,
-              args.task, answer), ensure_ascii=False))
+        task = getattr(args, "task", None)
+        print(json.dumps(submit(source, args.prep, stdin_json(input_help(source, task)), task),
+              ensure_ascii=False))
 
 
 def start(source, prep):
-    """Gather the source of the prep `prep` into its working folder, emptied
-    first with its answers in _raw, and write every reading task, as they
-    are independent and few; returns what was gathered, a line for each
-    task, 'Task <name>: <path>', and the merge task's line, its file written once every reading task is
-    answered. With nothing to read, it records the empty summary and returns
-    what finished() says."""
-    material = source.gather(prep)
-    work = work_dir(source, prep)
-    clear_folder(work)
-    clear_folder(raw_dir(source, prep))
-    write_work_file(os.path.join(work, MATERIAL), material)
+    """Gather the source of the prep `prep` and write its tasks, one for each
+    part the readers read, or the judge's alone, with the items the script
+    lists written to _raw; returns what was gathered and the tasks' lines,
+    'Task <name>: <path>', and the judge's, its file written once every part
+    is submitted. With nothing to read, it records the empty summary and
+    returns its path instead."""
+    material = source.gather(prep) if source.gather else None
+    clear_folder(work_dir(source, prep))
+    clear_folder(raw_path(source, prep))
+    if source.readers:
+        parts = source.readers.parts(prep)
+        return {"tasks": [write_task_file(task_folder(source, prep, task), task, reader_task(source, prep, task, part))
+                          for task, part in parts.items()],
+                "judge": task_line(source.name, work_dir(source, prep))}
+    assert material is not None  # a source without readers gathers its own
+    content = material["content"]
     result = {key: value for key, value in material.items()
-              if key not in ("tasks", "content")}
-    if not material["tasks"]:
-        write_prep_file(prep, source.output, {
-                        part: [] for part in SUMMARY_PARTS})
-        return {**result, **finished(source, prep)}
-    return {**result, "tasks": [write_task(source, prep, task, reading_task(source, prep, task, material))
-                                for task in material["tasks"]],
-            "merge": task_line(MERGE, task_folder(work, MERGE))}
+              if key not in ("content", "empty")}
+    write_prep_file(prep, f"{RAW_DIR}/{raw_name(source)}",
+                    {"items": content["items"]})
+    if material["empty"]:
+        return {**result, "path": write_prep_file(prep, source.output, {part: [] for part in SUMMARY_PARTS})}
+    return {**result, "task": write_judge(source, prep, content)}
 
 
-def submit(source, prep, task, answer):
-    """Check the answer `answer` to the task `task` of the prep `prep`, and
-    write it, a numbered note's item with its note's day and link; the answer
-    to the last reading task also writes the merge task, and the merge's
-    summary goes to the prep, each point's links turned into its evidence,
-    in order(), and what it left out in doubt to the working folder. Exits,
-    writing nothing, with every problem."""
-    material = load_material(source, prep)
-    notes, in_doubt, read = None, None, {}
-    if task == MERGE:
-        in_doubt = answer.pop("in_doubt", None) if isinstance(
-            answer, dict) else None
-        read = {item["link"]: item["date"] for name in material["tasks"]
-                for item in read_answer(source, prep, name)["items"]}
-        problems = merge_problems(source, answer, read) + \
-            in_doubt_problems(in_doubt)
-    elif task in material["tasks"]:
-        notes = source.task_notes(
-            material, task) if source.task_notes else None
-        problems = items_problems(answer, notes, None if source.task_days is None
-                                  else source.task_days(material, task))
-    else:
+def submit(source, prep, answer, task=None):
+    """Check the answer `answer` to the task `task` of the prep `prep`, a
+    part's items or, with no task, the judge's summary, and write it: a part's
+    to the working folder, the judge's to the prep, each point's cites turned
+    into its evidence, in order(); the last part also writes the judge's
+    task; with nothing listed in any part, it records the empty summary
+    instead. Returns the task and the judge's line, or the summary's path. Exits,
+    writing nothing, with every problem and the answer's shape."""
+    parts = source.readers.parts(prep) if source.readers else {}
+    if task is None:
+        return submit_judge(source, prep, answer)
+    if task not in parts:
         raise SystemExit(
             f"{task!r} isn't a task of this prep: start printed them")
+    days = days_between(**parts[task])
+    problems = reader_problems(source, answer, days)
     if problems:
-        raise SystemExit("; ".join(problems) +
-                         "\n\nThe answer's shape:\n" + answer_shape(source, task))
-    if task == MERGE:
-        write_work_file(answer_path(source, prep, MERGE), {
-                        "in_doubt": sorted(in_doubt or [], key=newest_first, reverse=True)})
-        write_prep_file(prep, source.output, order(
-            with_evidence(answer, read)))
-        return {"task": task, source.name: os.path.join(prep_dir(prep), source.output)}
-    stored = answer if notes is None else {"items": [{**notes[item["note"] - 1], "synopsis": item["synopsis"]}
-                                                     for item in sorted(answer["items"], key=lambda item: item["note"])]}
-    write_raw(prep, os.path.join(source.name, raw_name(task)),
-              json_text(stored))
-    if all(answered(source, prep, name) for name in material["tasks"]):
-        write_task(source, prep, MERGE, merge_task(source, prep, material))
-    return {"task": task, "items": len(answer["items"])}
+        raise SystemExit("; ".join(problems) + "\n\n" +
+                         input_help(source, task))
+    write_work_file(answer_path(source, prep, task), answer)
+    result = {"task": task, "items": len(answer["items"])}
+    if all(answered(source, prep, name) for name in parts):
+        answers = [read_json(answer_path(source, prep, name))
+                   for name in parts]
+        items = merged_items(answers)
+        write_prep_file(prep, f"{RAW_DIR}/{raw_name(source)}", {"items": items, "searched": [
+            entry for part in answers for entry in part["searched"]]})
+        if items:
+            result["judge"] = write_judge(source, prep, {"items": items})
+        else:
+            result["path"] = write_prep_file(
+                prep, source.output, {part: [] for part in SUMMARY_PARTS})
+    return result
 
 
-def finished(source, prep):
-    """What the agent tells the manager once the source is merged: where the
-    summary is, what the merge left out in doubt, as it wrote it, and the
-    command that submits a correction."""
-    in_doubt = read_answer(source, prep, MERGE)["in_doubt"] if answered(
-        source, prep, MERGE) else []
-    return {"finished": True, source.name: os.path.join(prep_dir(prep), source.output),
-            "in_doubt": in_doubt, "correct": f"{call(source)} submit --prep {prep} --task {MERGE}"}
+def submit_judge(source, prep, answer):
+    """Check the judge's answer, the summary's parts, each point citing the
+    items listed, and write it, each cite turned into its evidence, in
+    order(); returns its path."""
+    days = period_days(read_json(os.path.join(prep_dir(prep), PERSON)))
+    items = load_items(source, prep)
+    if problems := answer_problems(source, answer, items, days):
+        raise SystemExit("; ".join(problems) + "\n\n" + input_help(source))
+    return {"path": write_prep_file(prep, source.output, order(with_evidence(answer, items)))}
 
 
-def remerge(source, prep):
-    """Write the merge task of the prep `prep` again, from the synopses its
-    reading tasks wrote and the merge's protocol as it is now, so a change to
-    the merge's rules is tried without reading the source again; drops the
-    merge's earlier answer, so finished waits for the new one. Exits when a
-    reading task isn't answered."""
-    material = load_material(source, prep)
-    if missing := [task for task in material["tasks"] if not answered(source, prep, task)]:
-        raise SystemExit(
-            f"{', '.join(missing)} not answered yet: the merge is written once every reading task is")
-    if answered(source, prep, MERGE):
-        os.remove(answer_path(source, prep, MERGE))
-    return {"merge": write_task(source, prep, MERGE, merge_task(source, prep, material))}
+def input_help(source, task=None):
+    """What to send on stdin to submit the answer of `source`'s reading, with
+    a command to copy, in a quoted here-document: a part's, when `task` names
+    one, else the judge's, and, with no task, a part's after it."""
+    def shown(shape, command):
+        example = "\n".join(f"  {line}" for line in shape.splitlines())
+        return f"  python3 {source.script} submit --prep Jane-Doe_26-11-10{command} <<'END_OF_INPUT'\n{example}\n  END_OF_INPUT"
+    judge = (f"Input, on stdin, for the {source.what}'s summary:\n\n{shown(source.answer_shape, '')}\n\n{SUMMARY_HELP}\n"
+             + CITES_HELP.format(what=source.cites)
+             + "\n\nEach part is a list of points, [] when there is nothing to keep.")
+    if not source.readers:
+        return judge + "\n\nPrints one line of JSON: path, the file written."
+    reader = (f"Input, on stdin, for a part's task:\n\n{shown(source.readers.answer_shape, ' --task month:2026-09')}"
+              f"\n\n{source.readers.help}")
+    gives = "the task, and the judge's line once every part is in, or path when no part listed anything"
+    if task:
+        return f"{reader}\n\nPrints one line of JSON: {gives}."
+    return f"{judge}\n\n{reader}\n\nPrints one line of JSON: path, the file written; for a part, {gives}."
 
 
 # The tasks.
 
-def reading_task(source, prep, task, material):
-    """The text of the reading task `task`: its protocol, the person, the
-    source's part and how to submit."""
-    protocol, body = source.task_text(prep, task, material)
-    return "\n\n".join([read_protocol(protocol), person_section(prep), body, submit_section(f"{call(source)} submit --prep {prep} --task {task}",
-                                                                                            answer_shape(source, task))])
+def reader_task(source, prep, task, part):
+    """The text of the task of the part `task`, `part` its days: its
+    protocol, the person, what to read and how to submit."""
+    protocol, body = source.readers.task_text(prep, task, part)
+    return "\n\n".join([read_protocol(protocol, source.terms), person_section(prep), body,
+                        submit_section(f"{call(source)} submit --prep {prep} --task {task}", source.readers.answer_shape)])
 
 
-def merge_task(source, prep, material):
-    """The text of the merge task: its protocol, the person, the company's
-    values and every synopsis the reading tasks wrote, to judge and merge
-    into one summary."""
-    found = [json.dumps(item, ensure_ascii=False)
-             for name in material["tasks"] for item in read_answer(source, prep, name)["items"]]
-    return "\n\n".join([read_protocol(f"{source.name}-merge"), person_section(prep), values_section(),
-                        "## What the reading found\n\n" +
-                        ("\n".join(found) or "Nothing."),
-                        submit_section(f"{call(source)} submit --prep {prep} --task {MERGE}",
-                                       answer_shape(source, MERGE))])
+def write_judge(source, prep, content):
+    """Write the judge's task of the prep `prep`, from `content`, {items},
+    to the working folder: its protocol, the person, the company's values,
+    what the source shows and how to submit; returns the line that hands it
+    out, 'Task <name>: <path>'."""
+    protocol, body = source.task_text(prep, content)
+    text = "\n\n".join([read_protocol(protocol, source.terms), person_section(prep), values_section(), body,
+                        submit_section(f"{call(source)} submit --prep {prep}", source.answer_shape)])
+    return write_task_file(work_dir(source, prep), source.name, text)
 
 
 def person_section(prep):
@@ -213,184 +222,137 @@ def values_section():
                                                      for entry in company_setting(VALUES))
 
 
-def merge_answer(link, item):
-    """The shape of a merge's answer, for a source whose evidence is linked
-    as `link`, such as "/path/to/note.md", and whose items are each an `item`,
-    such as "note"."""
-    return ('{"going_well": [{"point": "...", "values": ["<each company value it clearly shows or calls for, '
-            f'at most {MAX_VALUES}>"],\n'
-            f'                 "links": ["{link}", ...]}}],\n'
-            f' "to_improve": [{{"point": "...", "values": [], "links": ["{link}"]}}],\n'
-            f' "context": [{{"point": "...", "links": ["{link}", ...]}}],\n'
-            f' "in_doubt": ["YYYY-MM-DD: what the {item} says, and why you left it out"]}}')
+# The items and the order.
 
+def merged_items(answers):
+    """The items of every part's answer in `answers`, in one list by day,
+    each numbered from 1, with its date, link and description; a link listed
+    again by a later part is kept once."""
+    seen, found = set(), []
+    for item in sorted((item for answer in answers for item in answer["items"]),
+                       key=lambda item: (item["date"], item["link"])):
+        if item["link"] not in seen:
+            seen.add(item["link"])
+            found.append(item)
+    return [{"number": number, **item} for number, item in enumerate(found, 1)]
 
-def answer_shape(source, task):
-    """The shape of the answer to `task`: the merge's, or a reading task's."""
-    return source.answers[MERGE if task == MERGE else "reading"]
-
-
-def write_task(source, prep, task, text):
-    """Write the task `task`'s text to its file in the working folder;
-    returns the line that hands it out, 'Task <name>: <path>'."""
-    return write_task_file(task_folder(work_dir(source, prep), task), task, text)
-
-
-# The order.
 
 def order(summary):
     """`summary` with each point's evidence from the most recent, the undated
-    first, as the most recent of all, and each part's points by their most
-    recent evidence, the same way: the order every list of the prep keeps."""
+    first, as the most recent of all, and each part's points by their latest
+    dated evidence, those with none dated first: the order every list of the
+    prep keeps."""
     def newest(item):
-        return newest_first(item["date"] or "")
-    points_of = {part: [{**point, "evidence": sorted(point["evidence"], key=newest, reverse=True)}
-                        for point in points] for part, points in summary.items()}
-    return {part: sorted(points, key=lambda point: newest(point["evidence"][0]), reverse=True)
-            for part, points in points_of.items()}
-
-
-def newest_first(text):
-    """The key that sorts, with reverse=True, texts that start with a day,
-    YYYY-MM-DD, from the latest, those that don't first, each kept in the
-    order given."""
-    day = text[:10]
-    return newest_key(day if len(day) == 10 and day[4] == "-" and day[7] == "-" else None)
+        return newest_key(item["date"])
+    return {part: sorted(({**point, "evidence": sorted(point["evidence"], key=newest, reverse=True)}
+                          for point in points),
+                         key=lambda point: newest_key(latest_day(point["evidence"])), reverse=True)
+            for part, points in summary.items()}
 
 
 # Checking the answers.
 
-def merge_problems(source, answer, read):
-    """Why `answer` isn't the merge's summary, empty when it is: its parts'
-    points, each with "links", at least one, each the link of an item in
-    `read`, {link: date}, the items the reading tasks wrote, and, its links
-    turned into evidence, the summary summary_problems() takes, over the
-    days read."""
+def reader_problems(source, answer, days):
+    """Why `answer`, a part's, isn't {searched, items}, empty when it is:
+    its items by listed_items_problems(), what it declares searched by the source's
+    coverage_problems(), both over `days`, the part's."""
+    if not (isinstance(answer, dict) and sorted(answer) == ["items", "searched"]):
+        return ['the answer must be {"searched": [...], "items": [...]}']
+    return listed_items_problems(answer["items"], days) or source.readers.coverage_problems(answer["searched"], days)
+
+
+def answer_problems(source, parts, items, days):
+    """Why `parts` isn't the summary a reading gives, empty when it is: its
+    points, each with "cites", at least one, each the number of one of
+    `items`, and, its cites turned into evidence, the summary
+    summary_problems() takes, over `days`, those of the period."""
     what = f"the {source.what}"
-    if not (isinstance(answer, dict) and sorted(answer) == sorted(SUMMARY_PARTS)):
-        return summary_problems(answer, what, [])
+    if not (isinstance(parts, dict) and sorted(parts) == sorted(SUMMARY_PARTS)):
+        return summary_problems(parts, what, [])
     problems = []
-    for part, points in answer.items():
-        fields = point_fields(part, "links")
+    for part, points in parts.items():
+        fields = point_fields(part, "cites")
         if not (isinstance(points, list) and all(is_point(point, fields) for point in points)):
             problems.append(
                 f"{what}'s {part} must be a list of points, each {point_shape(fields)}, or [] for none")
             continue
-        problems += [f"{what}'s {part}: {point['point'][:60]!r}...'s links must each be the link of something "
-                     "read, as its synopsis gives it" for point in points if not set(point["links"]) <= set(read)]
+        problems += [f"{what}'s {part}: {point['point'][:60]!r}...'s cites must each be the number of what it "
+                     f"rests on, 1 to {len(items)}" for point in points
+                     if not all(number <= len(items) for number in point["cites"])]
     if problems:
         return problems
-    return summary_problems(with_evidence(answer, read), what, company_names(VALUES),
-                            sorted({day for day in read.values() if day}), source.undated_context)
+    return summary_problems(with_evidence(parts, items), what, company_names(VALUES), days, source.undated_context)
 
 
-def with_evidence(answer, read):
-    """The merge's answer `answer` with each point's links turned into its
-    evidence, each {date, link}, the date the one `read`, {link: date},
-    gives the link."""
-    return {part: [{**{key: value for key, value in point.items() if key != "links"},
-                    "evidence": [{"date": read[link], "link": link} for link in point["links"]]}
-                   for point in points] for part, points in answer.items()}
+def with_evidence(parts, items):
+    """`parts`, the summary a reading gives, with each point's cites turned
+    into its evidence, each {date, link} of the item cited, `items`, numbered
+    from 1: once for a link, as two notes of one journal day share it."""
+    def evidence(point):
+        cited = [{"date": items[number - 1]["date"], "link": items[number - 1]["link"]}
+                 for number in point["cites"]]
+        return [item for place, item in enumerate(cited) if item not in cited[:place]]
+    return {part: [{**{key: value for key, value in point.items() if key != "cites"}, "evidence": evidence(point)}
+                   for point in points] for part, points in parts.items()}
 
 
-def items_problems(answer, notes=None, days=None):
-    """Why `answer` isn't a reading task's answer, empty when it is: items,
-    each a synopsis of at most MAX_SYNOPSIS_WORDS words and, with `notes`,
-    the task's notes, the number of its note, every note's once; else a
-    date, one of `days`, and a link."""
-    if not (isinstance(answer, dict) and sorted(answer) == ["items"] and isinstance(answer["items"], list)):
-        return ['the answer must be {"items": [...]}, [] when there is nothing']
-    fields = ["note", "synopsis"] if notes is not None else [
-        "date", "link", "synopsis"]
+def listed_items_problems(items, days):
+    """Why `items`, what a reader found, isn't a list of items, empty when
+    it is: each {date, link, description}, the date one of `days`, the link a
+    web address, once, and the description of at most MAX_DESCRIPTION_WORDS
+    words."""
+    if not isinstance(items, list):
+        return ['the answer must hold "items": a list, [] when nothing was found']
     problems = []
-    for number, item in enumerate(answer["items"], 1):
+    for number, item in enumerate(items, 1):
         what = f"item {number}"
-        if not (isinstance(item, dict) and sorted(item) == fields):
-            problems.append(f"{what} must have the fields {', '.join(fields)}")
-            continue
-        if not (isinstance(item["synopsis"], str) and item["synopsis"].strip()) \
-                or word_count(str(item["synopsis"])) > MAX_SYNOPSIS_WORDS:
-            problems.append(f"{what}'s synopsis must be text of about {SYNOPSIS_WORDS} words, at most "
-                            f"{MAX_SYNOPSIS_WORDS}")
-        if notes is not None:
-            continue
-        if item["date"] not in (days or []):
+        if not (isinstance(item, dict) and sorted(item) == ["date", "description", "link"]):
             problems.append(
-                f"{what}'s date, {item['date']!r}, must be the day of what it comes from")
+                f"{what} must have the fields date, link, description")
+            continue
+        if item["date"] not in days:
+            problems.append(
+                f"{what}'s date, {item['date']!r}, must be the day of what it comes from, within the period")
         if not (isinstance(item["link"], str) and item["link"].startswith(WEB_LINK)):
             problems.append(
                 f"{what}'s link, {item['link']!r}, must be the address of what it comes from")
-    if notes is not None and not problems:
-        numbers = [item["note"] for item in answer["items"]]
-        missing = [str(n)
-                   for n in range(1, len(notes) + 1) if n not in numbers]
-        if sorted(numbers) != list(range(1, len(notes) + 1)):
-            problems.append(f"every note, 1 to {len(notes)}, must have one synopsis, by its number"
-                            + (f": missing {', '.join(missing)}" if missing else ""))
+        if not (isinstance(item["description"], str) and item["description"].strip()):
+            problems.append(f"{what}'s description must be a text")
+        elif word_count(item["description"]) > MAX_DESCRIPTION_WORDS:
+            problems.append(f"{what}'s description has {word_count(item['description'])} words: keep it to "
+                            f"up to {DESCRIPTION_WORDS}")
+    links = [item["link"] for item in items if isinstance(item, dict)]
+    problems += [f"the link {link!r} is listed more than once: list each once"
+                 for link in sorted(set(links)) if links.count(link) > 1]
     return problems
-
-
-def in_doubt_problems(in_doubt):
-    """Why `in_doubt`, what the merge left out in doubt, isn't a list of
-    texts, empty when it is."""
-    if not (isinstance(in_doubt, list) and all(isinstance(line, str) and line.strip() for line in in_doubt)):
-        return ['"in_doubt" must be a list of texts, [] when nothing was left out in doubt']
-    return []
 
 
 # Where things are.
 
 def work_dir(source, prep):
     """The prep `prep`'s working folder for `source`, in the system's
-    temporary folder: the material,
-    the tasks and what the merge left out in doubt, needed only while a run
-    lasts. start empties it, never finding what an earlier run left. Exits
-    when the prep isn't there."""
+    temporary folder: its tasks and a part's answer, needed only while a run
+    lasts. Exits when the prep isn't there."""
     prep_dir(prep)
     return work_folder(FOLDER_NAME, prep, source.name)
 
 
-def raw_dir(source, prep):
-    """The prep `prep`'s folder of `source`'s answers, in its _raw folder."""
-    return os.path.join(prep_dir(prep), RAW_DIR, source.name)
-
-
-def task_folder(work, task):
-    """The folder of `task` in the working folder `work`, which holds its
-    file."""
-    return os.path.join(work, *task.split(":"))
+def task_folder(source, prep, task):
+    """The folder of the task `task`, which holds its file and answer: the
+    working folder for the judge's, or the only task, else a folder for each
+    part, such as month/2026-09."""
+    work = work_dir(source, prep)
+    return work if task == source.name else os.path.join(work, *task.split(":"))
 
 
 def answer_path(source, prep, task):
-    """The file of `task`'s answer: a reader's in _raw, by raw_name(), and
-    the merge's in the working folder."""
-    if task == MERGE:
-        return os.path.join(work_dir(source, prep), MERGE, ANSWER)
-    return os.path.join(raw_dir(source, prep), raw_name(task))
-
-
-def raw_name(task):
-    """The name of the reading task `task`'s answer in its source's _raw
-    folder: a month's by the month, such as 2026-07.json, else the task's
-    own, such as pages.json."""
-    kind, _, part = task.partition(":")
-    return f"{part or kind}.json"
-
-
-def task_month(task):
-    """The month a month's reading task is for, such as 2026-07 for
-    month:2026-07."""
-    return task.partition(":")[2]
+    """The file of the answer to the part `task`, in its folder."""
+    return os.path.join(task_folder(source, prep, task), ANSWER)
 
 
 def answered(source, prep, task):
-    """Whether `task` of the prep `prep` has an answer."""
+    """Whether the part `task` of the prep `prep` has an answer."""
     return os.path.exists(answer_path(source, prep, task))
-
-
-def read_answer(source, prep, task):
-    """The answer to `task`, as submitted."""
-    return read_json(answer_path(source, prep, task))
 
 
 def write_work_file(path, value):
@@ -400,20 +362,33 @@ def write_work_file(path, value):
         f.write(json_text(value))
 
 
-def load_material(source, prep):
-    """What start gathered for the prep `prep`; exits when it hasn't run."""
-    path = os.path.join(work_dir(source, prep), MATERIAL)
+def raw_name(source):
+    """The name of `source`'s file in a prep's _raw folder, such as
+    notes_items.json: the items it lists, which the summary, notes.json,
+    cites."""
+    return f"{source.name}_items.json"
+
+
+def raw_path(source, prep):
+    """The path of `source`'s file in the prep `prep`'s _raw folder."""
+    return os.path.join(prep_dir(prep), RAW_DIR, raw_name(source))
+
+
+def load_items(source, prep):
+    """The items listed for `source` in the prep `prep`, numbered from 1,
+    kept in its _raw folder; exits when they aren't there yet."""
+    path = raw_path(source, prep)
     if not os.path.exists(path):
-        raise SystemExit(
-            f"The {source.what}'s source for {prep} isn't gathered: run {call(source)} start --prep {prep} first")
-    return read_json(path)
+        raise SystemExit(f"The {source.what}'s items aren't listed yet: run {call(source)} start --prep {prep}, "
+                         "and submit every part before the judge's answer")
+    return read_json(path)["items"]
 
 
-def read_protocol(name):
-    """The protocol file `name`'s text, its shared parts filled in, with the
-    command that reads a Jira ticket by the path the skill pre-approves."""
-    return fill_protocol(PROTOCOL, name, {**POINT_LIMITS, "synopsis_words": SYNOPSIS_WORDS,
-                                          "max_synopsis_words": MAX_SYNOPSIS_WORDS,
+def read_protocol(name, terms=None):
+    """The protocol file `name`'s text, its shared parts filled in, with
+    `terms`, a source's words for them, and the command that reads a Jira
+    ticket by the path the skill pre-approves."""
+    return fill_protocol(PROTOCOL, name, {**POINT_LIMITS, "description_words": DESCRIPTION_WORDS, **(terms or {}),
                                           "jira_ticket": f"{script_command(__file__, 'jira_ticket.py')} --key <key>",
                                           "extract_saved": library_command(__file__, "extract_saved.py")})
 

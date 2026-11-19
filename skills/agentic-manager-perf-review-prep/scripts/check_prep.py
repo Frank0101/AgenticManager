@@ -9,10 +9,12 @@ import os
 
 from build_data import data_problems
 from check_report import report_problems
-from common import (CHART_FILES, CHARTS_DIR, CONTENT, FEEDBACK, STEP_CHANGE, VIEW_CHECK, content_problems, data_comparison_problems, STEP_CHANGE_COMPARISON, VIEW_CHECK_COMPARISON, folder_problem, NOTES, ORIENTATION, PERSON, RATINGS, RAW_DIR, REVIEWS, SLACK, SOURCES,
-                    SUMMARY_FILES, VALUES, DATA, company_names, expected_files, feedback_problems, notes_problems,
-                    orientation_problems, period_days, person_problems, prep_dir, read_json, read_raw_work,
-                    report_name, reviews_problems, slack_problems, sources_problems)
+from common import (CHART_FILES, CHARTS_DIR, OBSERVATIONS_CONTENT, FEEDBACK_FILES, STEP_CHANGE_CONTENT, observations_content_problems, step_change_content_problems, folder_problem, NOTES, PERSON, RAW_DIR, SOURCES,
+                    SUMMARY_FILES, VALUES, DATA, company_names, expected_files, feedback_problems,
+                    period_days, person_problems, prep_dir, read_json, read_raw_work,
+                    report_name, sources_problems, summary_problems)
+import read_notes
+import read_slack
 
 
 def check_prep(prep, today=None):
@@ -34,19 +36,16 @@ def check_prep(prep, today=None):
     # Once the prep is complete, the person is in every source.
     rules = {PERSON: lambda value: person_errors + (
         sources_problems(value.get("sources"), SOURCES) if isinstance(value, dict) else []),
-        ORIENTATION: lambda value: orientation_problems(value, values),
-        FEEDBACK: lambda value: feedback_problems(value, values)}
-    if REVIEWS in read:
-        ratings = company_names(RATINGS)
-        rules[REVIEWS] = lambda value: reviews_problems(
-            value, ratings, values)
+        **{file: lambda value, name=name: feedback_problems(value, name, values)
+           for name, file in FEEDBACK_FILES.items()}}
     # Everything gathered is checked against the review's period, so only
     # once the person and period are valid: a day a point of the notes or
     # the Slack summary cites, or an item of work is dated, must be in it.
     if person is not None and not person_errors:
         days = period_days(person)
-        rules[NOTES] = lambda value: notes_problems(value, values, days)
-        rules[SLACK] = lambda value: slack_problems(value, values, days)
+        for source in (read_notes.SOURCE, read_slack.SOURCE):
+            rules[source.output] = lambda value, source=source: summary_problems(
+                value, f"the {source.what}", values, days, source.undated_context)
     for name, problems in rules.items():
         if name in read:
             errors += [
@@ -60,22 +59,20 @@ def check_prep(prep, today=None):
     if built and DATA in read:
         errors += [f"{DATA}: {problem}" for problem in data_problems(
             read[DATA], read_raw_work(prep), person, summaries, values)]
-    # The agent's summaries, step change and view check are checked against
-    # the model they are written from.
+    # The agent's summaries and step change are checked against the model
+    # they are written from.
     data_passes = built and DATA in read and not any(
         error.startswith(DATA) for error in errors)
-    if data_passes and CONTENT in read:
-        errors += [f"{CONTENT}: {problem}" for problem in content_problems(
-            read[CONTENT], read[DATA]["observations"])]
-    for comparison in (STEP_CHANGE_COMPARISON, VIEW_CHECK_COMPARISON):
-        if data_passes and comparison.file in read:
-            errors += [f"{comparison.file}: {problem}" for problem in data_comparison_problems(
-                comparison, read[comparison.file], read[DATA])]
-    if data_passes and {report, CHARTS_DIR, CONTENT, STEP_CHANGE, VIEW_CHECK} <= files and not any(
-            error.startswith((CONTENT, STEP_CHANGE, VIEW_CHECK)) for error in errors):
+    if data_passes and OBSERVATIONS_CONTENT in read:
+        errors += [f"{OBSERVATIONS_CONTENT}: {problem}" for problem in observations_content_problems(
+            read[OBSERVATIONS_CONTENT], read[DATA]["observations"])]
+    if data_passes and STEP_CHANGE_CONTENT in read:
+        errors += [f"{STEP_CHANGE_CONTENT}: {problem}" for problem in step_change_content_problems(
+            read[STEP_CHANGE_CONTENT], read[DATA])]
+    if data_passes and {report, CHARTS_DIR, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT} <= files and not any(
+            error.startswith((OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT)) for error in errors):
         with open(os.path.join(folder, report), encoding="utf-8") as f:
             errors += [f"{report}: {problem}" for problem in report_problems(
                 f.read(
-                ), read[DATA], summaries, values, folder, read[CONTENT], read[STEP_CHANGE],
-                read[VIEW_CHECK])]
+                ), read[DATA], summaries, values, folder, read[OBSERVATIONS_CONTENT], read[STEP_CHANGE_CONTENT])]
     return {"ok": not errors, "errors": errors}

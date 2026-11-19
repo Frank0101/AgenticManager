@@ -11,7 +11,7 @@ The split is about the context an agent can hold. Reading every file of the repo
 
 ## What counts as an issue
 
-Fix only real issues: something wrong, unclear, inconsistent with another file, duplicated, or longer than it needs to be. Leave improbable corner cases, cosmetic preferences and defensive additions alone.
+A refactoring cleans, consolidates and simplifies: it never makes the code more defensive. Fix only real issues: something wrong, unclear, inconsistent with another file, duplicated, or longer than it needs to be. Never add a check or a guard for a case no run has produced or that needs something improbable, such as a hand-edited output or a broken install, and leave cosmetic preferences alone. A fix that adds code needs a real case behind it; prefer the one that removes code.
 
 After changing anything, read the pass's files again in full, not only what you changed: a change that is right locally can contradict another file. A pass ends when a full read finds no real issue; it never keeps going to find something small.
 

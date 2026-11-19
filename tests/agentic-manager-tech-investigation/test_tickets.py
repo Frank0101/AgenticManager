@@ -19,7 +19,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import tickets  # noqa: E402
-from common import GhError  # noqa: E402
+from agentic_manager.github import GhError  # noqa: E402
 from agentic_manager.jira import JiraError  # noqa: E402
 from agentic_manager import retry  # noqa: E402
 

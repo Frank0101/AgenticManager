@@ -2,9 +2,9 @@
 Run as a script, it has end-to-end tests in test_e2e_init.py.
 Run with: python3 tests/run.py agentic-manager-perf-review-prep
 
-The vault is a temporary folder of the test's own; the readers' answers go
-to the prep's _raw folder, in the test's output folder, and the tasks to the
-working folder, in the test's own system temporary folder.
+The vault is a temporary folder of the test's own; the notes read go to the
+prep's _raw folder, in the test's output folder, and the task to the working
+folder, in the test's own system temporary folder.
 """
 
 import json
@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import read_notes  # noqa: E402
 import reading  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import DELAY, PREP, PRESENTED, temp_output, write_prep  # noqa: E402
+from prep_fixture import PREP, temp_output, write_prep  # noqa: E402
 
 # A journal of the prep's period, 10/08/2026 to 10/11/2026, which links Jane,
 # as [[Jane]] or as a tag, whatever its case, and other people.
@@ -74,91 +74,62 @@ class ReadNotesTest(unittest.TestCase):
             {"text": "- #jane didn't flag the delay until asked\n\t- the second time this month"}])
 
     def test_gather(self):
-        # The period's journals that link the person by a confirmed link, by
-        # month, and the person's pages, each with its file's link; never a
-        # page about someone else.
+        # The period's journals that link the person by a confirmed link,
+        # by day, then the person's pages, numbered from 1 in one list, each
+        # with its file's link; never a page about someone else.
         material = read_notes.gather(PREP)
-        self.assertEqual({key: material[key] for key in ("journal_notes", "months", "pages", "tasks")},
-                         {"journal_notes": 3, "months": ["2026-08", "2026-09"], "pages": ["Jane"],
-                          "tasks": ["month:2026-08", "month:2026-09", "pages"]})
-        content = material["content"]
-        self.assertEqual([note["date"] for note in content["months"]["2026-08"]], [
-                         "2026-08-20", "2026-08-20"])
-        self.assertEqual(content["months"]["2026-09"], [
-            {"date": "2026-09-02", "link": str(Path(self.graph, "journals", "2026_09_02.md")),
-             "text": "- [[Jane promotion]] talk went well"}])
-        self.assertEqual(content["pages"], [
-                         {"title": "Jane", "text": "- Moved to the payments team in the summer",
-                          "link": str(Path(self.graph, "pages", "Jane.md"))}])
+        self.assertEqual({key: material[key] for key in ("empty", "journal_notes", "pages")},
+                         {"empty": False, "journal_notes": 3, "pages": ["Jane"]})
+        august, september = (str(Path(self.graph, "journals", name))
+                             for name in ("2026_08_20.md", "2026_09_02.md"))
+        self.assertEqual([(item["number"], item["date"], item["link"]) for item in material["content"]["items"]],
+                         [(1, "2026-08-20", august), (2, "2026-08-20", august), (3, "2026-09-02", september),
+                          (4, None, str(Path(self.graph, "pages", "Jane.md")))])
+        self.assertEqual(material["content"]["items"][3]["text"],
+                         "- Moved to the payments team in the summer")
 
-    def test_runs_the_tasks_then_merges(self):
-        # start gathers, writes every month and the pages, each saying how
-        # the notes write the person and each note numbered, in the working
-        # folder, and names the merge task, which the last reading answer
-        # writes, every synopsis with its note's day and link; each answer
-        # is kept in _raw, a month in months; the merge's summary is kept
-        # most recent first, and its submit says finished, with what it left
-        # out in doubt.
+    def test_runs_the_task_then_takes_the_summary(self):
+        # start writes the notes, numbered, to _raw and the task to the
+        # working folder, saying how the notes write the person; submit
+        # turns each point's cites into the day and link of the notes, most
+        # recent first, a page, undated, backing only context.
         started = reading.start(read_notes.SOURCE, PREP)
-        self.assertEqual(started["months"], ["2026-08", "2026-09"])
-        lines = started["tasks"]
-        self.assertEqual([line.split(": ")[0] for line in lines],
-                         ["Task month:2026-08", "Task month:2026-09", "Task pages"])
-        self.assertEqual(lines[0].split(": ", 1)[1], os.path.join(
-            tempfile.gettempdir(), "perf-review-preps", "Jane-Doe_26-11-10", "notes", "month", "2026-08", "task.md"))
-        with open(lines[0].split(": ", 1)[1], encoding="utf-8") as f:
+        self.assertEqual(
+            (started["journal_notes"], started["pages"]), (3, ["Jane"]))
+        name, path = started["task"].split(": ", 1)
+        self.assertEqual((name, path), ("Task notes", os.path.join(
+            tempfile.gettempdir(), "perf-review-preps", "Jane-Doe_26-11-10", "notes", "task.md")))
+        with open(path, encoding="utf-8") as f:
             task = f.read()
-        for expected in ("# Read a month of a manager's notes", "## The person\n\nJane Doe",
-                         "jira_ticket.py --key",
+        for expected in ("# Read a manager's notes about a person", "## The person\n\nJane Doe", "- Teamwork: ",
+                         "jira_ticket.py --key", "never one per mention",
                          "The notes write Jane Doe as [[Jane]] or [[Jane Promotion]], or as a tag, such as #Jane.",
-                         "### Note 1, 2026-08-20\n\n- Planning sync",
-                         "### Note 2, 2026-08-20", "about 60 words",
-                         "submit --prep Jane-Doe_26-11-10 --task month:2026-08"):
+                         "### Note 1, 2026-08-20\n\n- Planning sync", "### Note 3, 2026-09-02",
+                         "### Note 4, page Jane\n\n- Moved to the payments team", "submit --prep Jane-Doe_26-11-10"):
             self.assertIn(expected, task)
-        self.assertNotIn("- Teamwork: ", task)
-        merge = started["merge"].split(": ", 1)[1]
-        self.assertEqual(reading.submit(read_notes.SOURCE, PREP, "month:2026-08", {"items": [DELAY, PRESENTED]}),
-                         {"task": "month:2026-08", "items": 2})
-        self.assertFalse(os.path.exists(merge))
-        reading.submit(read_notes.SOURCE, PREP, "month:2026-09",
-                       {"items": [{"note": 1, "synopsis": "The promotion talk went well"}]})
-        reading.submit(read_notes.SOURCE,
-                       PREP, "pages", {"items": [{"note": 1, "synopsis": "Moved to payments"}]})
-        raw = os.path.join(self.folder, PREP, "_raw", "notes")
-        self.assertEqual(sorted(os.path.relpath(os.path.join(where, name), raw)
-                                for where, _, names in os.walk(raw) for name in names),
-                         ["2026-08.json", "2026-09.json", "pages.json"])
-        with open(merge, encoding="utf-8") as f:
-            text = f.read()
-        august = str(Path(self.graph, "journals", "2026_08_20.md"))
+        with open(os.path.join(self.folder, PREP, "_raw", "notes_items.json"), encoding="utf-8") as f:
+            self.assertEqual([item["number"]
+                             for item in json.load(f)["items"]], [1, 2, 3, 4])
+        august, september = (str(Path(self.graph, "journals", name))
+                             for name in ("2026_08_20.md", "2026_09_02.md"))
         page = str(Path(self.graph, "pages", "Jane.md"))
-        for expected in ("- Teamwork: ", f'{{"date": "2026-08-20", "link": "{august}", "synopsis": "Presented',
-                         f'{{"date": "2026-08-20", "link": "{august}", "synopsis": "Didn\'t flag',
-                         f'{{"date": null, "link": "{page}", "synopsis": "Moved'):
-            self.assertIn(expected, text)
-        self.assertLess(text.index("Presented the migration"),
-                        text.index("Didn't flag"))
-        september = str(Path(self.graph, "journals", "2026_09_02.md"))
-        # The merge gives each point's links; the script adds each one's day,
-        # so a page, which has none, can back only context.
+        # Notes 1 and 2 are of one journal day, so they share a link: a point
+        # citing both has that one evidence.
         summary = {"going_well": [{"point": "Presented the migration to the team", "values": ["Teamwork"],
-                                   "links": [august]},
-                                  {"point": "The promotion talk went well", "values": [],
-                                   "links": [august, september]}],
-                   "to_improve": [], "context": [{"point": "Moved to payments", "links": [page]}]}
-        with self.assertRaisesRegex(SystemExit, "must each be of a day the source was read on"):
-            reading.submit(read_notes.SOURCE, PREP, "merge", {**summary, "in_doubt": [], "going_well": [
-                {**summary["going_well"][0], "links": [page]}]})
-        with self.assertRaisesRegex(SystemExit, "must each be the link of something read"):
-            reading.submit(read_notes.SOURCE, PREP, "merge", {**summary, "in_doubt": [], "going_well": [
-                {**summary["going_well"][0], "links": [str(Path(self.graph, "journals", "2026_08_21.md"))]}]})
-        with self.assertRaisesRegex(SystemExit, '"in_doubt" must be a list of texts'):
-            reading.submit(read_notes.SOURCE, PREP, "merge", summary)
-        doubts = ["2026-08-20: Didn't flag a delay, but only once and minor",
-                  "2026-09-02: Talked about a promotion", "Jane: a page note"]
-        submitted = reading.submit(read_notes.SOURCE,
-                                   PREP, "merge", {**summary, "in_doubt": doubts})
-        with open(submitted["notes"], encoding="utf-8") as f:
+                                   "cites": [1, 2]},
+                                  {"point": "The promotion talk went well", "values": [], "cites": [3, 1]}],
+                   "to_improve": [], "context": [{"point": "Moved to payments", "cites": [4]}]}
+        with self.assertRaisesRegex(SystemExit, "must each be of a day the source was read on(.|\n)*a page, which has no "
+                                    "day, backs only a context point"):
+            reading.submit(read_notes.SOURCE, PREP, {**summary, "going_well": [
+                {**summary["going_well"][0], "cites": [4]}]})
+        with self.assertRaisesRegex(SystemExit, "must each be the number of what it rests on, 1 to 4(.|\n)*Input, on stdin"):
+            reading.submit(read_notes.SOURCE, PREP, {**summary, "going_well": [
+                {**summary["going_well"][0], "cites": [5]}]})
+        self.assertFalse(os.path.exists(
+            os.path.join(self.folder, PREP, "notes.json")))
+        submitted = reading.submit(read_notes.SOURCE, PREP, summary)
+        with open(submitted["path"], encoding="utf-8") as f:
             self.assertEqual(json.load(f), {"going_well": [
                 {"point": "The promotion talk went well", "values": [],
                  "evidence": [{"date": "2026-09-02", "link": september}, {"date": "2026-08-20", "link": august}]},
@@ -166,22 +137,6 @@ class ReadNotesTest(unittest.TestCase):
                  "evidence": [{"date": "2026-08-20", "link": august}]}],
                 "to_improve": [], "context": [{"point": "Moved to payments",
                                                "evidence": [{"date": None, "link": page}]}]})
-        self.assertFalse(os.path.exists(os.path.join(raw, "merge.json")))
-        done = reading.finished(read_notes.SOURCE, PREP)
-        self.assertEqual((done["finished"], done["in_doubt"]),
-                         (True, [doubts[2], doubts[1], doubts[0]]))
-        self.assertTrue(done["correct"].endswith(
-            "submit --prep Jane-Doe_26-11-10 --task merge"))
-        # remerge writes the merge task again from the kept synopses, with
-        # the merge's protocol as it is now, and drops the earlier answer.
-        with mock.patch.object(reading, "read_protocol", lambda name: "# A changed merge"):
-            again = reading.remerge(read_notes.SOURCE, PREP)
-        self.assertEqual(again["merge"], started["merge"])
-        with open(merge, encoding="utf-8") as f:
-            text = f.read()
-        self.assertTrue(text.startswith("# A changed merge"))
-        self.assertIn('"synopsis": "Moved to payments"', text)
-        self.assertFalse(reading.answered(read_notes.SOURCE, PREP, "merge"))
 
     def test_no_notes(self):
         # With nothing to read, start records the empty summary at once.
@@ -189,25 +144,18 @@ class ReadNotesTest(unittest.TestCase):
             for name in os.listdir(os.path.join(self.graph, folder)):
                 os.remove(os.path.join(self.graph, folder, name))
         done = reading.start(read_notes.SOURCE, PREP)
-        self.assertEqual((done["finished"], done["in_doubt"]), (True, []))
-        with open(done["notes"], encoding="utf-8") as f:
+        self.assertNotIn("task", done)
+        with open(done["path"], encoding="utf-8") as f:
             self.assertEqual(
                 json.load(f), {"going_well": [], "to_improve": [], "context": []})
 
     def test_refuses_what_it_cant_take(self):
-        with self.assertRaisesRegex(SystemExit, "run .* start --prep"):
-            reading.submit(read_notes.SOURCE, PREP, "merge", {})
-        with self.assertRaisesRegex(SystemExit, "isn't gathered: run .* start"):
-            read_notes.main(["finished", "--prep", PREP])
+        with self.assertRaisesRegex(SystemExit, "aren't listed yet: run .* start --prep"):
+            reading.submit(read_notes.SOURCE, PREP, {
+                           "going_well": [], "to_improve": [], "context": []})
         reading.start(read_notes.SOURCE, PREP)
-        with self.assertRaisesRegex(SystemExit, "month:2026-08, month:2026-09, pages not answered yet"):
-            reading.remerge(read_notes.SOURCE, PREP)
-        with self.assertRaisesRegex(SystemExit, "isn't a task of this prep"):
-            reading.submit(read_notes.SOURCE, PREP,
-                           "month:2025-01", {"items": []})
-        with self.assertRaisesRegex(SystemExit, "missing 2(.|\n)*The answer's shape"):
-            reading.submit(read_notes.SOURCE, PREP,
-                           "month:2026-08", {"items": [PRESENTED]})
+        with self.assertRaisesRegex(SystemExit, "must have the parts going_well, to_improve, context(.|\n)*python3 read_notes.py submit"):
+            reading.submit(read_notes.SOURCE, PREP, {"going_well": []})
 
 
 if __name__ == "__main__":

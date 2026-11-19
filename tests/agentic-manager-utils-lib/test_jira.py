@@ -134,6 +134,22 @@ class HelpersTest(unittest.TestCase):
                     linked, links=links), expected)
 
 
+class ReportTimezoneTest(unittest.TestCase):
+    def test_report_timezone(self):
+        # A named zone keeps its clock changes; anything else is refused
+        # rather than read as UTC.
+        zone = jira.report_timezone("Europe/London")
+        for stamp, expected in [("2026-01-10T12:00:00Z", 0),
+                                ("2026-07-10T12:00:00Z", 3600)]:
+            with self.subTest(stamp=stamp):
+                offset = jira.parse_ts(stamp).astimezone(zone).utcoffset()
+                assert offset is not None
+                self.assertEqual(offset.total_seconds(), expected)
+        for name in (None, "", " ", 3, "Missing/Zone", "/absolute"):
+            with self.subTest(name=name), self.assertRaisesRegex(SystemExit, "reporting timezone"):
+                jira.report_timezone(name)
+
+
 class ClientTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -870,6 +886,21 @@ class ClientTest(unittest.TestCase):
                         self.client.sprint_report(42, 7), expected)
                 self.assertEqual(FakeJira.requests[0][1], {
                                  "rapidViewId": "42", "sprintId": "7"})
+
+    def test_sprint_report_leaves_out_excluded_projects(self):
+        # Every issue list and the map of added keys lose SECRET's issues;
+        # the rest of the report is kept as Jira gave it.
+        client = self.make_client(self.base_url, excluded=["SECRET"])
+        buckets = ("completedIssues", "issuesNotCompletedInCurrentSprint",
+                   "issuesCompletedInAnotherSprint", "puntedIssues")
+        FakeJira.routes["/rest/greenhopper/1.0/rapid/charts/sprintreport"] = {"contents": {
+            **{bucket: [{"key": "PROJ-1"}, {"key": "SECRET-1"}] for bucket in buckets},
+            "issueKeysAddedDuringSprint": {"PROJ-1": True, "SECRET-1": True},
+            "completedIssuesEstimateSum": {"value": 3}}}
+        self.assertEqual(client.sprint_report(42, 7), {"contents": {
+            **{bucket: [{"key": "PROJ-1"}] for bucket in buckets},
+            "issueKeysAddedDuringSprint": {"PROJ-1": True},
+            "completedIssuesEstimateSum": {"value": 3}}})
 
     # --- fields
 

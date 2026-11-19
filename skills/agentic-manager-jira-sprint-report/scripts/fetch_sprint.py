@@ -299,9 +299,9 @@ def other_pull_requests(pulls, start, moment, run=subprocess.run):
     GhError when gh fails.
 
     Work done outside Jira has nothing there to find it by, so it is looked
-    for by who did the sprint's work, in any of those organisations'
-    repositories, as perf-review-prep looks for a person's work. Only merged
-    pull requests are work done. The search gives only each one's address
+    for by who did the sprint's work: by author, through the library's
+    authored_searches, in any of those organisations' repositories. Only
+    merged pull requests are work done. The search gives only each one's address
     and when it was merged, and only those merged during the sprint that no
     ticket links are read in full: the tickets' are read already."""
     window = search_window(start, moment)
