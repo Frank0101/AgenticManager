@@ -9,7 +9,7 @@ import os
 
 from build_data import data_problems
 from check_report import report_problems
-from common import (CHART_FILES, CHARTS_DIR, OBSERVATIONS_CONTENT, FEEDBACK_FILES, STEP_CHANGE_CONTENT, observations_content_problems, step_change_content_problems, folder_problem, NOTES, PERSON, RAW_DIR, SOURCES,
+from common import (CHART_FILES, CHARTS_DIR, OBSERVATIONS_CONTENT, FEEDBACK_FILES, STEP_CHANGE_CONTENT, observations_content_problems, step_change_content_problems, folder_problem, PERSON, RAW_DIR, SOURCES,
                     SUMMARY_FILES, VALUES, DATA, company_names, expected_files, feedback_problems,
                     period_days, person_problems, prep_dir, read_json, read_raw_work,
                     report_name, sources_problems, summary_problems)
@@ -41,7 +41,8 @@ def check_prep(prep, today=None):
     # Everything gathered is checked against the review's period, so only
     # once the person and period are valid: a day a point of the notes or
     # the Slack summary cites, or an item of work is dated, must be in it.
-    if person is not None and not person_errors:
+    period_ok = person is not None and not person_errors
+    if period_ok:
         days = period_days(person)
         for source in (read_notes.SOURCE, read_slack.SOURCE):
             rules[source.output] = lambda value, source=source: summary_problems(
@@ -54,7 +55,7 @@ def check_prep(prep, today=None):
     # checked once they are all there and pass, as is the report, which
     # shows them both.
     summaries = {name: read.get(file) for name, file in SUMMARY_FILES.items()}
-    built = (NOTES in rules and None not in summaries.values()
+    built = (period_ok and None not in summaries.values()
              and not any(error.startswith(f"{file}:") for error in errors for file in SUMMARY_FILES.values()))
     if built and DATA in read:
         errors += [f"{DATA}: {problem}" for problem in data_problems(

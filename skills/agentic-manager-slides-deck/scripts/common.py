@@ -124,7 +124,7 @@ def user_examples_dir():
 def asset_link(name, depth):
     """The link to the image `name` in _assets from a page `depth` folders
     below the skill's output folder: 1 for a deck, 2 for a kept example."""
-    return "../" * depth + f"{ASSETS}/{name}/{asset_image(name) or 'image'}"
+    return "../" * depth + f"{ASSETS}/{name}/{asset_image(name)}"
 
 
 def asset_image(name):

@@ -10,7 +10,7 @@ import argparse
 import json
 import os
 
-from common import (NOTION_LIMIT, PERSON, period_days, prep_dir, raw_work_problems, read_json, stdin_json,
+from common import (NOTION_LIMIT, PERSON, period_days, prep_dir, read_json, stdin_json,
                     work_items, write_raw_work)
 
 INPUT = """Input, on stdin: every search made, each over a range of days, with its results
@@ -46,9 +46,7 @@ def set_notion(prep, found):
     them to Notion's raw file; returns its path. Exits, writing nothing, with
     every problem."""
     period = period_days(read_json(os.path.join(prep_dir(prep), PERSON)))
-    if problems := raw_work_problems("notion", found, period):
-        raise SystemExit("; ".join(problems) + "\n\n" + INPUT)
-    return write_raw_work(prep, "notion", found, period)
+    return write_raw_work(prep, "notion", found, period, "\n\n" + INPUT)
 
 
 def main(argv=None):

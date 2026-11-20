@@ -22,7 +22,7 @@ Judge a note by what it ends up saying: the lines nested under it, or struck thr
 ## What to leave out
 
 - A light-hearted remark, such as a joke about the person.
-- A reminder or a to-do for the manager, such as updating objectives before a deadline or keeping evidence for a promotion case: it says nothing about the person's work.
+- {{reminder}}
 - The status of the work, with no behaviour of the person in it.
 - A previous review, which the manager gives separately.
 

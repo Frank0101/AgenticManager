@@ -92,14 +92,13 @@ def as_name(text):
     return re.sub(r"[^A-Za-z0-9]+", "-", plain).strip("-")
 
 
-def free_name(base, taken, separator="-"):
+def free_name(base, taken):
     """`base`, or the first numbered name after it for which `taken(name)` is
-    false: base-2, base-3 and so on, with `separator` before the number, the
-    caller's, so each skill keeps its names' shape."""
+    false: base-2, base-3 and so on."""
     name, number = base, 1
     while taken(name):
         number += 1
-        name = f"{base}{separator}{number}"
+        name = f"{base}-{number}"
     return name
 
 

@@ -298,12 +298,13 @@ def fetched(paths, root=""):
     return list(dict.fromkeys(path.removeprefix(root).split(".")[0] for path in paths if path.startswith(root)))
 
 
-def write_raw_work(prep, source, raw, days):
+def write_raw_work(prep, source, raw, days, help=""):
     """Writes `raw`, what `source` gave, such as {"created": [...]} for
     "notion", to its raw file in the prep `prep`; returns the file's path.
-    Exits, writing nothing, when `raw` breaks a rule, `days` the period's."""
+    Exits, writing nothing, when `raw` breaks a rule, `days` the period's,
+    with every problem and then `help`."""
     if problems := raw_work_problems(source, raw, days):
-        raise SystemExit("; ".join(problems))
+        raise SystemExit("; ".join(problems) + help)
     return write_prep_file(prep, f"{RAW_DIR}/{source}.json", raw)
 
 

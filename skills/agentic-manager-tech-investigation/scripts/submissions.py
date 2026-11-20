@@ -124,7 +124,7 @@ def submit_research(lines, question, data):
 
 
 def claim_reading(lines, sources, findings, keys, allocator, problems):
-    """Give the sources and findings of a submission their IDs in `keys`: a
+    """Give the research answer's sources and findings their IDs in `keys`: a
     source read again keeps its ID, and what was read this time is added to
     its coverage, which only ever grows."""
     for number, item in enumerate(sources):
@@ -136,8 +136,8 @@ def claim_reading(lines, sources, findings, keys, allocator, problems):
 
 
 def write_reading(lines, sources, findings, keys, problems):
-    """Write a submission's sources and findings, checked as research's are;
-    returns the values written."""
+    """Write the research answer's sources and findings; returns the values
+    written."""
     written = []
     for number, item in enumerate(sources):
         where = f"sources[{number}]"

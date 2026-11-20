@@ -415,7 +415,7 @@ def search_urls(source, raw):
         no_epic = [issue["key"] for issue in raw["resolved"]
                    if not epic_of(issue["fields"], parents)]
         jqls = {"created": raw["created_jql"], "resolved": raw["resolved_jql"],
-                "resolved_points": estimated and f"{raw['resolved_jql']} AND ({estimated})",
+                "resolved_points": f"{raw['resolved_jql']} AND ({estimated})" if estimated else None,
                 "no_epic": f"{raw['resolved_jql']} AND key in ({', '.join(no_epic)})" if no_epic else None}
         return {**{f"{name}_search_url": jql and jira_search_url(raw["base_url"], jql) for name, jql in jqls.items()},
                 "epic_search_urls": epic_search_urls(raw)}

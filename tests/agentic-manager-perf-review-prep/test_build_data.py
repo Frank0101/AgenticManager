@@ -26,6 +26,13 @@ class BuildDataTest(unittest.TestCase):
         self.assertEqual(build_data.build(
             WORK_RAW, PERSON, SUMMARIES, VALUE_NAMES), DATA)
 
+    def test_no_points_field(self):
+        # A site with no story points field has no search for the estimated
+        # resolved issues: its address is null.
+        urls = build_data.search_urls(
+            "jira", {**WORK_RAW["jira"], "points_fields": []})
+        self.assertIsNone(urls["resolved_points_search_url"])
+
     def test_build_data(self):
         # Written once every raw file is in and follows its rules, and every
         # summary is in; refused, writing nothing, while one is missing or a

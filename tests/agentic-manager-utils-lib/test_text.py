@@ -57,18 +57,15 @@ class TextTest(unittest.TestCase):
                 self.assertEqual(text.display_date(day), "02/03/2026")
 
     def test_free_name(self):
-        # The base when free, else the first free number from 2, after the
-        # caller's separator.
-        cases = [(set(), "-", "intro"),
-                 ({"intro"}, "-", "intro-2"),
-                 ({"intro", "intro-2", "intro-3"}, "-", "intro-4"),
-                 ({"intro", "intro-3"}, "-", "intro-2"),
-                 ({"intro"}, "--", "intro--2"),
-                 ({"intro", "intro--2"}, "--", "intro--3")]
-        for taken, separator, expected in cases:
-            with self.subTest(taken=sorted(taken), separator=separator):
+        # The base when free, else the first free number from 2.
+        cases = [(set(), "intro"),
+                 ({"intro"}, "intro-2"),
+                 ({"intro", "intro-2", "intro-3"}, "intro-4"),
+                 ({"intro", "intro-3"}, "intro-2")]
+        for taken, expected in cases:
+            with self.subTest(taken=sorted(taken)):
                 self.assertEqual(text.free_name(
-                    "intro", taken.__contains__, separator), expected)
+                    "intro", taken.__contains__), expected)
 
     def test_heading_anchor(self):
         cases = [("F03 — Delivery is exploration", "f03--delivery-is-exploration"),
