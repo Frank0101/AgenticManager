@@ -2,7 +2,7 @@
 the deck's <Name>_Slides.html from it once it finds none.
 
 The page around the slides is fixed, and this module owns it: the slide's
-size, the grey page behind the slides, the toolbar with zoom and PDF export,
+size, the dark page behind the slides, the toolbar with zoom and PDF export,
 the print rules that put one slide on each PDF page, and the scripts that zoom
 and draw the charts. slides.json holds only what needs judgment: the title,
 the deck's own CSS, each slide's HTML and the data of its charts and rings,
@@ -54,9 +54,13 @@ LENGTH = re.compile(r"([-+]?(?:\d+\.?\d*|\.\d+))[a-z]*", re.I)
 BLURRED = ("draws a blurred shadow, which the PDF export draws as a dark rectangle: lift it with a "
            "lighter fill, a 1px border or a backing shape offset with no blur")
 # The page around the deck, which make_deck.py styles and the deck must not:
-# a selector naming any of them, even as an ancestor, restyles it.
+# a selector naming any of them, even as an ancestor, restyles it. That
+# includes every class the page's own elements carry, such as the toolbar's
+# .divider: a deck class of the same name, meant for a slide, would restyle
+# the page's element too.
+PAGE_CLASSES = ("slides-wrapper", "toolbar", "divider")
 PAGE_SELECTOR = re.compile(
-    r"(?<![-\w.#])body(?![-\w])|\.(?:slides-wrapper|toolbar)(?![-\w])", re.I)
+    r"(?<![-\w.#])body(?![-\w])|\.(?:" + "|".join(PAGE_CLASSES) + r")(?![-\w])", re.I)
 RULE_PRELUDE = re.compile(r"([^{};]*)\{")
 
 
@@ -67,7 +71,7 @@ BASE_CSS = f"""      * {{
       }}
 
       body {{
-        background: #e8e8e8;
+        background: #16181d;
         font-family:
           system-ui,
           -apple-system,
@@ -82,7 +86,7 @@ BASE_CSS = f"""      * {{
         height: {SLIDE_HEIGHT}px;
         margin: 0 auto 40px;
         padding: 48px 56px;
-        box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12);
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
         overflow: hidden;
       }}
 
@@ -111,11 +115,11 @@ BASE_CSS = f"""      * {{
         display: flex;
         flex-direction: column;
         gap: 6px;
-        background: #fff;
-        border: 1px solid #ddd;
+        background: #23262e;
+        border: 1px solid #353a45;
         border-radius: 8px;
         padding: 8px 6px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
         z-index: 100;
       }}
       .toolbar button {{
@@ -126,18 +130,28 @@ BASE_CSS = f"""      * {{
         border-radius: 6px;
         font-size: 1rem;
         cursor: pointer;
-        color: #444;
+        color: #c5cad6;
         display: flex;
         align-items: center;
         justify-content: center;
         transition: background 0.15s;
       }}
       .toolbar button:hover {{
-        background: #f0f0f0;
+        background: #343944;
+        color: #ffffff;
+      }}
+      .toolbar svg {{
+        width: 18px;
+        height: 18px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
       }}
       .toolbar .divider {{
         height: 1px;
-        background: #eee;
+        background: #353a45;
         margin: 2px 0;
       }}
 
@@ -174,16 +188,18 @@ BASE_CSS = f"""      * {{
       }}"""
 
 TOOLBAR = """    <div class="toolbar">
-      <button onclick="zoom(1)" title="Zoom in">+</button>
-      <button onclick="zoom(-1)" title="Zoom out">−</button>
+      <button onclick="zoom(1)" title="Zoom in"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M11 8v6M8 11h6"/></svg></button>
+      <button onclick="zoom(-1)" title="Zoom out"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8 11h6"/></svg></button>
+      <button onclick="zoom(0)" title="Reset zoom"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5"/></svg></button>
       <div class="divider"></div>
-      <button onclick="window.print()" title="Export PDF">⎙</button>
+      <button onclick="window.print()" title="Export PDF"><svg viewBox="0 0 24 24"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M12 11v6M9 14l3 3 3-3"/></svg></button>
     </div>"""
 
 ZOOM_SCRIPT = """    <script>
       let scale = 1;
+      // Steps the zoom by `dir` tenths, or back to 100% when `dir` is 0.
       function zoom(dir) {
-        scale = Math.min(2, Math.max(0.4, scale + dir * 0.1));
+        scale = dir === 0 ? 1 : Math.min(2, Math.max(0.4, scale + dir * 0.1));
         const w = document.querySelector(".slides-wrapper");
         w.style.transform = `scale(${scale})`;
         w.style.transformOrigin = "top center";
@@ -244,7 +260,8 @@ def problems(content, assets=frozenset()):
     variables = css_variables(style)
     for line, selector in page_selectors(style):
         errors.append(f"style: line {line}: `{selector}` restyles the page around the deck: never style "
-                      "body, .slides-wrapper or .toolbar")
+                      f"body or the page's classes ({', '.join('.' + name for name in PAGE_CLASSES)}), "
+                      "and give the deck's own classes other names")
     for line, declaration in blurred_shadows(style, variables):
         errors.append(f"style: line {line}: `{declaration}` {BLURRED}")
     elements = {}
@@ -327,7 +344,7 @@ def css_variables(css):
 
 def page_selectors(css):
     """(line, selector) of each rule of the CSS `css` whose selector names
-    body, .slides-wrapper or .toolbar."""
+    body or one of the page's classes, PAGE_CLASSES."""
     text = uncommented(css)
     for match in RULE_PRELUDE.finditer(text):
         selector = match[1].strip()

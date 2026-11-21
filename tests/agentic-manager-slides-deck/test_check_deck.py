@@ -7,6 +7,7 @@ check to say so.
 """
 
 import os
+import re
 import shutil
 import sys
 import unittest
@@ -50,8 +51,9 @@ class CheckDeckTest(unittest.TestCase):
              "the page has 2 slides; slides.json has 3"),
             ("another title", lambda p: p.replace(
                 "<title>Acme Q3 Review", "<title>Acme"), "the page's title is 'Acme'"),
-            ("a toolbar button lost", lambda p: p.replace(
-                '<button onclick="zoom(-1)" title="Zoom out">−</button>', ""), "the toolbar's buttons are"),
+            ("a toolbar button lost", lambda p: re.sub(
+                r'<button onclick="zoom\(-1\)" title="Zoom out">.*?</button>', "", p),
+             "the toolbar's buttons are"),
             ("no zoom", lambda p: p.replace(
                 "function zoom(", "function z("), "the page has no zoom script"),
             ("no print rules", lambda p: p.replace(
@@ -66,7 +68,8 @@ class CheckDeckTest(unittest.TestCase):
                 '<canvas id="chart-revenue">', "<canvas>"), "the page's charts are"),
             ("other chart data", lambda p: p.replace(
                 '"data": [3, 5]', '"data": [3, 6]'), "chart data differs"),
-            ("a ring segment lost", lambda p: p.replace('<path d="', '<g d="', 1),
+            ("a ring segment lost", lambda p: re.sub(
+                r'(<svg class="ring"[^>]*>.*?)<path d="', r'\1<g d="', p, count=1, flags=re.S),
              "the page's rings and their segments are {'ring-phases': 2}"),
             ("a token left", lambda p: p.replace(
                 "<p>Platform team</p>", "<p>{{ring:phases}}</p>"), "the page still holds a token: {{ring:phases}}"),

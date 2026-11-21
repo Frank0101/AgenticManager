@@ -17,7 +17,7 @@ from common import (ASSETS, CHART_JS, PAGE, folder_problem, PLACEHOLDER, SLIDE_H
                     TOKEN, URL_ATTRIBUTES, VOID, asset_names, credit_line, credits, deck_dir, deck_file,
                     expected_files, link_kind, placed_images, read_json)
 
-TOOLBAR_BUTTONS = ["Zoom in", "Zoom out", "Export PDF"]
+TOOLBAR_BUTTONS = ["Zoom in", "Zoom out", "Reset zoom", "Export PDF"]
 CHARTS_DATA = re.compile(r"const charts = (.*);\n")
 
 

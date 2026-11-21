@@ -129,6 +129,10 @@ class ProblemsTest(unittest.TestCase):
              lambda d: d.update(
                  style=["@media print {", "  .a, .toolbar { display: none; }", "}"]),
              "style: line 2: `.a, .toolbar` restyles the page around the deck"),
+            ("a deck class named as the toolbar's divider",
+             lambda d: d.update(
+                 style=[".divider { position: absolute; width: 440px; }"]),
+             "style: line 1: `.divider` restyles the page around the deck"),
             ("image by its path", set_slide("<img src='/Users/me/logo.png'>"),
              "<img src> loads '/Users/me/logo.png': add the image with add_asset.py"),
             ("image by a relative path", set_slide("<img src='../_assets/logo.png'>"),
@@ -222,7 +226,7 @@ class ProblemsTest(unittest.TestCase):
             ("shadow in a comment", styled(
                 ["/* box-shadow: 0 2px 8px #000; */", "body-text { color: red; }"])),
             ("selectors like the page's", styled(
-                [".toolbar-row, .body, #body, .slides-wrapper-x, .slide .toolbox { color: red; }"])),
+                [".toolbar-row, .body, #body, .slides-wrapper-x, .slide .toolbox, .row-divider { color: red; }"])),
         ]
         for name, change in cases:
             with self.subTest(name):
@@ -258,7 +262,9 @@ class BuildTest(unittest.TestCase):
     def test_page(self):
         # The page wraps each slide in its frame with its own classes, puts
         # the deck's CSS after the fixed rules, places charts and rings, and
-        # loads Chart.js only when a slide holds a chart.
+        # loads Chart.js only when a slide holds a chart. Every class the
+        # page's own elements carry, but the .slide the deck styles, is one the
+        # style check forbids, so no deck class can share its name.
         page = self.build(content())
         self.assertIn("<title>Acme Q3 Review</title>", page)
         self.assertLess(page.index("@media print"),
@@ -276,6 +282,9 @@ class BuildTest(unittest.TestCase):
         plain = self.build(data)
         self.assertNotIn("<script src", plain)
         self.assertIn("function zoom(", plain)
+        classes = {name for value in re.findall(
+            r'class="([^"]*)"', plain) for name in value.split()}
+        self.assertEqual(classes - {"slide"}, set(make_deck.PAGE_CLASSES))
 
     def test_page_numbers_count_the_slides(self):
         data = content()
