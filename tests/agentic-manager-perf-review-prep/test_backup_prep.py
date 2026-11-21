@@ -29,21 +29,19 @@ class BackupPrepTest(unittest.TestCase):
         with open(self.notes, encoding="utf-8") as f:
             return f.read()
 
-    def test_keeps_the_first_version_and_puts_it_back(self):
-        # The first save copies the prep as the skill made it; a save after
-        # a change keeps that first copy; restore puts the whole prep back
-        # as it was, a file added since gone too.
-        first = self.read_notes()
-        self.assertTrue(backup_prep.save(PREP)["saved"])
-        self.write_notes("changed once")
-        self.assertFalse(backup_prep.save(PREP)["saved"])
-        self.write_notes("changed twice")
+    def test_goes_back_one_change(self):
+        # Each save replaces the copy, so restore puts back the whole prep as
+        # it was before the last change, a file added since gone too.
+        backup_prep.save(PREP)
+        self.write_notes("after the first change")
+        backup_prep.save(PREP)
+        self.write_notes("after the second change")
         extra = os.path.join(self.folder, PREP, "extra.json")
         with open(extra, "w", encoding="utf-8") as f:
             f.write("{}")
         self.assertEqual(backup_prep.restore(PREP), {
                          "prep_dir": os.path.join(self.folder, PREP)})
-        self.assertEqual(self.read_notes(), first)
+        self.assertEqual(self.read_notes(), "after the first change")
         self.assertFalse(os.path.exists(extra))
 
     def test_restore_without_a_save(self):

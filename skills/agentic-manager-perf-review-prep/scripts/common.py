@@ -526,11 +526,11 @@ def prep_dir(prep):
     return run_folder(FOLDER_NAME, prep, "prep", "Person", "init_prep.py")
 
 
-def original_dir(prep):
+def previous_dir(prep):
     """The folder in the system's temporary folder that keeps the prep `prep`
-    as the skill first made it, before any change to the finished prep, so the
-    manager can go back to it."""
-    return work_folder(FOLDER_NAME, prep, "original")
+    as it was before the last change to the finished prep, so the manager can
+    go back to it."""
+    return work_folder(FOLDER_NAME, prep, "previous")
 
 
 def write_prep_file(prep, name, value):

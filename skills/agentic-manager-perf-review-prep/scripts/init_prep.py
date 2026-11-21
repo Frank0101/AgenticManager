@@ -14,7 +14,7 @@ import json
 import os
 
 from common import (FOLDER_NAME, JIRA_SOURCE, PERSON, JiraClient, add_period_arguments, as_name, clear_folder, new_run,
-                    original_dir, person_problems, shown, sources_problems, stops_on_failure, write_prep_file)
+                    previous_dir, person_problems, shown, sources_problems, stops_on_failure, write_prep_file)
 
 OUTPUT = """Prints one line of JSON:
   folder, temporary   the skill's output folder, and whether it is temporary
@@ -49,7 +49,7 @@ def init(person, account, period_start, period_end, today=None, client=None):
     folder, temporary, prep, replaced = new_run(
         FOLDER_NAME, as_name(user["displayName"]), today)
     # The copy kept of a replaced prep goes with it, so it is never put back.
-    clear_folder(original_dir(prep))
+    clear_folder(previous_dir(prep))
     write_prep_file(prep, PERSON, recorded)
     return {"folder": folder, "temporary": temporary, "prep": prep, "prep_dir": os.path.join(folder, prep),
             "replaced": replaced, "person": recorded, "shown": shown(period_start, period_end)}

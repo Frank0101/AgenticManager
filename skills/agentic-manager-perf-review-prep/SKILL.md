@@ -125,7 +125,7 @@ Say the prep is ready, with a Markdown link to its report. Don't recap the repor
 
 Once a prep is done, the manager may ask you to change it. Work only from what they already know: the prep's files, their notes, the links already in those files and what they tell you. Never search Slack or Notion again.
 
-Before each change, run `python3 ${CLAUDE_SKILL_DIR}/scripts/backup_prep.py save --prep <prep>`: it keeps the prep as the skill first made it. If the manager asks to go back to it, run `python3 ${CLAUDE_SKILL_DIR}/scripts/backup_prep.py restore --prep <prep>`.
+Before each change the manager asks for, run `python3 ${CLAUDE_SKILL_DIR}/scripts/backup_prep.py save --prep <prep>` once: it keeps the prep as it is before the change. If the manager asks to undo it, run `python3 ${CLAUDE_SKILL_DIR}/scripts/backup_prep.py restore --prep <prep>`.
 
 Make each change where the report's text comes from, in a feedback of step 3 or in the notes, never in the report or in the summaries built from them, then run again only the steps that follow and tell the manager as in step 8:
 

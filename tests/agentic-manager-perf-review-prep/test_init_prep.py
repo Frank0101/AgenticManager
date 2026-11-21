@@ -62,13 +62,13 @@ class InitTest(unittest.TestCase):
             f.write("from an earlier run")
         earlier = os.path.join(self.folder, "Jose-Nunez_26-11-09")
         os.makedirs(earlier)
-        original = common.original_dir("Jose-Nunez_26-11-10")
-        os.makedirs(original)
+        previous = common.previous_dir("Jose-Nunez_26-11-10")
+        os.makedirs(previous)
         self.assertTrue(init_prep.init(
             "José Núñez", "a1", START, END, today=TODAY, client=client)["replaced"])
         self.assertEqual(os.listdir(path), ["person.json"])
         # nor can the copy kept of the replaced prep be put back over it
-        self.assertFalse(os.path.exists(original))
+        self.assertFalse(os.path.exists(previous))
         self.assertTrue(os.path.isdir(earlier))
 
     def test_refuses_a_prep_it_cant_start(self):
