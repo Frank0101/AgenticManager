@@ -64,7 +64,7 @@ Then look the person up in Jira with `python3 ${CLAUDE_SKILL_DIR}/scripts/find_j
 - **One account** is not asked about here: go on.
 - **Several such accounts:** propose the one you pick, such as the active one, say briefly why, and ask the manager to confirm it before going on.
 
-Then start the prep with `python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py`, for the person, the account's `accountId` and the period's days. It prints the prep folder's name, `prep`, which later steps pass as `<prep>`. The folder is named after the Jira account's official name, such as `Jane-Doe`, even when the manager gave a short form, such as Jane: `person.json` and the report keep the name as the manager gave it. This is on purpose, so the same person always gets the same folder, and a rerun on the same day replaces it; don't ask the manager about it. If the manager corrects the account or the period at the end of step 2, start again from here: the same day's prep is rebuilt from scratch.
+Then start the prep with `python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py`, for the person, the account's `accountId` and the period's days. It prints the prep folder's name, `prep`, which later steps pass as `<prep>`. The folder is named after the Jira account's official name, such as `Jane-Doe`, even when the manager gave a short form, such as Jane: `person.json` and the report keep the name as the manager gave it. Don't ask the manager about it. If the manager corrects the account or the period at the end of step 2, start again from here: the same day's prep is rebuilt from scratch.
 
 ## 2. Find the person in each source
 
@@ -86,7 +86,7 @@ Who the person is in GitHub, Notion, Slack and the vault is the manager's to con
 
    A reply that doesn't answer each question, such as a plain yes, confirms only what you found: ask the open questions again. Don't go on until every source is settled.
 
-4. **Record it** with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py --prep <prep>`; its `--help` shows the input. Run it again with every source to record a correction.
+4. **Record it** with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py --prep <prep>`. Run it again with every source to record a correction.
 
 ## 3. Hear the manager's feedback
 
@@ -102,7 +102,7 @@ Run `python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py` once, here, for all three fee
 
 The manager's own notes on the person, in their vault, and the person's Slack messages are many, and most aren't feedback, so subagents read them, never you: their context would fill yours. The notes are gathered and numbered by a script, so one subagent has only to judge them: it writes their summary, each point citing the notes it rests on. Slack is read a month at a time, by a subagent for each month who lists what it finds, and then one judge writes the summary from every month's list, so a behaviour that repeats over months is seen as the pattern it is. Say nothing to the manager while the subagents work, not even as each one finishes.
 
-1. **Start.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py start --prep <prep>` and `python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py start --prep <prep>`. The notes script prints `task`, the line `Task <name>: <path>` of its task, or `path` instead when it had nothing to read and recorded an empty summary; the Slack script prints `tasks`, one such line for each month, and `judge`, the line of the judge's task, whose file exists once every month is submitted.
+1. **Start.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py start --prep <prep>` and `python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py start --prep <prep>`. The notes script prints its `task`, or only `path` when it had nothing to read; the Slack script prints a task for each month, and the `judge`'s, whose file exists once every month is submitted.
 2. **Hand out the tasks.** Give the notes task, and each month's Slack task, to a fresh subagent each, all at once, only its path, with: "Do the task in <path> exactly as written there, then reply in one line." If the tool caps how many subagents run at once, start the next task as soon as one replies. A month's reader follows every conversation and describes it, but judges nothing, so its subagent can run on a smaller model than yours; the notes subagent and the judge only judge, so they use yours. Once every month has replied, give the `judge` task to one more fresh subagent the same way, unless its file isn't there: no month listed a conversation, so the last month's submit recorded the empty Slack summary (`path`) and there is nothing to hand out.
 3. **Finish** once the notes subagent has replied, and the judge if there was one: tell the manager, in one line, that what their notes say and what the person's Slack shows are recorded, with a Markdown link to each, `notes.json` and `slack.json` in the prep's folder, `prep_dir` as step 1 printed it, and go on.
 
@@ -110,16 +110,16 @@ The manager's own notes on the person, in their vault, and the person's Slack me
 
 The person's work in Jira, GitHub and Notion, in the period. It and step 4 don't need each other, so start it as soon as step 4's subagents are handed their tasks, without waiting for them. Say nothing to the manager about it while it runs, unless a script stops; step 4's message is sent as soon as both summaries are recorded, without waiting for this step.
 
-1. **Jira and GitHub.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py --prep <prep>`: it fetches the issues and pull requests, with no judgment, into their raw files.
-2. **Notion.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/read_notion.py start --prep <prep>`: it prints `task`, the line `Task notion: <path>` of the task that finds the pages the person created. Give it to a fresh subagent the same way as in step 4. That work is mechanical, so use the cheapest model the tool offers; when it replies, go on.
+1. **Jira and GitHub.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py --prep <prep>`.
+2. **Notion.** Run `python3 ${CLAUDE_SKILL_DIR}/scripts/read_notion.py start --prep <prep>` and give its task to a fresh subagent the same way as in step 4. That work is mechanical, so use the cheapest model the tool offers; when it replies, go on.
 
 ## 6. Summarise the work, the observations and the step change
 
-Once steps 4 and 5 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py --prep <prep>`: it builds `data.json`, the model the report reads, from the raw files and the summaries of the current manager feedback, the other and previous feedback, the notes and Slack, with no network, then a brief for each task, and prints `tasks`, a line `Task <name>: <path>` for each of its tasks: one writes the person's work and its impact, a paragraph for each initiative, the report's first section, one lists the work before the period, from the previous feedback, when there is one, one summarises the three tables of observations, what is going well and what to improve by company value, and the context, and one writes the step change from the previous feedback, when there is one. Give each to a fresh subagent, all at once, the same way as in step 4. Each task holds its own instructions and records what it writes with a script that checks it as it's written. Once all have replied, go on to step 7.
+Once steps 4 and 5 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py --prep <prep>`: it builds `data.json` and prints `tasks`, a line `Task <name>: <path>` for each. Give each to a fresh subagent, all at once, the same way as in step 4. The earlier-work task only restates the previous feedback in a few short bullets, so its subagent can run on a smaller model than yours; the others judge, so they use yours. Once all have replied, go on to step 7.
 
 ## 7. Finish
 
-Run `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py --prep <prep>`: it checks `work_impact_content.json`, `earlier_work_content.json`, `observations_content.json` and `step_change_content.json` field by field, then writes the report, `<Person>_Review_Prep.md`, and its charts from `data.json` and those four, and checks the whole prep. If its `problems` aren't empty, fix what each names by running again the step that writes that file, step 6 for those four, then run it again; if you can't, stop and tell the manager what they say.
+Run `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py --prep <prep>`: it writes the report and checks the whole prep. If its `problems` aren't empty, fix what each names by running again the step that writes that file, such as a task of step 6, then run it again; if you can't, stop and tell the manager what they say.
 
 ## 8. Tell the manager
 
@@ -138,8 +138,8 @@ Make each change where the report's text comes from, in a feedback of step 3 or 
 
 ## Summaries
 
-What the manager tells you in step 3 is one text per feedback, recorded as one summary, all three the same way. `rules.py` prints the parts of a summary, the company's values, and `rules`, how to write a point and pick its values, with examples.
+What the manager tells you in step 3 is one text per feedback, recorded as one summary, all three the same way, as `rules.py` says.
 
-Once the manager answers, summarise what they gave, without showing them the summary. If something isn't clear, such as a word you can't read for sure or a document you couldn't open, ask them about it, all in one message, and wait for their answer. Then record it with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py --prep <prep> --of <manager|other|previous>`, whose `--help` shows the input, tell them in one line that it's recorded, with a Markdown link to the `path` the script printed, and go on to the next question: that line can open its message.
+Once the manager answers, summarise what they gave, without showing them the summary. If something isn't clear, such as a word you can't read for sure or a document you couldn't open, ask them about it, all in one message, and wait for their answer. Then record it with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py --prep <prep> --of <manager|other|previous>`, tell them in one line that it's recorded, with a Markdown link to the `path` the script printed, and go on to the next question: that line can open its message.
 
 Each part is a list of points, written as `rules` says. Keep what the text says about the person and their work, add nothing it doesn't, and put each in the part it belongs to; leave a part empty when the text says nothing of it, and all three when it says nothing of the person. When `rules` would keep a judgement of the person's character as the text puts it, ask the manager first what was observed.

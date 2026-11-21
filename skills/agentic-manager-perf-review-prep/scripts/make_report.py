@@ -4,7 +4,7 @@ Every figure is one of data.json's facts, and every link one of its search
 addresses, so the report can't count differently from the model; the charts
 it shows are make_charts.py's.
 """
-from common import (observation_summary, EARLIER_WORK_HEADING, WORK_PERIOD_HEADING, CHARTS_DIR, EPICS_CHART, OBSERVATION_HEADINGS, OBSERVATIONS_SUBTITLE, OBSERVATION_SOURCES, FOCUS_SHARE, FOLDER_NAME, GITHUB_CELLS, HEADINGS, JIRA_CELLS, NO_VALUE, PAGES_HEADING, REPOS_CHART,
+from common import (ALSO, OTHER_POINTS, EARLIER_WORK_HEADING, WORK_PERIOD_HEADING, CHARTS_DIR, EPICS_CHART, OBSERVATION_HEADINGS, OBSERVATIONS_SUBTITLE, OBSERVATION_SOURCES, FOCUS_SHARE, FOLDER_NAME, GITHUB_CELLS, HEADINGS, JIRA_CELLS, NO_VALUE, PAGES_HEADING, REPOS_CHART,
                     NOT_RAISED, STEP_CHANGE_HEADING, STEP_CHANGE_NOT_APPLICABLE, STEP_CHANGE_ROW, STEP_CHANGE_SUBTITLE, STEP_CHANGES, VALUED_PARTS, WORK_IMPACT_HEADING, WORK_IMPACT_SUBTITLE, WORK_KINDS, ai_marked, work_evidence, chart_image, html_table, period_points, baseline_points, average_text, details_text, esc, link_href, reference_text, number, prep_dir, report_name, repo_code, repos_text, shown, size_text, types_text, week_text,
                     write_output_file)
 
@@ -60,19 +60,14 @@ def work_impact_section(work_impact_content, data, folder, earlier_work_content)
     its subtitle, the script's, then, under WORK_PERIOD_HEADING, each initiative of
     `work_impact_content`, in its order, its title in bold over its impact,
     a line in italics, and its paragraph, then, folded under them with how
-    many items they cite, a table, in small type, of each initiative's
-    evidence, in the order it cites it, by its item in `data`, data.json, as
-    work_evidence() gives it, laid out as the observations' tables: a
-    point's text, source, references, as its own row gives them, a note's
-    linked relative to `folder`, and id; an item's title, its kind, its
-    link by its key, and no id; then, with `earlier_work_content`, a
-    divider and, under EARLIER_WORK_HEADING, its bullets, which cite nothing."""
+    many items it cites, a table, in small type, of its evidence, in the
+    order it cites it, by its item in `data`, data.json, as work_evidence()
+    gives it, laid out as the observations' tables: a point's text, source,
+    references, as its own row gives them, a note's linked relative to
+    `folder`, and id; an item's title, its kind, its link by its key, and no
+    id; then, with `earlier_work_content`, a divider and, under
+    EARLIER_WORK_HEADING, its bullets, which cite nothing."""
     index, points = work_evidence(data), period_points(data["observations"])
-    lines = [f"## {ai_marked(WORK_IMPACT_HEADING)}", "",
-             WORK_IMPACT_SUBTITLE, "", f"### {WORK_PERIOD_HEADING}"]
-    for initiative in work_impact_content["initiatives"]:
-        lines += ["", f"<b>{esc(initiative['title'])}</b>", "", f"*{initiative['impact'].strip()}*",
-                  "", initiative["paragraph"].strip()]
 
     def row(key):
         item = index[key]
@@ -82,59 +77,98 @@ def work_impact_section(work_impact_content, data, folder, earlier_work_content)
                     f'<td>{reference(point, folder)}</td><td>{key}</td>')
         return (f'<td>{esc(item["title"])}</td><td>{WORK_KINDS[item["kind"]]}</td>'
                 f'<td><a href="{esc(item["link"])}">{esc(item["key"])}</a></td><td>–</td>')
-    rows = grouped_rows((esc(initiative["title"]), [row(key) for key in initiative["evidence"]])
-                        for initiative in work_impact_content["initiatives"])
-    heads = observation_heads(((ai_marked("Initiative"), 20), (ai_marked("Evidence"), 45), ("Source", 10),
-                               ("References", 20), ("ID", 5)))
+    heads = table_heads(
+        ((ai_marked("Evidence"), 60), ("Source", 15), ("References", 20), ("ID", 5)))
+    lines = [f"## {ai_marked(WORK_IMPACT_HEADING)}", "",
+             WORK_IMPACT_SUBTITLE, "", f"### {WORK_PERIOD_HEADING}"]
+    for initiative in work_impact_content["initiatives"]:
+        rows = [row(key) for key in initiative["evidence"]]
+        lines += ["", f"<b>{esc(initiative['title'])}</b>", "", f"*{initiative['impact'].strip()}*",
+                  "", initiative["paragraph"].strip(), "",
+                  *folded(details_text(len(rows), ("item", "items")), heads, rows)]
     earlier = (["", "---", "", f"### {EARLIER_WORK_HEADING}", "",
                 *(f"- {bullet.strip()}" for bullet in earlier_work_content["bullets"])]
                if earlier_work_content else [])
-    return [*lines, "", f"<details><summary>{details_text(len(rows), ('item', 'items'))}</summary>", "",
-            *html_table(heads, *rows, small=True), "", "</details>", *earlier]
+    return [*lines, *earlier]
+
+
+def folded(summary, heads, rows):
+    """A table's lines, in small type, of `heads` and `rows`, folded under
+    `summary`, what its fold says."""
+    return [f"<details><summary>{summary}</summary>", "", *html_table(heads, *rows, small=True), "", "</details>"]
 
 
 def observations_section(observations, folder, observations_content):
     """The Observations section's lines: for each part of OBSERVATION_HEADINGS,
-    a divider apart from the one before, its heading, marked as the agent's, as
-    its summary, `observations_content`'s by observation_summary(), follows, then, folded under it as the detail,
-    with how many points it holds, a table of them, in small type, by
-    observation_rows(), the most recent first, each with its source and its
-    reference: – for a feedback, which has none, or a reading's
-    evidence, the most recent first, each linked to its note or message."""
+    a divider apart from the one before, its heading, marked as the agent's
+    when it holds points, then its summaries, `observations_content`'s, each
+    with its points folded under it, by observation_blocks()."""
     lines = []
     for part, heading in OBSERVATION_HEADINGS.items():
-        heads, rows, count = observation_rows(part, observations[part], folder)
-        lines += [*(["", "---", ""] if lines else []), f"### {ai_marked(heading)}" if rows else f"### {heading}",
-                  *(["", observation_summary(part, observations_content[part], observations), "",
-                     f"<details><summary>{details_text(count)}</summary>", "",
-                     *html_table(heads, *rows, small=True), "", "</details>"] if rows else [])]
+        blocks = observation_blocks(
+            part, observations[part], observations_content[part], folder)
+        lines += [*(["", "---", ""] if lines else []),
+                  f"### {ai_marked(heading)}" if blocks else f"### {heading}"]
+        for text, summary, heads, rows in blocks:
+            lines += ["", *([text, ""] if text else []),
+                      *folded(summary, heads, rows)]
     return lines
 
 
-def observation_rows(part, points, folder):
-    """(heads, rows, count): the headings, rows and number of points of the
-    table of `part`, whose `points` are data.json's. A part of VALUED_PARTS
-    is grouped by company value, each value named once beside its points,
-    the second value a point names beside it, its columns as wide in both, so
-    the two read alike; context names none, so it is its points alone, its
-    point given the room the values take. Each point shows its id, by which
-    the manager can name it."""
+def observation_blocks(part, groups, summaries, folder):
+    """Each block of `part`, (text, fold, heads, rows): its summary, the fold's
+    words, and the table of points folded under it, in small type, the most
+    recent first, each with its source, its reference, – for a feedback,
+    which has none, or a reading's evidence, the most recent first, each
+    linked to its note or message relative to `folder`, and its id, by
+    which the manager can name it. Context, whose `groups` are its points,
+    is one block, its summary over them all. A part of VALUED_PARTS, its
+    `groups` data.json's, is a block for each value `summaries`
+    summarises, in its groups' order, its name in bold over its summary, its
+    points beside the second value each names; then, with an ALSO line,
+    the points under no value beneath it; then the points no summary
+    covers, grouped by value as the groups are, under OTHER_POINTS."""
+    if not groups:
+        return []
+
+    def cells(point):
+        return (f'<td>{esc(point["point"])}</td><td>{OBSERVATION_SOURCES[point["source"]]}</td>'
+                f'<td>{reference(point, folder)}</td><td>{point["id"]}</td>')
+
+    def also_cells(point):
+        return f'<td>{esc(point["also"] or "")}</td>' + cells(point)
+    plain = table_heads(
+        ((ai_marked("Point"), 65), ("Source", 10), ("References", 20), ("ID", 5)))
     if part not in VALUED_PARTS:
-        rows = [f'<td>{esc(point["point"])}</td><td>{OBSERVATION_SOURCES[point["source"]]}</td>'
-                f'<td>{reference(point, folder)}</td><td>{point["id"]}</td>' for point in points]
-        return observation_heads(((ai_marked("Point"), 65), ("Source", 10), ("References", 20), ("ID", 5))), rows, len(rows)
-    rows = grouped_rows((esc(group["value"] or NO_VALUE),
-                         [f'<td>{esc(point["also"] or "")}</td><td>{esc(point["point"])}</td>'
-                          f'<td>{OBSERVATION_SOURCES[point["source"]]}</td>'
-                          f'<td>{reference(point, folder)}</td><td>{point["id"]}</td>' for point in group["points"]])
-                        for group in points)
-    return observation_heads(((ai_marked("Value"), 10), (ai_marked("Also"), 10), (ai_marked("Point"), 45),
-                              ("Source", 10), ("References", 20), ("ID", 5))), rows, len(rows)
+        return [(summaries.strip(), details_text(len(groups)), plain, [cells(point) for point in groups])]
+    valued = table_heads(((ai_marked("Also"), 10), (ai_marked("Point"), 55), ("Source", 10),
+                          ("References", 20), ("ID", 5)))
+    blocks, also, rest = [], [], []
+    for group in groups:
+        if group["value"] in summaries["values"]:
+            rows = [also_cells(point) for point in group["points"]]
+            blocks.append((f"<b>{esc(group['value'])}</b>\n\n{summaries['values'][group['value']].strip()}",
+                           details_text(len(rows)), valued, rows))
+        elif group["value"] is None and summaries["also"] is not None:
+            rows = [cells(point) for point in group["points"]]
+            also = [(f"<b>{ALSO}</b> {summaries['also'].strip()}",
+                     details_text(len(rows)), plain, rows)]
+        else:
+            rest.append(group)
+    blocks += also
+    if rest:
+        rows = grouped_rows((esc(group["value"] or NO_VALUE),
+                             [also_cells(point) for point in group["points"]])
+                            for group in rest)
+        heads = table_heads(((ai_marked("Value"), 10), (ai_marked("Also"), 10), (ai_marked("Point"), 45),
+                             ("Source", 10), ("References", 20), ("ID", 5)))
+        blocks.append(("", details_text(len(rows), OTHER_POINTS), heads, rows))
+    return blocks
 
 
-def observation_heads(columns):
-    """A table of observations' row of headings, each of `columns`, (heading,
-    width as a percentage)."""
+def table_heads(columns):
+    """A table's row of headings, each of `columns`, (heading, width as a
+    percentage)."""
     return "".join(f'<th width="{width}%">{head}</th>' for head, width in columns)
 
 
@@ -158,10 +192,9 @@ def step_change_section(value, observations, previous, folder):
     rows = step_change_rows(value["rows"], observations, previous, folder)
     return [f"## {ai_marked(STEP_CHANGE_HEADING)}", "", STEP_CHANGE_SUBTITLE, "",
             value["summary"].strip(),
-            *(["", f"<details><summary>{details_text(len(rows), ('change', 'changes'))}</summary>", "",
-               *html_table(observation_heads(((ai_marked("Previous feedback point"), 35),
-                                              (ai_marked("Change"), 15), (ai_marked("Evidence"), 50))),
-                           *rows, small=True), "", "</details>"] if rows else [])]
+            *(["", *folded(details_text(len(rows), ("change", "changes")),
+                           table_heads(((ai_marked("Previous feedback point"), 35), (ai_marked("Change"), 15),
+                                        (ai_marked("Evidence"), 50))), rows)] if rows else [])]
 
 
 def step_change_rows(rows, observations, previous, folder):

@@ -1,4 +1,4 @@
-"""Checks a prep's report against data.json: that it shows the person's work and its impact, work_impact_content.json's, each initiative's evidence as data.json holds it, the most recent first, and the work before the period, earlier_work_content.json's, then every GitHub and Jira figure, each main focus, the charts' series and the Notion pages created as the items give them, the observations' points, going well, to improve and context, as the summaries give them, each table under observations_content.json's summary of it, then the step change, step_change_content.json's, as it reads against the previous feedback and the period's points.
+"""Checks a prep's report against data.json: that it shows the person's work and its impact, work_impact_content.json's, each initiative with its evidence as data.json holds it, the most recent first, and the work before the period, earlier_work_content.json's, then every GitHub and Jira figure, each main focus, the charts' series and the Notion pages created as the items give them, the observations' points, going well, to improve and context, as the summaries give them, each folded under observations_content.json's summary of its value, the rest folded last, then the step change, step_change_content.json's, as it reads against the previous feedback and the period's points.
 
 It reads each figure back from the report and works it out again from the
 items, apart from data.json's facts and from make_report.py, with which it
@@ -10,7 +10,7 @@ from datetime import date, timedelta
 import html
 import re
 
-from common import (ALSO, EARLIER_WORK_CONTENT, EARLIER_WORK_HEADING, WORK_PERIOD_HEADING, NOTION_KEY, BINS_PER_DECADE, CHART_IMAGE, CHARTS_DIR, OBSERVATION_HEADINGS, OBSERVATIONS_SUBTITLE, OBSERVATION_SOURCES, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS, NO_VALUE,
+from common import (ALSO, OTHER_POINTS, EARLIER_WORK_CONTENT, EARLIER_WORK_HEADING, WORK_PERIOD_HEADING, NOTION_KEY, BINS_PER_DECADE, CHART_IMAGE, CHARTS_DIR, OBSERVATION_HEADINGS, OBSERVATIONS_SUBTITLE, OBSERVATION_SOURCES, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS, NO_VALUE,
                     PAGES_HEADING, PREVIOUS_ID, NOT_RAISED, STEP_CHANGE_CONTENT, STEP_CHANGE_HEADING, STEP_CHANGE_NOT_APPLICABLE, STEP_CHANGE_ROW, STEP_CHANGE_SUBTITLE, STEP_CHANGES, SUMMARY_PARTS, VALUED_PARTS, WORK_IMPACT_HEADING, WORK_IMPACT_SUBTITLE, WORK_KINDS, ai_marked, average_text, details_text, link_href, period_points, point_id, reference_text, project_of, repo_code, repos_text, size_text, types_text,
                     week_text)
 
@@ -25,29 +25,34 @@ SECTION = re.compile(
 # points are: its group's cell, on the group's first row only, with how many
 # rows it spans and the group's name.
 GROUP_CELL = r'<tr valign="top">(?:<td rowspan="(\d+)">([^<]*)</td>)?'
-# The work and its impact: each initiative's title, in bold over its impact
-# line and its paragraph, and each row of its evidence's table: the
-# initiative's cell, then the item's title or a point's text, its kind or a
-# point's source, its link or a point's references, and a point's id.
-INITIATIVE = re.compile(r"<b>([^<]*)</b>")
-WORK_ROW = re.compile(
-    GROUP_CELL + r'<td>([^<]*)</td><td>([^<]*)</td><td>(.*?)</td><td>([^<]*)</td></tr>')
+# A fold, what comes before it in its part, what it says and the table it
+# holds; and an initiative of the work and its impact: its title, in bold,
+# then its impact line and its paragraph, then what its fold says and the
+# table it holds.
+FOLD = re.compile(
+    r"(.*?)<details><summary>([^<]*)</summary>(.*?)</details>", re.S)
+INITIATIVE = re.compile(
+    r"<b>([^<]*)</b>\n\n(.*?)<details><summary>([^<]*)</summary>(.*?)</details>", re.S)
 # The Notion section's count of the pages created, and each page's row: its
 # week's cell, then its link and title, and its area.
 PAGES_COUNT = re.compile(rf"^### {re.escape(PAGES_HEADING)} \((\d+)\)", re.M)
 PAGE_ROW = re.compile(GROUP_CELL + r'<td><a href="([^"]+)">([^<]*)</a></td>'
                       r'<td>([^<]*)</td></tr>')
 # An Observations part: its heading and what follows it, up
-# to the next part; and each valued point's row: its value's cell, then the
-# second value it names, its text, its source, its reference and its id.
+# to the next part; a valued point's row, in the points no summary covers:
+# its value's cell, then the second value it names, its text, its source,
+# its reference and its id; and, under a value's summary, the same without
+# the value's cell.
 OBSERVATION_PART = re.compile(
     r"^### ([^\n<]+?)(?: <sup[^\n]*)?\n((?:(?!^### ).)*)", re.M | re.S)
-DETAILS = re.compile(r"<details><summary>([^<]*)</summary>")
 OBSERVATION_ROW = re.compile(GROUP_CELL + r'<td>([^<]*)</td><td>([^<]*)</td><td>([^<]*)</td>'
                              r'<td>(.*?)</td><td>([^<]*)</td></tr>')
-# A context point's row, not grouped: its text, its source, its reference and
-# its id.
-CONTEXT_POINT_ROW = re.compile(
+VALUE_ROW = re.compile(r'<tr valign="top"><td>([^<]*)</td><td>([^<]*)</td><td>([^<]*)</td>'
+                       r'<td>(.*?)</td><td>([^<]*)</td></tr>')
+# A row of a point or an item alone, not grouped and naming no second value:
+# a context point's, one under no value's, or an initiative's evidence: its
+# text or title, its source or kind, its references or link and its id.
+PLAIN_ROW = re.compile(
     r'<tr valign="top"><td>([^<]*)</td><td>([^<]*)</td><td>(.*?)</td><td>([^<]*)</td></tr>')
 # A step change row: its baseline point, its kind and its evidence, each
 # cited point's text, then its source and reference in brackets, one to a
@@ -124,9 +129,8 @@ def _work_impact_problems(text, marked, data, work_impact_content, earlier_work_
     work_impact_content.json, empty when it does: its heading marked, its
     subtitle, under WORK_PERIOD_HEADING each initiative's title, impact line and paragraph, the most recent first by
     the latest day of its evidence, worked out again from `data`, data.json's
-    items and points, undated last, then its table, folded, of each
-    initiative's evidence, in the order it cites it, as the observations'
-    tables: a point's text, source, references, a note's relative to
+    items and points, undated last, each with its table, folded, of its
+    evidence, in the order it cites it, as the observations' tables: a point's text, source, references, a note's relative to
     `folder`, and id; an item's title, kind, link by its key, and no id;
     then, with `earlier_work_content`, earlier_work_content.json, a divider
     and its bullets under EARLIER_WORK_HEADING, else nothing more."""
@@ -134,8 +138,6 @@ def _work_impact_problems(text, marked, data, work_impact_content, earlier_work_
         return [f"the report's Work and impact must have its heading marked as the agent's, then its subtitle, "
                 f"{WORK_IMPACT_SUBTITLE}: run finish_report.py again"]
     initiatives = work_impact_content["initiatives"]
-    points = {key: point for key, (_, point) in period_points(
-        data["observations"]).items()}
     items, days = {}, {}
 
     # A link that is some issue's epic is an epic, even when the person
@@ -156,7 +158,7 @@ def _work_impact_problems(text, marked, data, work_impact_content, earlier_work_
     for page in data["notion"]["created"]:
         seen(page["url"], page["title"], NOTION_KEY,
              WORK_KINDS["page"], page["between"][1])
-    for key, point in points.items():
+    for key, (_, point) in period_points(data["observations"]).items():
         source = OBSERVATION_SOURCES[point["source"]]
         links = [(link_href(item["link"], folder), reference_text(point["source"], item))
                  for item in point["evidence"]]
@@ -168,39 +170,34 @@ def _work_impact_problems(text, marked, data, work_impact_content, earlier_work_
     def latest(initiative):
         found = [days[item] for item in initiative["evidence"] if days[item]]
         return (bool(found), max(found, default=""))
-    head = text.split("<details>", 1)[0]
-    if (initiatives != sorted(initiatives, key=latest, reverse=True)
-            or not head.strip().startswith(f"{WORK_IMPACT_SUBTITLE}\n\n### {WORK_PERIOD_HEADING}\n")
-            or [html.unescape(title) for title in INITIATIVE.findall(head)]
-            != [initiative["title"] for initiative in initiatives]
-            or not all(f'*{initiative["impact"].strip()}*\n\n{initiative["paragraph"].strip()}' in head
-                       for initiative in initiatives)):
+    if initiatives != sorted(initiatives, key=latest, reverse=True):
         return ["the report's Work and impact doesn't show work_impact_content.json's initiatives, the most recent "
                 "first: run set_work_impact.py, then finish_report.py, again"]
-
-    expected = [(initiative["title"], *items[reference])
-                for initiative in initiatives for reference in initiative["evidence"]]
-    found, spans = _grouped_rows(WORK_ROW, text)
-    shown = [(group, html.unescape(title), source, _reference(reference), number)
-             for group, title, source, reference, number in found]
-    details = DETAILS.search(text)
-    if (spans != _spans(expected) or shown != expected
-            or not details or details[1] != details_text(len(expected), ("item", "items"))):
-        return ["the report's Work and impact evidence doesn't show data.json's items and points: run "
-                "finish_report.py again"]
-    # What follows the evidence: the work before the period, or nothing.
-    tail = text.split(
-        "</details>", 1)[1].strip() if "</details>" in text else None
-    earlier = (f"---\n\n### {EARLIER_WORK_HEADING}\n\n"
-               + "\n".join(f"- {bullet.strip()}" for bullet in earlier_work_content["bullets"])
-               if earlier_work_content else "")
-    if tail != earlier:
+    body, _, tail = text.partition(f"\n---\n\n### {EARLIER_WORK_HEADING}\n")
+    found = INITIATIVE.findall(body)
+    if (not body.strip().startswith(f"{WORK_IMPACT_SUBTITLE}\n\n### {WORK_PERIOD_HEADING}\n")
+            or [html.unescape(title) for title, *_ in found] != [initiative["title"] for initiative in initiatives]
+            or not all(prose.strip() == f'*{initiative["impact"].strip()}*\n\n{initiative["paragraph"].strip()}'
+                       for (_, prose, *_), initiative in zip(found, initiatives))):
+        return ["the report's Work and impact doesn't show work_impact_content.json's initiatives, the most recent "
+                "first: run set_work_impact.py, then finish_report.py, again"]
+    for (_, _, summary, table), initiative in zip(found, initiatives):
+        expected = [items[reference] for reference in initiative["evidence"]]
+        shown = [(html.unescape(title), source, _reference(reference), number)
+                 for title, source, reference, number in PLAIN_ROW.findall(table)]
+        if shown != expected or summary != details_text(len(expected), ("item", "items")):
+            return [f"the report's Work and impact evidence of {initiative['title']} doesn't show data.json's items "
+                    "and points: run finish_report.py again"]
+    # What follows the initiatives: the work before the period, or nothing.
+    if body.rsplit("</details>", 1)[-1].strip() or (
+            ("\n".join(f"- {bullet.strip()}" for bullet in earlier_work_content["bullets"])
+             if earlier_work_content else None) != (tail.strip() if tail else None)):
         return [f"the report's {EARLIER_WORK_HEADING} doesn't show {EARLIER_WORK_CONTENT}'s bullets: run "
                 "finish_report.py again"]
     return []
 
-
 # Jira.
+
 
 def _jira_problems(text, jira, weeks):
     """Why `text`, the report's Jira section, doesn't show `jira`, data.json's,
@@ -460,45 +457,72 @@ def _observations_problems(text, summaries, values, folder, observations_content
         cited |= {point_id(part, number): (row[1], *row[3:]) if part in VALUED_PARTS else row
                   for number, row in enumerate(expected, 1)}
         table = parts.get(heading)
-        if table is None:
+        blocks = _observation_blocks(part, [(*row, point_id(part, number)) for number, row in enumerate(expected, 1)],
+                                     observations_content[part])
+        shown = _shown_blocks(table) if table is not None else None
+        if shown is None or [block[1:] for block in shown] != [block[1:] for block in blocks]:
             return [f"the report's {heading} points don't show the summaries': run finish_report.py again"], cited
-        details = DETAILS.search(table)
-        if part in VALUED_PARTS:
-            found, spans = _grouped_rows(OBSERVATION_ROW, table)
-            shown = [(group, html.unescape(point), html.unescape(second), source, *_reference(reference), number)
-                     for group, second, point, source, reference, number in found]
-            grouped = spans == _spans(expected)
-        else:
-            shown = [(html.unescape(point), source, *_reference(reference), number)
-                     for point, source, reference, number in CONTEXT_POINT_ROW.findall(table)]
-            grouped = True
-        # Each row ends with its point's id, in the table's order.
-        with_ids = [(*row, point_id(part, number))
-                    for number, row in enumerate(expected, 1)]
-        if not grouped or (details[1] if details else None, shown) != (
-                details_text(len(expected)) if expected else None, with_ids):
-            return [f"the report's {heading} points don't show the summaries': run finish_report.py again"], cited
-        if expected and table.split("<details>", 1)[0].strip() != _summary_text(part, observations_content[part],
-                                                                                expected):
+        if [block[0] for block in shown] != [block[0] for block in blocks]:
             return [f"the report's {heading} summary isn't observations_content.json's: run finish_report.py again"], cited
     return [], cited
 
 
-def _summary_text(part, summaries, expected):
-    """The text the report shows above the table of `part`, from
-    `summaries`, observations_content.json's for it, and `expected`, the
-    table's rows as worked out here: in a valued part, each value it
-    summarises in the order the rows group them, its name in bold over its
-    summary, then its ALSO line, if any; in context, its summary."""
+def _observation_blocks(part, rows, summaries):
+    """Each block of `part` as the report should show it, (text, fold, rows):
+    its summary, what its fold says and its rows, each as _shown_blocks() reads
+    it, from `rows`, the part's table worked out here, each ending with its
+    id, and `summaries`, observations_content.json's for it. Context is one
+    block; a valued part a block for each value it summarises, in the rows'
+    order, its name in bold over its summary, then its ALSO line, if any,
+    over the points under no value, then the points no summary covers, under
+    OTHER_POINTS, grouped by value."""
+    if not rows:
+        return []
     if part not in VALUED_PARTS:
-        return summaries.strip()
-    order = [name for name in dict.fromkeys(
-        row[0] for row in expected) if name != NO_VALUE]
-    blocks = [f"<b>{html.escape(name)}</b>\n\n{summaries['values'][name].strip()}"
-              for name in order if name in summaries["values"]]
-    if summaries["also"] is not None:
-        blocks.append(f"<b>{ALSO}</b> {summaries['also'].strip()}")
-    return "\n\n".join(blocks)
+        return [(summaries.strip(), details_text(len(rows)), rows)]
+    values, also = summaries["values"], summaries["also"]
+    blocks = []
+    for name in dict.fromkeys(row[0] for row in rows):
+        if name in values:
+            own = [row[1:] for row in rows if row[0] == name]
+            blocks.append(
+                (f"<b>{html.escape(name)}</b>\n\n{values[name].strip()}", details_text(len(own)), own))
+    unvalued = [(row[1], *row[3:]) for row in rows if row[0] == NO_VALUE]
+    if also is not None:
+        blocks.append((f"<b>{ALSO}</b> {also.strip()}",
+                      details_text(len(unvalued)), unvalued))
+    rest = [row for row in rows if row[0] not in values and not (
+        row[0] == NO_VALUE and also is not None)]
+    if rest:
+        blocks.append(
+            ("", details_text(len(rest), OTHER_POINTS), (rest, _spans(rest))))
+    return blocks
+
+
+def _shown_blocks(table):
+    """Each block of an Observations part, `table`, as the report shows it,
+    (text, fold, rows): what comes before its fold, what the fold says and
+    its rows, each its cells, a reference read by _reference(), then its id,
+    as many as its table's headings say: grouped by value, as (rows, spans),
+    the second value each names, or neither; None when anything but the
+    divider before the next part follows the last fold."""
+    if table.rsplit("</details>", 1)[-1].strip() not in ("", "---"):
+        return None
+    blocks = []
+    for text, fold, rows in FOLD.findall(table):
+        columns = rows.split("</tr>", 1)[0].count("<th")
+        if columns == 6:
+            found, spans = _grouped_rows(OBSERVATION_ROW, rows)
+            shown = ([(group, html.unescape(point), html.unescape(second), source, *_reference(reference), number)
+                      for group, second, point, source, reference, number in found], spans)
+        elif columns == 5:
+            shown = [(html.unescape(point), html.unescape(second), source, *_reference(reference), number)
+                     for second, point, source, reference, number in VALUE_ROW.findall(rows)]
+        else:
+            shown = [(html.unescape(point), source, *_reference(reference), number)
+                     for point, source, reference, number in PLAIN_ROW.findall(rows)]
+        blocks.append((text.strip(), fold, shown))
+    return blocks
 
 
 def _step_change_section_problems(section, previous, cited, step_change_content):
@@ -529,10 +553,10 @@ def _step_change_section_problems(section, previous, cited, step_change_content)
                                                    order.index(row[point_field])))]
     shown = [(html.unescape(point), change, _cited(evidence, NOT_RAISED))
              for point, change, evidence in CHANGE_ROW.findall(text)]
-    details = DETAILS.search(text)
+    details = FOLD.search(text)
     if not marked or step_change_content["summary"].strip() not in text.split("<details>", 1)[0]:
         return [f"the report's step change summary isn't {STEP_CHANGE_CONTENT}'s: run finish_report.py again"]
-    if (details[1] if details else None, shown) != (
+    if (details[2] if details else None, shown) != (
             details_text(len(expected), ("change", "changes")) if expected else None, expected):
         return [f"the report's step change rows don't show {STEP_CHANGE_CONTENT}'s: run finish_report.py again"]
     return []

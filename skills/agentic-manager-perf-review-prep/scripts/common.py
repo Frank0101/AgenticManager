@@ -194,13 +194,15 @@ HEADINGS = {"created": "Issues created", "resolved": "Issues resolved", "resolve
 # The Notion section's heading of its table of the pages created.
 PAGES_HEADING = "Pages created"
 # The Observations section: under its heading, OBSERVATIONS_SUBTITLE, the
-# script's, so not marked as the agent's, then a table for each part, by its
-# heading, in order.
-# A valued part's table puts each point under the first company value it names, the
+# script's, so not marked as the agent's, then each part, by its heading, in
+# order, its points folded under the agent's summaries.
+# A valued part groups each point under the first company value it names, the
 # one it shows most, so it shows once, the second value it names beside it,
 # the values with the most points first, those naming none under NO_VALUE,
-# last, as it is no value; context names no value, so its table isn't
-# grouped. Each point's source, by the summary file it comes from, as the
+# last, as it is no value: a fold for each value summarised, one under the
+# ALSO line for the points under no value, then the points no summary
+# covers, grouped by value; context names no value, so its points are one
+# fold, not grouped. Each point's source, by the summary file it comes from, as the
 # report names it; and what a reading's reference names, by its source,
 # beside the day it was seen on, or a page, which has no day, by its title.
 OBSERVATION_HEADINGS = {"going_well": "Going well",
@@ -211,6 +213,10 @@ NO_VALUE = "No value"
 # What the line on the points under no value opens with, after the values'
 # summaries.
 ALSO = "Also:"
+# What the fold under a valued part's summaries holds: the points no summary
+# covers, those of a value left unsaid and, with no ALSO line, those under no
+# value, so every point is still one fold away.
+OTHER_POINTS = ("other point", "other points")
 OBSERVATION_SOURCES = {"manager": "Manager feedback", "other": "Other feedback",
                        "notes": "Manager's notes", "slack": "Slack"}
 REFERENCE_NAMES = {"notes": "Journal", "slack": "Slack"}
@@ -265,11 +271,11 @@ STEP_CHANGE_TASK = "step-change"
 # initiative, the agent's to name and group, under its subtitle, the
 # script's. Each initiative cites its evidence, a period point by its id or
 # an item of data.json by its link: a Jira issue or epic, a pull request or a
-# Notion page; the report folds a table of it under the paragraphs. The
+# Notion page; the report folds a table of it under each paragraph. The
 # initiatives come most recent first, by the latest day of their evidence,
 # undated last, worked out by the script, never the agent.
 WORK_IMPACT_HEADING = "Work and impact"
-WORK_IMPACT_SUBTITLE = "*What the person worked on and with what impact, the most recent first.*"
+WORK_IMPACT_SUBTITLE = "*What the person worked on and the impact of their own part, the most recent first.*"
 # The work and its impact's two parts, as the Observations' are: the
 # period's initiatives, then, only with previous feedback, a short list of
 # what the person worked on before the period, as that feedback says it, for
@@ -307,9 +313,9 @@ STEP_CHANGE_CONTENT = "step_change_content.json"
 WORK_IMPACT_CONTENT = "work_impact_content.json"
 EARLIER_WORK_BRIEF = "earlier_work_brief.json"
 EARLIER_WORK_CONTENT = "earlier_work_content.json"
-WORDS = {"value": 75, "context": 75, "step_change": 150,
+WORDS = {"value": 75, "context": 150, "step_change": 150,
                       "work_impact": 75, "work_impact_line": 30, "earlier_work": 30}
-MAX_WORDS = {"value": 100, "context": 100, "step_change": 200,
+MAX_WORDS = {"value": 100, "context": 200, "step_change": 200,
              "work_impact": 100, "work_impact_line": 40, "earlier_work": 40}
 # The chart of the resolved issues by epic, beside the main focus.
 EPICS_CHART = "jira_epics.svg"
@@ -874,21 +880,6 @@ def observations_content_problems(observations_content, data):
     elif problem := _length_problem(f"{what}'s context", text, "context"):
         problems.append(problem)
     return problems
-
-
-def observation_summary(part, summaries, observations):
-    """The text above the table of `part`, as the report writes it from
-    `summaries`, observations_content.json's for it, and `observations`,
-    data.json's: in a valued part, each value it summarises, in its table's
-    order, its name in bold over its summary, then, when it has one, its
-    ALSO line; in context, its summary."""
-    if part not in VALUED_PARTS:
-        return summaries.strip()
-    blocks = [f"<b>{esc(group['value'])}</b>\n\n{summaries['values'][group['value']].strip()}"
-              for group in observations[part] if group["value"] in summaries["values"]]
-    if summaries["also"] is not None:
-        blocks.append(f"<b>{ALSO}</b> {summaries['also'].strip()}")
-    return "\n\n".join(blocks)
 
 
 def _is_value_summaries(value):

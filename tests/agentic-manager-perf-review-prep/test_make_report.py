@@ -54,9 +54,12 @@ class MakeReportTest(unittest.TestCase):
                       report)
         self.assertLess(report.index("<b>Billing migration</b>"),
                         report.index("<b>Old billing retirement</b>"))
-        self.assertIn('<details><summary>Details (6 items)</summary>', report)
+        # Each initiative's evidence folded under its paragraph.
         self.assertIn(
-            '<tr valign="top"><td rowspan="5">Billing migration</td><td>Billing</td><td>Jira epic</td>'
+            "relied on.\n\n<details><summary>Details (5 items)</summary>", report)
+        self.assertIn('<details><summary>Details (1 item)</summary>', report)
+        self.assertIn(
+            '<tr valign="top"><td>Billing</td><td>Jira epic</td>'
             '<td><a href="https://acme.atlassian.net/browse/PROJ-1">PROJ-1</a></td><td>–</td></tr>\n'
             '<tr valign="top"><td>Migrate billing</td><td>GitHub</td>'
             '<td><a href="https://github.com/acme/billing/pull/1">acme/billing#1</a></td><td>–</td></tr>\n'
@@ -65,8 +68,9 @@ class MakeReportTest(unittest.TestCase):
             '<tr valign="top"><td>Agreed to own the billing migration and has kept to its plan</td>'
             '<td>Other feedback</td><td>–</td><td>G3</td></tr>\n'
             '<tr valign="top"><td>Presented the migration to the wider team</td><td>Manager\'s notes</td>'
-            '<td><a href="../../../journals/2026_09_02.md">Journal 2 Sep</a></td><td>G2</td></tr>\n'
-            '<tr valign="top"><td rowspan="1">Old billing retirement</td><td>Retire old billing</td><td>Jira</td>'
+            '<td><a href="../../../journals/2026_09_02.md">Journal 2 Sep</a></td><td>G2</td></tr>', report)
+        self.assertIn(
+            '<tr valign="top"><td>Retire old billing</td><td>Jira</td>'
             '<td><a href="https://acme.atlassian.net/browse/PROJ-13">PROJ-13</a></td><td>–</td></tr>', report)
 
     def test_earlier_work_section(self):
@@ -91,26 +95,31 @@ class MakeReportTest(unittest.TestCase):
         report = make_report.render(
             PERSON, DATA, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT, WORK_IMPACT_CONTENT)
         # Each summarised value in bold over its summary, in its table's
-        # order, then the line on the points under no value.
+        # order, its points folded under it, then the line on the points
+        # under no value over them, then the points no summary covers.
         self.assertIn(
             f'### {common.ai_marked("Going well")}\n\n<b>Teamwork</b>\n\nJane explains outages to the teams around '
-            'them and presented the billing migration to the wider team.\n\n<b>Ownership</b>\n\nJane has owned the '
-            'billing migration and kept to its plan.\n\n<details>', report)
+            'them and presented the billing migration to the wider team.\n\n<details><summary>Details (2 points)'
+            '</summary>', report)
+        self.assertIn('</details>\n\n<b>Ownership</b>\n\nJane has owned the billing migration and kept to its plan.'
+                      '\n\n<details><summary>Details (1 point)</summary>', report)
         self.assertIn(
             '<b>Also:</b> Jane could share progress with the wider team more often.\n\n<details>', report)
-        self.assertIn('<details><summary>Details (4 points)</summary>', report)
+        self.assertIn(
+            '</details>\n\n<details><summary>Details (1 other point)</summary>', report)
         self.assertIn('</details>\n\n---\n\n### To improve', report)
-        self.assertIn('<tr valign="top"><td rowspan="2">Teamwork</td><td></td><td>'
+        self.assertIn('<tr valign="top"><td></td><td>'
                       "Explained the outage&#x27;s cause in the incident channel, and colleagues thanked them"
                       '</td><td>Slack</td><td><a href="https://'
                       'acme.slack.com/archives/C1/p1">Slack 3 Sep</a></td><td>G1</td></tr>', report)
         self.assertIn('<td>Other feedback</td><td>–'
                       '</td><td>G3</td></tr>', report)
         # The current manager feedback's points name no value, so they come
-        # last in their tables, under No value, with no reference.
+        # with no reference: among the points no summary covers, under No
+        # value, or under the line on them.
         self.assertIn('<tr valign="top"><td rowspan="1">No value</td><td></td><td>'
                       'Has led the billing migration well since May</td><td>Manager feedback</td><td>–</td><td>G4</td></tr>', report)
-        self.assertIn('<td rowspan="1">No value</td><td></td><td>'
+        self.assertIn('<tr valign="top"><td>'
                       'Could share progress with the wider team more often</td><td>Manager feedback</td><td>–</td><td>I3</td></tr>',
                       report)
         self.assertIn('<a href="../../../journals/2026_10_01.md">Journal 1 Oct</a>, '
@@ -247,9 +256,9 @@ class MakeReportTest(unittest.TestCase):
                    "context": "Jane is back from leave and preparing a promotion case."}
         report = make_report.render(
             PERSON, data, REPORT_FOLDER, content, None, POINT_WORK_IMPACT)
-        for expected in ('<td rowspan="2">Ownership</td><td></td><td>Led the migration</td><td>Manager feedback</td><td>–</td><td>G1</td></tr>',
+        for expected in ('<td></td><td>Led the migration</td><td>Manager feedback</td><td>–</td><td>G1</td></tr>',
                          '<td>Kept to the plan</td><td>Other feedback</td><td>–</td><td>G2</td></tr>',
-                         '<td rowspan="2">Teamwork</td><td></td><td>Share progress</td><td>Manager feedback</td><td>–</td><td>I1</td></tr>',
+                         '<td></td><td>Share progress</td><td>Manager feedback</td><td>–</td><td>I1</td></tr>',
                          '<td>Raise risks</td><td>Other feedback</td><td>–</td><td>I2</td></tr>',
                          '<tr valign="top"><td>Back from leave</td><td>Manager feedback</td><td>–</td><td>C1</td></tr>\n'
                          '<tr valign="top"><td>Preparing a promotion case</td><td>Other feedback</td><td>–</td><td>C2</td></tr>'):
