@@ -57,27 +57,27 @@ class MakeReportTest(unittest.TestCase):
         self.assertIn('<tr valign="top"><td rowspan="2">Teamwork</td><td></td><td>'
                       "Explained the outage&#x27;s cause in the incident channel, and colleagues thanked them"
                       '</td><td>Slack</td><td><a href="https://'
-                      'acme.slack.com/archives/C1/p1">Slack 3 Sep</a></td></tr>', report)
+                      'acme.slack.com/archives/C1/p1">Slack 3 Sep</a></td><td>G1</td></tr>', report)
         self.assertIn('<td>Other feedback</td><td>–'
-                      '</td></tr>', report)
+                      '</td><td>G3</td></tr>', report)
         # The current manager feedback's points name no value, so they come
         # last in their tables, under No value, with no reference.
         self.assertIn('<tr valign="top"><td rowspan="1">No value</td><td></td><td>'
-                      'Has led the billing migration well since May</td><td>Manager feedback</td><td>–</td></tr>', report)
+                      'Has led the billing migration well since May</td><td>Manager feedback</td><td>–</td><td>G4</td></tr>', report)
         self.assertIn('<td rowspan="1">No value</td><td></td><td>'
-                      'Could share progress with the wider team more often</td><td>Manager feedback</td><td>–</td></tr>',
+                      'Could share progress with the wider team more often</td><td>Manager feedback</td><td>–</td><td>I3</td></tr>',
                       report)
         self.assertIn('<a href="../../../journals/2026_10_01.md">Journal 1 Oct</a>, '
                       '<a href="../../../journals/2026_08_20.md">Journal 20 Aug</a>', report)
-        # Context last, not grouped: its point, source and references, a
+        # Context last, not grouped: its id, point, source and references, a
         # page's undated evidence named by its title.
         self.assertIn('</details>\n\n---\n\n<b>Context</b>', report)
         self.assertIn(
-            f'<tr valign="top"><th width="70%">{common.ai_marked("Point")}</th><th width="10%">Source</th>'
-            '<th width="20%">References</th></tr>\n<tr valign="top"><td>Is preparing a promotion case with the '
-            'manager</td><td>Other feedback</td><td>–</td></tr>\n'
+            f'<tr valign="top"><th width="65%">{common.ai_marked("Point")}</th><th width="10%">Source</th>'
+            '<th width="20%">References</th><th width="5%">ID</th></tr>\n<tr valign="top">'
+            '<td>Is preparing a promotion case with the manager</td><td>Other feedback</td><td>–</td><td>C1</td></tr>\n'
             '<tr valign="top"><td>Moved to the payments team in the summer</td>'
-            '<td>Manager\'s notes</td><td><a href="../../../pages/Jane.md">Page Jane</a></td></tr>', report)
+            '<td>Manager\'s notes</td><td><a href="../../../pages/Jane.md">Page Jane</a></td><td>C2</td></tr>', report)
         for part, heading in (("to_improve", "To improve"), ("context", "Context")):
             with self.subTest(part):
                 empty = {**DATA, "observations": {**
@@ -92,7 +92,7 @@ class MakeReportTest(unittest.TestCase):
             f"{common.ai_marked('<b>Going well</b>')}", report)
         self.assertIn(
             f'<th width="10%">{common.ai_marked("Value")}</th><th width="10%">{common.ai_marked("Also")}</th>'
-            f'<th width="50%">{common.ai_marked("Point")}</th>', report)
+            f'<th width="45%">{common.ai_marked("Point")}</th>', report)
         # A point naming two values sits under the first, the second next to
         # the value's column.
         self.assertIn(
@@ -200,12 +200,12 @@ class MakeReportTest(unittest.TestCase):
                    "to_improve": "Jane could share progress and raise risks, which Teamwork calls for.",
                    "context": "Jane is back from leave and preparing a promotion case."}
         report = make_report.render(PERSON, data, REPORT_FOLDER, content, None)
-        for expected in ('<td rowspan="2">Ownership</td><td></td><td>Led the migration</td><td>Manager feedback</td><td>–</td></tr>',
-                         '<td>Kept to the plan</td><td>Other feedback</td><td>–</td></tr>',
-                         '<td rowspan="2">Teamwork</td><td></td><td>Share progress</td><td>Manager feedback</td><td>–</td></tr>',
-                         '<td>Raise risks</td><td>Other feedback</td><td>–</td></tr>',
-                         '<tr valign="top"><td>Back from leave</td><td>Manager feedback</td><td>–</td></tr>\n'
-                         '<tr valign="top"><td>Preparing a promotion case</td><td>Other feedback</td><td>–</td></tr>'):
+        for expected in ('<td rowspan="2">Ownership</td><td></td><td>Led the migration</td><td>Manager feedback</td><td>–</td><td>G1</td></tr>',
+                         '<td>Kept to the plan</td><td>Other feedback</td><td>–</td><td>G2</td></tr>',
+                         '<td rowspan="2">Teamwork</td><td></td><td>Share progress</td><td>Manager feedback</td><td>–</td><td>I1</td></tr>',
+                         '<td>Raise risks</td><td>Other feedback</td><td>–</td><td>I2</td></tr>',
+                         '<tr valign="top"><td>Back from leave</td><td>Manager feedback</td><td>–</td><td>C1</td></tr>\n'
+                         '<tr valign="top"><td>Preparing a promotion case</td><td>Other feedback</td><td>–</td><td>C2</td></tr>'):
             self.assertIn(expected, report)
         self.assertEqual(check_report.report_problems(
             report, data, summaries, VALUE_NAMES, REPORT_FOLDER, content, None), [])

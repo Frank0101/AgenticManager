@@ -82,7 +82,7 @@ class CheckReportTest(unittest.TestCase):
                  ("a page's reference changed",
                   (">Page Jane</a>", ">Page Sam</a>"), "Context points"),
                  ("a context point dropped", ('<tr valign="top"><td>Is preparing a promotion case with the manager'
-                                              '</td><td>Other feedback</td><td>–</td></tr>\n', ""), "Context points"),
+                                              '</td><td>Other feedback</td><td>–</td><td>C1</td></tr>\n', ""), "Context points"),
                  ("the context summary changed", ("Jane moved to the payments team",
                   "Jane moved to the data team"), "Context summary"),
                  ("an other feedback point's source changed",

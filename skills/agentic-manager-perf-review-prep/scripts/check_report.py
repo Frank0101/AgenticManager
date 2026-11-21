@@ -32,15 +32,18 @@ PAGE_ROW = re.compile(GROUP_CELL + r'<td><a href="([^"]+)">([^<]*)</a></td>'
                       r'<td>([^<]*)</td></tr>')
 # An Observations part: its heading and what follows it, up
 # to the next part; and each valued point's row: its value's cell, then the
-# second value it names, its text, its source and its reference.
+# second value it names, its text, its source, its reference and its id.
 OBSERVATION_PART = re.compile(r"<b>([^<]+)</b>((?:(?!<b>).)*)", re.S)
 DETAILS = re.compile(r"<details><summary>([^<]*)</summary>")
 OBSERVATION_ROW = re.compile(GROUP_CELL + r'<td>([^<]*)</td><td>([^<]*)</td><td>([^<]*)</td>'
-                             r'<td>(.*?)</td></tr>')
-# A context point's row, not grouped: its text, its source and its reference;
-# a step change row is read the same way: its baseline point, its kind and
-# its evidence, each cited point's text, then its source and reference in
-# brackets, one to a line.
+                             r'<td>(.*?)</td><td>([^<]*)</td></tr>')
+# A context point's row, not grouped: its text, its source, its reference and
+# its id.
+CONTEXT_POINT_ROW = re.compile(
+    r'<tr valign="top"><td>([^<]*)</td><td>([^<]*)</td><td>(.*?)</td><td>([^<]*)</td></tr>')
+# A step change row: its baseline point, its kind and its evidence, each
+# cited point's text, then its source and reference in brackets, one to a
+# line.
 CONTEXT_ROW = re.compile(
     r'<tr valign="top"><td>([^<]*)</td><td>([^<]*)</td><td>(.*?)</td></tr>')
 CITED = re.compile(
@@ -364,15 +367,18 @@ def _observations_problems(text, summaries, values, folder, observations_content
         details = DETAILS.search(table)
         if part in VALUED_PARTS:
             found, spans = _grouped_rows(OBSERVATION_ROW, table)
-            shown = [(group, html.unescape(point), html.unescape(second), source, *_reference(reference))
-                     for group, second, point, source, reference in found]
+            shown = [(group, html.unescape(point), html.unescape(second), source, *_reference(reference), number)
+                     for group, second, point, source, reference, number in found]
             grouped = spans == _spans(expected)
         else:
-            shown = [(html.unescape(point), source, *_reference(reference))
-                     for point, source, reference in CONTEXT_ROW.findall(table)]
+            shown = [(html.unescape(point), source, *_reference(reference), number)
+                     for point, source, reference, number in CONTEXT_POINT_ROW.findall(table)]
             grouped = True
+        # Each row ends with its point's id, in the table's order.
+        with_ids = [(*row, point_id(part, number))
+                    for number, row in enumerate(expected, 1)]
         if not grouped or (details[1] if details else None, shown) != (
-                details_text(len(expected)) if expected else None, expected):
+                details_text(len(expected)) if expected else None, with_ids):
             return [f"the report's {heading} points don't show the summaries': run finish_report.py again"], cited
         if expected and observations_content[part].strip() not in table.split("<details>", 1)[0]:
             return [f"the report's {heading} summary isn't observations_content.json's: run finish_report.py again"], cited

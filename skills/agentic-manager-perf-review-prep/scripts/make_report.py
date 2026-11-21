@@ -69,18 +69,19 @@ def observation_rows(part, points, folder):
     is grouped by company value, each value named once beside its points,
     the second value a point names beside it, its columns as wide in both, so
     the two read alike; context names none, so it is its points alone, its
-    point given the room the values take."""
+    point given the room the values take. Each point shows its id, by which
+    the manager can name it."""
     if part not in VALUED_PARTS:
         rows = [f'<td>{esc(point["point"])}</td><td>{OBSERVATION_SOURCES[point["source"]]}</td>'
-                f'<td>{reference(point, folder)}</td>' for point in points]
-        return observation_heads(((ai_marked("Point"), 70), ("Source", 10), ("References", 20))), rows, len(rows)
+                f'<td>{reference(point, folder)}</td><td>{point["id"]}</td>' for point in points]
+        return observation_heads(((ai_marked("Point"), 65), ("Source", 10), ("References", 20), ("ID", 5))), rows, len(rows)
     rows = grouped_rows((esc(group["value"] or NO_VALUE),
                          [f'<td>{esc(point["also"] or "")}</td><td>{esc(point["point"])}</td>'
                           f'<td>{OBSERVATION_SOURCES[point["source"]]}</td>'
-                          f'<td>{reference(point, folder)}</td>' for point in group["points"]])
+                          f'<td>{reference(point, folder)}</td><td>{point["id"]}</td>' for point in group["points"]])
                         for group in points)
-    return observation_heads(((ai_marked("Value"), 10), (ai_marked("Also"), 10), (ai_marked("Point"), 50),
-                              ("Source", 10), ("References", 20))), rows, len(rows)
+    return observation_heads(((ai_marked("Value"), 10), (ai_marked("Also"), 10), (ai_marked("Point"), 45),
+                              ("Source", 10), ("References", 20), ("ID", 5))), rows, len(rows)
 
 
 def observation_heads(columns):
