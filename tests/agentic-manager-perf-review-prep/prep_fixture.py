@@ -255,12 +255,12 @@ SUMMARIES = {"manager": MANAGER_FEEDBACK, "other": OTHER_FEEDBACK, "previous": P
 # focus, and each table's points in its order, with the values each names, its
 # source and when it was seen, and for the step change their ids and the
 # previous feedback.
-OBSERVATIONS_CONTENT = {"going_well": "Jane explains outages to the teams around them and presented the billing migration to the "
-                        "wider team, showing Teamwork, and has owned the migration and kept to its plan, reflecting Ownership.",
-                        "to_improve": "Jane flagged delays only when asked, many times, where Ownership calls for raising them "
-                        "early.",
-                        "context": "Jane moved to the payments team in the summer and is preparing a promotion case with the "
-                        "manager."}
+OBSERVATIONS_CONTENT = {"going_well": {"values": {
+    "Teamwork": "Jane explains outages to the teams around them and presented the billing migration to the wider team.",
+    "Ownership": "Jane has owned the billing migration and kept to its plan."}, "also": None},
+    "to_improve": {"values": {"Ownership": "Jane flagged delays only when asked, many times, and should raise them early."},
+                   "also": "Jane could share progress with the wider team more often."},
+    "context": "Jane moved to the payments team in the summer and is preparing a promotion case with the manager."}
 # The design review is no longer raised; flagging delays, raised in
 # the previous feedback, still is; the migration held; and the move to
 # payments, a period context point, is new since it.
@@ -331,18 +331,65 @@ def temp_output(test):
     return os.path.join(root, "out", "perf-review-preps")
 
 
+# The agent's account of the work and its impact, from DATA: the billing
+# migration, whose latest evidence is G2, seen on 2 September, comes before
+# the retirement of the old billing, an issue created on 20 August; and the
+# brief it is written from, worked out by hand: the issues by epic, those
+# with none as one more group, the pull requests by repository and the
+# pages, each group by its latest item, then every point with its id.
+BILLING_EVIDENCE = [f"{JIRA_BASE}/browse/PROJ-1", "https://github.com/acme/billing/pull/1",
+                    "https://www.notion.so/billing-plan", "G3", "G2"]
+WORK_IMPACT_CONTENT = {"initiatives": [
+    {"title": "Billing migration", "impact": "The payments team moved off the old billing system.", "paragraph": "Jane led the billing migration from its plan to its rollout, "
+     "keeping to the plan the payments team relied on.", "evidence": BILLING_EVIDENCE},
+    {"title": "Old billing retirement", "impact": "The old billing system began to wind down.", "paragraph": "Jane started retiring the old billing system.",
+     "evidence": [f"{JIRA_BASE}/browse/PROJ-13"]}]}
+# A work and impact that cites a point alone, for a data.json whose items
+# differ from DATA's.
+POINT_WORK_IMPACT = {"initiatives": [{"title": "Outages", "impact": "The teams around Jane understood the outage.", "paragraph": "Jane explained an outage's cause to the teams "
+                                      "around them.", "evidence": ["G1"]}]}
+# The work before the period, from PREVIOUS_FEEDBACK as DATA holds it, and
+# its brief.
+EARLIER_WORK_CONTENT = {"bullets": [
+    "Jane delivered the billing migration on time, as the previous feedback recorded."]}
+EARLIER_WORK_BRIEF = {"person": "Jane Doe",
+                      "previous": {"going_well": ["Delivered the billing migration on time"],
+                                   "to_improve": ["Could lead a design review alone", "Flagged delays only when asked"],
+                                   "context": []}}
+WORK_IMPACT_BRIEF = {"person": "Jane Doe",
+                     "epics": [{"key": "PROJ-1", "title": "Billing", "url": f"{JIRA_BASE}/browse/PROJ-1", "items": 1,
+                                "recent": [{"key": "PROJ-12", "title": "Migrate billing",
+                                            "url": f"{JIRA_BASE}/browse/PROJ-12", "status": "Done",
+                                            "date": "2026-09-01"}]},
+                               {"key": None, "title": None, "url": None, "items": 1,
+                                "recent": [{"key": "PROJ-13", "title": "Retire old billing",
+                                            "url": f"{JIRA_BASE}/browse/PROJ-13", "status": "In Progress",
+                                            "date": "2026-08-20"}]}],
+                     "pull_requests": [{"repo": "acme/billing", "search_url": DATA["github"]["repo_search_urls"]["acme/billing"],
+                                        "items": 1, "recent": [{"title": "Migrate billing",
+                                                                "url": "https://github.com/acme/billing/pull/1",
+                                                                "date": "2026-09-01"}]}],
+                     "notion": [{"title": "Billing plan", "url": "https://www.notion.so/billing-plan",
+                                 "path": "Engineering / Billing", "date": "2026-08-16"}],
+                     **{part: STEP_CHANGE_BRIEF[part] for part in ("going_well", "to_improve", "context")}}
+
+
 def write_prep(folder, person=PERSON, prep=PREP, manager=MANAGER_FEEDBACK,
                other=OTHER_FEEDBACK, previous=PREVIOUS_FEEDBACK, notes=NOTES, data=DATA, slack=SLACK, raw_work=WORK_RAW,
                observations_brief=OBSERVATIONS_BRIEF, observations_content=OBSERVATIONS_CONTENT, step_change_brief=STEP_CHANGE_BRIEF, step_change_content=STEP_CHANGE_CONTENT,
-               report=True):
+               work_impact_brief=WORK_IMPACT_BRIEF, work_impact_content=WORK_IMPACT_CONTENT,
+               earlier_work_brief=EARLIER_WORK_BRIEF, earlier_work_content=EARLIER_WORK_CONTENT, report=True):
     """Writes the prep `prep` in the output folder `folder`, holding `person`,
     `manager`, `other`, `previous`, `notes`, `data`, `slack`, `observations_brief`,
-    `observations_content`, `step_change_brief` and `step_change_content`, each left out when None, the _raw folder, with
+    `observations_content`, `step_change_brief`, `step_change_content`, `work_impact_brief`,
+    `work_impact_content`, `earlier_work_brief` and `earlier_work_content`, each left out when None, the _raw folder, with
     `raw_work`, each source's raw file, unless None, and, with `report` and
     both a person and data, the report as finish_report.py writes it, with
     its charts, each an empty drawing, its summaries OBSERVATIONS_CONTENT's when
-    `observations_content` is None and its step change STEP_CHANGE_CONTENT's when `step_change_content` is,
-    as if they went after the report was written."""
+    `observations_content` is None, its step change STEP_CHANGE_CONTENT's when `step_change_content` is
+    its work and impact WORK_IMPACT_CONTENT's when `work_impact_content` is, and its work before the
+    period EARLIER_WORK_CONTENT's when `earlier_work_content` is, as if they went after the report
+    was written."""
     os.makedirs(os.path.join(folder, prep, "_raw"), exist_ok=True)
     for source, lists in (raw_work or {}).items():
         with open(os.path.join(folder, prep, "_raw", f"{source}.json"), "w", encoding="utf-8") as f:
@@ -355,7 +402,11 @@ def write_prep(folder, person=PERSON, prep=PREP, manager=MANAGER_FEEDBACK,
                                               slack), ("observations_brief.json", observations_brief),
                         ("observations_content.json", observations_content), ("step_change_brief.json",
                                                                               step_change_brief),
-                        ("step_change_content.json", step_change_content)):
+                        ("step_change_content.json", step_change_content),
+                        ("work_impact_brief.json", work_impact_brief), (
+                            "work_impact_content.json", work_impact_content),
+                        ("earlier_work_brief.json", earlier_work_brief),
+                        ("earlier_work_content.json", earlier_work_content)):
         if value is not None:
             with open(os.path.join(folder, prep, name), "w", encoding="utf-8") as f:
                 json.dump(value, f)
@@ -369,4 +420,5 @@ def write_prep(folder, person=PERSON, prep=PREP, manager=MANAGER_FEEDBACK,
             f.write(make_report.render(
                 person, data, os.path.join(
                     folder, prep), observations_content or OBSERVATIONS_CONTENT,
-                step_change_content or STEP_CHANGE_CONTENT))
+                step_change_content or STEP_CHANGE_CONTENT, work_impact_content or WORK_IMPACT_CONTENT,
+                earlier_work_content or EARLIER_WORK_CONTENT))

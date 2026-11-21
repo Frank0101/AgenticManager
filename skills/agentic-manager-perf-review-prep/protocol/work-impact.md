@@ -1,0 +1,45 @@
+# Write the person's work and its impact
+
+{{sources}} The report opens with what you write, as a calibration starts from it: what the person worked on in the period and with what impact, before any feedback.
+
+## What to read
+
+The brief, at the path below, holds every point of the period: the manager's feedback, the other feedback, the notes and Slack, and the person's work: their issues by epic and pull requests by repository, the most recent group first, each group with how many it holds and its {{recent_items}} most recent, and every page they created. Start from it: the points say what the work meant to others, the titles what it was. Then, for the main initiatives only, open its links, in this order:
+
+1. Jira issues and epics, then GitHub pull requests, which say what the person did, where the brief isn't enough to tell: `{{jira_ticket}}`, such as `--key PROJ-123`, and `{{pull_request}}`.
+2. Notion pages, which say why the work was done and its impact on the business, such as a proposal, a plan or a decision record: always the pages the person created for a main initiative, and those the issues and epics you read link to where you need them. Use the Notion MCP's tool to read a page, which you may have to load first.
+
+Open only what the brief links to, or what an item you read from it links to.
+
+{{saved}}
+
+{{customers}}
+
+## What to write
+
+The person's main initiatives in the period, each with a line on its impact and a paragraph on what the person did in it. An initiative is yours to name and to draw together, such as an epic, the pull requests that served it and the plan behind it, or a theme several epics share; give it a short title. Support is work too: answering and fixing in support channels, following delivery through and making sure a rollout goes well. It belongs with the initiative it served, its delivery and its support in one paragraph, even when the support came after the delivery; it makes an initiative of its own only when it served none of the others. Leave out work too small to matter in a review, such as a one-off fix, unless it had a clear impact.
+
+## How to write an initiative
+
+- The impact line says what changed because of the initiative, and for whom, such as who it served or what it unblocked: one line, so the manager sees it before the detail.
+- The paragraph says what the person did, their own part in it, such as leading the design, building the core or taking over from someone, bearing the impact line out without repeating it. Name the part the sources show was theirs, not the whole initiative others worked on too; a judgement of their part, such as "took ownership", says whose it is.
+- Say only the impact the sources state, such as the points; a page's goal or an issue's purpose gives what the work aimed for, reached when the epic is Done or a source says so, unless another source shows it wasn't; a ticket closed without being done isn't finished work. Never infer it, and never measure it with counts of issues or pull requests: they show where the work went, not what it was worth. Every initiative has an impact line: when its impact isn't plain, look for it in the sources, as above, before you write.
+- Be conservative: claim no more than what you read shows. A title says only what an item is, so a claim that rests on a title alone says no more than that the person wrote it or did it; to say more, open it.
+- Claim a share of the work, such as "most of" or "much of", only when a source states it, such as a feedback saying the person did most of an epic's stories: the brief holds the person's own items, not the whole, so a count can't show a share.
+- Cite in `evidence` every point and item the paragraph rests on: a point by its id, such as G3, and an issue, epic, pull request or page by its link, as the brief gives it; a page you reached through an item is cited by that item. The report shows them in a table under the initiatives, so the line and the paragraph name no id and no link.
+- Write about {{work_impact_line_words}} words for the impact line and {{work_impact_words}} for the paragraph, fewer when the evidence is thin: never pad.
+- {{style}}
+
+The script orders the initiatives, the most recent first by their evidence: submit them in any order.
+
+## Examples
+
+| Case                                                                                                                                                                 | Decision                                                                                                                                                                                                                                                        | Why                                                                                        |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| An epic, Billing migration, with 40 resolved issues; G3 says Jane owned it, kept to its plan and finished it in October; a Notion page, Billing plan, gives its goal | One initiative, citing the epic, the page and G3. Impact: the payments team moved off the old system, as the plan set out and G3 says was done. Paragraph: Jane led the migration from its plan to its finish and kept to its dates, as the other feedback says | The page says what the work aimed for, the point that it was reached and the person's part |
+| 300 merged pull requests on an epic, and no source says what share of it the person did                                                                              | Never "Jane merged 300 pull requests, a big impact" or "Jane built much of the epic"; say what Jane built                                                                                                                                                       | A count shows where the work went, not what it was worth nor what share of the whole it is |
+| Three one-line fixes in a repository nobody mentions                                                                                                                 | Leave them out                                                                                                                                                                                                                                                  | Too small to matter in a review, and no impact stated                                      |
+| A page the person created, Payments security model, known only by its title                                                                                          | Write that Jane wrote the payments security model page, or open it before writing that Jane designed the security                                                                                                                                               | A title says what the page is, not the person's part in it                                 |
+| Other feedback says Jane took ownership of a platform the whole team built; issue titles show Jane built its search                                                  | Jane built the platform's search, and took ownership of the platform, as Sam put it                                                                                                                                                                             | The person's own part, and the judgement with whose it is                                  |
+| Jane answered and fixed most questions in a rollout's support channel, as a point says                                                                               | Part of that initiative's paragraph: Jane kept its rollout going by fixing what users raised                                                                                                                                                                    | Support that made the delivery go well is impact                                           |
+| An epic, not Done, sets "a working platform" as its goal, and its status lists what doesn't work yet; some of its tickets are Closed, not Done                       | Jane worked towards a working platform, not "Jane gave the team a working platform"                                                                                                                                                                             | A goal, or a ticket closed undone, is an aim, not an outcome                               |

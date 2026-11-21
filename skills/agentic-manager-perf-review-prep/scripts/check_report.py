@@ -1,4 +1,4 @@
-"""Checks a prep's report against data.json: that it shows every GitHub and Jira figure, each main focus, the charts' series and the Notion pages created as the items give them, the observations' points, going well, to improve and context, as the summaries give them, each table under observations_content.json's summary of it, then the step change, step_change_content.json's, as it reads against the previous feedback and the period's points.
+"""Checks a prep's report against data.json: that it shows the person's work and its impact, work_impact_content.json's, each initiative's evidence as data.json holds it, the most recent first, and the work before the period, earlier_work_content.json's, then every GitHub and Jira figure, each main focus, the charts' series and the Notion pages created as the items give them, the observations' points, going well, to improve and context, as the summaries give them, each table under observations_content.json's summary of it, then the step change, step_change_content.json's, as it reads against the previous feedback and the period's points.
 
 It reads each figure back from the report and works it out again from the
 items, apart from data.json's facts and from make_report.py, with which it
@@ -10,14 +10,14 @@ from datetime import date, timedelta
 import html
 import re
 
-from common import (BINS_PER_DECADE, CHART_IMAGE, CHARTS_DIR, OBSERVATION_HEADINGS, OBSERVATIONS_SUBTITLE, OBSERVATION_SOURCES, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS, NO_VALUE,
-                    PAGES_HEADING, PREVIOUS_ID, NOT_RAISED, STEP_CHANGE_CONTENT, STEP_CHANGE_HEADING, STEP_CHANGE_NOT_APPLICABLE, STEP_CHANGE_ROW, STEP_CHANGE_SUBTITLE, STEP_CHANGES, SUMMARY_PARTS, VALUED_PARTS, ai_marked, average_text, details_text, link_href, point_id, reference_text, project_of, repo_code, repos_text, size_text, types_text,
+from common import (ALSO, EARLIER_WORK_CONTENT, EARLIER_WORK_HEADING, WORK_PERIOD_HEADING, NOTION_KEY, BINS_PER_DECADE, CHART_IMAGE, CHARTS_DIR, OBSERVATION_HEADINGS, OBSERVATIONS_SUBTITLE, OBSERVATION_SOURCES, FOCUS_SHARE, GITHUB_CELLS, JIRA_CELLS, MAX_GROUPS, NO_VALUE,
+                    PAGES_HEADING, PREVIOUS_ID, NOT_RAISED, STEP_CHANGE_CONTENT, STEP_CHANGE_HEADING, STEP_CHANGE_NOT_APPLICABLE, STEP_CHANGE_ROW, STEP_CHANGE_SUBTITLE, STEP_CHANGES, SUMMARY_PARTS, VALUED_PARTS, WORK_IMPACT_HEADING, WORK_IMPACT_SUBTITLE, WORK_KINDS, ai_marked, average_text, details_text, link_href, period_points, point_id, reference_text, project_of, repo_code, repos_text, size_text, types_text,
                     week_text)
 
 # The report's sections, in order, each where its heading starts it, the
 # heading marked as the agent's when the agent wrote its text, as the step
 # change's is when its baseline has points.
-SECTION_HEADINGS = ("Observations", STEP_CHANGE_HEADING,
+SECTION_HEADINGS = (WORK_IMPACT_HEADING, "Observations", STEP_CHANGE_HEADING,
                     "GitHub", "Jira", "Notion")
 SECTION = re.compile(
     rf"\n## ({'|'.join(map(re.escape, SECTION_HEADINGS))})({re.escape(ai_marked(''))})?\n")
@@ -25,15 +25,23 @@ SECTION = re.compile(
 # points are: its group's cell, on the group's first row only, with how many
 # rows it spans and the group's name.
 GROUP_CELL = r'<tr valign="top">(?:<td rowspan="(\d+)">([^<]*)</td>)?'
+# The work and its impact: each initiative's title, in bold over its impact
+# line and its paragraph, and each row of its evidence's table: the
+# initiative's cell, then the item's title or a point's text, its kind or a
+# point's source, its link or a point's references, and a point's id.
+INITIATIVE = re.compile(r"<b>([^<]*)</b>")
+WORK_ROW = re.compile(
+    GROUP_CELL + r'<td>([^<]*)</td><td>([^<]*)</td><td>(.*?)</td><td>([^<]*)</td></tr>')
 # The Notion section's count of the pages created, and each page's row: its
 # week's cell, then its link and title, and its area.
-PAGES_COUNT = re.compile(rf"<b>{re.escape(PAGES_HEADING)}</b> \((\d+)\)")
+PAGES_COUNT = re.compile(rf"^### {re.escape(PAGES_HEADING)} \((\d+)\)", re.M)
 PAGE_ROW = re.compile(GROUP_CELL + r'<td><a href="([^"]+)">([^<]*)</a></td>'
                       r'<td>([^<]*)</td></tr>')
 # An Observations part: its heading and what follows it, up
 # to the next part; and each valued point's row: its value's cell, then the
 # second value it names, its text, its source, its reference and its id.
-OBSERVATION_PART = re.compile(r"<b>([^<]+)</b>((?:(?!<b>).)*)", re.S)
+OBSERVATION_PART = re.compile(
+    r"^### ([^\n<]+?)(?: <sup[^\n]*)?\n((?:(?!^### ).)*)", re.M | re.S)
 DETAILS = re.compile(r"<details><summary>([^<]*)</summary>")
 OBSERVATION_ROW = re.compile(GROUP_CELL + r'<td>([^<]*)</td><td>([^<]*)</td><td>([^<]*)</td>'
                              r'<td>(.*?)</td><td>([^<]*)</td></tr>')
@@ -44,7 +52,7 @@ CONTEXT_POINT_ROW = re.compile(
 # A step change row: its baseline point, its kind and its evidence, each
 # cited point's text, then its source and reference in brackets, one to a
 # line.
-CONTEXT_ROW = re.compile(
+CHANGE_ROW = re.compile(
     r'<tr valign="top"><td>([^<]*)</td><td>([^<]*)</td><td>(.*?)</td></tr>')
 CITED = re.compile(
     rf"(.*) \(({'|'.join(map(re.escape, OBSERVATION_SOURCES.values()))})(?:: (.*))?\)", re.S)
@@ -67,7 +75,8 @@ FIGURE = re.compile(
 CHART = re.compile(rf"<td>{CHART_IMAGE.pattern}</td>")
 
 
-def report_problems(report, data, summaries, values, folder, observations_content, step_change_content):
+def report_problems(report, data, summaries, values, folder, observations_content, step_change_content,
+                    work_impact_content, earlier_work_content=None):
     """Why `report`, the report's text, doesn't show `data`, data.json, and
     `summaries`, the current manager feedback, the other feedback, the previous
     feedback, the notes' summary and Slack's, by SUMMARY_FILES' names,
@@ -76,17 +85,22 @@ def report_problems(report, data, summaries, values, folder, observations_conten
     breakdown and each link to its search, each main focus, the series the
     charts draw, the Notion pages created and the observations' points, a note's
     link relative to `folder`, the report's, each table under its summary in
-    `observations_content`, observations_content.json, and the step change, `step_change_content`,
-    step_change_content.json."""
+    `observations_content`, observations_content.json, the step change, `step_change_content`,
+    step_change_content.json, and first the work and its impact, `work_impact_content`,
+    work_impact_content.json, with the work before the period,
+    `earlier_work_content`, earlier_work_content.json, when there is any."""
     sections = SECTION.split(report)
     if tuple(sections[1::3]) != SECTION_HEADINGS:
-        return ["the report must have its Observations section, then its Step change one, its GitHub one, its "
-                "Jira one and its Notion one: run finish_report.py again"]
-    observations_text, step_text, github_text, jira_text, notion_text = sections[
+        return ["the report must have its Work and impact section, then its Observations one, its Step change one, "
+                "its GitHub one, its Jira one and its Notion one: run finish_report.py again"]
+    work_text, observations_text, step_text, github_text, jira_text, notion_text = sections[
         3::3]
-    step_marked = sections[2::3][1] is not None
+    work_marked, step_marked = (
+        sections[2::3][index] is not None for index in (0, 2))
     span = (data["weeks"][0][0], data["weeks"][-1][1])
-    problems = _jira_problems(jira_text, data["jira"], data["weeks"]) + \
+    problems = _work_impact_problems(work_text, work_marked, data, work_impact_content, earlier_work_content,
+                                     folder) + \
+        _jira_problems(jira_text, data["jira"], data["weeks"]) + \
         _github_problems(github_text, data["github"], data["weeks"]) + \
         _notion_problems(notion_text, data["notion"], span)
     if _subtitle(observations_text) != OBSERVATIONS_SUBTITLE:
@@ -100,6 +114,90 @@ def report_problems(report, data, summaries, values, folder, observations_conten
     return problems + _step_change_section_problems(
         (step_text, step_marked), _baseline_labels(summaries["previous"]),
         cited, step_change_content)
+
+
+# Work and impact.
+
+def _work_impact_problems(text, marked, data, work_impact_content, earlier_work_content, folder):
+    """Why `text`, the report's work and its impact, its heading marked as
+    the agent's or not, doesn't show `work_impact_content`,
+    work_impact_content.json, empty when it does: its heading marked, its
+    subtitle, under WORK_PERIOD_HEADING each initiative's title, impact line and paragraph, the most recent first by
+    the latest day of its evidence, worked out again from `data`, data.json's
+    items and points, undated last, then its table, folded, of each
+    initiative's evidence, in the order it cites it, as the observations'
+    tables: a point's text, source, references, a note's relative to
+    `folder`, and id; an item's title, kind, link by its key, and no id;
+    then, with `earlier_work_content`, earlier_work_content.json, a divider
+    and its bullets under EARLIER_WORK_HEADING, else nothing more."""
+    if not marked or _subtitle(text) != WORK_IMPACT_SUBTITLE:
+        return [f"the report's Work and impact must have its heading marked as the agent's, then its subtitle, "
+                f"{WORK_IMPACT_SUBTITLE}: run finish_report.py again"]
+    initiatives = work_impact_content["initiatives"]
+    points = {key: point for key, (_, point) in period_points(
+        data["observations"]).items()}
+    items, days = {}, {}
+
+    # A link that is some issue's epic is an epic, even when the person
+    # reported it too, and its day the latest any entry gives it.
+    def seen(link, title, key, kind, day):
+        if link not in items or kind == WORK_KINDS["epic"]:
+            items[link] = (title, kind, ([(link, key)], ""), "–")
+        days[link] = max(days.get(link) or "", day or "") or None
+    for issue in (*data["jira"]["created"], *data["jira"]["resolved"]):
+        seen(issue["url"], issue["title"], issue["key"],
+             WORK_KINDS["issue"], issue["date"])
+        if issue["epic"]:
+            seen(issue["epic"]["url"], issue["epic"]["title"], issue["epic"]["key"], WORK_KINDS["epic"],
+                 issue["date"])
+    for pr in (*data["github"]["opened"], *data["github"]["merged"]):
+        seen(pr["url"], pr["title"], f'{pr["repo"]}#{pr["number"]}',
+             WORK_KINDS["pr"], pr["date"])
+    for page in data["notion"]["created"]:
+        seen(page["url"], page["title"], NOTION_KEY,
+             WORK_KINDS["page"], page["between"][1])
+    for key, point in points.items():
+        source = OBSERVATION_SOURCES[point["source"]]
+        links = [(link_href(item["link"], folder), reference_text(point["source"], item))
+                 for item in point["evidence"]]
+        items[key] = (point["point"], source,
+                      (links, "" if links else "–"), key)
+        days[key] = max((item["date"]
+                        for item in point["evidence"] if item["date"]), default=None)
+
+    def latest(initiative):
+        found = [days[item] for item in initiative["evidence"] if days[item]]
+        return (bool(found), max(found, default=""))
+    head = text.split("<details>", 1)[0]
+    if (initiatives != sorted(initiatives, key=latest, reverse=True)
+            or not head.strip().startswith(f"{WORK_IMPACT_SUBTITLE}\n\n### {WORK_PERIOD_HEADING}\n")
+            or [html.unescape(title) for title in INITIATIVE.findall(head)]
+            != [initiative["title"] for initiative in initiatives]
+            or not all(f'*{initiative["impact"].strip()}*\n\n{initiative["paragraph"].strip()}' in head
+                       for initiative in initiatives)):
+        return ["the report's Work and impact doesn't show work_impact_content.json's initiatives, the most recent "
+                "first: run set_work_impact.py, then finish_report.py, again"]
+
+    expected = [(initiative["title"], *items[reference])
+                for initiative in initiatives for reference in initiative["evidence"]]
+    found, spans = _grouped_rows(WORK_ROW, text)
+    shown = [(group, html.unescape(title), source, _reference(reference), number)
+             for group, title, source, reference, number in found]
+    details = DETAILS.search(text)
+    if (spans != _spans(expected) or shown != expected
+            or not details or details[1] != details_text(len(expected), ("item", "items"))):
+        return ["the report's Work and impact evidence doesn't show data.json's items and points: run "
+                "finish_report.py again"]
+    # What follows the evidence: the work before the period, or nothing.
+    tail = text.split(
+        "</details>", 1)[1].strip() if "</details>" in text else None
+    earlier = (f"---\n\n### {EARLIER_WORK_HEADING}\n\n"
+               + "\n".join(f"- {bullet.strip()}" for bullet in earlier_work_content["bullets"])
+               if earlier_work_content else "")
+    if tail != earlier:
+        return [f"the report's {EARLIER_WORK_HEADING} doesn't show {EARLIER_WORK_CONTENT}'s bullets: run "
+                "finish_report.py again"]
+    return []
 
 
 # Jira.
@@ -380,9 +478,27 @@ def _observations_problems(text, summaries, values, folder, observations_content
         if not grouped or (details[1] if details else None, shown) != (
                 details_text(len(expected)) if expected else None, with_ids):
             return [f"the report's {heading} points don't show the summaries': run finish_report.py again"], cited
-        if expected and observations_content[part].strip() not in table.split("<details>", 1)[0]:
+        if expected and table.split("<details>", 1)[0].strip() != _summary_text(part, observations_content[part],
+                                                                                expected):
             return [f"the report's {heading} summary isn't observations_content.json's: run finish_report.py again"], cited
     return [], cited
+
+
+def _summary_text(part, summaries, expected):
+    """The text the report shows above the table of `part`, from
+    `summaries`, observations_content.json's for it, and `expected`, the
+    table's rows as worked out here: in a valued part, each value it
+    summarises in the order the rows group them, its name in bold over its
+    summary, then its ALSO line, if any; in context, its summary."""
+    if part not in VALUED_PARTS:
+        return summaries.strip()
+    order = [name for name in dict.fromkeys(
+        row[0] for row in expected) if name != NO_VALUE]
+    blocks = [f"<b>{html.escape(name)}</b>\n\n{summaries['values'][name].strip()}"
+              for name in order if name in summaries["values"]]
+    if summaries["also"] is not None:
+        blocks.append(f"<b>{ALSO}</b> {summaries['also'].strip()}")
+    return "\n\n".join(blocks)
 
 
 def _step_change_section_problems(section, previous, cited, step_change_content):
@@ -412,7 +528,7 @@ def _step_change_section_problems(section, previous, cited, step_change_content)
                                   key=lambda row: (list(STEP_CHANGES).index(row[change_field]),
                                                    order.index(row[point_field])))]
     shown = [(html.unescape(point), change, _cited(evidence, NOT_RAISED))
-             for point, change, evidence in CONTEXT_ROW.findall(text)]
+             for point, change, evidence in CHANGE_ROW.findall(text)]
     details = DETAILS.search(text)
     if not marked or step_change_content["summary"].strip() not in text.split("<details>", 1)[0]:
         return [f"the report's step change summary isn't {STEP_CHANGE_CONTENT}'s: run finish_report.py again"]

@@ -208,6 +208,9 @@ OBSERVATION_HEADINGS = {"going_well": "Going well",
 OBSERVATIONS_SUBTITLE = ("*What the current manager feedback, the period's other feedback, the manager's notes and "
                          "Slack show, by company value.*")
 NO_VALUE = "No value"
+# What the line on the points under no value opens with, after the values'
+# summaries.
+ALSO = "Also:"
 OBSERVATION_SOURCES = {"manager": "Manager feedback", "other": "Other feedback",
                        "notes": "Manager's notes", "slack": "Slack"}
 REFERENCE_NAMES = {"notes": "Journal", "slack": "Slack"}
@@ -241,6 +244,12 @@ STEP_CHANGES = {"improved": "Improved", "still_to_improve": "Still to improve", 
 STEP_CHANGE_PARTS = {"going_well": ("held", "worsened"), "to_improve": ("improved", "still_to_improve", "worsened"),
                      "context": ("context_change",), None: ("new_context",)}
 STEP_CHANGE_ROW = ("previous_point", "change", "evidence")
+# The agent's summaries of the observations: in going well and to improve,
+# one for each company value it judges worth saying, by the value's name,
+# and a line on the points under no value that matter, or null; in context,
+# a text. The report shows each value's in the table's order, the script's.
+OBSERVATIONS_SHAPE = ('{"going_well": {"values": {"<company value>": "...", ...}, "also": "..." or null}, '
+                      '"to_improve": {"values": {...}, "also": null}, "context": "..."}')
 STEP_CHANGE_SHAPE = ('{"summary": "...", "rows": [{"previous_point": "P-I1", "change": "improved", '
                      '"evidence": ["I2", ...]}, ...]}')
 NOT_RAISED = "Not raised again in the period"
@@ -251,22 +260,57 @@ STEP_CHANGE_NOT_APPLICABLE = "N/A: no previous feedback to compare with"
 STEP_CHANGE_SUBTITLE = ("*How the period compares with the previous feedback: what improved, persisted, worsened "
                         "or held, and how the context changed.*")
 STEP_CHANGE_TASK = "step-change"
+# Work and impact, the report's first section, as calibration starts from it:
+# what the person worked on and with what impact, a paragraph for each
+# initiative, the agent's to name and group, under its subtitle, the
+# script's. Each initiative cites its evidence, a period point by its id or
+# an item of data.json by its link: a Jira issue or epic, a pull request or a
+# Notion page; the report folds a table of it under the paragraphs. The
+# initiatives come most recent first, by the latest day of their evidence,
+# undated last, worked out by the script, never the agent.
+WORK_IMPACT_HEADING = "Work and impact"
+WORK_IMPACT_SUBTITLE = "*What the person worked on and with what impact, the most recent first.*"
+# The work and its impact's two parts, as the Observations' are: the
+# period's initiatives, then, only with previous feedback, a short list of
+# what the person worked on before the period, as that feedback says it, for
+# a review that looks back over the whole year. It is a reminder, so it cites
+# nothing.
+WORK_PERIOD_HEADING = "In the period"
+EARLIER_WORK_HEADING = "Before the period"
+EARLIER_WORK_TASK = "earlier-work"
+EARLIER_WORK_SHAPE = '{"bullets": ["...", ...]}'
+MAX_EARLIER_BULLETS = 5
+WORK_IMPACT_TASK = "work-impact"
+OBSERVATIONS_TASK = "observations"
+WORK_IMPACT_SHAPE = ('{"initiatives": [{"title": "...", "impact": "...", "paragraph": "...", '
+                     '"evidence": ["G2", "https://...", ...]}, ...]}')
+WORK_IMPACT_FIELDS = ("title", "impact", "paragraph", "evidence")
+# How the evidence table names each kind of item data.json holds.
+WORK_KINDS = {"issue": "Jira", "epic": "Jira epic",
+              "pr": "GitHub", "page": "Notion"}
+# How the evidence table names a Notion page's link, which has no key.
+NOTION_KEY = "Notion page"
 # What the agents read, each made from data.json, and what they write: one
-# summarises each table of observations, a few flowing paragraphs above it,
-# the other writes the step change. Each is about OBSERVATIONS_WORDS words,
-# by part, fewer for a table of few points, the context half as long, as it
-# says facts once rather than weighing themes. An agent writes up to any
+# summarises the observations, a few sentences for each company value worth
+# saying in going well and to improve and a paragraph of context, another
+# writes the step change, the others the work and its impact. Each text is
+# about WORDS words, by what it is, fewer when there is little
+# to say. An agent writes up to any
 # number it is told and a little over a target, so it is told the target
 # alone, in the protocol, the help and the error, and only more than
-# MAX_OBSERVATIONS_WORDS, a margin it never sees, is refused.
+# MAX_WORDS, a margin it never sees, is refused.
 OBSERVATIONS_BRIEF = "observations_brief.json"
 STEP_CHANGE_BRIEF = "step_change_brief.json"
+WORK_IMPACT_BRIEF = "work_impact_brief.json"
 OBSERVATIONS_CONTENT = "observations_content.json"
 STEP_CHANGE_CONTENT = "step_change_content.json"
-OBSERVATIONS_WORDS = {"going_well": 150,
-                      "to_improve": 150, "context": 75, "step_change": 150}
-MAX_OBSERVATIONS_WORDS = {"going_well": 200,
-                          "to_improve": 200, "context": 100, "step_change": 200}
+WORK_IMPACT_CONTENT = "work_impact_content.json"
+EARLIER_WORK_BRIEF = "earlier_work_brief.json"
+EARLIER_WORK_CONTENT = "earlier_work_content.json"
+WORDS = {"value": 75, "context": 75, "step_change": 150,
+                      "work_impact": 75, "work_impact_line": 30, "earlier_work": 30}
+MAX_WORDS = {"value": 100, "context": 100, "step_change": 200,
+             "work_impact": 100, "work_impact_line": 40, "earlier_work": 40}
 # The chart of the resolved issues by epic, beside the main focus.
 EPICS_CHART = "jira_epics.svg"
 # The GitHub cells of the report, in order, as the Jira ones, and the chart
@@ -284,10 +328,14 @@ def expected_files(prep):
     them, the period's other feedback, the previous feedback, the manager's notes on
     them, what their Slack messages show, the report's data, the brief of
     its observations and the agent's summaries of them, the brief of the
-    step change and the agent's step change, the _raw folder of what each
+    step change and the agent's step change, the brief of the work and its
+    impact and the agent's account of it, the brief of the work before the
+    period and the agent's list of it, the _raw folder of what each
     source gave, and the report with its _charts folder."""
     return {PERSON, *FEEDBACK_FILES.values(), NOTES, SLACK, DATA, OBSERVATIONS_BRIEF, OBSERVATIONS_CONTENT, STEP_CHANGE_BRIEF, STEP_CHANGE_CONTENT,
-            RAW_DIR, report_name(prep), CHARTS_DIR}
+            WORK_IMPACT_BRIEF, WORK_IMPACT_CONTENT, EARLIER_WORK_BRIEF, EARLIER_WORK_CONTENT, RAW_DIR, report_name(
+                prep),
+            CHARTS_DIR}
 
 
 def report_name(prep):
@@ -533,6 +581,16 @@ def previous_dir(prep):
     return work_folder(FOLDER_NAME, prep, "previous")
 
 
+def link_commands():
+    """The commands a task reads a linked item with, by the paths the skill
+    pre-approves, as its protocol names them: jira_ticket, which reads a Jira
+    ticket, pull_request, which reads a pull request, and extract_saved,
+    which lists what a too large result holds."""
+    return {"jira_ticket": f"{script_command(__file__, 'jira_ticket.py')} --key <key>",
+            "pull_request": "gh pr view <url> --comments",
+            "extract_saved": library_command(__file__, "extract_saved.py")}
+
+
 def write_prep_file(prep, name, value):
     """Writes `value` as indented JSON to the file `name` of the prep folder
     `prep`, through the shared writer; returns the file's path."""
@@ -754,34 +812,91 @@ def _is_evidence(item):
             and isinstance(item["link"], str) and (item["link"].startswith(WEB_LINK) or os.path.isabs(item["link"])))
 
 
-def observations_content_problems(observations_content, observations):
-    """Why `observations_content` isn't the agent's summaries of `observations`,
-    data.json's, empty when it is: one for each part of OBSERVATION_HEADINGS,
-    each a text of at most its MAX_OBSERVATIONS_WORDS words, empty exactly when
-    its table holds no point, a valued part's naming every company value its
-    table groups points under; one a point names only second is the agent's
-    to weigh, so it isn't checked, and context names none."""
-    if not (isinstance(observations_content, dict) and sorted(observations_content) == sorted(OBSERVATION_HEADINGS)):
-        return [f"observations_content.json must be {{{', '.join(f'\"{part}\": \"...\"' for part in OBSERVATION_HEADINGS)}}}"]
+def agent_files():
+    """(file, task, check) of each file step 6's agents write, in the order
+    the report shows them: the task that writes it and the function that
+    says why its value breaks its rules against data.json, each called as
+    check(value, data)."""
+    return ((WORK_IMPACT_CONTENT, WORK_IMPACT_TASK, work_impact_content_problems),
+            (EARLIER_WORK_CONTENT, EARLIER_WORK_TASK, earlier_work_content_problems),
+            (OBSERVATIONS_CONTENT, OBSERVATIONS_TASK, observations_content_problems),
+            (STEP_CHANGE_CONTENT, STEP_CHANGE_TASK, step_change_content_problems))
+
+
+def observations_content_problems(observations_content, data):
+    """Why `observations_content` isn't the agent's summaries of data.json's
+    observations, in `data`, empty when it is, as OBSERVATIONS_SHAPE: in a valued part,
+    `values`, each the name of a company value its table groups points
+    under, at least one when it groups any, and `also`, a text only when its
+    table holds points under no value, else null, each text not blank, of at
+    most its MAX_WORDS words, naming no id; context a text of at
+    most its words, empty exactly when its table holds no point."""
+    what, observations = OBSERVATIONS_CONTENT, data["observations"]
+    if not (isinstance(observations_content, dict) and sorted(observations_content) == sorted(OBSERVATION_HEADINGS)
+            and all(_is_value_summaries(observations_content[part]) for part in VALUED_PARTS)
+            and isinstance(observations_content["context"], str)):
+        return [f"{what} must be {OBSERVATIONS_SHAPE}"]
     problems = []
-    for part in OBSERVATION_HEADINGS:
-        text, points = observations_content[part], observations[part]
-        if not isinstance(text, str):
+    for part in VALUED_PARTS:
+        groups = observations[part]
+        named = [group["value"] for group in groups if group["value"]]
+        values, also = observations_content[part]["values"], observations_content[part]["also"]
+        if unknown := [value for value in values if value not in named]:
+            problems.append(f"{what}'s {part} summarises {', '.join(unknown)}, which its table groups no point under: "
+                            f"summarise only some of {', '.join(named) or 'none'}")
+        elif named and not values:
             problems.append(
-                f"observations_content.json's {part} must be a text")
-        elif points and not text.strip():
-            problems.append(
-                f"observations_content.json's {part} is empty: summarise its table's points")
-        elif not points and text.strip():
-            problems.append(
-                f"observations_content.json's {part} must be empty, as its table holds no point")
-        elif problem := _length_problem(f"observations_content.json's {part}", text, part):
-            problems.append(problem)
-        elif part in VALUED_PARTS and (missing := [group["value"] for group in points
-                                                   if group["value"] and group["value"].casefold() not in text.casefold()]):
-            problems.append(f"observations_content.json's {part} doesn't name {', '.join(missing)}: say, even briefly, how "
-                            "its table's points show each value they are grouped under")
+                f"{what}'s {part} summarises no value: summarise each of {', '.join(named)} worth saying")
+        texts = [(f"{what}'s {part} {value}", text)
+                 for value, text in values.items()]
+        if also is not None:
+            if all(group["value"] for group in groups):
+                problems.append(
+                    f"{what}'s {part} also must be null, as its table holds no point under no value")
+            else:
+                texts.append((f"{what}'s {part} also", also))
+        for field, text in texts:
+            if not text.strip():
+                problems.append(
+                    f"{field} is empty: say what its points show, or leave it out")
+            elif problem := _length_problem(field, text, "value"):
+                problems.append(problem)
+            elif ids := POINT_ID_TEXT.findall(text):
+                problems.append(
+                    f"{field} names {', '.join(ids)}: say what the points show in words")
+    text, points = observations_content["context"], observations["context"]
+    if points and not text.strip():
+        problems.append(
+            f"{what}'s context is empty: summarise its table's points")
+    elif not points and text.strip():
+        problems.append(
+            f"{what}'s context must be empty, as its table holds no point")
+    elif problem := _length_problem(f"{what}'s context", text, "context"):
+        problems.append(problem)
     return problems
+
+
+def observation_summary(part, summaries, observations):
+    """The text above the table of `part`, as the report writes it from
+    `summaries`, observations_content.json's for it, and `observations`,
+    data.json's: in a valued part, each value it summarises, in its table's
+    order, its name in bold over its summary, then, when it has one, its
+    ALSO line; in context, its summary."""
+    if part not in VALUED_PARTS:
+        return summaries.strip()
+    blocks = [f"<b>{esc(group['value'])}</b>\n\n{summaries['values'][group['value']].strip()}"
+              for group in observations[part] if group["value"] in summaries["values"]]
+    if summaries["also"] is not None:
+        blocks.append(f"<b>{ALSO}</b> {summaries['also'].strip()}")
+    return "\n\n".join(blocks)
+
+
+def _is_value_summaries(value):
+    """Whether `value` is a valued part's summaries as OBSERVATIONS_SHAPE
+    says: {values: {name: text}, also: text or null}."""
+    return (isinstance(value, dict) and sorted(value) == ["also", "values"] and isinstance(value["values"], dict)
+            and all(isinstance(text, str) for text in value["values"].values())
+            and (value["also"] is None or isinstance(value["also"], str)))
 
 
 def step_change_content_problems(step_change, data):
@@ -789,7 +904,7 @@ def step_change_content_problems(step_change, data):
     previous feedback to the period's points, those of data.json, `data`,
     empty when it is: null exactly when there is no
     previous feedback; else a summary, not empty, of at most its
-    MAX_OBSERVATIONS_WORDS words, naming no id, and rows, each {previous_point,
+    MAX_WORDS words, naming no id, and rows, each {previous_point,
     change, evidence}: the point one of the previous feedback's ids, a row for each aspect of it
     that went differently, or null; the change one of STEP_CHANGE_PARTS for
     the point's part, or for None when it has none; the evidence period
@@ -857,14 +972,144 @@ def step_change_content_problems(step_change, data):
     return problems
 
 
+def work_impact_content_problems(work_impact, data, ordered=True):
+    """Why `work_impact`, work_impact_content.json's, isn't the account of the
+    work and its impact from `data`, data.json, empty when it is: at least one
+    initiative, each {title, impact, paragraph, evidence}: its title a text,
+    not blank, listed once; its impact, a line, and its paragraph not empty,
+    each of at most its MAX_WORDS words, naming no id; its evidence at least one of work_evidence()'s
+    references, each once; and, when `ordered`, the initiatives most recent
+    first, by by_recency()."""
+    what = WORK_IMPACT_CONTENT
+    if not (isinstance(work_impact, dict) and sorted(work_impact) == ["initiatives"]
+            and isinstance(work_impact["initiatives"], list) and work_impact["initiatives"]):
+        return [f"{what} must be {WORK_IMPACT_SHAPE}, with at least one initiative"]
+    index = work_evidence(data)
+    problems, titles = [], []
+    for number, initiative in enumerate(work_impact["initiatives"], 1):
+        field = f"{what}'s initiative {number}"
+        if not (isinstance(initiative, dict) and sorted(initiative) == sorted(WORK_IMPACT_FIELDS)
+                and all(isinstance(initiative[name], str) for name in ("title", "impact", "paragraph"))
+                and isinstance(initiative["evidence"], list)
+                and all(isinstance(item, str) for item in initiative["evidence"])):
+            problems.append(
+                f'{field} must be {{"title": "...", "impact": "...", "paragraph": "...", '
+                '"evidence": ["G2", "https://...", ...]}}')
+            continue
+        title, impact, paragraph, evidence = (initiative[name]
+                                              for name in WORK_IMPACT_FIELDS)
+        if not title.strip():
+            problems.append(f"{field}'s title is empty: name the initiative")
+        elif title in titles:
+            problems.append(
+                f"{field}'s title, {title!r}, names another initiative too: give each its own")
+        titles.append(title)
+        for name, text, part, empty in (("impact", impact, "work_impact_line", "say in a line what it changed"),
+                                        ("paragraph", paragraph, "work_impact", "say what the person did")):
+            if not text.strip():
+                problems.append(f"{field}'s {name} is empty: {empty}")
+            elif problem := _length_problem(f"{field}'s {name}", text, part):
+                problems.append(problem)
+            elif ids := POINT_ID_TEXT.findall(text):
+                problems.append(f"{field}'s {name} names {', '.join(ids)}: say what the points show in words, as "
+                                "ids belong only in its evidence")
+        if not evidence:
+            problems.append(
+                f"{field}'s evidence is empty: cite the points and items it rests on")
+        elif unknown := [item for item in evidence if item not in index]:
+            problems.append(f"{field}'s evidence names {', '.join(unknown)}, which the brief doesn't hold: cite a "
+                            "point by its id, such as G1, or an issue, epic, pull request or page by its link")
+        elif len(set(evidence)) != len(evidence):
+            problems.append(
+                f"{field}'s evidence names an item more than once: name each once")
+    if ordered and not problems and work_impact["initiatives"] != by_recency(work_impact["initiatives"], index):
+        problems.append(f"{what}'s initiatives must come most recent first, by their evidence's latest day: record "
+                        "them with set_work_impact.py, which orders them")
+    return problems
+
+
+def earlier_work_content_problems(earlier_work, data):
+    """Why `earlier_work`, earlier_work_content.json's, isn't the list of the
+    work before the period from `data`, data.json, empty when it is: null
+    exactly when there is no previous feedback; else {bullets}, one to
+    MAX_EARLIER_BULLETS, each a text, not blank, of at most its
+    MAX_WORDS words, naming no id."""
+    what = EARLIER_WORK_CONTENT
+    if data["previous"] is None:
+        return [] if earlier_work is None else [f"{what} must be null, as there is no previous feedback"]
+    if not (isinstance(earlier_work, dict) and sorted(earlier_work) == ["bullets"]
+            and isinstance(earlier_work["bullets"], list)
+            and all(isinstance(bullet, str) for bullet in earlier_work["bullets"])):
+        return [f"{what} must be {EARLIER_WORK_SHAPE}, as there is previous feedback"]
+    bullets = earlier_work["bullets"]
+    problems = []
+    if not 1 <= len(bullets) <= MAX_EARLIER_BULLETS:
+        problems.append(f"{what} has {len(bullets)} bullets: write one to {MAX_EARLIER_BULLETS}, the work that "
+                        "mattered most")
+    for number, bullet in enumerate(bullets, 1):
+        field = f"{what}'s bullet {number}"
+        if not bullet.strip():
+            problems.append(f"{field} is empty: say what the person worked on")
+        elif problem := _length_problem(field, bullet, "earlier_work"):
+            problems.append(problem)
+        elif ids := POINT_ID_TEXT.findall(bullet):
+            problems.append(
+                f"{field} names {', '.join(ids)}: say what the feedback said in words")
+    return problems
+
+
+def by_recency(initiatives, index):
+    """`initiatives` most recent first, by the latest day of their evidence in
+    `index`, work_evidence()'s, those with none dated last, each kept in the
+    order given among those of the same day."""
+    def latest(initiative):
+        days = [index[item]["date"]
+                for item in initiative["evidence"] if index[item]["date"]]
+        return (bool(days), max(days, default=""))
+    return sorted(initiatives, key=latest, reverse=True)
+
+
+def work_evidence(data):
+    """{reference: {kind, title, key, link, date, source}}: everything an
+    initiative of the work may cite in `data`, data.json: each period point by
+    its id, its kind "point", its text as title, no key nor link, its latest
+    evidence's day and its source; each Jira issue, its epic, pull request and
+    Notion page by its link, its kind one of WORK_KINDS, its title, its key,
+    the issue's or epic's, the pull request's repository and number or
+    NOTION_KEY, its day its latest in data.json, an epic's its issues' latest
+    and a page's the last of the range it was found in, and no source. A
+    link that is some issue's epic is an epic, even when the person reported
+    it too."""
+    index = {point["id"]: {"kind": "point", "title": point["point"], "key": None, "link": None,
+                           "date": point["date"], "source": point["source"]}
+             for _, point in period_points(data["observations"]).values()}
+
+    def add(kind, title, key, link, day):
+        found = index.setdefault(link, {"kind": kind, "title": title, "key": key,
+                                        "link": link, "date": day, "source": None})
+        found["date"] = max(found["date"] or "", day or "") or None
+        if kind == "epic":
+            found["kind"] = kind
+    for issue in (*data["jira"]["created"], *data["jira"]["resolved"]):
+        add("issue", issue["title"], issue["key"], issue["url"], issue["date"])
+        if epic := issue["epic"]:
+            add("epic", epic["title"], epic["key"], epic["url"], issue["date"])
+    for pr in (*data["github"]["opened"], *data["github"]["merged"]):
+        add("pr", pr["title"],
+            f'{pr["repo"]}#{pr["number"]}', pr["url"], pr["date"])
+    for page in data["notion"]["created"]:
+        add("page", page["title"], NOTION_KEY, page["url"], page["between"][1])
+    return index
+
+
 def _length_problem(what, text, part):
-    """Why `text`, `what`, the summary of `part`, is too long, or None: more
-    than its MAX_OBSERVATIONS_WORDS words, the error giving the target
+    """Why `text`, `what`, an agent's text of `part`, a key of WORDS, is too
+    long, or None: more than its MAX_WORDS words, the error giving the target
     alone."""
-    if word_count(text) <= MAX_OBSERVATIONS_WORDS[part]:
+    if word_count(text) <= MAX_WORDS[part]:
         return None
-    return (f"{what} has {word_count(text)} words, more than {OBSERVATIONS_WORDS[part]}: cut it to about "
-            f"{OBSERVATIONS_WORDS[part]}, keeping what matters most")
+    return (f"{what} has {word_count(text)} words, more than {WORDS[part]}: cut it to about "
+            f"{WORDS[part]}, keeping what matters most")
 
 
 def period_points(observations):

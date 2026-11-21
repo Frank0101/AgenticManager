@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
 import check_prep  # noqa: E402
 import common  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import (OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT, MANAGER_FEEDBACK, NOTES, OTHER_FEEDBACK, PERSON, PREVIOUS_FEEDBACK, PREP,
+from prep_fixture import (WORK_IMPACT_CONTENT, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT, MANAGER_FEEDBACK, NOTES, OTHER_FEEDBACK, PERSON, PREVIOUS_FEEDBACK, PREP,
                           SLACK, DATA, WORK_RAW, temp_output, write_prep)  # noqa: E402
 
 TODAY = date(2026, 11, 10)
@@ -76,12 +76,17 @@ class CheckTest(unittest.TestCase):
                      **WORK_RAW["github"], "start": "2026-08-01"}}}, None, "data.json: the github raw file is for"),
                  ("no observations content", {"observations_content": None},
                   None, "missing observations_content.json"),
-                 ("observations content that breaks a rule", {"observations_content": {**OBSERVATIONS_CONTENT, "to_improve": ""}}, None,
-                  "observations_content.json: observations_content.json's to_improve is empty"),
+                 ("observations content that breaks a rule", {"observations_content": {**OBSERVATIONS_CONTENT, "to_improve": {"values": {}, "also": None}}},
+                  None, "observations_content.json: observations_content.json's to_improve summarises no value"),
                  ("no step change", {"step_change_content": None},
                   None, "missing step_change_content.json"),
                  ("a step change row missing", {"step_change_content": {**STEP_CHANGE_CONTENT, "rows": STEP_CHANGE_CONTENT["rows"][:1]}},
                   None, "step_change_content.json: step_change_content.json has no row for P-I1, P-I2"),
+                 ("no work and impact", {"work_impact_content": None},
+                  None, "missing work_impact_content.json"),
+                 ("work and impact out of order", {"work_impact_content": {
+                     "initiatives": WORK_IMPACT_CONTENT["initiatives"][::-1]}},
+                  None, "work_impact_content.json: work_impact_content.json's initiatives must come most recent first"),
                  ("no report", {"report": False},
                   None, "_Review_Prep.md, _charts"),
                  ("a chart more", {}, "_charts/extra.svg",

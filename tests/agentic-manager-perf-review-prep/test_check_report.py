@@ -16,7 +16,7 @@ import check_report  # noqa: E402
 import common  # noqa: E402
 import make_report  # noqa: E402
 sys.path.insert(0, TEST_DIR)
-from prep_fixture import OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT, CONTEXT_STEP_CHANGE, CONTEXT_DATA, CONTEXT_SUMMARIES, DATA, DATA_BY_PROJECT, DATA_NO_EPIC_FIRST, PERSON, REPORT_FOLDER, SUMMARIES, VALUE_NAMES  # noqa: E402
+from prep_fixture import EARLIER_WORK_CONTENT, POINT_WORK_IMPACT, WORK_IMPACT_CONTENT, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT, CONTEXT_STEP_CHANGE, CONTEXT_DATA, CONTEXT_SUMMARIES, DATA, DATA_BY_PROJECT, DATA_NO_EPIC_FIRST, PERSON, REPORT_FOLDER, SUMMARIES, VALUE_NAMES  # noqa: E402
 
 
 class CheckReportTest(unittest.TestCase):
@@ -27,10 +27,18 @@ class CheckReportTest(unittest.TestCase):
         # worked out again from the items, and the observations' order from
         # the summaries.
         report = make_report.render(
-            PERSON, DATA, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT)
+            PERSON, DATA, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT, WORK_IMPACT_CONTENT)
 
         def swapped(first, second):
             return lambda text: text.replace(first, "\0").replace(second, first).replace("\0", second)
+
+        # A change in the Observations alone, as the work and its impact's
+        # evidence shows the same points.
+        def in_observations(old, new):
+            def edit(text):
+                head, tail = text.split("## Observations", 1)
+                return head + "## Observations" + tail.replace(old, new, 1)
+            return edit
         slack, notes = (
             point["point"] for point in DATA["observations"]["going_well"][0]["points"])
         page, piece = (point["point"]
@@ -39,11 +47,11 @@ class CheckReportTest(unittest.TestCase):
                  ("two points swapped, the older first",
                   swapped(slack, notes), "Going well points"),
                  ("a value moved under another",
-                  (">Teamwork<", ">Ownership<"), "Going well points"),
+                  ('<td rowspan="2">Teamwork<', '<td rowspan="2">Ownership<'), "Going well points"),
                  ("the undated page's context point after a dated one",
                   swapped(page, piece), "Context points"),
-                 ("a page count changed", ("Pages created</b> (1)",
-                  "Pages created</b> (2)"), "Notion pages"),
+                 ("a page count changed", ("### Pages created (1)",
+                  "### Pages created (2)"), "Notion pages"),
                  ("a page's week changed",
                   (">10–16 Aug<", ">17–23 Aug<"), "Notion pages"),
                  ("a page's area changed",
@@ -53,7 +61,22 @@ class CheckReportTest(unittest.TestCase):
                  ("no Notion section", ("## Notion", "## Pages"),
                   "its Jira one and its Notion one"),
                  ("no Feedback section", ("## Observations", "## Evidence"),
-                  "must have its Observations section"),
+                  "then its Observations one"),
+                 ("no Work and impact section", ("## Work and impact", "## Work"),
+                  "must have its Work and impact section"),
+                 ("the Work and impact heading unmarked", (f"## {common.ai_marked('Work and impact')}",
+                                                           "## Work and impact"), "heading marked as the agent's"),
+                 ("the Work and impact subtitle changed", ("the most recent first.*", "the oldest first.*"),
+                  "heading marked as the agent's, then its subtitle"),
+                 ("an initiative's paragraph changed", ("keeping to the plan", "beyond the plan"),
+                  "Work and impact doesn't show"),
+                 ("two initiatives swapped", swapped("<b>Billing migration</b>", "<b>Old billing retirement</b>"),
+                  "Work and impact doesn't show"),
+                 ("an evidence's key changed", (">acme/billing#1</a>",
+                  ">acme/billing#2</a>"), "Work and impact evidence"),
+                 ("an evidence's link changed", ('href="https://www.notion.so/billing-plan">Notion page</a>',
+                                                 'href="https://www.notion.so/other">Notion page</a>'),
+                  "Work and impact evidence"),
                  ("no Observations subtitle", ("*What the current manager feedback, the period's other feedback, the "
                                                "manager's notes and Slack show, by company value.*\n\n", ""),
                   "Observations must start with its subtitle"),
@@ -65,11 +88,14 @@ class CheckReportTest(unittest.TestCase):
                   "Going well points"),
                  ("a manager feedback point dropped", ("Has led the billing migration well since May", "Has led it well"),
                   "Going well points"),
-                 ("a point's text changed", ("Presented the migration",
-                  "Presented the plan"), "Going well points"),
+                 ("a point's text changed", in_observations("Presented the migration",
+                                                            "Presented the plan"), "Going well points"),
                  ("a point's source changed",
                   (">Slack<", ">Other feedback<"), "Going well points"),
-                 ("a reference changed", ("<td>Other feedback</td><td>–</td>", "<td>Other feedback</td><td>Q2</td>"),
+                 ("a reference changed", ("<td></td><td>Agreed to own the billing migration and has kept to its plan</td>"
+                                          "<td>Other feedback</td><td>–</td>",
+                                          "<td></td><td>Agreed to own the billing migration and has kept to its plan</td>"
+                                          "<td>Other feedback</td><td>Q2</td>"),
                   "Going well points"),
                  ("an evidence's day changed", (">Journal 20 Aug</a>",
                   ">Journal 21 Aug</a>"), "To improve points"),
@@ -105,7 +131,7 @@ class CheckReportTest(unittest.TestCase):
                  ("the step change summary changed", ("Jane no longer needs support", "Jane needs support"),
                   "step change summary"),
                  ("no Step change section", ("## Step change",
-                  "## Shift"), "then its Step change one"),
+                  "## Shift"), "its Step change one"),
                  ("a value's span changed", ('rowspan="2">Teamwork',
                   'rowspan="1">Teamwork'), "Going well points"),
                  ("a count changed", ('">1</a> (1 Task)',
@@ -136,11 +162,57 @@ class CheckReportTest(unittest.TestCase):
                 text = change(report) if callable(change) else report.replace(
                     change[0], change[1], 1) if change else report
                 problems = " ".join(
-                    check_report.report_problems(text, DATA, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT))
+                    check_report.report_problems(text, DATA, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT, WORK_IMPACT_CONTENT))
                 if expected is None:
                     self.assertEqual(problems, "")
                 else:
                     self.assertIn(expected, problems)
+
+    def test_earlier_work(self):
+        # name: (a change to the report, expected in the problems, or None):
+        # with the work before the period, its bullets after a divider under
+        # their heading, after the period's evidence; with none, nothing
+        # after the evidence.
+        report = make_report.render(PERSON, DATA, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT,
+                                    WORK_IMPACT_CONTENT, EARLIER_WORK_CONTENT)
+        bullet = EARLIER_WORK_CONTENT["bullets"][0]
+        cases = [("as written", None, None),
+                 ("a bullet changed", (bullet, "Jane did other things."),
+                  "Before the period"),
+                 ("the heading dropped", ("### Before the period", ""), "Before the period")]
+        for name, change, expected in cases:
+            with self.subTest(name):
+                text = report.replace(
+                    change[0], change[1], 1) if change else report
+                problems = " ".join(check_report.report_problems(
+                    text, DATA, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT,
+                    WORK_IMPACT_CONTENT, EARLIER_WORK_CONTENT))
+                if expected is None:
+                    self.assertEqual(problems, "")
+                else:
+                    self.assertIn(expected, problems)
+        self.assertIn("Before the period", " ".join(check_report.report_problems(
+            report, DATA, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT,
+            WORK_IMPACT_CONTENT, None)))
+
+    def test_an_epic_the_person_also_reported(self):
+        # An epic the person reported, later than the story under it, is
+        # one item: the report and the check both name it an epic, dated by
+        # the latest day either gives it.
+        epic = {"key": "PROJ-1", "title": "Billing", "type": "Epic", "epic": None, "status": "Done",
+                "url": "https://acme.atlassian.net/browse/PROJ-1", "date": "2026-10-01", "points": None}
+        data = {**DATA, "jira": {**DATA["jira"],
+                                 "created": [*DATA["jira"]["created"], epic]}}
+        self.assertEqual(
+            (common.work_evidence(data)[epic["url"]]["kind"],
+             common.work_evidence(data)[epic["url"]]["date"]), ("epic", "2026-10-01"))
+        report = make_report.render(PERSON, data, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT,
+                                    WORK_IMPACT_CONTENT)
+        # The Jira figures aren't recounted for the added issue: only the
+        # work and its impact is checked here.
+        self.assertEqual([problem for problem in check_report.report_problems(
+            report, data, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT,
+            WORK_IMPACT_CONTENT) if "Work and impact" in problem], [])
 
     def test_model_problems(self):
         # name: (a change to data.json's Jira, or GitHub, facts, expected in
@@ -173,7 +245,7 @@ class CheckReportTest(unittest.TestCase):
                 data = copy.deepcopy(DATA)
                 change(data[source])
                 self.assertIn(expected, " ".join(check_report.report_problems(
-                    make_report.render(PERSON, data, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT), data, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT)))
+                    make_report.render(PERSON, data, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT, WORK_IMPACT_CONTENT), data, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT, WORK_IMPACT_CONTENT)))
 
     def test_observations_same_day(self):
         # Evidence of the same day keeps the order the summary gives it, in
@@ -187,7 +259,7 @@ class CheckReportTest(unittest.TestCase):
         data = {
             **DATA, "observations": build_data.observations(summaries, VALUE_NAMES)}
         self.assertEqual(check_report.report_problems(
-            make_report.render(PERSON, data, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT), data, summaries, VALUE_NAMES, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT), [])
+            make_report.render(PERSON, data, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT, WORK_IMPACT_CONTENT), data, summaries, VALUE_NAMES, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT, WORK_IMPACT_CONTENT), [])
 
     def test_step_change(self):
         # name: (data.json's previous feedback, step_change_content.json,
@@ -228,9 +300,9 @@ class CheckReportTest(unittest.TestCase):
             with self.subTest(name):
                 data = {**DATA, "previous": previous}
                 report = make_report.render(
-                    PERSON, data, REPORT_FOLDER, OBSERVATIONS_CONTENT, step_change)
+                    PERSON, data, REPORT_FOLDER, OBSERVATIONS_CONTENT, step_change, WORK_IMPACT_CONTENT)
                 problems = " ".join(check_report.report_problems(
-                    edit(report), data, summaries, VALUE_NAMES, REPORT_FOLDER, OBSERVATIONS_CONTENT, step_change))
+                    edit(report), data, summaries, VALUE_NAMES, REPORT_FOLDER, OBSERVATIONS_CONTENT, step_change, WORK_IMPACT_CONTENT))
                 if expected is None:
                     self.assertEqual(problems, "")
                 else:
@@ -246,12 +318,12 @@ class CheckReportTest(unittest.TestCase):
         for name, data, entry in cases:
             with self.subTest(name):
                 report = make_report.render(
-                    PERSON, data, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT)
+                    PERSON, data, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT, POINT_WORK_IMPACT)
                 self.assertIn(entry, report)
                 self.assertEqual(check_report.report_problems(
-                    report, data, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT), [])
+                    report, data, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT, POINT_WORK_IMPACT), [])
                 self.assertIn("main focus", " ".join(check_report.report_problems(
-                    report.replace(entry, entry.replace("(", "(7"), 1), data, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT)))
+                    report.replace(entry, entry.replace("(", "(7"), 1), data, SUMMARIES, VALUE_NAMES, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT, POINT_WORK_IMPACT)))
 
 
 if __name__ == "__main__":

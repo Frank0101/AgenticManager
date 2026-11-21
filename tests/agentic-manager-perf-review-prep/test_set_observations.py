@@ -22,7 +22,8 @@ class SetObservationsTest(unittest.TestCase):
         # nothing, with every problem.
         folder = temp_output(self)
         write_prep(folder, observations_content=None, report=False)
-        cases = [("a summary empty", {**OBSERVATIONS_CONTENT, "to_improve": ""}, "to_improve is empty"),
+        cases = [("no value summarised", {**OBSERVATIONS_CONTENT, "to_improve": {"values": {}, "also": None}},
+                  "to_improve summarises no value"),
                  ("a step change too", {**OBSERVATIONS_CONTENT, "step_change": None}, "observations_content.json must be")]
         for name, value, expected in cases:
             with self.subTest(name), self.assertRaisesRegex(SystemExit, f"{expected}(.|\n)*END_OF_INPUT"):

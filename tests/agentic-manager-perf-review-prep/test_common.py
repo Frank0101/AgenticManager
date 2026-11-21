@@ -389,46 +389,56 @@ class CommonTest(unittest.TestCase):
                 common.prep_dir(prep)
 
     def test_observations_content_problems(self):
-        # name: (observations_content.json, the tables' points, going well's and to
-        # improve's groups and context's points, expected in its problems, or
-        # None for none): each table's summary, empty exactly when the table
-        # holds no point, not longer than MAX_OBSERVATIONS_WORDS words, and a
-        # valued table's naming each value it groups points under; context
-        # names none, so none is checked.
-        long = "word " * (common.MAX_OBSERVATIONS_WORDS["going_well"] + 1)
-        summaries = {"going_well": "Good.",
-                     "to_improve": "Better.", "context": "Moved team."}
-        cases = [("all summarised", summaries, (1, 1, 1), None),
+        # name: (observations_content.json, going well's and to improve's
+        # groups, by value or None, and context's points, expected in its
+        # problems, or None for none): in a valued table, a summary for each
+        # value worth saying, of the values its table groups points under, at
+        # least one when it has any, and also only when it has points under
+        # no value; each within its words, naming no id; context empty exactly
+        # when its table holds no point.
+        def part(values, also=None):
+            return {"values": values, "also": also}
+        summaries = {"going_well": part({"Teamwork": "Good."}), "to_improve": part({}, "Better."),
+                     "context": "Moved team."}
+        groups = (["Teamwork", None], [None], 1)
+        long = "word " * (common.MAX_WORDS["value"] + 1)
+        cases = [("all summarised", summaries, groups, None),
+                 ("some values only", {**summaries, "going_well": part({"Teamwork": "Good."})},
+                  (["Teamwork", "Ownership"], [None], 1), None),
+                 ("no value summarised", {
+                  **summaries, "going_well": part({})}, groups, "summarises no value"),
+                 ("a value its table doesn't hold", {**summaries, "going_well": part({"Craft": "Good."})}, groups,
+                  "summarises Craft, which its table groups no point under"),
+                 ("also with no point under no value", {**summaries, "to_improve": part({"Ownership": "Better."},
+                                                                                        "And more.")},
+                  (["Teamwork", None], ["Ownership"], 1), "also must be null"),
+                 ("a value too long", {**summaries, "going_well": part({"Teamwork": long})}, groups,
+                  f"more than {common.WORDS['value']}: cut it"),
+                 ("an id in a value", {**summaries, "going_well": part({"Teamwork": "Good, as G3 says."})}, groups,
+                  "names G3"),
+                 ("an empty value", {
+                  **summaries, "going_well": part({"Teamwork": " "})}, groups, "is empty"),
                  ("no point to improve", {
-                  **summaries, "to_improve": ""}, (1, 0, 1), None),
-                 ("a table not summarised", {**summaries, "going_well": " "}, (1, 1, 1),
-                  "going_well is empty"),
-                 ("a summary of no point", summaries, (1, 0, 1),
-                  "to_improve must be empty"),
-                 ("too long", {**summaries, "going_well": long},
-                  (1, 1, 1), f"more than {common.OBSERVATIONS_WORDS['going_well']}: cut it"),
-                 ("context too long", {**summaries, "context": "word " * (common.MAX_OBSERVATIONS_WORDS["context"] + 1)},
-                  (1, 1, 1), f"more than {common.OBSERVATIONS_WORDS['context']}: cut it"),
-                 ("a field missing", {"going_well": "Good.", "to_improve": "Better."}, (1, 1, 1),
-                  'must be {"going_well"'),
-                 ("a field too many", {**summaries, "step_change": None}, (1, 1, 1),
-                  'must be {"going_well"'),
-                 ("a value not named", {**summaries, "going_well": "Good teamwork.", "to_improve": ""},
-                  (["Teamwork", "Ownership", None], 0, 1), "doesn't name Ownership"),
-                 ("context not summarised", {**summaries, "context": ""}, (1, 1, 1),
-                  "context is empty"),
-                 ("context of no point", summaries, (1, 1, 0),
-                  "context must be empty"),
-                 ("no context", {**summaries, "context": ""}, (1, 1, 0), None)]
+                  **summaries, "to_improve": part({})}, (["Teamwork", None], [], 1), None),
+                 ("context too long", {**summaries, "context": "word " * (common.MAX_WORDS["context"] + 1)},
+                  groups, f"more than {common.WORDS['context']}: cut it"),
+                 ("a field missing", {"going_well": summaries["going_well"], "to_improve": summaries["to_improve"]},
+                  groups, 'must be {"going_well"'),
+                 ("a part as a text", {
+                  **summaries, "going_well": "Good."}, groups, 'must be {"going_well"'),
+                 ("context not summarised", {
+                  **summaries, "context": ""}, groups, "context is empty"),
+                 ("context of no point", summaries,
+                  (["Teamwork", None], [None], 0), "context must be empty"),
+                 ("no context", {**summaries, "context": ""}, (["Teamwork", None], [None], 0), None)]
         for name, content, counts, expected in cases:
             with self.subTest(name):
                 *valued, context = counts
-                groups = [[{"value": value} for value in n] if isinstance(n, list) else [{"value": None}] * n
-                          for n in valued]
-                observations = {**dict(zip(("going_well", "to_improve"), groups)),
+                observations = {**{name: [{"value": value} for value in values]
+                                   for name, values in zip(("going_well", "to_improve"), valued)},
                                 "context": [{"point": "Moved team"}] * context}
                 problems = " ".join(common.observations_content_problems(
-                    content, observations))
+                    content, {"observations": observations}))
                 if expected is None:
                     self.assertEqual(problems, "")
                 else:
@@ -451,7 +461,7 @@ class CommonTest(unittest.TestCase):
             return {"previous_point": previous_point, "change": change, "evidence": list(evidence)}
         context_review = {
             **PREVIOUS, "context": [{"id": "P-C1", "point": "Was new to billing"}]}
-        long = "word " * (common.MAX_OBSERVATIONS_WORDS["step_change"] + 1)
+        long = "word " * (common.MAX_WORDS["step_change"] + 1)
         cases = [("as written", step, PREVIOUS, None),
                  ("only the to-improve rows", {**step, "rows": [row("P-I1", "improved"),
                                                                 row("P-I2", "worsened", "I2")]},
@@ -509,9 +519,9 @@ class CommonTest(unittest.TestCase):
                  ("an empty summary", {**step, "summary": " "},
                   PREVIOUS, "summary is empty"),
                  ("a summary too long", {**step, "summary": long}, PREVIOUS,
-                  f"summary has {common.MAX_OBSERVATIONS_WORDS['step_change'] + 1} words, more than "
-                  f"{common.OBSERVATIONS_WORDS['step_change']}: cut it to about "
-                  f"{common.OBSERVATIONS_WORDS['step_change']}")]
+                  f"summary has {common.MAX_WORDS['step_change'] + 1} words, more than "
+                  f"{common.WORDS['step_change']}: cut it to about "
+                  f"{common.WORDS['step_change']}")]
         for name, step_change, previous, expected in cases:
             with self.subTest(name):
                 problems = " ".join(common.step_change_content_problems(
@@ -521,7 +531,7 @@ class CommonTest(unittest.TestCase):
                 else:
                     self.assertIn(expected, problems)
                     self.assertNotIn(
-                        str(common.MAX_OBSERVATIONS_WORDS["step_change"]), problems)
+                        str(common.MAX_WORDS["step_change"]), problems)
 
     def test_point_ids(self):
         # name: (part, place, prefix, id): by part and place, a previous

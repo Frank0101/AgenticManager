@@ -26,23 +26,31 @@ class FinishReportTest(unittest.TestCase):
                          ([], sorted(common.CHART_FILES)))
 
     def test_agents_files_first(self):
-        # name: (observations_content.json, step_change_content.json, expected problems, or a text
-        # in them): nothing written while one is missing or breaks a rule,
-        # each problem naming its file and field.
-        cases = [("all missing", None, None,
-                  ["observations_content.json is missing: write it, as the observations task says",
-                   "step_change_content.json is missing: write it, as the step-change task says"]),
-                 ("the step change missing", OBSERVATIONS_CONTENT, None,
+        # name: (the agent's files to write instead of the fixture's, None
+        # for missing, expected problems, or a text in them): nothing written
+        # while one is missing or breaks a rule, each problem naming its file
+        # and field.
+        files = ("work_impact_content", "earlier_work_content",
+                 "observations_content", "step_change_content")
+        cases = [("all missing", dict.fromkeys(files),
+                  [f"{name} is missing: write it, as the {task} task says"
+                   for name, task, _ in common.agent_files()]),
+                 ("the step change missing", {"step_change_content": None},
                   ["step_change_content.json is missing: write it, as the step-change task says"]),
-                 ("a summary breaking a rule", {
-                  **OBSERVATIONS_CONTENT, "going_well": ""}, STEP_CHANGE_CONTENT, "going_well is empty"),
-                 ("the step change breaking a rule", OBSERVATIONS_CONTENT, {**STEP_CHANGE_CONTENT, "rows": []},
+                 ("the work and its impact breaking a rule",
+                  {"work_impact_content": {"initiatives": []}}, "with at least one initiative"),
+                 ("the work before the period breaking a rule",
+                  {"earlier_work_content": {"bullets": []}}, "earlier_work_content.json"),
+                 ("a summary breaking a rule",
+                  {"observations_content": {**OBSERVATIONS_CONTENT,
+                                            "going_well": {"values": {}, "also": None}}},
+                  "going_well summarises no value"),
+                 ("the step change breaking a rule", {"step_change_content": {**STEP_CHANGE_CONTENT, "rows": []}},
                   "step_change_content.json has no row for P-I1, P-I2")]
-        for name, content, step_change, expected in cases:
+        for name, written, expected in cases:
             with self.subTest(name):
                 folder = temp_output(self)
-                write_prep(folder, observations_content=content,
-                           step_change_content=step_change, report=False)
+                write_prep(folder, **written, report=False)
                 made = finish_report.finish(PREP)
                 self.assertEqual((made["report"], os.path.exists(os.path.join(folder, PREP, common.CHARTS_DIR))),
                                  (None, False))

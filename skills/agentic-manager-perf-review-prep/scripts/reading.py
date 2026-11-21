@@ -16,7 +16,7 @@ from typing import Callable
 
 from common import (FOLDER_NAME, DESCRIPTION_WORDS, MAX_DESCRIPTION_WORDS, PERSON, PROTOCOL, POINT_LIMITS, RAW_DIR, SUMMARY_HELP,
                     SUMMARY_PARTS, VALUES, WEB_LINK, clear_folder, company_names, company_setting, days_between,
-                    fill_protocol, is_point, json_text, latest_day, library_command, newest_key, period_days, point_fields,
+                    fill_protocol, is_point, json_text, latest_day, link_commands, newest_key, period_days, point_fields,
                     point_shape, prep_dir, read_json, script_command, stdin_json, submit_section, summary_problems,
                     task_line, word_count, work_folder, write_prep_file, write_task_file)
 
@@ -396,11 +396,10 @@ def load_items(source, prep):
 
 def read_protocol(name, terms=None):
     """The protocol file `name`'s text, its shared parts filled in, with
-    `terms`, a source's words for them, and the command that reads a Jira
-    ticket by the path the skill pre-approves."""
+    `terms`, a source's words for them, and link_commands(), the commands
+    that read a linked item by the paths the skill pre-approves."""
     return fill_protocol(PROTOCOL, name, {**POINT_LIMITS, "description_words": DESCRIPTION_WORDS, **(terms or {}),
-                                          "jira_ticket": f"{script_command(__file__, 'jira_ticket.py')} --key <key>",
-                                          "extract_saved": library_command(__file__, "extract_saved.py")})
+                                          **link_commands()})
 
 
 def call(source):

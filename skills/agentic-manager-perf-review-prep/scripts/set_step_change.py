@@ -11,7 +11,7 @@ import argparse
 import json
 import os
 
-from common import (DATA, OBSERVATIONS_WORDS, STEP_CHANGE_CONTENT, STEP_CHANGE_PARTS,
+from common import (DATA, WORDS, STEP_CHANGE_CONTENT, STEP_CHANGE_PARTS,
                     step_change_content_problems, prep_dir, read_json, stdin_json, write_prep_file)
 
 INPUT = f"""Input, on stdin: the step change, such as:
@@ -25,7 +25,7 @@ INPUT = f"""Input, on stdin: the step change, such as:
   END_OF_INPUT
 
   summary       how the period compares with the brief's previous feedback,
-                about {OBSERVATIONS_WORDS["step_change"]} words, fewer when little changed
+                about {WORDS["step_change"]} words, fewer when little changed
   rows          at least a row per to-improve point of the previous feedback, the others only as change says, each:
     previous_point  the id of a point of the previous feedback, such as P-I1, or null
                   for a period context point it didn't have; a point whose aspects

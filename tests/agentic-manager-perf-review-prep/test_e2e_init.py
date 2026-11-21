@@ -56,6 +56,8 @@ REPORT_SCRIPT = os.path.join(SCRIPTS, "finish_report.py")
 PREPARE_SCRIPT = os.path.join(SCRIPTS, "prepare_report.py")
 OBSERVATIONS_SCRIPT = os.path.join(SCRIPTS, "set_observations.py")
 STEP_CHANGE_SCRIPT = os.path.join(SCRIPTS, "set_step_change.py")
+WORK_IMPACT_SCRIPT = os.path.join(SCRIPTS, "set_work_impact.py")
+EARLIER_WORK_SCRIPT = os.path.join(SCRIPTS, "set_earlier_work.py")
 SLACK_SCRIPT = os.path.join(SCRIPTS, "read_slack.py")
 TOKEN = "s3cret-token"
 JANE = {"accountId": "5b10ac8d82e05b22cc7d4ef5", "accountType": "atlassian", "displayName": "Jane Doe",
@@ -284,9 +286,9 @@ class ScriptsTest(unittest.TestCase):
         for path in prepared["briefs"]:
             with open(path, encoding="utf-8") as f:
                 briefs.append(json.load(f))
-        brief, step_change_brief = briefs
+        brief, step_change_brief, work_brief, earlier_brief = briefs
         self.assertEqual([line.split(":", 1)[0] for line in prepared["tasks"]],
-                         ["Task observations", "Task step-change"])
+                         ["Task work-impact", "Task earlier-work", "Task observations", "Task step-change"])
         self.assertEqual(work["jira"]["resolved"], [
             {"key": "PROJ-12", "title": "Migrate invoices", "type": "Story",
              "epic": {"key": "PROJ-1", "title": "Billing migration", "url": f"{self.base_url}/browse/PROJ-1"},
@@ -304,15 +306,39 @@ class ScriptsTest(unittest.TestCase):
         self.assertEqual((code, json.loads(out)["report"]), (1, None))
         self.assertIn("observations_content.json is missing", out)
         self.assertIn("step_change_content.json is missing", out)
-        # Each valued summary names the values its table groups points under.
-        content: dict[str, object] = {part: " ".join(["Jane did well, showing", *sorted({point["values"][0] for point in brief[part]
-                                                                                         if point["values"]})])
-                                      if brief[part] else "" for part in ("going_well", "to_improve")}
+        self.assertIn("work_impact_content.json is missing", out)
+        self.assertIn("earlier_work_content.json is missing", out)
+        # The work before the period, from the previous feedback, a list of
+        # one to five bullets that cite nothing.
+        self.assertEqual(earlier_brief["previous"]["going_well"], [
+                         FEEDBACK["going_well"][0]["point"]])
+        code, _, err = self.run_script(EARLIER_WORK_SCRIPT, "--prep", prep, stdin=json.dumps(
+            {"bullets": ["Jane migrated the billing, as P-G1 says."]}))
+        self.assertEqual(code, 1)
+        self.assertIn("names P-G1", err)
+        self.run_ok(EARLIER_WORK_SCRIPT, "--prep", prep, stdin=json.dumps(
+            {"bullets": ["Jane delivered the earlier billing work on time."]}))
+        # The work and its impact cites what the brief holds, by its link.
+        epic = next(group["url"]
+                    for group in work_brief["epics"] if group["key"])
+        code, _, err = self.run_script(WORK_IMPACT_SCRIPT, "--prep", prep, stdin=json.dumps(
+            {"initiatives": [{"title": "Billing", "impact": "Invoices moved to the new system.", "paragraph": "Jane migrated the invoices.",
+                              "evidence": ["https://example.test/elsewhere"]}]}))
+        self.assertEqual(code, 1)
+        self.assertIn("which the brief doesn't hold", err)
+        self.run_ok(WORK_IMPACT_SCRIPT, "--prep", prep, stdin=json.dumps(
+            {"initiatives": [{"title": "Billing", "impact": "Invoices moved to the new system.", "paragraph": "Jane migrated the invoices.",
+                              "evidence": [epic, PR["url"]]}]}))
+        # Each valued summary is by the values its table groups points under.
+        content: dict[str, object] = {part: {"values": {value: "Jane did well." for value in {
+            point["values"][0] for point in brief[part] if point["values"]}},
+            "also": "Jane did more." if any(not point["values"] for point in brief[part]) else None}
+            for part in ("going_well", "to_improve")}
         content["context"] = "Jane moved team." if brief["context"] else ""
         code, _, err = self.run_script(OBSERVATIONS_SCRIPT, "--prep", prep, stdin=json.dumps(
-            {**content, "going_well": "Jane did well."}))
+            {**content, "going_well": {"values": {"Craft": "Jane did well."}, "also": None}}))
         self.assertEqual(code, 1)
-        self.assertIn("doesn't name", err)
+        self.assertIn("which its table groups no point under", err)
         self.run_ok(OBSERVATIONS_SCRIPT, "--prep",
                     prep, stdin=json.dumps(content))
         # The step change compares with the previous feedback: it raised

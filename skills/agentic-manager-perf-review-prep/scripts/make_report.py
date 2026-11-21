@@ -1,27 +1,34 @@
-"""Writes a prep's report, <Person>_Review_Prep.md, from data.json, observations_content.json and step_change_content.json: the observations, going well and to improve by company value, then the context, then the step change from the previous feedback, each table under its summary, then the person's GitHub, Jira and Notion figures.
+"""Writes a prep's report, <Person>_Review_Prep.md, from data.json, work_impact_content.json, earlier_work_content.json, observations_content.json and step_change_content.json: the person's work and its impact, in the period and before it, then the observations, going well and to improve by company value, then the context, then the step change from the previous feedback, each table under its summary, then the person's GitHub, Jira and Notion figures.
 
 Every figure is one of data.json's facts, and every link one of its search
 addresses, so the report can't count differently from the model; the charts
 it shows are make_charts.py's.
 """
-from common import (CHARTS_DIR, EPICS_CHART, OBSERVATION_HEADINGS, OBSERVATIONS_SUBTITLE, OBSERVATION_SOURCES, FOCUS_SHARE, FOLDER_NAME, GITHUB_CELLS, HEADINGS, JIRA_CELLS, NO_VALUE, PAGES_HEADING, REPOS_CHART,
-                    NOT_RAISED, STEP_CHANGE_HEADING, STEP_CHANGE_NOT_APPLICABLE, STEP_CHANGE_ROW, STEP_CHANGE_SUBTITLE, STEP_CHANGES, VALUED_PARTS, ai_marked, chart_image, html_table, period_points, baseline_points, average_text, details_text, esc, link_href, reference_text, number, prep_dir, report_name, repo_code, repos_text, shown, size_text, types_text, week_text,
+from common import (observation_summary, EARLIER_WORK_HEADING, WORK_PERIOD_HEADING, CHARTS_DIR, EPICS_CHART, OBSERVATION_HEADINGS, OBSERVATIONS_SUBTITLE, OBSERVATION_SOURCES, FOCUS_SHARE, FOLDER_NAME, GITHUB_CELLS, HEADINGS, JIRA_CELLS, NO_VALUE, PAGES_HEADING, REPOS_CHART,
+                    NOT_RAISED, STEP_CHANGE_HEADING, STEP_CHANGE_NOT_APPLICABLE, STEP_CHANGE_ROW, STEP_CHANGE_SUBTITLE, STEP_CHANGES, VALUED_PARTS, WORK_IMPACT_HEADING, WORK_IMPACT_SUBTITLE, WORK_KINDS, ai_marked, work_evidence, chart_image, html_table, period_points, baseline_points, average_text, details_text, esc, link_href, reference_text, number, prep_dir, report_name, repo_code, repos_text, shown, size_text, types_text, week_text,
                     write_output_file)
 
 
-def write_report(prep, person, data, observations_content, step_change_content):
+def write_report(prep, person, data, observations_content, step_change_content, work_impact_content,
+                 earlier_work_content):
     """Write the prep `prep`'s report from `person`, its person.json, `data`,
-    its data.json, `observations_content`, its observations_content.json, and `step_change_content`, its
-    step_change_content.json; returns its path."""
+    its data.json, `observations_content`, its observations_content.json, `step_change_content`, its
+    step_change_content.json, `work_impact_content`, its work_impact_content.json, and
+    `earlier_work_content`, its earlier_work_content.json; returns its path."""
     path, _ = write_output_file(FOLDER_NAME, f"{prep}/{report_name(prep)}",
-                                render(person, data, prep_dir(prep), observations_content, step_change_content).encode("utf-8"))
+                                render(person, data, prep_dir(prep), observations_content, step_change_content,
+                                       work_impact_content, earlier_work_content).encode("utf-8"))
     return path
 
 
 # The report.
 
-def render(person, data, folder, observations_content, step_change_content):
-    """The report's text: the person and the period, then the Observations,
+def render(person, data, folder, observations_content, step_change_content, work_impact_content,
+           earlier_work_content=None):
+    """The report's text: the person and the period, then their work and its
+    impact, `work_impact_content`, work_impact_content.json, with the work
+    before the period, `earlier_work_content`, earlier_work_content.json,
+    when there is any, as a calibration starts from it, then the Observations,
     under OBSERVATIONS_SUBTITLE, what is going well, what to improve and the
     context, each summarised as
     `observations_content`, observations_content.json, says, then the step change, `step_change_content`,
@@ -33,7 +40,9 @@ def render(person, data, folder, observations_content, step_change_content):
     of the code, pull requests stay the plainest trace of what someone did,
     while tickets grow more generic."""
     return "\n".join([f"# {person['person']}: performance review prep", "",
-                      f"Period: {shown(person['start'], person['end'])}", "", "## Observations", "",
+                      f"Period: {shown(person['start'], person['end'])}", "",
+                      *work_impact_section(work_impact_content,
+                                           data, folder, earlier_work_content), "", "## Observations", "",
                       OBSERVATIONS_SUBTITLE, "", *observations_section(data["observations"],
                                                                        folder, observations_content), "",
                       *step_change_section(step_change_content, data["observations"],
@@ -46,10 +55,48 @@ def render(person, data, folder, observations_content, step_change_content):
                       *notion_section(data["notion"])]) + "\n"
 
 
+def work_impact_section(work_impact_content, data, folder, earlier_work_content):
+    """The work and its impact's lines: its heading, marked as the agent's,
+    its subtitle, the script's, then, under WORK_PERIOD_HEADING, each initiative of
+    `work_impact_content`, in its order, its title in bold over its impact,
+    a line in italics, and its paragraph, then, folded under them with how
+    many items they cite, a table, in small type, of each initiative's
+    evidence, in the order it cites it, by its item in `data`, data.json, as
+    work_evidence() gives it, laid out as the observations' tables: a
+    point's text, source, references, as its own row gives them, a note's
+    linked relative to `folder`, and id; an item's title, its kind, its
+    link by its key, and no id; then, with `earlier_work_content`, a
+    divider and, under EARLIER_WORK_HEADING, its bullets, which cite nothing."""
+    index, points = work_evidence(data), period_points(data["observations"])
+    lines = [f"## {ai_marked(WORK_IMPACT_HEADING)}", "",
+             WORK_IMPACT_SUBTITLE, "", f"### {WORK_PERIOD_HEADING}"]
+    for initiative in work_impact_content["initiatives"]:
+        lines += ["", f"<b>{esc(initiative['title'])}</b>", "", f"*{initiative['impact'].strip()}*",
+                  "", initiative["paragraph"].strip()]
+
+    def row(key):
+        item = index[key]
+        if item["kind"] == "point":
+            point = points[key][1]
+            return (f'<td>{esc(item["title"])}</td><td>{OBSERVATION_SOURCES[item["source"]]}</td>'
+                    f'<td>{reference(point, folder)}</td><td>{key}</td>')
+        return (f'<td>{esc(item["title"])}</td><td>{WORK_KINDS[item["kind"]]}</td>'
+                f'<td><a href="{esc(item["link"])}">{esc(item["key"])}</a></td><td>–</td>')
+    rows = grouped_rows((esc(initiative["title"]), [row(key) for key in initiative["evidence"]])
+                        for initiative in work_impact_content["initiatives"])
+    heads = observation_heads(((ai_marked("Initiative"), 20), (ai_marked("Evidence"), 45), ("Source", 10),
+                               ("References", 20), ("ID", 5)))
+    earlier = (["", "---", "", f"### {EARLIER_WORK_HEADING}", "",
+                *(f"- {bullet.strip()}" for bullet in earlier_work_content["bullets"])]
+               if earlier_work_content else [])
+    return [*lines, "", f"<details><summary>{details_text(len(rows), ('item', 'items'))}</summary>", "",
+            *html_table(heads, *rows, small=True), "", "</details>", *earlier]
+
+
 def observations_section(observations, folder, observations_content):
     """The Observations section's lines: for each part of OBSERVATION_HEADINGS,
     a divider apart from the one before, its heading, marked as the agent's, as
-    its summary, `observations_content`'s, follows, then, folded under it as the detail,
+    its summary, `observations_content`'s by observation_summary(), follows, then, folded under it as the detail,
     with how many points it holds, a table of them, in small type, by
     observation_rows(), the most recent first, each with its source and its
     reference: – for a feedback, which has none, or a reading's
@@ -57,8 +104,9 @@ def observations_section(observations, folder, observations_content):
     lines = []
     for part, heading in OBSERVATION_HEADINGS.items():
         heads, rows, count = observation_rows(part, observations[part], folder)
-        lines += [*(["", "---", ""] if lines else []), ai_marked(f"<b>{heading}</b>") if rows else f"<b>{heading}</b>",
-                  *(["", observations_content[part].strip(), "", f"<details><summary>{details_text(count)}</summary>", "",
+        lines += [*(["", "---", ""] if lines else []), f"### {ai_marked(heading)}" if rows else f"### {heading}",
+                  *(["", observation_summary(part, observations_content[part], observations), "",
+                     f"<details><summary>{details_text(count)}</summary>", "",
                      *html_table(heads, *rows, small=True), "", "</details>"] if rows else [])]
     return lines
 
@@ -219,7 +267,7 @@ def notion_section(notion):
                         for week, pages in weeks.items())
     heads = "".join(
         f"<th>{head}</th>" for head in ("Week", "Page", "Area"))
-    return [f'<b>{PAGES_HEADING}</b> ({notion["counts"]["created"]})', "", *html_table(heads, *rows, small=True)]
+    return [f'### {PAGES_HEADING} ({notion["counts"]["created"]})', "", *html_table(heads, *rows, small=True)]
 
 
 # Shared by the sections.

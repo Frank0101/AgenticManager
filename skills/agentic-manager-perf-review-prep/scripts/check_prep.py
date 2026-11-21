@@ -9,10 +9,10 @@ import os
 
 from build_data import data_problems
 from check_report import report_problems
-from common import (CHART_FILES, CHARTS_DIR, OBSERVATIONS_CONTENT, FEEDBACK_FILES, STEP_CHANGE_CONTENT, observations_content_problems, step_change_content_problems, folder_problem, PERSON, RAW_DIR, SOURCES,
-                    SUMMARY_FILES, VALUES, DATA, company_names, expected_files, feedback_problems,
-                    person_problems, prep_dir, read_json, read_raw_work,
-                    report_name, sources_problems, summary_problems)
+from common import (CHART_FILES, CHARTS_DIR, DATA, EARLIER_WORK_CONTENT, FEEDBACK_FILES, OBSERVATIONS_CONTENT, PERSON,
+                    RAW_DIR, SOURCES, STEP_CHANGE_CONTENT, SUMMARY_FILES, VALUES, WORK_IMPACT_CONTENT, agent_files,
+                    company_names, expected_files, feedback_problems, folder_problem, person_problems, prep_dir,
+                    read_json, read_raw_work, report_name, sources_problems, summary_problems)
 import read_notes
 import read_slack
 
@@ -60,20 +60,20 @@ def check_prep(prep, today=None):
     if built and DATA in read:
         errors += [f"{DATA}: {problem}" for problem in data_problems(
             read[DATA], read_raw_work(prep), person, summaries, values)]
-    # The agent's summaries and step change are checked against the model
-    # they are written from.
+    # What step 6's agents write is checked against the model it is written
+    # from.
     data_passes = built and DATA in read and not any(
         error.startswith(DATA) for error in errors)
-    if data_passes and OBSERVATIONS_CONTENT in read:
-        errors += [f"{OBSERVATIONS_CONTENT}: {problem}" for problem in observations_content_problems(
-            read[OBSERVATIONS_CONTENT], read[DATA]["observations"])]
-    if data_passes and STEP_CHANGE_CONTENT in read:
-        errors += [f"{STEP_CHANGE_CONTENT}: {problem}" for problem in step_change_content_problems(
-            read[STEP_CHANGE_CONTENT], read[DATA])]
-    if data_passes and {report, CHARTS_DIR, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT} <= files and not any(
-            error.startswith((OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT)) for error in errors):
+    for name, _, check in agent_files():
+        if data_passes and name in read:
+            errors += [f"{name}: {problem}" for problem in check(
+                read[name], read[DATA])]
+    contents = tuple(name for name, _, _ in agent_files())
+    if data_passes and {report, CHARTS_DIR, *contents} <= files and not any(
+            error.startswith(contents) for error in errors):
         with open(os.path.join(folder, report), encoding="utf-8") as f:
             errors += [f"{report}: {problem}" for problem in report_problems(
                 f.read(
-                ), read[DATA], summaries, values, folder, read[OBSERVATIONS_CONTENT], read[STEP_CHANGE_CONTENT])]
+                ), read[DATA], summaries, values, folder, read[OBSERVATIONS_CONTENT],
+                read[STEP_CHANGE_CONTENT], read[WORK_IMPACT_CONTENT], read[EARLIER_WORK_CONTENT])]
     return {"ok": not errors, "errors": errors}
