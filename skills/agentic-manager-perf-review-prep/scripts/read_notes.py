@@ -10,7 +10,8 @@ where the notes are and what the task shows.
 import os
 from datetime import date
 
-from common import NOTES, PERSON, descendants, graph_path, journal_day, links, notes, parse_blocks, prep_dir, read_json
+from common import (NOTES, NOTES_END, PERSON, descendants, graph_path, journal_day, links, notes, notes_days, parse_blocks,
+                    prep_dir, read_json, write_prep_file)
 import reading
 
 ANSWER = """{"going_well": [{"point": "Presented the billing migration to the wider team, to a great reception",
@@ -24,15 +25,14 @@ ANSWER = """{"going_well": [{"point": "Presented the billing migration to the wi
 def gather(prep):
     """The material of the notes: how many notes there are and the pages,
     and the content, {items: [{number, date, link, text}]}: the notes of the
-    period that link the person, by day, then the person's pages, from the
+    days notes_days() gives that link the person, by day, then the person's pages, from the
     links the manager confirmed, numbered from 1, a page with no date and its
     title as `page`."""
     folder = prep_dir(prep)
     person = read_json(os.path.join(folder, PERSON))
     wanted = {link.casefold()
               for link in person["sources"]["logseq-fs"]["links"]}
-    first, last = date.fromisoformat(
-        person["start"]), date.fromisoformat(person["end"])
+    days = set(notes_days(person))
     journal, pages = [], []
     for folder_name, title, text, file in notes(graph_path()):
         link = os.path.abspath(file)
@@ -42,7 +42,7 @@ def gather(prep):
                               "text": text.strip(), "page": title})
             continue
         day = journal_day(title)
-        if day is None or not first <= day <= last:
+        if day is None or day.isoformat() not in days:
             continue
         journal += [{"date": day.isoformat(), "link": link, **note}
                     for note in linking_blocks(text, wanted)]
@@ -90,11 +90,22 @@ def task_text(prep, content):
         + f"\n\n{item['text']}" for item in content["items"])
 
 
+def until_today(prep):
+    """Record that the notes of the prep `prep` run to today, for a change to
+    the finished prep: its NOTES_END, today, when later than the period."""
+    folder = prep_dir(prep)
+    person = read_json(os.path.join(folder, PERSON))
+    today = date.today().isoformat()
+    if today > person["end"]:
+        write_prep_file(prep, PERSON, {**person, NOTES_END: today})
+
+
 SOURCE = reading.Source(name="notes", script="read_notes.py", output=NOTES, what="notes summary", task_text=task_text,
                         answer_shape=ANSWER, cites="as the task numbers the notes",
                         terms={"cited": "notes",
                                "citations_more": "A page has no day, so it can back only a `context` point."},
-                        gather=gather, undated_context=True)
+                        gather=gather, undated_context=True, days=notes_days,
+                        until_today=until_today)
 
 
 def main(argv=None):

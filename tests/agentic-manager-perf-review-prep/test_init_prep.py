@@ -15,6 +15,7 @@ TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(TEST_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
+import common  # noqa: E402
 import init_prep  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from prep_fixture import temp_output  # noqa: E402
@@ -61,9 +62,13 @@ class InitTest(unittest.TestCase):
             f.write("from an earlier run")
         earlier = os.path.join(self.folder, "Jose-Nunez_26-11-09")
         os.makedirs(earlier)
+        original = common.original_dir("Jose-Nunez_26-11-10")
+        os.makedirs(original)
         self.assertTrue(init_prep.init(
             "José Núñez", "a1", START, END, today=TODAY, client=client)["replaced"])
         self.assertEqual(os.listdir(path), ["person.json"])
+        # nor can the copy kept of the replaced prep be put back over it
+        self.assertFalse(os.path.exists(original))
         self.assertTrue(os.path.isdir(earlier))
 
     def test_refuses_a_prep_it_cant_start(self):

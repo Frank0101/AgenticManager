@@ -36,6 +36,8 @@ class CommonTest(unittest.TestCase):
                   "person": 7}, "must name the person"),
                  ("not a date", {"start": "10/08/2026"},
                   "must be a date as YYYY-MM-DD"),
+                 ("a date not as YYYY-MM-DD", {"end": "20261110"},
+                  "must be a date as YYYY-MM-DD"),
                  ("ends after today", {"end": "2026-12-31"}, "after today"),
                  ("starts after it ends", {
                   "start": "2026-11-10", "end": "2026-08-10"}, "after it ends")]
@@ -44,6 +46,22 @@ class CommonTest(unittest.TestCase):
                 person = change if isinstance(change, list) else {
                     k: v for k, v in {**PERSON, **change}.items() if v is not None}
                 problems = common.person_problems(person, TODAY)
+                if expected is None:
+                    self.assertEqual(problems, [])
+                else:
+                    self.assertIn(expected, " ".join(problems))
+
+    def test_person_problems_notes_end(self):
+        # The notes' last day, set once a change to the finished prep read
+        # them to today: (its value, expected in the problems on 21/11, or
+        # None for none).
+        today = date(2026, 11, 21)
+        for value, expected in {"2026-11-21": None, "2026-11-11": None,
+                                "2026-11-10": "notes' last day", "2026-11-22": "notes' last day",
+                                "today": "notes' last day", "20261121": "notes' last day"}.items():
+            with self.subTest(value):
+                problems = common.person_problems(
+                    {**PERSON, "notes_end": value}, today)
                 if expected is None:
                     self.assertEqual(problems, [])
                 else:
@@ -243,6 +261,17 @@ class CommonTest(unittest.TestCase):
         days = common.period_days(PERSON)
         self.assertEqual((days[0], days[1], days[-1], len(days)),
                          ("2026-08-10", "2026-08-11", "2026-11-10", 93))
+
+    def test_notes_days(self):
+        # (the notes' last day, if set): the notes' first and last day, the
+        # period's unless a change to the finished prep read them further.
+        for notes_end, expected in {None: ("2026-08-10", "2026-11-10"),
+                                    "2026-11-21": ("2026-08-10", "2026-11-21")}.items():
+            with self.subTest(notes_end):
+                person = {**PERSON, **
+                          ({"notes_end": notes_end} if notes_end else {})}
+                days = common.notes_days(person)
+                self.assertEqual((days[0], days[-1]), expected)
 
     def test_work_problems_links(self):
         # name: (a resolved issue's url, whether the work is accepted): a

@@ -28,7 +28,7 @@ from agentic_manager.logseq import descendants, graph_path, journal_day, links, 
 from agentic_manager.output_file import json_text, read_json, write_output_file, write_output_json  # noqa: E402,F401
 from agentic_manager.protocol import fill as fill_protocol  # noqa: E402,F401
 from agentic_manager.output_folder import CHARTS_DIR, RAW_DIR, clear_folder, folder_problem, new_run, run_document, run_folder, work_folder  # noqa: E402,F401
-from agentic_manager.period import add_period_arguments, calendar_weeks, calendar_week, days, months_of, period_problem, shown  # noqa: E402,F401
+from agentic_manager.period import add_period_arguments, calendar_weeks, calendar_week, days, is_day, months_of, period_problem, shown  # noqa: E402,F401
 from agentic_manager.tasks import submit_section, task_line, write_task as write_task_file  # noqa: E402,F401
 from agentic_manager.svg import GRID, SURFACE, INK, MUTED, arc_segment, esc, legend, nice_step, svg, text, text_width  # noqa: E402,F401
 from agentic_manager.text import CHART_IMAGE, SMALL_TYPE, ai_marked, chart_image, html_table, as_name, number, plural, word_count  # noqa: E402,F401
@@ -49,6 +49,11 @@ PERSON = "person.json"
 # as the manager confirmed. How the period reads is worked out from them
 # wherever it is shown, never stored.
 PERSON_FIELDS = ("person", "start", "end", "sources")
+# The last day the manager's notes were read to, set only when a change to a
+# finished prep reads them up to today, as notes written after the period,
+# such as before a calibration, still speak of it; without it, the notes are
+# the period's, as everything else.
+NOTES_END = "notes_end"
 # Who the person is in each source, by the fields each records: an account's
 # id and the name it gives, or in the vault the links about the person, their
 # tag and the pages about them, such as [[Jane]] and [[Jane Promotion]], whose
@@ -118,7 +123,7 @@ FEEDBACK_FILES = {"manager": MANAGER_FEEDBACK,
 FEEDBACK_NAMES = {"manager": "current manager feedback",
                   "other": "other feedback", "previous": "previous feedback"}
 # The manager's own notes on the person in their vault: from the journals of
-# the period, what they noticed, each point with the days it was seen on and
+# the days notes_days() gives, what they noticed, each point with the days it was seen on and
 # the notes' files, a pattern one point with all of them; from the person's
 # pages, only context, which has no date. Read by one subagent.
 NOTES = "notes.json"
@@ -521,6 +526,13 @@ def prep_dir(prep):
     return run_folder(FOLDER_NAME, prep, "prep", "Person", "init_prep.py")
 
 
+def original_dir(prep):
+    """The folder in the system's temporary folder that keeps the prep `prep`
+    as the skill first made it, before any change to the finished prep, so the
+    manager can go back to it."""
+    return work_folder(FOLDER_NAME, prep, "original")
+
+
 def write_prep_file(prep, name, value):
     """Writes `value` as indented JSON to the file `name` of the prep folder
     `prep`, through the shared writer; returns the file's path."""
@@ -530,30 +542,41 @@ def write_prep_file(prep, name, value):
 
 def person_problems(person, today):
     """Why `person` isn't a valid person.json on `today`, its sources aside,
-    empty when it is: its fields are PERSON_FIELDS, the person is named by
-    letters or digits, and the period's days are dates as YYYY-MM-DD of a
-    period that can be reported on. Its sources follow sources_problems()."""
+    empty when it is: its fields are PERSON_FIELDS, NOTES_END too once set,
+    the person is named by letters or digits, the period's days are dates as
+    YYYY-MM-DD of a period that can be reported on, and NOTES_END a day after
+    it, today at the latest. Its sources follow sources_problems()."""
     if not isinstance(person, dict):
         return ["the person must be a JSON object"]
     problems = []
-    if sorted(person) != sorted(PERSON_FIELDS):
-        problems.append(f"the person's fields must be {', '.join(PERSON_FIELDS)}, "
-                        f"not {', '.join(person) or 'none'}")
+    if sorted(set(person) - {NOTES_END}) != sorted(PERSON_FIELDS):
+        problems.append(f"the person's fields must be {', '.join(PERSON_FIELDS)}, and {NOTES_END} once the notes "
+                        f"were read to today, not {', '.join(person) or 'none'}")
     name = person.get("person")
     if not isinstance(name, str) or not as_name(name):
         problems.append(f"{name!r} must name the person, such as Jane Doe")
     days = {}
     for field in ("start", "end"):
         value = person.get(field)
-        try:
-            days[field] = date.fromisoformat(
-                value if isinstance(value, str) else "")
-        except ValueError:
+        if isinstance(value, str) and is_day(value):
+            days[field] = date.fromisoformat(value)
+        else:
             problems.append(
                 f"the period's {field}, {value!r}, must be a date as YYYY-MM-DD")
     if len(days) == 2 and (problem := period_problem(days["start"], days["end"], today)):
         problems.append(problem)
+    if NOTES_END in person and "end" in days:
+        value = person[NOTES_END]
+        if not (isinstance(value, str) and is_day(value) and days["end"] < date.fromisoformat(value) <= today):
+            problems.append(f"the notes' last day, {value!r}, must be a date as YYYY-MM-DD after the period's end "
+                            "and not after today")
     return problems
+
+
+def notes_days(person):
+    """Every day the manager's notes are read on in `person`, a prep's
+    person.json, as YYYY-MM-DD: the period's, or up to NOTES_END once set."""
+    return days_between(person["start"], person.get(NOTES_END, person["end"]))
 
 
 def period_days(person):

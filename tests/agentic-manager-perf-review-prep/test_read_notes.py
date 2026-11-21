@@ -12,6 +12,7 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 from unittest import mock
 
@@ -87,6 +88,27 @@ class ReadNotesTest(unittest.TestCase):
                           (4, None, str(Path(self.graph, "pages", "Jane.md")))])
         self.assertEqual(material["content"]["items"][3]["text"],
                          "- Moved to the payments team in the summer")
+
+    def test_until_today(self):
+        # A note written after the period, such as before a calibration,
+        # stays out of the prep unless start runs with --until-today, which
+        # records that the notes run to today; a note dated after today
+        # isn't one yet.
+        for name, text in [("2026_11_12.md", "- [[Jane]] calibration prep"),
+                           ("2999_01_01.md", "- [[Jane]] not written yet")]:
+            with open(os.path.join(self.graph, "journals", name), "w", encoding="utf-8") as f:
+                f.write(text)
+
+        def dates():
+            return [item["date"] for item in read_notes.gather(PREP)["content"]["items"]]
+        self.assertNotIn("2026-11-12", dates())
+        with mock.patch("sys.stdout"):
+            read_notes.main(["start", "--prep", PREP, "--until-today"])
+        with open(os.path.join(self.folder, PREP, "person.json"), encoding="utf-8") as f:
+            self.assertEqual(
+                json.load(f)["notes_end"], date.today().isoformat())
+        self.assertIn("2026-11-12", dates())
+        self.assertNotIn("2999-01-01", dates())
 
     def test_runs_the_task_then_takes_the_summary(self):
         # start writes the notes, numbered, to _raw and the task to the

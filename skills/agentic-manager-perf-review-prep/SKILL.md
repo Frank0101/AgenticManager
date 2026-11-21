@@ -2,7 +2,7 @@
 name: agentic-manager-perf-review-prep
 disable-model-invocation: true
 description: Helps a manager prepare a performance review of one person over a review period, from the evidence of their work in Jira, GitHub, the documentation, the team's messages and the manager's own notes.
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py --needs jira-api github-cli notion-mcp slack-mcp logseq-fs company.values --sensitive) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_observations.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_step_change.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *)
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/check_config.py --needs jira-api github-cli notion-mcp slack-mcp logseq-fs company.values --sensitive) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/extract_saved.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/../agentic-manager-utils-lib/agentic_manager/period.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_jira_account.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/init_prep.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/find_person.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_identities.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rules.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/jira_ticket.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/fetch_work.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_notion.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/read_slack.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_observations.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/set_step_change.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py *) Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/backup_prep.py *)
 ---
 
 # Performance Review Prep
@@ -30,6 +30,8 @@ perf-review-preps/
     ├── step_change_content.json      set_step_change.py writes
     └── Jane-Doe_Review_Prep.md       finish_report.py writes
 ```
+
+To change a prep that is already done, as the manager asks, go straight to [step 9](#9-change-a-finished-prep), without the prerequisite.
 
 ## Prerequisite
 
@@ -111,8 +113,6 @@ The person's work in Jira, GitHub and Notion, in the period. It and step 4 don't
 
 Once steps 4 and 5 are done, run `python3 ${CLAUDE_SKILL_DIR}/scripts/prepare_report.py --prep <prep>`: it builds `data.json`, the model the report reads, from the raw files and the summaries of the current manager feedback, the other and previous feedback, the notes and Slack, with no network, then a brief for each task, and prints `tasks`, a line `Task <name>: <path>` for each of its tasks: one summarises the three tables of observations, what is going well, what to improve and the context, and one writes the step change from the previous feedback, when there is one. Give each to a fresh subagent, all at once, the same way as in step 4. Each task holds its own instructions and records what it writes with a script that checks it as it's written. Once all have replied, go on to step 7.
 
-To change the observations' summaries or the step change later, as the manager asks, edit it yourself and record it whole again with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_observations.py --prep <prep>` or `python3 ${CLAUDE_SKILL_DIR}/scripts/set_step_change.py --prep <prep>`, whose `--help` shows the input, then run step 7 again.
-
 ## 7. Finish
 
 Run `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py --prep <prep>`: it checks `observations_content.json` and `step_change_content.json` field by field, then writes the report, `<Person>_Review_Prep.md`, and its charts from `data.json` and those two, and checks the whole prep. If its `problems` aren't empty, fix what each names by running again the step that writes that file, step 6 for `observations_content.json` and `step_change_content.json`, then run it again; if you can't, stop and tell the manager what they say.
@@ -120,6 +120,17 @@ Run `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_report.py --prep <prep>`: it che
 ## 8. Tell the manager
 
 Say the prep is ready, with a Markdown link to its report. Don't recap the report; add only a doubt about your own judgment that it doesn't show, such as a summary you weren't sure how to weigh. If step 1's `temporary` is `true`, add that the folder is temporary and setting `output.root` in the config keeps preps.
+
+## 9. Change a finished prep
+
+Once a prep is done, the manager may ask you to change it. Work only from what they already know: the prep's files, their notes, the links already in those files and what they tell you. Never search Slack or Notion again.
+
+Before each change, run `python3 ${CLAUDE_SKILL_DIR}/scripts/backup_prep.py save --prep <prep>`: it keeps the prep as the skill first made it. If the manager asks to go back to it, run `python3 ${CLAUDE_SKILL_DIR}/scripts/backup_prep.py restore --prep <prep>`.
+
+Make each change where the report's text comes from, in a feedback of step 3 or in the notes, never in the report or in the summaries built from them, then run again only the steps that follow and tell the manager as in step 8:
+
+- **The manager has updated their notes.** Read them again up to today with `python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py start --prep <prep> --until-today`, hand out its task as in step 4, then run steps 6 and 7. The notes come only from the vault: something the manager tells you in chat they add to their vault first, or it goes into a feedback of step 3.
+- **The manager wants to change a feedback of step 3**, adding to it, cutting it or replacing part or all of it. Update its summary as [Summaries](#summaries) says, record it whole again with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py --prep <prep> --of <manager|other|previous>`, then run steps 6 and 7.
 
 ## Summaries
 

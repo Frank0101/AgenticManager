@@ -11,7 +11,7 @@ from build_data import data_problems
 from check_report import report_problems
 from common import (CHART_FILES, CHARTS_DIR, OBSERVATIONS_CONTENT, FEEDBACK_FILES, STEP_CHANGE_CONTENT, observations_content_problems, step_change_content_problems, folder_problem, PERSON, RAW_DIR, SOURCES,
                     SUMMARY_FILES, VALUES, DATA, company_names, expected_files, feedback_problems,
-                    period_days, person_problems, prep_dir, read_json, read_raw_work,
+                    person_problems, prep_dir, read_json, read_raw_work,
                     report_name, sources_problems, summary_problems)
 import read_notes
 import read_slack
@@ -40,13 +40,13 @@ def check_prep(prep, today=None):
            for name, file in FEEDBACK_FILES.items()}}
     # Everything gathered is checked against the review's period, so only
     # once the person and period are valid: a day a point of the notes or
-    # the Slack summary cites, or an item of work is dated, must be in it.
+    # the Slack summary cites, or an item of work is dated, must be in it,
+    # or for the notes in the days they were read on.
     period_ok = person is not None and not person_errors
     if period_ok:
-        days = period_days(person)
         for source in (read_notes.SOURCE, read_slack.SOURCE):
             rules[source.output] = lambda value, source=source: summary_problems(
-                value, f"the {source.what}", values, days, source.undated_context)
+                value, f"the {source.what}", values, source.days(person), source.undated_context)
     for name, problems in rules.items():
         if name in read:
             errors += [

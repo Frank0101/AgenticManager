@@ -4,7 +4,7 @@
 
 ## What you read
 
-Below, numbered, are the notes from the manager's journal over the review's period that mention the person, each with the day it was written and shown as written, inside the block it sits in, so the lines around it give its context, then the pages about the person, which have no day and give only context.
+Below, numbered, are the notes from the manager's journal that mention the person, each with the day it was written and shown as written, inside the block it sits in, so the lines around it give its context, then the pages about the person, which have no day and give only context.
 
 ## What to keep
 

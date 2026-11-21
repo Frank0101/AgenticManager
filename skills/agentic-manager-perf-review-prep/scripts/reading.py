@@ -37,7 +37,10 @@ class Source:
     shape; `cites` what a number cites, for its help; `terms` the words the
     shared parts of its protocol take, `cited`, what a point cites, and
     `citations_more`, what else to say of it; `undated_context` whether a context
-    point may rest on an undated item, as one from a page."""
+    point may rest on an undated item, as one from a page; `days(person)` the
+    days its items may be dated on, from person.json; `until_today(prep)`, when
+    given, what start's --until-today does: records that the items run to
+    today."""
     name: str
     script: str
     output: str
@@ -49,6 +52,8 @@ class Source:
     gather: Callable | None = None
     readers: "Readers | None" = None
     undated_context: bool = False
+    days: Callable = period_days
+    until_today: Callable | None = None
 
 
 @dataclass
@@ -86,11 +91,16 @@ def command_line(source, description, argv=None):
         command = commands.add_parser(name, help=help, description=help)
         command.add_argument("--prep", required=True,
                              help="the prep's folder, <Person>_<YY-MM-DD>, as init_prep.py printed it")
+        if name == "start" and source.until_today:
+            command.add_argument("--until-today", action="store_true",
+                                 help="read up to today, past the period's end, only to change a finished prep")
         if name == "submit" and source.readers:
             command.add_argument("--task", help="a part's task, as start printed it, such as month:2026-09; "
                                  "without it, the answer is the judge's")
     args = parser.parse_args(argv)
     if args.command == "start":
+        if getattr(args, "until_today", False):
+            source.until_today(args.prep)
         print(json.dumps(start(source, args.prep), ensure_ascii=False))
     else:
         task = getattr(args, "task", None)
@@ -163,7 +173,7 @@ def submit_judge(source, prep, answer):
     """Check the judge's answer, the summary's parts, each point citing the
     items listed, and write it, each cite turned into its evidence, in
     order(); returns its path."""
-    days = period_days(read_json(os.path.join(prep_dir(prep), PERSON)))
+    days = source.days(read_json(os.path.join(prep_dir(prep), PERSON)))
     items = load_items(source, prep)
     if problems := answer_problems(source, answer, items, days):
         raise SystemExit("; ".join(problems) + "\n\n" + input_help(source))
@@ -265,7 +275,7 @@ def answer_problems(source, parts, items, days):
     """Why `parts` isn't the summary a reading gives, empty when it is: its
     points, each with "cites", at least one, each the number of one of
     `items`, and, its cites turned into evidence, the summary
-    summary_problems() takes, over `days`, those of the period."""
+    summary_problems() takes, over `days`, the days the source was read on."""
     what = f"the {source.what}"
     if not (isinstance(parts, dict) and sorted(parts) == sorted(SUMMARY_PARTS)):
         return summary_problems(parts, what, [])
