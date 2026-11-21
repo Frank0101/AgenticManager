@@ -125,12 +125,12 @@ Say the prep is ready, with a Markdown link to its report. Don't recap the repor
 
 Once a prep is done, the manager may ask you to change it. Work only from what they already know: the prep's files, their notes, the links already in those files and what they tell you. Never search Slack or Notion again.
 
-Before each change the manager asks for, run `python3 ${CLAUDE_SKILL_DIR}/scripts/backup_prep.py save --prep <prep>` once: it keeps the prep as it is before the change. If the manager asks to undo it, run `python3 ${CLAUDE_SKILL_DIR}/scripts/backup_prep.py restore --prep <prep>`.
+Before each change the manager asks for, run `python3 ${CLAUDE_SKILL_DIR}/scripts/backup_prep.py save --prep <prep>` once: it keeps the prep as it is before the change. If the manager asks to undo it, run `python3 ${CLAUDE_SKILL_DIR}/scripts/backup_prep.py restore --prep <prep>`, with no save before it.
 
-Make each change where the report's text comes from, in a feedback of step 3 or in the notes, never in the report or in the summaries built from them, then run again only the steps that follow and tell the manager as in step 8:
+Make each change where the report's text comes from, in a feedback of step 3 or in the notes, never in what the skill writes from them: the notes' summary, the observations, the step change and the report; then run again only the steps that follow and tell the manager as in step 8:
 
-- **The manager has updated their notes.** Read them again up to today with `python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py start --prep <prep> --until-today`, hand out its task as in step 4, then run steps 6 and 7. The notes come only from the vault: something the manager tells you in chat they add to their vault first, or it goes into a feedback of step 3.
-- **The manager wants to change a feedback of step 3**, adding to it, cutting it or replacing part or all of it. Update its summary as [Summaries](#summaries) says, record it whole again with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py --prep <prep> --of <manager|other|previous>`, then run steps 6 and 7.
+- **The manager has updated their notes.** Read them again up to today with `python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py start --prep <prep> --until-today`, hand out its task as in step 4, then run steps 6 and 7.
+- **The manager wants to change a feedback of step 3**, adding to it, cutting it or replacing part or all of it. Something they tell you in chat, such as a note of their own, goes into the current manager feedback, and feedback from someone else into the other feedback. Update its summary as [Summaries](#summaries) says, record it whole again with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py --prep <prep> --of <manager|other|previous>`, then run steps 6 and 7.
 
 ## Summaries
 
