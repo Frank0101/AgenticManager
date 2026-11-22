@@ -19,7 +19,7 @@ CONTENT = {
         {"class": "dark", "html": [
             "<h1 class='title'>Acme Q3 Review</h1>", "<p>Platform team</p>"]},
         {"html": ["<h2 class='title'>Revenue</h2>",
-                  "<div style='height: 380px'>{{chart:revenue}}</div>",
+                  "<div style='height: 200px'>{{chart:revenue}}</div>",
                   "<div>{{ring:phases}}<p>[IMAGE: team photo]</p></div>"]},
         {"html": ["<h2>Flow</h2>",
                   "<svg viewBox='0 0 200 40'><rect x='0' y='0' width='80' height='40'/><path d='M80 20 H120'/></svg>"]},

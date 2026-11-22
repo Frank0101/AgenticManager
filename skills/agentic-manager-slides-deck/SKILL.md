@@ -138,7 +138,7 @@ Many examples make it easy to build a deck that looks like several. Keep it one:
 ## 4. Finish, look and open
 
 1. **Finish.** `python3 ${CLAUDE_SKILL_DIR}/scripts/finish_deck.py --deck <deck>` writes the deck and checks it. Fix `slides.json` and run it again until `ok` is true; never edit the deck itself.
-2. **Look.** `python3 ${CLAUDE_SKILL_DIR}/scripts/snap_deck.py --deck <deck>` pictures the slides with headless Chrome. Look at its `sheet`, the whole deck in one image, opening a slide's own picture only where something looks wrong. Fix overflowing or clipped text, overlaps and fonts that don't render as intended, then finish and look again. Without Chrome, skip this; never ask the user to install it.
+2. **Look.** `python3 ${CLAUDE_SKILL_DIR}/scripts/snap_deck.py --deck <deck>` pictures the slides with headless Chrome. Look at its `sheet`, the whole deck in one image, opening a slide's own picture only where something looks wrong, and every slide its `layout` names. Fix overflowing or clipped text, overlaps and fonts that don't render as intended, and every `layout` problem, then finish and look again. Text that is decoration, such as a giant word behind the content, reads as such when it is faint or an outline; otherwise mark it `aria-hidden='true'`. Without Chrome, skip this; never ask the user to install it.
 3. **Open.** Finish with `--open` to open the deck in the user's browser, on every finish until it has `opened` once in the conversation and never after: the user refreshes the page already open.
 
 ## 5. Tell the user

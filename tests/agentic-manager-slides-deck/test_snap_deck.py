@@ -73,7 +73,7 @@ class OneSlidePageTest(unittest.TestCase):
 
     def test_chrome_shoots_the_page_at_the_slides_size(self):
         command = snap_deck.chrome_command(
-            "chrome", "/p", "/out/slide-1.png", "/out/slide-1.html", (common.SLIDE_WIDTH, common.SLIDE_HEIGHT))
+            "chrome", "/p", "/out/slide-1.html", (common.SLIDE_WIDTH, common.SLIDE_HEIGHT), "--screenshot=/out/slide-1.png")
         self.assertEqual(command[0], "chrome")
         for part in ("--headless", "--user-data-dir=/p", "--screenshot=/out/slide-1.png",
                      f"--window-size={common.SLIDE_WIDTH},{common.SLIDE_HEIGHT}", "file:///out/slide-1.html"):
@@ -100,7 +100,7 @@ def chrome_cannot_picture():
         page, picture = Path(folder) / "blank.html", Path(folder) / "blank.png"
         page.write_text("<html><body>blank</body></html>", encoding="utf-8")
         command = snap_deck.chrome_command(snap_deck.find_chrome(), Path(folder) / "profile",
-                                           picture, page, (200, 100))
+                                           page, (200, 100), f"--screenshot={picture}")
         try:
             subprocess.run(command, capture_output=True, timeout=PROBE_SECONDS)
         except subprocess.TimeoutExpired:
@@ -123,7 +123,8 @@ class SnapTest(unittest.TestCase):
         folder = temp_output(self)
         write_slides(folder, content())
         finish_deck.finish(DECK)
-        sheet, pictures = snap_deck.snap(DECK)
+        sheet, pictures, layout = snap_deck.snap(DECK)
+        self.assertEqual(layout, [])
         self.addCleanup(shutil.rmtree, os.path.dirname(sheet))
         self.assertEqual([Path(p).name for p in pictures],
                          ["slide-1.png", "slide-2.png", "slide-3.png"])
@@ -136,6 +137,91 @@ class SnapTest(unittest.TestCase):
                 self.assertEqual(struct.unpack(">II", header[16:24]), size)
         self.assertEqual(sorted(os.listdir(os.path.dirname(sheet))),
                          ["sheet.png", "slide-1.png", "slide-2.png", "slide-3.png"])
+
+
+# Each case is one slide: what it holds, and the problems it must report, by
+# the start of their text. The problems are the faults found in real decks;
+# the free cases are overlaps a design makes on purpose.
+ABS = "position:absolute; left:57px;"
+CARD = "border:1px solid #888; padding:10px; width:300px;"
+LAYOUT_CASES = [
+    ("a label under the title it sits on",
+     f"<div style='{ABS} top:120px; font-size:14px'>FIELD MANUAL FM-ENG 1</div>"
+     f"<h1 style='{ABS} top:110px; margin:0; font-size:60px'>SIMPLE, SECURE</h1>",
+     ["'FIELD MANUAL FM-ENG 1' overlaps 'SIMPLE, SECURE'"]),
+    ("a title wrapping onto the text below it",
+     f"<h2 style='{ABS} top:40px; width:500px; margin:0; font-size:36px; line-height:1'>The platform: cloud native, standard, repeatable</h2>"
+     f"<p style='{ABS} top:84px; margin:0'>The platform is the ecosystem we build</p>",
+     ["'The platform: cloud native, standard"]),
+    ("a note laid over a card's text",
+     f"<div style='{ABS} top:100px; {CARD}'><p>Reference architecture and design review once mature</p></div>"
+     f"<div style='{ABS} top:128px; width:600px; background:#334'>More details are in the governance process</div>",
+     ["'Reference architecture and design review"]),
+    ("text spilling out of a card of fixed height",
+     f"<div style='{ABS} top:100px; height:18px; {CARD}'><p style='margin:0'>Simplicity is our overriding desire to avoid unnecessary complexity: clean code, refactor as we go</p></div>",
+     ["'Simplicity is our overriding desire to a"]),
+    ("text cut off by the slide's right edge",
+     "<p style='position:absolute; left:1000px; top:100px; white-space:nowrap'>Owned by all of us, every day</p>",
+     ["'Owned by all of us, every day' is cut off by the slide's edge"]),
+    ("gradient text still counts",
+     f"<div style='{ABS} top:100px; font-size:30px'>Plain words here</div>"
+     f"<div style='{ABS} top:104px; font-size:30px; background:linear-gradient(90deg, red, blue); -webkit-background-clip:text; background-clip:text; color:transparent'>Gradient words</div>",
+     ["'Plain words here' overlaps 'Gradient words'"]),
+    ("free: an outlined ghost word behind the title",
+     "<div style='position:absolute; right:-14px; top:-34px; font-size:150px; color:transparent; -webkit-text-stroke:1.5px #888'>SECURE</div>"
+     f"<h2 style='{ABS} top:40px; margin:0; font-size:34px'>Reinforcing trust in every interaction</h2>"
+     "<p style='position:absolute; right:60px; top:40px'>2026&ndash;2028</p>", []),
+    ("free: a faint watermark behind the text",
+     f"<div style='{ABS} top:80px; font-size:120px; opacity:0.2'>DRAFT</div><p style='{ABS} top:120px'>Real content over it</p>", []),
+    ("free: decorative text marked aria-hidden",
+     f"<div aria-hidden='true' style='{ABS} top:80px; font-size:120px'>01</div><p style='{ABS} top:120px'>Real content over it</p>", []),
+    ("free: a badge placed over a card's corner",
+     f"<div style='{ABS} top:100px; {CARD}'><span style='position:absolute; right:-20px; top:-12px; background:gold'>NEW</span><p>Card text</p></div>", []),
+    ("free: a stamp rotated across its box",
+     f"<div style='{ABS} top:100px; {CARD}'><div style='transform:rotate(-8deg) translateX(40px); white-space:nowrap'>SECTION III, rotated across</div></div>", []),
+    ("free: text laid over a shape and an image",
+     "<div style='position:absolute; left:100px; top:100px; width:300px; height:200px; background:#246'></div>"
+     "<svg style='position:absolute; left:100px; top:100px' width='300' height='200'><circle cx='150' cy='100' r='90' fill='#a33'/></svg>"
+     "<p style='position:absolute; left:130px; top:180px; margin:0; color:#fff'>Caption over the picture</p>", []),
+    ("free: a title in two tight lines",
+     f"<h1 style='{ABS} top:150px; margin:0; font-size:70px; line-height:0.9'>HOW WE<br>ENGINEER</h1>", []),
+    ("free: tightly stacked blocks and wrapping chips",
+     f"<div style='{ABS} top:100px; width:260px'><h3 style='margin:0; font-size:20px; line-height:1'>Heading</h3><p style='margin:0; line-height:1.1'>Text right under it</p>"
+     "<div style='display:flex; flex-wrap:wrap; gap:4px'>" + "".join(f"<span style='border:1px solid #999; padding:1px 6px'>chip {n}</span>" for n in range(12)) + "</div></div>", []),
+]
+
+
+@unittest.skipUnless(snap_deck.find_chrome(), "Chrome isn't installed")
+class LayoutTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        reason = chrome_cannot_picture()
+        if reason:
+            raise unittest.SkipTest(
+                f"{reason}: it can't run headless on this machine")
+
+    def test_reports_only_text_no_one_can_read(self):
+        slides = "".join(
+            f"<div class='slide'>{html}</div>" for _, html, _ in LAYOUT_CASES)
+        page = ("<html><head><style>.slide { position: relative; width: 1100px; height: 618px; overflow: hidden;"
+                " font: 16px sans-serif; }</style></head><body><div class='slides-wrapper'>"
+                f"{slides}</div></body></html>")
+        with tempfile.TemporaryDirectory() as folder:
+            found = snap_deck.layout_problems(
+                snap_deck.find_chrome(), page, folder, folder)
+        for number, (name, _, expected) in enumerate(LAYOUT_CASES, 1):
+            with self.subTest(name):
+                prefix = f"slide {number}: "
+                problems = [p[len(prefix):]
+                            for p in found if p.startswith(prefix)]
+                self.assertEqual(len(problems), len(expected), problems)
+                for problem, start in zip(problems, expected):
+                    self.assertTrue(problem.startswith(
+                        start), f"{problem!r} doesn't start with {start!r}")
+
+    def test_a_page_the_script_never_measured_fails(self):
+        with self.assertRaisesRegex(SystemExit, "look at the pictures instead"):
+            snap_deck.read_layout("<html><body></body></html>")
 
 
 if __name__ == "__main__":
