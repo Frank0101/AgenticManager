@@ -247,8 +247,7 @@ def chrome_command(chrome, profile, page, size, output):
 def layout_page(page, folder):
     """The deck's page `page`, from the deck's folder `folder`, with every
     slide at its real size and the script that measures the text of each."""
-    shown = page_copy(page, folder, ".toolbar { display: none !important; }"
-                      " .slides-wrapper { transform: none !important; }")
+    shown = page_copy(page, folder, ".toolbar { display: none !important; }")
     return shown.replace("</body>", LAYOUT_SCRIPT + "</body>", 1)
 
 
@@ -258,7 +257,6 @@ def one_slide_page(page, folder, number):
     corner."""
     return page_copy(page, folder, "body { padding: 0 !important; background: none !important; }"
                      " .toolbar { display: none !important; }"
-                     " .slides-wrapper { transform: none !important; }"
                      " .slide { margin: 0 !important; box-shadow: none !important; }"
                      f" .slides-wrapper > .slide:not(:nth-child({number})) {{ display: none !important; }}")
 

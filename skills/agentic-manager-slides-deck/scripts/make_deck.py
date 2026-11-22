@@ -64,6 +64,19 @@ PAGE_SELECTOR = re.compile(
 RULE_PRELUDE = re.compile(r"([^{};]*)\{")
 
 
+# The toolbar sits fixed on the page's left, so the slides start past its
+# right edge: its offset, border, padding and button.
+TOOLBAR_LEFT, TOOLBAR_PADDING, TOOLBAR_BUTTON = 12, 6, 32
+TOOLBAR_RIGHT = TOOLBAR_LEFT + 2 * (1 + TOOLBAR_PADDING) + TOOLBAR_BUTTON
+# The space around the slides: from the window's edges and, on the left, from
+# the toolbar, at any zoom.
+PAGE_MARGIN = 20
+
+# The slides sit centred in the window and, once a zoom makes them wider than
+# it, start past the toolbar: the body's left padding is the larger of the
+# two, from the zoom the script keeps in --zoom. The body is as wide as the
+# slides it holds, at least the window, so its right padding still lies after
+# them, where scrolling reaches it.
 BASE_CSS = f"""      * {{
         box-sizing: border-box;
         margin: 0;
@@ -76,7 +89,14 @@ BASE_CSS = f"""      * {{
           system-ui,
           -apple-system,
           sans-serif;
-        padding: 40px 20px;
+        width: max-content;
+        min-width: 100%;
+        padding: 40px {PAGE_MARGIN}px 40px
+          max({TOOLBAR_RIGHT + PAGE_MARGIN}px, calc((100vw - {SLIDE_WIDTH}px * var(--zoom, 1)) / 2));
+      }}
+
+      .slides-wrapper {{
+        width: max-content;
       }}
 
       .slide {{
@@ -109,7 +129,7 @@ BASE_CSS = f"""      * {{
 
       .toolbar {{
         position: fixed;
-        left: 12px;
+        left: {TOOLBAR_LEFT}px;
         top: 50%;
         transform: translateY(-50%);
         display: flex;
@@ -118,13 +138,13 @@ BASE_CSS = f"""      * {{
         background: #23262e;
         border: 1px solid #353a45;
         border-radius: 8px;
-        padding: 8px 6px;
+        padding: 8px {TOOLBAR_PADDING}px;
         box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
         z-index: 100;
       }}
       .toolbar button {{
-        width: 32px;
-        height: 32px;
+        width: {TOOLBAR_BUTTON}px;
+        height: {TOOLBAR_BUTTON}px;
         border: none;
         background: none;
         border-radius: 6px;
@@ -174,7 +194,7 @@ BASE_CSS = f"""      * {{
           display: none;
         }}
         .slides-wrapper {{
-          transform: none !important;
+          zoom: 1 !important;
         }}
         .slide {{
           width: {SLIDE_WIDTH}px;
@@ -195,14 +215,26 @@ TOOLBAR = """    <div class="toolbar">
       <button onclick="window.print()" title="Export PDF"><svg viewBox="0 0 24 24"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M12 11v6M9 14l3 3 3-3"/></svg></button>
     </div>"""
 
+# The zoom is CSS zoom, not a transform: a transform leaves the layout at its
+# own size, so slides grown past the window spill left, where scrolling can't
+# reach, and shrunk ones leave the page as tall as before.
 ZOOM_SCRIPT = """    <script>
       let scale = 1;
-      // Steps the zoom by `dir` tenths, or back to 100% when `dir` is 0.
+      // Steps the zoom by `dir` tenths, or back to 100% when `dir` is 0,
+      // keeping the point of the slides at the view's centre where it was.
       function zoom(dir) {
+        const wrapper = document.querySelector(".slides-wrapper");
+        const view = document.documentElement;
+        const at = () => wrapper.getBoundingClientRect();
+        const before = at();
+        const x = (view.clientWidth / 2 - before.left) / scale;
+        const y = (view.clientHeight / 2 - before.top) / scale;
         scale = dir === 0 ? 1 : Math.min(2, Math.max(0.4, scale + dir * 0.1));
-        const w = document.querySelector(".slides-wrapper");
-        w.style.transform = `scale(${scale})`;
-        w.style.transformOrigin = "top center";
+        wrapper.style.zoom = scale;
+        document.body.style.setProperty("--zoom", scale);
+        const after = at();
+        window.scrollBy(after.left + x * scale - view.clientWidth / 2,
+          after.top + y * scale - view.clientHeight / 2);
       }
     </script>"""
 

@@ -6,6 +6,7 @@ the reason rather than failing after snap_deck.py's own wait.
 Run with: python3 tests/run.py agentic-manager-slides-deck
 """
 
+import json
 import os
 import re
 import shutil
@@ -23,6 +24,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "skills",
                 os.path.basename(TEST_DIR), "scripts"))
 import common  # noqa: E402
 import finish_deck  # noqa: E402
+import make_deck  # noqa: E402
 import snap_deck  # noqa: E402
 sys.path.insert(0, TEST_DIR)
 from deck_fixture import DECK, content, temp_output, write_slides  # noqa: E402
@@ -222,6 +224,77 @@ class LayoutTest(unittest.TestCase):
     def test_a_page_the_script_never_measured_fails(self):
         with self.assertRaisesRegex(SystemExit, "look at the pictures instead"):
             snap_deck.read_layout("<html><body></body></html>")
+
+
+# Each case zooms the page's own way, after a setup if it has one, then measures it: the zoom must keep every slide reachable, with a margin
+# from the toolbar on the left and from the page's end on the right, and the page as tall as what it shows;
+# slides that fit the window stay centred in it.
+ZOOM_PROBE = """<script>
+window.addEventListener('load', () => {
+  const measure = () => {
+    const slide = document.querySelector('.slide').getBoundingClientRect();
+    const all = document.querySelector('.slides-wrapper').getBoundingClientRect();
+    return { left: slide.left + window.scrollX, right: document.documentElement.scrollWidth - slide.right - window.scrollX,
+             centre: (slide.left + slide.right) / 2 - document.documentElement.clientWidth / 2,
+             seen: [(document.documentElement.clientWidth / 2 - all.left) / all.width,
+                    (document.documentElement.clientHeight / 2 - all.top) / all.height],
+             toolbar: document.querySelector('.toolbar').getBoundingClientRect().right,
+             height: document.documentElement.scrollHeight };
+  };
+  %s
+  const before = measure();
+  %s
+  const pre = document.createElement('pre');
+  pre.id = 'zoom-probe';
+  pre.textContent = JSON.stringify({ before, after: measure() });
+  document.body.appendChild(pre);
+});
+</script></body>"""
+
+
+@unittest.skipUnless(snap_deck.find_chrome(), "Chrome isn't installed")
+class ZoomTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        reason = chrome_cannot_picture()
+        if reason:
+            raise unittest.SkipTest(
+                f"{reason}: it can't run headless on this machine")
+
+    def test_zoom_keeps_slides_reachable_and_the_page_its_size(self):
+        folder = temp_output(self)
+        write_slides(folder, content())
+        finish_deck.finish(DECK)
+        with open(os.path.join(folder, DECK, "Acme-Q3-Review_Slides.html"), encoding="utf-8") as f:
+            page = f.read()
+        cases = [("slides that fit the window are centred in it", 1440, "",
+                  lambda b, a: abs(a["centre"]) <= 1),
+                 ("zoomed out, slides stay centred", 1440,
+                  "zoom(-1); zoom(-1);", lambda b, a: abs(a["centre"]) <= 1),
+                 ("zoomed in past the window, the slides start past the toolbar, with a margin", 1440,
+                  "zoom(1); zoom(1); zoom(1);", lambda b, a: round(a["left"] - a["toolbar"]) == make_deck.PAGE_MARGIN),
+                 ("zooming keeps the point at the view's centre where it was", 1440,
+                  ("window.scrollTo(0, 1500); zoom(1); zoom(1); zoom(1);",
+                   "zoom(1); zoom(-1); zoom(-1);"),
+                  lambda b, a: all(abs(x - y) < 0.002 for x, y in zip(b["seen"], a["seen"]))),
+                 ("zoomed in past the window, a margin stays after the slides", 1440,
+                  "zoom(1); zoom(1); zoom(1);", lambda b, a: round(a["right"]) == make_deck.PAGE_MARGIN),
+                 ("zoomed out, the page shrinks with the slides", 1200,
+                  "for (let i = 0; i < 6; i++) zoom(-1);", lambda b, a: a["height"] < b["height"] * 0.6)]
+        for name, width, steps, holds in cases:
+            setup, steps = steps if isinstance(steps, tuple) else ("", steps)
+            with self.subTest(name), tempfile.TemporaryDirectory() as out:
+                run = snap_deck.run_chrome(snap_deck.find_chrome(), os.path.join(out, "zoom.html"),
+                                           page.replace(
+                                               "</body>", ZOOM_PROBE % (setup, steps), 1), (width, 800),
+                                           "--dump-dom", "zoom the page")
+                found = re.search(
+                    r'<pre id="zoom-probe">(.*?)</pre>', run.stdout)
+                self.assertIsNotNone(found, "the probe never ran")
+                assert found
+                measured = json.loads(found[1])
+                self.assertTrue(
+                    holds(measured["before"], measured["after"]), measured)
 
 
 if __name__ == "__main__":
