@@ -181,10 +181,14 @@ BASE_CSS = f"""      * {{
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
         }}
+        /* The zoom script sets the body's left padding on the element itself,
+           which only !important outweighs. */
         html,
         body {{
           margin: 0;
-          padding: 0;
+          padding: 0 !important;
+          width: auto;
+          min-width: 0;
           background: white;
         }}
         .toolbar {{

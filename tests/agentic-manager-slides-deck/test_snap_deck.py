@@ -226,9 +226,10 @@ class LayoutTest(unittest.TestCase):
             snap_deck.read_layout("<html><body></body></html>")
 
 
-# Each case zooms the page's own way, after a setup if it has one, then measures it: the zoom must keep every slide reachable, with a margin
-# from the toolbar on the left and from the page's end on the right, and the page as tall as what it shows;
-# slides that fit the window stay centred in it.
+# Each case zooms or prints the page its own way, after a setup if it has one, then measures it: the zoom must
+# keep every slide reachable, with a margin from the toolbar on the left and from the page's end on the right,
+# and the page as tall as what it shows; slides that fit the window stay centred in it, and printed ones start
+# at the page's edge.
 ZOOM_PROBE = """<script>
 window.addEventListener('load', () => {
   const measure = () => {
@@ -252,8 +253,20 @@ window.addEventListener('load', () => {
 </script></body>"""
 
 
+# Applies the page's print rules on screen, after whatever the page's scripts set, as printing does.
+AS_PRINTED = """for (const sheet of document.styleSheets) {
+    for (const rule of [...sheet.cssRules]) {
+      if (rule.media && rule.media.mediaText.includes('print')) {
+        for (const inner of rule.cssRules) {
+          try { sheet.insertRule(inner.cssText, sheet.cssRules.length); } catch (e) {}
+        }
+      }
+    }
+  }"""
+
+
 @unittest.skipUnless(snap_deck.find_chrome(), "Chrome isn't installed")
-class ZoomTest(unittest.TestCase):
+class ViewerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         reason = chrome_cannot_picture()
@@ -281,6 +294,10 @@ class ZoomTest(unittest.TestCase):
                   lambda b, a: all(abs(x - y) < 0.002 for x, y in zip(b["seen"], a["seen"]))),
                  ("zoomed in past the window, a margin stays after the slides", 1440,
                   "zoom(1); zoom(1); zoom(1);", lambda b, a: round(a["right"]) == make_deck.PAGE_MARGIN),
+                 ("printed, the slides start at the page's left edge", 1440, AS_PRINTED,
+                  lambda b, a: round(a["left"]) == 0),
+                 ("printed after a zoom, the slides start at the page's left edge", 1440,
+                  "zoom(1); zoom(1); zoom(1);" + AS_PRINTED, lambda b, a: round(a["left"]) == 0),
                  ("zoomed out, the page shrinks with the slides", 1200,
                   "for (let i = 0; i < 6; i++) zoom(-1);", lambda b, a: a["height"] < b["height"] * 0.6)]
         for name, width, steps, holds in cases:
