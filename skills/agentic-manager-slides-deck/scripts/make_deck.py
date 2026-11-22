@@ -72,11 +72,9 @@ TOOLBAR_RIGHT = TOOLBAR_LEFT + 2 * (1 + TOOLBAR_PADDING) + TOOLBAR_BUTTON
 # the toolbar, at any zoom.
 PAGE_MARGIN = 20
 
-# The slides sit centred in the window and, once a zoom makes them wider than
-# it, start past the toolbar: the body's left padding is the larger of the
-# two, from the zoom the script keeps in --zoom. The body is as wide as the
-# slides it holds, at least the window, so its right padding still lies after
-# them, where scrolling reaches it.
+# The body is as wide as the slides it holds, at least the window, so its right
+# padding still lies after them, where scrolling reaches it; the zoom script
+# sets its left padding.
 BASE_CSS = f"""      * {{
         box-sizing: border-box;
         margin: 0;
@@ -91,8 +89,7 @@ BASE_CSS = f"""      * {{
           sans-serif;
         width: max-content;
         min-width: 100%;
-        padding: 40px {PAGE_MARGIN}px 40px
-          max({TOOLBAR_RIGHT + PAGE_MARGIN}px, calc((100vw - {SLIDE_WIDTH}px * var(--zoom, 1)) / 2));
+        padding: 40px {PAGE_MARGIN}px;
       }}
 
       .slides-wrapper {{
@@ -217,9 +214,19 @@ TOOLBAR = """    <div class="toolbar">
 
 # The zoom is CSS zoom, not a transform: a transform leaves the layout at its
 # own size, so slides grown past the window spill left, where scrolling can't
-# reach, and shrunk ones leave the page as tall as before.
+# reach, and shrunk ones leave the page as tall as before. The slides stay
+# centred while they fit the window with a margin each side, and past that
+# start a margin after the toolbar: the zoom keeps the view on the same point,
+# so they still grow evenly on screen, the toolbar's margin showing only when
+# scrolled to the left. CSS can't choose between the two, so the script does,
+# on every zoom and resize.
 ZOOM_SCRIPT = """    <script>
       let scale = 1;
+      // Sets the body's left padding: centred if the slides fit, else past the toolbar.
+      function place() {
+        const free = (document.documentElement.clientWidth - %SLIDE_WIDTH% * scale) / 2;
+        document.body.style.paddingLeft = (free >= %MARGIN% ? free : %TOOLBAR_RIGHT% + %MARGIN%) + "px";
+      }
       // Steps the zoom by `dir` tenths, or back to 100% when `dir` is 0,
       // keeping the point of the slides at the view's centre where it was.
       function zoom(dir) {
@@ -231,12 +238,15 @@ ZOOM_SCRIPT = """    <script>
         const y = (view.clientHeight / 2 - before.top) / scale;
         scale = dir === 0 ? 1 : Math.min(2, Math.max(0.4, scale + dir * 0.1));
         wrapper.style.zoom = scale;
-        document.body.style.setProperty("--zoom", scale);
+        place();
         const after = at();
         window.scrollBy(after.left + x * scale - view.clientWidth / 2,
           after.top + y * scale - view.clientHeight / 2);
       }
-    </script>"""
+      place();
+      window.addEventListener("resize", place);
+    </script>""".replace("%SLIDE_WIDTH%", str(SLIDE_WIDTH)).replace("%MARGIN%", str(PAGE_MARGIN)).replace(
+    "%TOOLBAR_RIGHT%", str(TOOLBAR_RIGHT))
 
 # Charts are drawn without animation, so a PDF never catches one half drawn.
 # Their settings are data, never code: how values read ("£3.5m") is a

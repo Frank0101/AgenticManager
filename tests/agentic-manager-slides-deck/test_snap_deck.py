@@ -271,6 +271,8 @@ class ZoomTest(unittest.TestCase):
                   lambda b, a: abs(a["centre"]) <= 1),
                  ("zoomed out, slides stay centred", 1440,
                   "zoom(-1); zoom(-1);", lambda b, a: abs(a["centre"]) <= 1),
+                 ("zoomed in until they nearly fill the window, slides stay centred", 1440,
+                  "zoom(1); zoom(1);", lambda b, a: abs(a["centre"]) <= 1),
                  ("zoomed in past the window, the slides start past the toolbar, with a margin", 1440,
                   "zoom(1); zoom(1); zoom(1);", lambda b, a: round(a["left"] - a["toolbar"]) == make_deck.PAGE_MARGIN),
                  ("zooming keeps the point at the view's centre where it was", 1440,
