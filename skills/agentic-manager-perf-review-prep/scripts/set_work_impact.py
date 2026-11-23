@@ -20,18 +20,19 @@ INPUT = f"""Input, on stdin: the initiatives, in any order, such as:
   python3 set_work_impact.py --prep Jane-Doe_26-11-10 <<'END_OF_INPUT'
   {{"initiatives": [
     {{"title": "Billing migration",
-     "impact": "One line on what changed because of it, and for whom.",
-     "paragraph": "One paragraph on what the person did, which bears the line out.",
+     "impact": "One line on the initiative's impact: what it is for, its value, and what changed.",
+     "paragraph": "One paragraph on the person's part in it: what they did and how it went.",
      "evidence": ["G3", "https://acme.atlassian.net/browse/PROJ-1",
                   "https://github.com/acme/billing/pull/1", "https://www.notion.so/billing-plan"]}}]}}
   END_OF_INPUT
 
   initiatives   at least one, each:
     title       the initiative's name, short, each its own
-    impact      what changed because of it, and for whom, one line of about
-                {WORDS["work_impact_line"]} words, naming no id
-    paragraph   what the person did in it, their own part, bearing the line
-                out without repeating it, about {WORDS["work_impact"]} words, fewer when
+    impact      the initiative's impact: what it is for, its value and what
+                changed because of it, not the person's part, one line of
+                about {WORDS["work_impact_line"]} words, naming no id
+    paragraph   the person's own part in it, what they did and how it went
+                as the points put it, about {WORDS["work_impact"]} words, fewer when
                 the evidence is thin, naming no id
     evidence    what it rests on, each once, at least one: a period point by
                 its id, such as G3, or a Jira issue or epic, a pull request or

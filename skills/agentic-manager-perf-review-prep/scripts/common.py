@@ -275,7 +275,7 @@ STEP_CHANGE_TASK = "step-change"
 # initiatives come most recent first, by the latest day of their evidence,
 # undated last, worked out by the script, never the agent.
 WORK_IMPACT_HEADING = "Work and impact"
-WORK_IMPACT_SUBTITLE = "*What the person worked on and the impact of their own part, the most recent first.*"
+WORK_IMPACT_SUBTITLE = "*What the person worked on, each initiative's impact and the person's part in it, the most recent first.*"
 # The work and its impact's two parts, as the Observations' are: the
 # period's initiatives, then, only with previous feedback, a short list of
 # what the person worked on before the period, as that feedback says it, for
@@ -314,9 +314,9 @@ WORK_IMPACT_CONTENT = "work_impact_content.json"
 EARLIER_WORK_BRIEF = "earlier_work_brief.json"
 EARLIER_WORK_CONTENT = "earlier_work_content.json"
 WORDS = {"value": 75, "context": 150, "step_change": 150,
-                      "work_impact": 75, "work_impact_line": 30, "earlier_work": 30}
+                      "work_impact": 100, "work_impact_line": 30, "earlier_work": 30}
 MAX_WORDS = {"value": 100, "context": 200, "step_change": 200,
-             "work_impact": 100, "work_impact_line": 40, "earlier_work": 40}
+             "work_impact": 130, "work_impact_line": 40, "earlier_work": 40}
 # The chart of the resolved issues by epic, beside the main focus.
 EPICS_CHART = "jira_epics.svg"
 # The GitHub cells of the report, in order, as the Jira ones, and the chart
@@ -995,7 +995,7 @@ def work_impact_content_problems(work_impact, data, ordered=True):
             problems.append(
                 f"{field}'s title, {title!r}, names another initiative too: give each its own")
         titles.append(title)
-        for name, text, part, empty in (("impact", impact, "work_impact_line", "say in a line what it changed"),
+        for name, text, part, empty in (("impact", impact, "work_impact_line", "say in a line the initiative's impact"),
                                         ("paragraph", paragraph, "work_impact", "say what the person did")):
             if not text.strip():
                 problems.append(f"{field}'s {name} is empty: {empty}")

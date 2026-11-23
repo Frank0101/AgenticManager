@@ -125,7 +125,7 @@ def observation_blocks(part, groups, summaries, folder):
     is one block, its summary over them all. A part of VALUED_PARTS, its
     `groups` data.json's, is a block for each value `summaries`
     summarises, in its groups' order, its name a heading over its summary, its
-    points beside the second value each names; then, under an ALSO heading over its line,
+    points beside the second value each names; then, under an ALSO heading over its summary,
     the points under no value beneath it; then the points no summary
     covers, grouped by value as the groups are, under OTHER_POINTS."""
     if not groups:

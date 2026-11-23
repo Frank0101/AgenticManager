@@ -473,7 +473,7 @@ def _observation_blocks(part, rows, summaries):
     it, from `rows`, the part's table worked out here, each ending with its
     id, and `summaries`, observations_content.json's for it. Context is one
     block; a valued part a block for each value it summarises, in the rows'
-    order, its name a heading over its summary, then, under ALSO, its line, if any,
+    order, its name a heading over its summary, then, under ALSO, its summary, if any,
     over the points under no value, then the points no summary covers, under
     OTHER_POINTS, grouped by value."""
     if not rows:
