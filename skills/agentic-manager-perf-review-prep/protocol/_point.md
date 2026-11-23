@@ -1,6 +1,6 @@
 ### Writing a point
 
-Make the person the subject of a point: what they did, or what happened because of them. When it is someone's judgement, say whose, such as "Jane's review saved the release, as Sam put it", not "Sam praised Jane's review".
+Make the person the subject of a point: what they did, or what happened because of them. When it is someone's judgement, say whose, such as "Jane's review saved the release, as Sam put it", not "Sam praised Jane's review". A figure keeps who the source says reported it and, when it says so, who checked it.
 
 A point is one sentence in your words, never copied, that stands on its own: say what it is about, such as a promotion, so it reads without its source. It is up to {{point_words}} words, fewer when the point is simple.
 
@@ -13,6 +13,7 @@ For example:
 | The source says                                                                                                  | The point                                                                                                          | Why                                                                     |
 | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
 | The manager wrote that Jane was the only one who gave them the quarter's plan on time, though not done very well | "Jane was the only one to hand the manager the quarter's plan on time, though not done very well", not "delivered" | "Gave me" is handing over, not doing the work; the quality caveat stays |
+| Jane wrote that the migration saves about $1,500 a month, checked with Sam in finance                            | "Jane's migration saves about $1,500 a month, figures Jane checked with Sam, of finance"                           | A figure keeps who reported it and who checked it                       |
 
 ### Values
 

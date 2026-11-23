@@ -134,7 +134,8 @@ Before each change the manager asks for, run `python3 ${CLAUDE_SKILL_DIR}/script
 Make each change where the report's text comes from, in a feedback of step 3 or in the notes, never in what the skill writes from them: the notes' summary, what step 6 writes and the report; then run again only the steps that follow and tell the manager as in step 8:
 
 - **The manager has updated their notes.** Read them again up to today with `python3 ${CLAUDE_SKILL_DIR}/scripts/read_notes.py start --prep <prep> --until-today`, hand out its task as in step 4, then run steps 6 and 7.
-- **The manager wants to change a feedback of step 3**, adding to it, cutting it or replacing part or all of it. Something they tell you in chat, such as a note of their own, goes into the current manager feedback, and feedback from someone else into the other feedback. Update its summary as [Summaries](#summaries) says, record it whole again with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py --prep <prep> --of <manager|other|previous>`, then run steps 6 and 7.
+- **The manager brings the person's self-reflection.** Compare it with what the report already holds and propose to the manager, in one message, what it adds, such as work or figures the report lacks or points to improve that the person names themselves. What the manager keeps is recorded as the next case says.
+- **The manager wants to change a feedback of step 3**, adding to it, cutting it or replacing part or all of it. Something they tell you in chat, such as a note of their own or what they keep of the person's self-reflection, goes into the current manager feedback, and feedback from someone else into the other feedback. Update its summary as [Summaries](#summaries) says, record it whole again with `python3 ${CLAUDE_SKILL_DIR}/scripts/set_summary.py --prep <prep> --of <manager|other|previous>`, then run steps 6 and 7.
 
 ## Summaries
 

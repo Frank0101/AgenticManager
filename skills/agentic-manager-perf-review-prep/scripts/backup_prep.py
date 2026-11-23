@@ -18,7 +18,7 @@ from common import clear_folder, previous_dir, prep_dir
 
 def save(prep):
     """Copy the prep `prep` to previous_dir(), replacing the copy there;
-    returns the copy's path."""
+    returns {previous}, the copy's path."""
     previous = previous_dir(prep)
     clear_folder(previous)
     shutil.copytree(prep_dir(prep), previous)
@@ -27,7 +27,7 @@ def save(prep):
 
 def restore(prep):
     """Put the prep `prep` back as the copy in previous_dir() keeps it,
-    replacing what it holds now; returns its path. Exits when no copy was
+    replacing what it holds now; returns {prep_dir}, the prep's path. Exits when no copy was
     saved."""
     previous, folder = previous_dir(prep), prep_dir(prep)
     if not os.path.exists(previous):
