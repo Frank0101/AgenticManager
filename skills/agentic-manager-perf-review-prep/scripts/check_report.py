@@ -26,13 +26,13 @@ SECTION = re.compile(
 # rows it spans and the group's name.
 GROUP_CELL = r'<tr valign="top">(?:<td rowspan="(\d+)">([^<]*)</td>)?'
 # A fold, what comes before it in its part, what it says and the table it
-# holds; and an initiative of the work and its impact: its title, in bold,
+# holds; and an initiative of the work and its impact: its title, a heading,
 # then its impact line and its paragraph, then what its fold says and the
 # table it holds.
 FOLD = re.compile(
     r"(.*?)<details><summary>([^<]*)</summary>(.*?)</details>", re.S)
 INITIATIVE = re.compile(
-    r"<b>([^<]*)</b>\n\n(.*?)<details><summary>([^<]*)</summary>(.*?)</details>", re.S)
+    r"^#### ([^\n]*)\n\n(.*?)<details><summary>([^<]*)</summary>(.*?)</details>", re.M | re.S)
 # The Notion section's count of the pages created, and each page's row: its
 # week's cell, then its link and title, and its area.
 PAGES_COUNT = re.compile(rf"^### {re.escape(PAGES_HEADING)} \((\d+)\)", re.M)
@@ -473,7 +473,7 @@ def _observation_blocks(part, rows, summaries):
     it, from `rows`, the part's table worked out here, each ending with its
     id, and `summaries`, observations_content.json's for it. Context is one
     block; a valued part a block for each value it summarises, in the rows'
-    order, its name in bold over its summary, then its ALSO line, if any,
+    order, its name a heading over its summary, then, under ALSO, its line, if any,
     over the points under no value, then the points no summary covers, under
     OTHER_POINTS, grouped by value."""
     if not rows:
@@ -486,10 +486,10 @@ def _observation_blocks(part, rows, summaries):
         if name in values:
             own = [row[1:] for row in rows if row[0] == name]
             blocks.append(
-                (f"<b>{html.escape(name)}</b>\n\n{values[name].strip()}", details_text(len(own)), own))
+                (f"#### {html.escape(name)}\n\n{values[name].strip()}", details_text(len(own)), own))
     unvalued = [(row[1], *row[3:]) for row in rows if row[0] == NO_VALUE]
     if also is not None:
-        blocks.append((f"<b>{ALSO}</b> {also.strip()}",
+        blocks.append((f"#### {ALSO}\n\n{also.strip()}",
                       details_text(len(unvalued)), unvalued))
     rest = [row for row in rows if row[0] not in values and not (
         row[0] == NO_VALUE and also is not None)]

@@ -6,7 +6,7 @@ It holds the person, the company's values with what each means, `focus`, where m
 
 ## What to write
 
-The report shows three parts: what is going well, what to improve and the context, the points of the first two grouped under the company value they show most. It shows what you write over the points: in going well and to improve, a short summary for each value worth saying, with that value's points folded under it, and a line on the points under no value that matter, with those points under it; in context, a summary of its own. The points no summary covers come folded last.
+The report shows three parts: what is going well, what to improve and the context, the points of the first two grouped under the company value they show most. It shows what you write over the points: in going well and to improve, a short summary for each value worth saying, with that value's points folded under it, and a short summary of the points under no value that matter, under an Also heading, with those points under it; in context, a summary of its own. The points no summary covers come folded last.
 
 ## How to write going well and to improve
 
@@ -16,7 +16,7 @@ The report shows three parts: what is going well, what to improve and the contex
 - Say once what several points, or several sources, show together. A detail of one moment comes only as an example, never a list to fill the room.
 - A point that changed over time stays as the points put it: in going well, since when it holds; in to improve, when it held. Weighing one against the other isn't yours to do.
 - In to improve, say what was seen, what the person should do, and how progress would show, as the points give it.
-- `also` is a line on the points under no value that matter, such as an overall judgement of the person's level; leave it null when there are none, or none worth saying.
+- `also` summarises the points under no value that matter, such as an overall judgement of the person's level; leave it null when there are none, or none worth saying.
 - {{style}}
 - Write about {{value_words}} words a value, and the same for `also`, fewer when the points are few: never pad.
 - Leave `values` empty, {}, and `also` null, when the table holds no point.

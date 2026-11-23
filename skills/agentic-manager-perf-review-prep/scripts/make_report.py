@@ -58,7 +58,7 @@ def render(person, data, folder, observations_content, step_change_content, work
 def work_impact_section(work_impact_content, data, folder, earlier_work_content):
     """The work and its impact's lines: its heading, marked as the agent's,
     its subtitle, the script's, then, under WORK_PERIOD_HEADING, each initiative of
-    `work_impact_content`, in its order, its title in bold over its impact,
+    `work_impact_content`, in its order, its title a heading over its impact,
     a line in italics, and its paragraph, then, folded under them with how
     many items it cites, a table, in small type, of its evidence, in the
     order it cites it, by its item in `data`, data.json, as work_evidence()
@@ -83,7 +83,7 @@ def work_impact_section(work_impact_content, data, folder, earlier_work_content)
              WORK_IMPACT_SUBTITLE, "", f"### {WORK_PERIOD_HEADING}"]
     for initiative in work_impact_content["initiatives"]:
         rows = [row(key) for key in initiative["evidence"]]
-        lines += ["", f"<b>{esc(initiative['title'])}</b>", "", f"*{initiative['impact'].strip()}*",
+        lines += ["", f"#### {esc(initiative['title'])}", "", f"*{initiative['impact'].strip()}*",
                   "", initiative["paragraph"].strip(), "",
                   *folded(details_text(len(rows), ("item", "items")), heads, rows)]
     earlier = (["", "---", "", f"### {EARLIER_WORK_HEADING}", "",
@@ -124,8 +124,8 @@ def observation_blocks(part, groups, summaries, folder):
     which the manager can name it. Context, whose `groups` are its points,
     is one block, its summary over them all. A part of VALUED_PARTS, its
     `groups` data.json's, is a block for each value `summaries`
-    summarises, in its groups' order, its name in bold over its summary, its
-    points beside the second value each names; then, with an ALSO line,
+    summarises, in its groups' order, its name a heading over its summary, its
+    points beside the second value each names; then, under an ALSO heading over its line,
     the points under no value beneath it; then the points no summary
     covers, grouped by value as the groups are, under OTHER_POINTS."""
     if not groups:
@@ -147,11 +147,11 @@ def observation_blocks(part, groups, summaries, folder):
     for group in groups:
         if group["value"] in summaries["values"]:
             rows = [also_cells(point) for point in group["points"]]
-            blocks.append((f"<b>{esc(group['value'])}</b>\n\n{summaries['values'][group['value']].strip()}",
+            blocks.append((f"#### {esc(group['value'])}\n\n{summaries['values'][group['value']].strip()}",
                            details_text(len(rows)), valued, rows))
         elif group["value"] is None and summaries["also"] is not None:
             rows = [cells(point) for point in group["points"]]
-            also = [(f"<b>{ALSO}</b> {summaries['also'].strip()}",
+            also = [(f"#### {ALSO}\n\n{summaries['also'].strip()}",
                      details_text(len(rows)), plain, rows)]
         else:
             rest.append(group)

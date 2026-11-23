@@ -72,7 +72,7 @@ class CheckReportTest(unittest.TestCase):
                   "heading marked as the agent's, then its subtitle"),
                  ("an initiative's paragraph changed", ("keeping to the plan", "beyond the plan"),
                   "Work and impact doesn't show"),
-                 ("two initiatives swapped", swapped("<b>Billing migration</b>", "<b>Old billing retirement</b>"),
+                 ("two initiatives swapped", swapped("#### Billing migration\n", "#### Old billing retirement\n"),
                   "Work and impact doesn't show"),
                  ("an evidence's key changed", (">acme/billing#1</a>",
                   ">acme/billing#2</a>"), "Work and impact evidence"),

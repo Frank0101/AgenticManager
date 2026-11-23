@@ -49,11 +49,11 @@ class MakeReportTest(unittest.TestCase):
         report = make_report.render(
             PERSON, DATA, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT, WORK_IMPACT_CONTENT)
         self.assertIn(f"Period: 10/08/2026 to 10/11/2026\n\n## {common.ai_marked('Work and impact')}\n\n"
-                      f"{common.WORK_IMPACT_SUBTITLE}\n\n### In the period\n\n<b>Billing migration</b>\n\n"
+                      f"{common.WORK_IMPACT_SUBTITLE}\n\n### In the period\n\n#### Billing migration\n\n"
                       "*The payments team moved off the old billing system.*\n\nJane led the billing migration",
                       report)
-        self.assertLess(report.index("<b>Billing migration</b>"),
-                        report.index("<b>Old billing retirement</b>"))
+        self.assertLess(report.index("#### Billing migration"),
+                        report.index("#### Old billing retirement"))
         # Each initiative's evidence folded under its paragraph.
         self.assertIn(
             "relied on.\n\n<details><summary>Details (5 items)</summary>", report)
@@ -94,17 +94,17 @@ class MakeReportTest(unittest.TestCase):
         # heading alone.
         report = make_report.render(
             PERSON, DATA, REPORT_FOLDER, OBSERVATIONS_CONTENT, STEP_CHANGE_CONTENT, WORK_IMPACT_CONTENT)
-        # Each summarised value in bold over its summary, in its table's
+        # Each summarised value a heading over its summary, in its table's
         # order, its points folded under it, then the line on the points
         # under no value over them, then the points no summary covers.
         self.assertIn(
-            f'### {common.ai_marked("Going well")}\n\n<b>Teamwork</b>\n\nJane explains outages to the teams around '
+            f'### {common.ai_marked("Going well")}\n\n#### Teamwork\n\nJane explains outages to the teams around '
             'them and presented the billing migration to the wider team.\n\n<details><summary>Details (2 points)'
             '</summary>', report)
-        self.assertIn('</details>\n\n<b>Ownership</b>\n\nJane has owned the billing migration and kept to its plan.'
+        self.assertIn('</details>\n\n#### Ownership\n\nJane has owned the billing migration and kept to its plan.'
                       '\n\n<details><summary>Details (1 point)</summary>', report)
         self.assertIn(
-            '<b>Also:</b> Jane could share progress with the wider team more often.\n\n<details>', report)
+            '#### Also\n\nJane could share progress with the wider team more often.\n\n<details>', report)
         self.assertIn(
             '</details>\n\n<details><summary>Details (1 other point)</summary>', report)
         self.assertIn('</details>\n\n---\n\n### To improve', report)

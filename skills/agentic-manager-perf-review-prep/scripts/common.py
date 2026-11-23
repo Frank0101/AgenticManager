@@ -200,7 +200,7 @@ PAGES_HEADING = "Pages created"
 # one it shows most, so it shows once, the second value it names beside it,
 # the values with the most points first, those naming none under NO_VALUE,
 # last, as it is no value: a fold for each value summarised, one under the
-# ALSO line for the points under no value, then the points no summary
+# ALSO heading for the points under no value, then the points no summary
 # covers, grouped by value; context names no value, so its points are one
 # fold, not grouped. Each point's source, by the summary file it comes from, as the
 # report names it; and what a reading's reference names, by its source,
@@ -210,11 +210,11 @@ OBSERVATION_HEADINGS = {"going_well": "Going well",
 OBSERVATIONS_SUBTITLE = ("*What the current manager feedback, the period's other feedback, the manager's notes and "
                          "Slack show, by company value.*")
 NO_VALUE = "No value"
-# What the line on the points under no value opens with, after the values'
-# summaries.
-ALSO = "Also:"
+# The heading over the summary of the points under no value, after the
+# values' summaries.
+ALSO = "Also"
 # What the fold under a valued part's summaries holds: the points no summary
-# covers, those of a value left unsaid and, with no ALSO line, those under no
+# covers, those of a value left unsaid and, with no ALSO summary, those under no
 # value, so every point is still one fold away.
 OTHER_POINTS = ("other point", "other points")
 OBSERVATION_SOURCES = {"manager": "Manager feedback", "other": "Other feedback",
