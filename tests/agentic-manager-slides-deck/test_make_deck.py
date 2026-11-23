@@ -173,6 +173,13 @@ class ProblemsTest(unittest.TestCase):
              "rings.phases.segments[0].value: must be a number above 0"),
             ("gap swallows a segment", ring(gap=91, segments=[{"color": "red"}] * 4),
              "rings.phases.gap: 91° leaves nothing of the narrowest segment, 90° wide"),
+            ("an id on two slides", lambda d: d["slides"].extend(
+                [slide("<svg><marker id='ah'/></svg>")] * 2),
+             "id 'ah' is on slides[3].html, slides[4].html"),
+            ("an id twice on a slide", set_slide("<b id='x'></b><i id='x'></i>"),
+             "id 'x' is on slides[0].html: every slide shares one page"),
+            ("an id the page gives a chart", set_slide("<p id='chart-revenue'>x</p>"),
+             "id 'chart-revenue' is on charts.revenue, slides[0].html"),
         ]
         for name, change, expected in cases:
             with self.subTest(name):
@@ -225,6 +232,8 @@ class ProblemsTest(unittest.TestCase):
                 [], "<div style='box-shadow: 3px 3px 0 0 #000'></div>")),
             ("shadow in a comment", styled(
                 ["/* box-shadow: 0 2px 8px #000; */", "body-text { color: red; }"])),
+            ("an id per slide", slides(
+                slide("<svg><marker id='ah1'/></svg>"), slide("<svg><marker id='ah3'/></svg>"))),
             ("selectors like the page's", styled(
                 [".toolbar-row, .body, #body, .slides-wrapper-x, .slide .toolbox, .row-divider { color: red; }"])),
         ]

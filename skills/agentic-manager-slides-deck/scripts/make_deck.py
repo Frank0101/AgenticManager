@@ -16,7 +16,7 @@ from html.parser import HTMLParser
 
 from common import (CHART_JS, FOLDER_NAME, PAGE, SLIDE_HEIGHT, SLIDE_WIDTH, SLUG, TOKEN, URL_ATTRIBUTES, VOID,
                     arc_segment, asset_link, coordinate, credit_line, deck_file, is_number, is_text_list, link_kind,
-                    placed_images, write_output_file)
+                    placed_images, repeated_id_error, repeated_ids, write_output_file)
 
 FIELDS = {"title", "style", "slides", "charts", "rings"}
 SLIDE_FIELDS = {"html", "class"}
@@ -310,7 +310,7 @@ def problems(content, assets=frozenset()):
                       "and give the deck's own classes other names")
     for line, declaration in blurred_shadows(style, variables):
         errors.append(f"style: line {line}: `{declaration}` {BLURRED}")
-    elements = {}
+    elements, ids = {}, []
     for kind, check in (("chart", check_chart), ("ring", check_ring)):
         field = kind + "s"
         items = content.get(field, {})
@@ -323,6 +323,7 @@ def problems(content, assets=frozenset()):
                     f"{field}.{ident}: an id is lowercase words joined by hyphens, such as revenue-by-quarter")
             check(item, f"{field}.{ident}", errors)
             elements[(kind, ident)] = 0
+            ids.append((f"{field}.{ident}", f"{kind}-{ident}"))
     slides = content.get("slides")
     if not isinstance(slides, list) or not slides:
         errors.append("slides: must be a nonempty list")
@@ -361,13 +362,16 @@ def problems(content, assets=frozenset()):
             errors.append(
                 f"{where}.html: `{{{{` starts no token: write {{{{chart:<id>}}}}, {{{{ring:<id>}}}}, "
                 "{{asset:<name>}} or {{page}}")
-        problem = read_slide(bare, variables)
+        problem, slide_ids = read_slide(bare, variables)
         if problem:
             errors.append(f"{where}.html: {problem}")
+        ids += [(f"{where}.html", ident) for ident in slide_ids]
     for (kind, ident), count in elements.items():
         if count != 1:
             errors.append(f"{kind}s.{ident}: must be placed exactly once, as {{{{{kind}:{ident}}}}} "
                           f"in a slide's html, not {count} times")
+    errors += [repeated_id_error(ident, where)
+               for ident, where in repeated_ids(ids).items()]
     return errors, texts
 
 
@@ -567,21 +571,22 @@ def check_ring(ring, where, errors):
 
 
 def read_slide(text, variables):
-    """The first problem with one slide's HTML, or None, `variables` being the
-    deck's custom properties (from css_variables()). Every tag it opens must
-    close, since one unclosed tag would swallow every slide after it."""
+    """(the first problem with one slide's HTML or None, the ids it gives),
+    `variables` being the deck's custom properties (from css_variables()).
+    Every tag it opens must close, since one unclosed tag would swallow every
+    slide after it."""
     parser = SlideParser(variables)
     parser.feed(text)
     parser.finish()
-    return parser.problem
+    return parser.problem, parser.ids
 
 
 class SlideParser(HTMLParser):
-    """Reads one slide's HTML: the first problem with it."""
+    """Reads one slide's HTML: the first problem with it, and the ids it gives."""
 
     def __init__(self, variables):
         super().__init__(convert_charrefs=True)
-        self.open, self.problem, self.variables = [], None, variables
+        self.open, self.problem, self.variables, self.ids = [], None, variables, []
 
     def fail(self, message):
         if not self.problem:
@@ -622,6 +627,8 @@ class SlideParser(HTMLParser):
             elif name == "class" and "mermaid" in value.split():
                 self.fail(
                     f"<{tag} class='mermaid'>: draw a diagram as inline SVG, in the deck's look")
+            elif name == "id" and value:
+                self.ids.append(value)
 
     def handle_endtag(self, tag):
         if tag in VOID:

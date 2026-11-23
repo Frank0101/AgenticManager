@@ -73,6 +73,9 @@ class CheckDeckTest(unittest.TestCase):
              "the page's rings and their segments are {'ring-phases': 2}"),
             ("a token left", lambda p: p.replace(
                 "<p>Platform team</p>", "<p>{{ring:phases}}</p>"), "the page still holds a token: {{ring:phases}}"),
+            ("an id twice", lambda p: p.replace(
+                "<p>Platform team</p>", "<p id='chart-revenue'>Platform team</p>"),
+             "id 'chart-revenue' is on slide"),
             ("a page number left", lambda p: p.replace(
                 "<p>Platform team</p>", "<p>{{page}}</p>"), "the page still holds a token: {{page}}"),
         ]

@@ -15,7 +15,7 @@ from html.parser import HTMLParser
 
 from common import (ASSETS, CHART_JS, PAGE, folder_problem, PLACEHOLDER, SLIDE_HEIGHT, SLIDE_WIDTH, SLIDES, STAND_IN,
                     TOKEN, URL_ATTRIBUTES, VOID, asset_names, credit_line, credits, deck_dir, deck_file,
-                    expected_files, link_kind, placed_images, read_json)
+                    expected_files, link_kind, placed_images, read_json, repeated_id_error, repeated_ids)
 
 TOOLBAR_BUTTONS = ["Zoom in", "Zoom out", "Reset zoom", "Export PDF"]
 CHARTS_DATA = re.compile(r"const charts = (.*);\n")
@@ -94,6 +94,8 @@ def check_deck(deck):
             if name in known and credit_line(known[name]) not in shown:
                 errors.append(
                     f"slide {number} shows {name} without its credit: {credit_line(known[name])}")
+    errors += [repeated_id_error(ident, where)
+               for ident, where in repeated_ids(page.ids).items()]
     token = TOKEN.search(raw)
     if token or PAGE in raw:
         errors.append(
@@ -125,6 +127,7 @@ class PageReader(HTMLParser):
         self.canvases, self.rings, self.links = [], {}, 0
         self.slide_text = []  # each slide's text, in pieces
         self.stand_ins = []  # "slide <n>: <the image it stands in for>"
+        self.ids = []  # (place, id) of every element with an id
 
     def inside(self, tag, cls):
         return any(t == tag and cls in c for t, c, _ in self.open)
@@ -145,6 +148,11 @@ class PageReader(HTMLParser):
         if tag == "div" and "slide" in classes and parent and "slides-wrapper" in parent[1]:
             self.slides += 1
             self.slide_text.append([])
+        if ident := (attrs.get("id") or "").strip():
+            in_slide = self.inside("div", "slide") or (
+                tag == "div" and "slide" in classes)
+            self.ids.append(
+                (f"slide {self.slides}" if in_slide else "the page", ident))
         if STAND_IN in attrs:
             self.stand_ins.append(f"slide {self.slides}: {attrs[STAND_IN]}")
         if tag == "button" and self.inside("div", "toolbar"):

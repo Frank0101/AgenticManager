@@ -3,8 +3,9 @@ set of files it holds, the slide's size, the one library a deck loads, what a
 slide may hold and the tokens that place a chart, a ring, an image or the page
 number in it, how to find a deck's folder, and the examples and images every
 deck shares, listed from their descriptions each time so the lists can't go
-stale. Scripts import the shared library's names from here, so they don't
-depend on the order of their imports.
+stale, and the rule that an id is unique across the deck. Scripts import the
+shared library's names from here, so they don't depend on the order of their
+imports.
 """
 import os
 import re
@@ -199,3 +200,21 @@ def link_kind(value):
     if value and not value.startswith("data:"):
         return "file"
     return None
+
+
+def repeated_ids(places):
+    """{id: [places]} of each id that `places`, (place, id) pairs such as
+    ("slides[3].html", "arrow"), holds more than once. Every slide shares one
+    page, so a url(#id) finds the first element of that id, wherever it is."""
+    seen = {}
+    for place, ident in places:
+        seen.setdefault(ident, []).append(place)
+    return {ident: where for ident, where in seen.items() if len(where) > 1}
+
+
+def repeated_id_error(ident, where):
+    """The error for the id `ident` held at each of `where`, as repeated_ids()
+    gives it."""
+    return (f"id {ident!r} is on {', '.join(dict.fromkeys(where))}: every slide shares one page, so give "
+            "each id in the deck, such as an SVG marker's or gradient's, a name of its own, for example "
+            "suffixed with the slide's number")
